@@ -1,0 +1,11 @@
+stock_label,amount,target_weight
+AAPL,50,15.0
+GOOGL,20,12.5
+MSFT,40,13.5
+TSLA,15,8.0
+AMZN,25,11.0
+NVDA,30,9.5
+META,35,10.5
+NFLX,45,7.5
+AMD,60,6.5
+INTC,55,6.0

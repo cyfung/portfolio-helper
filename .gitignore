@@ -1,0 +1,13 @@
+/data/
+/.idea/
+/.claude/
+/build/
+/.gradle/
+
+# Distribution files
+docs/
+
+# Shadow JAR and Launch4j
+build/libs/*-all.jar
+build/launch4j/
+*.exe

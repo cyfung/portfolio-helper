@@ -1,0 +1,708 @@
+/* ============================================
+   CSS Variables - Light Theme (Default)
+   ============================================ */
+:root {
+    /* Color Palette - Light Theme (Bloomberg Light) */
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8f9fa;
+    --color-bg-elevated: #ffffff;
+    --color-bg-hover: #f1f3f5;
+
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #495057;
+    --color-text-tertiary: #6c757d;
+    --color-text-inverse: #ffffff;
+
+    --color-border-subtle: #dee2e6;
+    --color-border-medium: #ced4da;
+    --color-border-strong: #adb5bd;
+
+    --color-accent-primary: #0066cc;
+    --color-accent-hover: #0052a3;
+
+    --color-positive: #00875a;
+    --color-negative: #de350b;
+
+    --color-header-bg: #0066cc;
+    --color-header-text: #ffffff;
+
+    /* Typography */
+    --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-family-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Monaco, 'Courier New', monospace;
+
+    --font-size-xs: 0.75rem;      /* 12px */
+    --font-size-sm: 0.875rem;     /* 14px */
+    --font-size-md: 1rem;         /* 16px - base */
+    --font-size-lg: 1.125rem;     /* 18px */
+    --font-size-xl: 1.25rem;      /* 20px */
+    --font-size-2xl: 1.5rem;      /* 24px */
+    --font-size-3xl: 2rem;        /* 32px */
+
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Spacing */
+    --spacing-xs: 0.125rem;   /* 2px */
+    --spacing-sm: 0.25rem;    /* 4px */
+    --spacing-md: 0.375rem;   /* 6px */
+    --spacing-lg: 0.5rem;     /* 8px */
+    --spacing-xl: 0.75rem;    /* 12px */
+    --spacing-2xl: 1rem;      /* 16px */
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+    /* Border Radius */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    /* Transitions */
+    --transition-fast: 0.15s ease;
+    --transition-base: 0.3s ease;
+}
+
+/* ============================================
+   Dark Theme Overrides
+   ============================================ */
+[data-theme="dark"] {
+    /* Color Palette - Dark Theme (Trading Terminal Style) */
+    --color-bg-primary: #161920;
+    --color-bg-secondary: #191C24;
+    --color-bg-elevated: #141924;
+    --color-bg-hover: #1a1f2e;
+
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #8b949e;
+    --color-text-tertiary: #6e7681;
+    --color-text-inverse: #0a0e14;
+
+    --color-border-subtle: #1c2128;
+    --color-border-medium: #2d333b;
+    --color-border-strong: #3d444d;
+
+    --color-accent-primary: #58a6ff;
+    --color-accent-hover: #79b8ff;
+
+    --color-positive: #3DC37A;
+    --color-negative: #EE6579;
+
+    --color-header-bg: #1c2128;
+    --color-header-text: #e6edf3;
+
+    /* Shadows - Softer in dark mode */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================
+   Global Styles
+   ============================================ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family-base);
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    padding: var(--spacing-lg);
+    transition: background-color var(--transition-base), color var(--transition-base);
+    line-height: 1.4;
+}
+
+/* ============================================
+   Container
+   ============================================ */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    background-color: var(--color-bg-primary);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-xl);
+    transition: background-color var(--transition-base);
+}
+
+/* ============================================
+   Portfolio Header with Theme Toggle
+   ============================================ */
+.portfolio-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-xl);
+    padding-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+h1 {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    margin: 0;
+    transition: color var(--transition-base);
+}
+
+/* ============================================
+   Header Button Group
+   ============================================ */
+.header-buttons {
+    display: flex;
+    gap: var(--spacing-lg);
+    align-items: center;
+}
+
+/* ============================================
+   Rebalancing Toggle Button
+   ============================================ */
+.rebal-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-sm) var(--spacing-xl);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.rebal-toggle:hover {
+    background-color: var(--color-bg-hover);
+    border-color: var(--color-accent-primary);
+}
+
+.rebal-toggle.active {
+    background-color: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+    border-color: var(--color-accent-primary);
+}
+
+.rebal-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+}
+
+[data-theme="dark"] .rebal-toggle:focus {
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+/* ============================================
+   Theme Toggle Button
+   ============================================ */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+    background-color: var(--color-bg-hover);
+    border-color: var(--color-accent-primary);
+    transform: scale(1.05);
+}
+
+.theme-toggle:active {
+    transform: scale(0.95);
+}
+
+.theme-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+}
+
+[data-theme="dark"] .theme-toggle:focus {
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+.theme-toggle svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--color-text-primary);
+    transition: stroke var(--transition-base);
+}
+
+/* Icon visibility based on theme */
+.theme-toggle .icon-sun {
+    display: none;
+}
+
+.theme-toggle .icon-moon {
+    display: block;
+}
+
+[data-theme="dark"] .theme-toggle .icon-sun {
+    display: block;
+}
+
+[data-theme="dark"] .theme-toggle .icon-moon {
+    display: none;
+}
+
+/* ============================================
+   Table Styles
+   ============================================ */
+.portfolio-tables-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.portfolio-table {
+    width: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0 auto var(--spacing-sm) auto;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-size: var(--font-size-md);
+}
+
+/* Total table - separate table that appears connected */
+.portfolio-total-table {
+    margin-top: -1px;
+    margin-bottom: var(--spacing-sm);
+    border-top: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    table-layout: auto;
+    width: auto;
+}
+
+.portfolio-table:not(.portfolio-total-table) {
+    margin-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 1px solid var(--color-border-medium);
+}
+
+.portfolio-table thead {
+    background-color: var(--color-header-bg);
+    color: var(--color-header-text);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.portfolio-table th {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    text-align: left;
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    font-size: var(--font-size-sm);
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--color-border-subtle);
+    white-space: nowrap;
+}
+
+/* Right-align numeric columns (Qty through Rebal Shares) */
+.portfolio-table th:nth-child(2),
+.portfolio-table th:nth-child(3),
+.portfolio-table th:nth-child(4),
+.portfolio-table th:nth-child(5),
+.portfolio-table th:nth-child(6),
+.portfolio-table th:nth-child(7),
+.portfolio-table th:nth-child(8),
+.portfolio-table th:nth-child(9),
+.portfolio-table th:nth-child(10),
+.portfolio-table th:nth-child(11) {
+    text-align: right;
+}
+
+.portfolio-table tbody tr {
+    border-bottom: 1px solid var(--color-border-subtle);
+    transition: background-color var(--transition-fast);
+}
+
+.portfolio-table tbody tr:hover {
+    background-color: var(--color-bg-hover);
+}
+
+.portfolio-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.portfolio-table td {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-md);
+    transition: color var(--transition-base);
+    white-space: nowrap;
+}
+
+.portfolio-table td:first-child {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-md);
+}
+
+.portfolio-table .price,
+.portfolio-table .amount {
+    text-align: right;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Mark price column - use primary text color */
+.portfolio-table .price {
+    text-align: right;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.portfolio-table .price.loaded {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* Mkt Val column - use secondary text color */
+.portfolio-table .value {
+    text-align: right;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+}
+
+.portfolio-table .value.loaded {
+    color: var(--color-text-secondary);
+}
+
+.portfolio-table .weight {
+    text-align: right;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.portfolio-table .weight.loaded {
+    color: var(--color-text-primary);
+}
+
+/* Price Change Indicators */
+.price-change {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.price-change.positive { color: var(--color-positive); }
+.price-change.negative { color: var(--color-negative); }
+.price-change.neutral { color: var(--color-text-tertiary); }
+
+/* Weight Difference Display */
+.weight-display {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.weight-diff {
+    margin-left: var(--spacing-xs);
+    font-weight: var(--font-weight-normal);
+}
+
+.weight-diff.good { color: var(--color-positive); }
+.weight-diff.warning { color: #f59e0b; }
+.weight-diff.alert { color: var(--color-negative); }
+
+[data-theme="dark"] .weight-diff.warning { color: #fbbf24; }
+
+/* ============================================
+   Rebalancing Column Visibility
+   ============================================ */
+/* Hide rebalancing columns by default */
+.portfolio-table .rebal-column {
+    display: none;
+}
+
+/* Show rebalancing columns when active */
+.rebalancing-visible .portfolio-table .rebal-column {
+    display: table-cell;
+}
+
+/* ============================================
+   Table Footer (Total Row)
+   ============================================ */
+.portfolio-table tfoot {
+    background-color: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border-medium);
+}
+
+.portfolio-total-table tbody {
+    background-color: var(--color-bg-secondary);
+}
+
+.portfolio-total-table tbody tr {
+    border-bottom: none;
+}
+
+.portfolio-total-table tbody tr:hover {
+    background-color: var(--color-bg-secondary);
+}
+
+.portfolio-total-table .total-row {
+    border-top: 1px solid var(--color-border-medium);
+    border-bottom: none;
+}
+
+.portfolio-table .total-row td,
+.portfolio-total-table .total-row td {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+}
+
+.portfolio-total-table .total-row td:first-child {
+    text-align: left;
+}
+
+.portfolio-total-table .total-row td:last-child {
+    text-align: right;
+}
+
+.portfolio-table .total-value {
+    color: var(--color-accent-primary);
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Portfolio Total Section */
+.portfolio-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    align-items: flex-end;
+    text-align: right;
+}
+
+.total-main {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-mono);
+}
+
+.total-change {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+}
+
+.change-dollars, .change-percent {
+    font-family: var(--font-family-mono);
+    font-weight: var(--font-weight-semibold);
+}
+
+.change-dollars.positive, .change-percent.positive { color: var(--color-positive); }
+.change-dollars.negative, .change-percent.negative { color: var(--color-negative); }
+.change-dollars.neutral, .change-percent.neutral { color: var(--color-text-tertiary); }
+
+/* ============================================
+   Row Update Highlighting
+   ============================================ */
+
+/* Highlight animation for updated rows */
+.portfolio-table tbody tr.recently-updated {
+    animation: row-highlight-fade 10s ease-out;
+}
+
+@keyframes row-highlight-fade {
+    0% {
+        background-color: rgba(0, 102, 204, 0.25);
+        box-shadow: 0 0 8px rgba(0, 102, 204, 0.4);
+    }
+    20% {
+        background-color: rgba(0, 102, 204, 0.2);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* Dark theme variant - lighter blue glow */
+[data-theme="dark"] .portfolio-table tbody tr.recently-updated {
+    animation: row-highlight-fade-dark 10s ease-out;
+}
+
+@keyframes row-highlight-fade-dark {
+    0% {
+        background-color: rgba(88, 166, 255, 0.15);
+        box-shadow: 0 0 8px rgba(88, 166, 255, 0.3);
+    }
+    20% {
+        background-color: rgba(88, 166, 255, 0.1);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* Timestamp row styling */
+.timestamp-row td {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-md);
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.timestamp-value {
+    text-align: right;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+}
+
+.timestamp-value.loaded {
+    color: var(--color-positive);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* ============================================
+   Info, Status and Error Messages
+   ============================================ */
+.status {
+    text-align: left;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-sm);
+    transition: color var(--transition-base);
+}
+
+.status.complete {
+    color: var(--color-positive);
+}
+
+.info {
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-md);
+    transition: color var(--transition-base);
+}
+
+.error {
+    color: var(--color-negative);
+    text-align: center;
+    padding: var(--spacing-md);
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-negative);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--transition-base);
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+@media (max-width: 768px) {
+    body {
+        padding: var(--spacing-sm);
+    }
+
+    .container {
+        padding: var(--spacing-lg);
+    }
+
+    .portfolio-header {
+        margin-bottom: var(--spacing-lg);
+    }
+
+    h1 {
+        font-size: var(--font-size-xl);
+    }
+
+    .theme-toggle {
+        width: 32px;
+        height: 32px;
+    }
+
+    .theme-toggle svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .portfolio-table th,
+    .portfolio-table td {
+        padding: var(--spacing-sm) var(--spacing-lg);
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: var(--spacing-md);
+    }
+
+    .container {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-md);
+    }
+
+    .portfolio-header {
+        margin-bottom: var(--spacing-lg);
+        padding-bottom: var(--spacing-md);
+    }
+
+    h1 {
+        font-size: var(--font-size-lg);
+    }
+
+    .theme-toggle {
+        width: 32px;
+        height: 32px;
+    }
+
+    .theme-toggle svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .portfolio-table th,
+    .portfolio-table td,
+    .portfolio-table .total-row td {
+        padding: var(--spacing-sm) var(--spacing-lg);
+    }
+}
+
+/* ============================================
+   Accessibility
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
