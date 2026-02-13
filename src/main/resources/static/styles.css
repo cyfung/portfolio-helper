@@ -417,6 +417,12 @@ h1 {
 .price-change.negative { color: var(--color-negative); }
 .price-change.neutral { color: var(--color-text-tertiary); }
 
+/* After-hours styling - use secondary text color */
+.price-change.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 0.8;
+}
+
 /* Weight Difference Display */
 .weight-display {
     font-family: var(--font-family-mono);

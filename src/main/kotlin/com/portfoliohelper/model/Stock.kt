@@ -8,13 +8,15 @@ package com.portfoliohelper.model
  * @property markPrice Current market price from IB API (null until fetched)
  * @property lastClosePrice Previous day's closing price from IB API (null until fetched)
  * @property targetWeight Target allocation percentage for this stock (e.g., 9.5 for 9.5%)
+ * @property isMarketClosed Whether the market is currently closed (for styling)
  */
 data class Stock(
     val label: String,
     val amount: Int,
     val markPrice: Double? = null,
     val lastClosePrice: Double? = null,
-    val targetWeight: Double? = null
+    val targetWeight: Double? = null,
+    val isMarketClosed: Boolean = false
 ) {
     /**
      * Total value of this stock position.

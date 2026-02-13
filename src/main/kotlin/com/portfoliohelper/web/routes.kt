@@ -62,7 +62,7 @@ fun Application.configureRouting() {
                                             updateGlobalTimestamp(data.timestamp);
 
                                             // Update price in UI
-                                            updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice);
+                                            updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false);
                                         }
                                     } catch (e) {
                                         console.error('Failed to parse SSE data:', e);
@@ -99,7 +99,7 @@ fun Application.configureRouting() {
                                     }
                                 }
 
-                                function updatePriceInUI(symbol, markPrice, lastClosePrice) {
+                                function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed) {
                                     // Store previous value for comparison (to detect if row should be highlighted)
                                     const valueCell = document.getElementById('value-' + symbol);
                                     const amountCell = document.getElementById('amount-' + symbol);
@@ -130,35 +130,57 @@ fun Application.configureRouting() {
                                         const changeDollars = markPrice - lastClosePrice;
                                         const changePercent = (changeDollars / lastClosePrice) * 100;
 
+                                        // Check if change is effectively zero (within 0.001 tolerance for floating point)
+                                        const isZeroChange = Math.abs(changeDollars) < 0.001;
+
+                                        // Determine after-hours class
+                                        const afterHoursClass = isMarketClosed ? ' after-hours' : '';
+
                                         // Update day change $ cell
                                         const changeCell = document.getElementById('day-change-' + symbol);
                                         if (changeCell) {
-                                            const sign = changeDollars >= 0 ? '+' : '-';
-                                            changeCell.textContent = sign + '$' + Math.abs(changeDollars).toFixed(2);
-                                            changeCell.className = 'price-change loaded ' +
-                                                (changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral');
+                                            if (isZeroChange) {
+                                                changeCell.textContent = '—';
+                                                changeCell.className = 'price-change loaded neutral' + afterHoursClass;
+                                            } else {
+                                                const sign = changeDollars >= 0 ? '+' : '-';
+                                                changeCell.textContent = sign + '$' + Math.abs(changeDollars).toFixed(2);
+                                                const direction = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
+                                                changeCell.className = 'price-change loaded ' + direction + afterHoursClass;
+                                            }
                                         }
 
                                         // Update day change % cell
                                         const changePercentCell = document.getElementById('day-percent-' + symbol);
                                         if (changePercentCell) {
-                                            const sign = changePercent >= 0 ? '+' : '-';
-                                            changePercentCell.textContent = sign + Math.abs(changePercent).toFixed(2) + '%';
-                                            changePercentCell.className = 'price-change loaded ' +
-                                                (changePercent > 0 ? 'positive' : changePercent < 0 ? 'negative' : 'neutral');
+                                            if (isZeroChange) {
+                                                changePercentCell.textContent = '—';
+                                                changePercentCell.className = 'price-change loaded neutral' + afterHoursClass;
+                                            } else {
+                                                const sign = changePercent >= 0 ? '+' : '-';
+                                                changePercentCell.textContent = sign + Math.abs(changePercent).toFixed(2) + '%';
+                                                const direction = changePercent > 0 ? 'positive' : changePercent < 0 ? 'negative' : 'neutral';
+                                                changePercentCell.className = 'price-change loaded ' + direction + afterHoursClass;
+                                            }
                                         }
 
                                         // Update position value change (Mkt Val Chg)
+                                        // IMPORTANT: Always calculate from changeDollars * amount to avoid floating point errors
                                         if (amountCell) {
                                             const amount = parseInt(amountCell.textContent);
                                             const positionChange = changeDollars * amount;
 
                                             const positionChangeCell = document.getElementById('position-change-' + symbol);
                                             if (positionChangeCell) {
-                                                const sign = positionChange >= 0 ? '+' : '-';
-                                                positionChangeCell.textContent = sign + '$' + Math.abs(positionChange).toFixed(2);
-                                                positionChangeCell.className = 'price-change loaded ' +
-                                                    (positionChange > 0 ? 'positive' : positionChange < 0 ? 'negative' : 'neutral');
+                                                if (isZeroChange) {
+                                                    positionChangeCell.textContent = '—';
+                                                    positionChangeCell.className = 'price-change loaded neutral' + afterHoursClass;
+                                                } else {
+                                                    const sign = positionChange >= 0 ? '+' : '-';
+                                                    positionChangeCell.textContent = sign + '$' + Math.abs(positionChange).toFixed(2);
+                                                    const direction = positionChange > 0 ? 'positive' : positionChange < 0 ? 'negative' : 'neutral';
+                                                    positionChangeCell.className = 'price-change loaded ' + direction + afterHoursClass;
+                                                }
                                             }
                                         }
                                     }
@@ -194,8 +216,6 @@ fun Application.configureRouting() {
                                             }, 10000);
                                         }
                                     }
-
-                                    updateStatus();
                                 }
 
                                 function updateTotalValue() {
@@ -278,21 +298,6 @@ fun Application.configureRouting() {
                                             weightCell.classList.add('loaded');
                                         }
                                     });
-                                }
-
-                                function updateStatus() {
-                                    const loadedCount = document.querySelectorAll('.price.loaded').length / 2; // Divide by 2 (mark + close)
-                                    const totalCount = document.querySelectorAll('tbody tr').length;
-                                    const statusEl = document.getElementById('status');
-
-                                    if (statusEl) {
-                                        if (loadedCount >= totalCount) {
-                                            statusEl.textContent = 'Market data loaded (' + loadedCount + '/' + totalCount + ' stocks)';
-                                            statusEl.classList.add('complete');
-                                        } else {
-                                            statusEl.textContent = 'Loading market data... (' + loadedCount + '/' + totalCount + ' stocks)';
-                                        }
-                                    }
                                 }
 
                                 function updateRebalancingColumns(portfolioTotal) {
@@ -419,17 +424,6 @@ fun Application.configureRouting() {
                                 +"No stocks found in the portfolio. Please add stocks to the CSV file."
                             }
                         } else {
-                            // Status indicator
-                            p(classes = "status") {
-                                id = "status"
-                                if (portfolio.hasCompleteMarketData) {
-                                    attributes["class"] = "status complete"
-                                    +"Market data loaded (${portfolio.stocksWithMarketData}/${portfolio.totalStocks} stocks)"
-                                } else {
-                                    +"Loading market data... (${portfolio.stocksWithMarketData}/${portfolio.totalStocks} stocks)"
-                                }
-                            }
-
                             div(classes = "portfolio-tables-wrapper") {
                                 table(classes = "portfolio-table") {
                                     thead {
@@ -480,22 +474,35 @@ fun Application.configureRouting() {
                                             }
 
                                             // Day Chg ($ change)
-                                            td(classes = "price-change ${stock.priceChangeDirection}") {
+                                            val isZeroChange = stock.priceChangeDollars?.let { Math.abs(it) < 0.001 } ?: false
+                                            val changeDirection = if (isZeroChange) "neutral" else stock.priceChangeDirection
+                                            val afterHoursClass = if (stock.isMarketClosed) "after-hours" else ""
+
+                                            td(classes = "price-change $changeDirection $afterHoursClass") {
                                                 id = "day-change-${stock.label}"
                                                 if (stock.priceChangeDollars != null) {
-                                                    val sign = if (stock.priceChangeDollars!! >= 0) "+" else "-"
-                                                    +"$sign${'$'}%.2f".format(Math.abs(stock.priceChangeDollars!!))
+                                                    // Hide if change is effectively zero (within 0.001 tolerance)
+                                                    if (isZeroChange) {
+                                                        +"—"
+                                                    } else {
+                                                        val sign = if (stock.priceChangeDollars!! >= 0) "+" else "-"
+                                                        +"$sign${'$'}%.2f".format(Math.abs(stock.priceChangeDollars!!))
+                                                    }
                                                 } else {
                                                     span(classes = "loading") { +"—" }
                                                 }
                                             }
 
                                             // Day % (% change)
-                                            td(classes = "price-change ${stock.priceChangeDirection}") {
+                                            td(classes = "price-change $changeDirection $afterHoursClass") {
                                                 id = "day-percent-${stock.label}"
                                                 if (stock.priceChangePercent != null) {
-                                                    val sign = if (stock.priceChangePercent!! >= 0) "+" else "-"
-                                                    +"$sign%.2f%%".format(Math.abs(stock.priceChangePercent!!))
+                                                    if (isZeroChange) {
+                                                        +"—"
+                                                    } else {
+                                                        val sign = if (stock.priceChangePercent!! >= 0) "+" else "-"
+                                                        +"$sign%.2f%%".format(Math.abs(stock.priceChangePercent!!))
+                                                    }
                                                 } else {
                                                     span(classes = "loading") { +"—" }
                                                 }
@@ -512,11 +519,18 @@ fun Application.configureRouting() {
                                             }
 
                                             // Mkt Val Chg (Position value change)
-                                            td(classes = "price-change ${stock.priceChangeDirection}") {
+                                            // IMPORTANT: positionChangeDollars is calculated as priceChangeDollars * amount
+                                            // This ensures it's always zero when price change is zero (no floating point errors)
+                                            td(classes = "price-change $changeDirection $afterHoursClass") {
                                                 id = "position-change-${stock.label}"
                                                 if (stock.positionChangeDollars != null) {
-                                                    val sign = if (stock.positionChangeDollars!! >= 0) "+" else "-"
-                                                    +"$sign${'$'}%.2f".format(Math.abs(stock.positionChangeDollars!!))
+                                                    // Hide if change is effectively zero (within 0.001 tolerance)
+                                                    if (isZeroChange) {
+                                                        +"—"
+                                                    } else {
+                                                        val sign = if (stock.positionChangeDollars!! >= 0) "+" else "-"
+                                                        +"$sign${'$'}%.2f".format(Math.abs(stock.positionChangeDollars!!))
+                                                    }
                                                 } else {
                                                     span(classes = "loading") { +"—" }
                                                 }
@@ -654,6 +668,7 @@ fun Application.configureRouting() {
                     append("\"symbol\":\"$symbol\",")
                     append("\"markPrice\":${quote.regularMarketPrice},")
                     append("\"lastClosePrice\":${quote.previousClose},")
+                    append("\"isMarketClosed\":${quote.isMarketClosed},")
                     append("\"timestamp\":${quote.lastUpdateTime}")
                     append("}")
                 }

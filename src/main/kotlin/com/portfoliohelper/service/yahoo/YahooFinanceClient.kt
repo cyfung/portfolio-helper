@@ -49,12 +49,31 @@ object YahooFinanceClient {
 
             val meta = result["meta"]?.jsonObject
             val regularMarketPrice = meta?.get("regularMarketPrice")?.jsonPrimitive?.doubleOrNull
+
+            // Extract previous close from meta
             val previousClose = meta?.get("chartPreviousClose")?.jsonPrimitive?.doubleOrNull
+
+            // Extract trading hours to determine if market is closed
+            val currentTradingPeriod = meta?.get("currentTradingPeriod")?.jsonObject
+            val regularPeriod = currentTradingPeriod?.get("regular")?.jsonObject
+            val tradingPeriodStart = regularPeriod?.get("start")?.jsonPrimitive?.longOrNull
+            val tradingPeriodEnd = regularPeriod?.get("end")?.jsonPrimitive?.longOrNull
+
+            // Determine if market is closed (before open or after close)
+            val isMarketClosed = run {
+                val currentTimeSeconds = System.currentTimeMillis() / 1000
+                val beforeOpen = tradingPeriodStart?.let { currentTimeSeconds < it } ?: false
+                val afterClose = tradingPeriodEnd?.let { currentTimeSeconds >= it } ?: false
+                beforeOpen || afterClose
+            }
 
             return YahooQuote(
                 symbol = symbol,
                 regularMarketPrice = regularMarketPrice,
-                previousClose = previousClose
+                previousClose = previousClose,
+                tradingPeriodStart = tradingPeriodStart,
+                tradingPeriodEnd = tradingPeriodEnd,
+                isMarketClosed = isMarketClosed
             )
         } catch (e: Exception) {
             throw YahooFinanceException("Failed to parse response for $symbol", e)

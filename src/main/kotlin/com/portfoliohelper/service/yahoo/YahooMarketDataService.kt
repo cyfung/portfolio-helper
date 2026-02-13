@@ -71,7 +71,8 @@ object YahooMarketDataService {
             val quote = quoteCache[stock.label]
             stock.copy(
                 markPrice = quote?.regularMarketPrice,
-                lastClosePrice = quote?.previousClose
+                lastClosePrice = quote?.previousClose,
+                isMarketClosed = quote?.isMarketClosed ?: false
             )
         }
         return Portfolio(enrichedStocks)
