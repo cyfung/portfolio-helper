@@ -35,6 +35,9 @@ dependencies {
     // Kotlinx Serialization for JSON parsing
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 
+    // Jsoup for HTML parsing (NAV scraping from fund provider websites)
+    implementation("org.jsoup:jsoup:1.17.2")
+
     // Kotlin Coroutines (for async/parallel fetching)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
 

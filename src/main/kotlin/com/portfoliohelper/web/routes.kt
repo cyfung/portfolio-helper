@@ -2,6 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.service.PortfolioState
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
+import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -57,6 +58,9 @@ fun Application.configureRouting() {
                                             // Portfolio structure changed, reload page
                                             console.log('Portfolio reloaded, refreshing page...');
                                             location.reload();
+                                        } else if (data.type === 'nav') {
+                                            // NAV update
+                                            updateNavInUI(data.symbol, data.nav);
                                         } else {
                                             // Update global timestamp
                                             updateGlobalTimestamp(data.timestamp);
@@ -96,6 +100,14 @@ fun Application.configureRouting() {
                                     if (timeCell && timestamp) {
                                         timeCell.textContent = formatTimestamp(timestamp);
                                         timeCell.classList.add('loaded');
+                                    }
+                                }
+
+                                function updateNavInUI(symbol, nav) {
+                                    const navCell = document.getElementById('nav-' + symbol);
+                                    if (navCell) {
+                                        navCell.textContent = nav !== null ? '$' + nav.toFixed(2) : '—';
+                                        if (nav !== null) navCell.classList.add('loaded');
                                     }
                                 }
 
@@ -430,6 +442,7 @@ fun Application.configureRouting() {
                                     tr {
                                         th { +"Symbol" }
                                         th { +"Qty" }
+                                        th { +"Last NAV" }
                                         th { +"Last" }
                                         th { +"Mark" }
                                         th { +"Day Chg" }
@@ -451,6 +464,16 @@ fun Application.configureRouting() {
                                             td(classes = "amount") {
                                                 id = "amount-${stock.label}"
                                                 +stock.amount.toString()
+                                            }
+
+                                            // Last NAV
+                                            td(classes = if (stock.lastNav != null) "price loaded" else "price") {
+                                                id = "nav-${stock.label}"
+                                                if (stock.lastNav != null) {
+                                                    +"${'$'}%.2f".format(stock.lastNav)
+                                                } else {
+                                                    +"—"
+                                                }
                                             }
 
                                             // Last Close Price
@@ -676,6 +699,21 @@ fun Application.configureRouting() {
             }
 
             YahooMarketDataService.onPriceUpdate(callback)
+
+            // Register callback for NAV updates
+            val navCallback: (String, com.portfoliohelper.service.nav.NavData) -> Unit = { symbol, navData ->
+                val json = buildString {
+                    append("{")
+                    append("\"type\":\"nav\",")
+                    append("\"symbol\":\"$symbol\",")
+                    append("\"nav\":${navData.nav},")
+                    append("\"timestamp\":${navData.lastFetchTime}")
+                    append("}")
+                }
+                channel.trySend("data: $json\n\n")
+            }
+
+            NavService.onNavUpdate(navCallback)
 
             // Listen for portfolio reload events
             launch {

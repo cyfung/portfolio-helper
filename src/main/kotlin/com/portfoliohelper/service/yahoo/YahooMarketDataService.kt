@@ -2,6 +2,7 @@ package com.portfoliohelper.service.yahoo
 
 import com.portfoliohelper.model.Portfolio
 import com.portfoliohelper.model.Stock
+import com.portfoliohelper.service.nav.NavService
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
@@ -72,7 +73,8 @@ object YahooMarketDataService {
             stock.copy(
                 markPrice = quote?.regularMarketPrice,
                 lastClosePrice = quote?.previousClose,
-                isMarketClosed = quote?.isMarketClosed ?: false
+                isMarketClosed = quote?.isMarketClosed ?: false,
+                lastNav = NavService.getNav(stock.label)
             )
         }
         return Portfolio(enrichedStocks)

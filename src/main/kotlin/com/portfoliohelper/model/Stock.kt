@@ -16,7 +16,8 @@ data class Stock(
     val markPrice: Double? = null,
     val lastClosePrice: Double? = null,
     val targetWeight: Double? = null,
-    val isMarketClosed: Boolean = false
+    val isMarketClosed: Boolean = false,
+    val lastNav: Double? = null
 ) {
     /**
      * Total value of this stock position.

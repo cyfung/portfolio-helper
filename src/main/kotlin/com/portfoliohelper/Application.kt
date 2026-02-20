@@ -1,6 +1,7 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.*
+import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.web.configureRouting
 import io.ktor.server.engine.*
@@ -59,6 +60,23 @@ fun main() {
 
     initializeMarketData()
 
+    // Initialize NAV service for fund NAV data
+    fun initializeNavData() {
+        try {
+            logger.info("Initializing NAV service...")
+            NavService.initialize()
+
+            val symbols = PortfolioState.getStocks().map { it.label }
+            val navIntervalSeconds = System.getenv("NAV_UPDATE_INTERVAL")?.toLongOrNull() ?: 300L
+            NavService.requestNavForSymbols(symbols, navIntervalSeconds)
+        } catch (e: Exception) {
+            logger.error("Failed to initialize NAV service", e)
+            logger.warn("Application will continue without NAV data")
+        }
+    }
+
+    initializeNavData()
+
     // Set up CSV file watcher for hot-reload
     val csvFilePath = Paths.get(csvPath)
     val fileWatcher = if (java.nio.file.Files.exists(csvFilePath)) {
@@ -73,6 +91,9 @@ fun main() {
 
             // Update Yahoo Finance with new symbols
             initializeMarketData()
+
+            // Update NAV service with new symbols
+            initializeNavData()
 
             // Broadcast reload event to SSE clients
             PortfolioUpdateBroadcaster.broadcastReload()
@@ -109,6 +130,7 @@ fun main() {
         logger.info("Shutting down application (shutdown hook)...")
         SystemTrayService.shutdown()
         fileWatcher?.stop()
+        NavService.shutdown()
         YahooMarketDataService.shutdown()
         logger.info("Cleanup completed")
     })
@@ -139,6 +161,7 @@ fun main() {
     logger.info("Cleaning up resources...")
     SystemTrayService.shutdown()
     fileWatcher?.stop()
+    NavService.shutdown()
     YahooMarketDataService.shutdown()
 
     logger.info("Application stopped successfully")

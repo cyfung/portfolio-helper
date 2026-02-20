@@ -330,7 +330,8 @@ h1 {
 .portfolio-table th:nth-child(8),
 .portfolio-table th:nth-child(9),
 .portfolio-table th:nth-child(10),
-.portfolio-table th:nth-child(11) {
+.portfolio-table th:nth-child(11),
+.portfolio-table th:nth-child(12) {
     text-align: right;
 }
 
