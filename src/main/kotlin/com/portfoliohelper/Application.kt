@@ -46,8 +46,11 @@ fun main() {
             logger.info("Initializing Yahoo Finance market data service...")
             YahooMarketDataService.initialize()
 
-            // Request market data for all symbols (starts background polling)
-            val symbols = PortfolioState.getStocks().map { it.label }
+            // Request market data for all symbols + LETF component symbols (starts background polling)
+            val stocks = PortfolioState.getStocks()
+            val portfolioSymbols = stocks.map { it.label }
+            val componentSymbols = stocks.flatMap { it.letfComponents?.map { c -> c.second } ?: emptyList() }
+            val symbols = (portfolioSymbols + componentSymbols).distinct()
             val updateIntervalSeconds = System.getenv("PRICE_UPDATE_INTERVAL")?.toLongOrNull() ?: 60L
             YahooMarketDataService.requestMarketDataForSymbols(symbols, updateIntervalSeconds)
 

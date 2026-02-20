@@ -47,6 +47,9 @@ fun Application.configureRouting() {
                     script {
                         unsafe {
                             raw("""
+                                // Global store for Day % of all symbols (portfolio + LETF components)
+                                const componentDayPercents = {};
+
                                 // Connect to SSE for live price updates
                                 const eventSource = new EventSource('/api/prices/stream');
 
@@ -109,9 +112,16 @@ fun Application.configureRouting() {
                                         navCell.textContent = nav !== null ? '$' + nav.toFixed(2) : '—';
                                         if (nav !== null) navCell.classList.add('loaded');
                                     }
+                                    // Recalculate Est Val (NAV is preferred base price)
+                                    updateAllEstVals();
                                 }
 
                                 function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed) {
+                                    // Store Day % for LETF Est Val calculations
+                                    if (markPrice !== null && lastClosePrice !== null && lastClosePrice !== 0) {
+                                        componentDayPercents[symbol] = ((markPrice - lastClosePrice) / lastClosePrice) * 100;
+                                    }
+
                                     // Store previous value for comparison (to detect if row should be highlighted)
                                     const valueCell = document.getElementById('value-' + symbol);
                                     const amountCell = document.getElementById('amount-' + symbol);
@@ -228,6 +238,9 @@ fun Application.configureRouting() {
                                             }, 10000);
                                         }
                                     }
+
+                                    // Recalculate Est Val for all LETF stocks
+                                    updateAllEstVals();
                                 }
 
                                 function updateTotalValue() {
@@ -363,6 +376,49 @@ fun Application.configureRouting() {
                                     });
                                 }
 
+                                function updateAllEstVals() {
+                                    document.querySelectorAll('tbody tr[data-letf]').forEach(row => {
+                                        const symbol = row.querySelector('td:first-child').textContent.trim();
+                                        const letfAttr = row.getAttribute('data-letf');
+                                        if (!letfAttr) return;
+
+                                        // Parse components: "1,CTA,1,IVV" → [{mult: 1, sym: "CTA"}, {mult: 1, sym: "IVV"}]
+                                        const tokens = letfAttr.split(',');
+                                        const components = [];
+                                        for (let i = 0; i + 1 < tokens.length; i += 2) {
+                                            components.push({ mult: parseFloat(tokens[i]), sym: tokens[i + 1] });
+                                        }
+
+                                        // Get base price: prefer NAV, fallback to close
+                                        const navCell = document.getElementById('nav-' + symbol);
+                                        const closeCell = document.getElementById('close-' + symbol);
+                                        const navPrice = navCell ? parsePrice(navCell.textContent) : null;
+                                        const closePrice = closeCell ? parsePrice(closeCell.textContent) : null;
+                                        const basePrice = navPrice !== null ? navPrice : closePrice;
+
+                                        if (basePrice === null) return;
+
+                                        // Calculate sum of (multiplier * dayPercent / 100)
+                                        let sumComponent = 0;
+                                        let allAvailable = true;
+                                        for (const comp of components) {
+                                            const dayPct = componentDayPercents[comp.sym];
+                                            if (dayPct === undefined) {
+                                                allAvailable = false;
+                                                break;
+                                            }
+                                            sumComponent += comp.mult * dayPct / 100;
+                                        }
+
+                                        const estValCell = document.getElementById('est-val-' + symbol);
+                                        if (estValCell && allAvailable) {
+                                            const estVal = (1 + sumComponent) * basePrice;
+                                            estValCell.textContent = '$' + estVal.toFixed(2);
+                                            estValCell.classList.add('loaded');
+                                        }
+                                    });
+                                }
+
                                 // Rebalancing columns toggle
                                 document.addEventListener('DOMContentLoaded', () => {
                                     const rebalToggle = document.getElementById('rebal-toggle');
@@ -443,6 +499,7 @@ fun Application.configureRouting() {
                                         th { +"Symbol" }
                                         th { +"Qty" }
                                         th { +"Last NAV" }
+                                        th { +"Est Val" }
                                         th { +"Last" }
                                         th { +"Mark" }
                                         th { +"Day Chg" }
@@ -457,6 +514,11 @@ fun Application.configureRouting() {
                                 tbody {
                                     for (stock in portfolio.stocks) {
                                         tr {
+                                            // Add LETF data attribute if stock has components
+                                            if (stock.letfComponents != null) {
+                                                attributes["data-letf"] = stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
+                                            }
+
                                             // Symbol
                                             td { +stock.label }
 
@@ -471,6 +533,31 @@ fun Application.configureRouting() {
                                                 id = "nav-${stock.label}"
                                                 if (stock.lastNav != null) {
                                                     +"${'$'}%.2f".format(stock.lastNav)
+                                                } else {
+                                                    +"—"
+                                                }
+                                            }
+
+                                            // Est Val (Estimated Value from LETF components)
+                                            td(classes = "price") {
+                                                id = "est-val-${stock.label}"
+                                                if (stock.letfComponents != null) {
+                                                    // Compute initial Est Val server-side if data is available
+                                                    val basePrice = stock.lastNav ?: stock.lastClosePrice
+                                                    if (basePrice != null) {
+                                                        val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
+                                                            val quote = YahooMarketDataService.getQuote(sym)
+                                                            if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
+                                                                mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
+                                                            } else {
+                                                                0.0
+                                                            }
+                                                        }
+                                                        val estVal = (1.0 + sumComponent / 100.0) * basePrice
+                                                        +"${'$'}%.2f".format(estVal)
+                                                    } else {
+                                                        +"—"
+                                                    }
                                                 } else {
                                                     +"—"
                                                 }

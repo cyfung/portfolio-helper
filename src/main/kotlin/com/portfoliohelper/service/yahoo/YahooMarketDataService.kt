@@ -94,5 +94,7 @@ object YahooMarketDataService {
         isInitialized = false
     }
 
+    fun getQuote(symbol: String): YahooQuote? = quoteCache[symbol]
+
     fun isConnected(): Boolean = isInitialized
 }

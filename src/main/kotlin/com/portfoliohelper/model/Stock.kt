@@ -17,7 +17,8 @@ data class Stock(
     val lastClosePrice: Double? = null,
     val targetWeight: Double? = null,
     val isMarketClosed: Boolean = false,
-    val lastNav: Double? = null
+    val lastNav: Double? = null,
+    val letfComponents: List<Pair<Double, String>>? = null
 ) {
     /**
      * Total value of this stock position.

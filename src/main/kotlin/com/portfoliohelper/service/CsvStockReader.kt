@@ -44,13 +44,36 @@ object CsvStockReader {
                         null  // Column doesn't exist in CSV
                     }
 
+                    // Read LETF column if exists (backward compatible)
+                    // Format: "1 CTA 1 IVV" → listOf(1.0 to "CTA", 1.0 to "IVV")
+                    val letfComponents = try {
+                        val letfValue = record.get("letf")?.trim()
+                        if (!letfValue.isNullOrBlank()) {
+                            val tokens = letfValue.split("\\s+".toRegex())
+                            val components = mutableListOf<Pair<Double, String>>()
+                            var i = 0
+                            while (i + 1 < tokens.size) {
+                                val multiplier = tokens[i].toDouble()
+                                val symbol = tokens[i + 1]
+                                components.add(multiplier to symbol)
+                                i += 2
+                            }
+                            components.takeIf { it.isNotEmpty() }
+                        } else null
+                    } catch (e: IllegalArgumentException) {
+                        null  // Column doesn't exist in CSV
+                    } catch (e: NumberFormatException) {
+                        null  // Invalid format
+                    }
+
                     // Create stock with null prices - will be populated by IB API
                     stocks.add(Stock(
                         label = label,
                         amount = amount,
                         markPrice = null,
                         lastClosePrice = null,
-                        targetWeight = targetWeight
+                        targetWeight = targetWeight,
+                        letfComponents = letfComponents
                     ))
                 } catch (e: NumberFormatException) {
                     throw IllegalArgumentException("Invalid number format in CSV at record ${record.recordNumber}: ${e.message}")
