@@ -1,5 +1,4 @@
-# Cash balances — format: Label.CURRENCY=amount
-Cash.HKD=1234
-Cash.USD=123
-Loan.hkd=123
-Interest.USD=-700
+# Cash balances — format: Label.Currency[.M]=Amount  (append .M to mark as margin balance)
+Cash.HKD.M=1234
+Cash.USD.M=123
+Interest.USD.M=-700
