@@ -22,6 +22,7 @@
 
     --color-positive: #00875a;
     --color-negative: #de350b;
+    --color-warning: #b45309;
 
     --color-header-bg: #0066cc;
     --color-header-text: #ffffff;
@@ -90,6 +91,7 @@
 
     --color-positive: #3DC37A;
     --color-negative: #EE6579;
+    --color-warning: #f59e0b;
 
     --color-header-bg: #1c2128;
     --color-header-text: #e6edf3;
@@ -149,6 +151,24 @@ h1 {
     font-weight: var(--font-weight-bold);
     margin: 0;
     transition: color var(--transition-base);
+}
+
+.header-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-md);
+}
+
+.header-timestamp {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.header-timestamp.loaded {
+    color: var(--color-positive);
+    font-weight: var(--font-weight-semibold);
 }
 
 /* ============================================
@@ -969,13 +989,13 @@ h1 {
    Margin Row
    ============================================ */
 .summary-table .margin-row td {
-    color: var(--color-negative);
+    color: var(--color-warning);
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
 }
 
 .margin-percent {
-    color: var(--color-negative);
+    color: var(--color-warning);
     font-size: 0.85em;
 }
 

@@ -722,7 +722,14 @@ fun Application.configureRouting() {
                 body {
                     div(classes = "container") {
                         div(classes = "portfolio-header") {
-                            h1 { +"Stock Portfolio" }
+                            div(classes = "header-title-group") {
+                                h1 { +"Stock Portfolio" }
+                                span(classes = "header-timestamp") {
+                                    id = "last-update-time"
+                                    val now = java.time.LocalTime.now()
+                                    +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(now)
+                                }
+                            }
 
                             // Button group for theme and rebalancing toggle
                             div(classes = "header-buttons") {
@@ -787,6 +794,42 @@ fun Application.configureRouting() {
                                 // Summary table: cash + portfolio totals, above the stock table
                                 table(classes = "summary-table") {
                                     tbody {
+                                        // Total Value row — at the top of the summary table
+                                        val cashTotalUsdForGrandTotal = cashEntries.sumOf { entry ->
+                                            val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                            if (rate != null) entry.amount * rate else 0.0
+                                        }
+                                        val grandTotalDaySign = if (portfolio.dailyChangeDollars >= 0) "+" else "-"
+                                        val grandTotalPrevTotal = portfolio.previousTotalValue + cashTotalUsdForGrandTotal
+                                        val grandTotalDayChangePercent = if (grandTotalPrevTotal != 0.0) {
+                                            (portfolio.dailyChangeDollars / abs(grandTotalPrevTotal)) * 100.0
+                                        } else 0.0
+                                        tr(classes = "grand-total-row") {
+                                            td { +"Total Value" }
+                                            td {}
+                                            td {
+                                                span {
+                                                    id = "grand-total-value"
+                                                    +"${'$'}%.2f".format(portfolio.totalValue + cashTotalUsdForGrandTotal)
+                                                }
+                                                div(classes = "summary-subvalue") {
+                                                    id = "total-day-change"
+                                                    span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
+                                                        +"$grandTotalDaySign${'$'}%.2f".format(abs(portfolio.dailyChangeDollars))
+                                                    }
+                                                    +" "
+                                                    span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
+                                                        +"($grandTotalDaySign%.2f%%)".format(abs(grandTotalDayChangePercent))
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Section break after Total Value
+                                        tr(classes = "summary-section-break") {
+                                            td { attributes["colspan"] = "3" }
+                                        }
+
                                         // Cash entry rows — sorted by label, duplicate labels suppressed
                                         val sortedCashEntries =
                                             cashEntries.sortedBy { it.label.lowercase() }
@@ -933,60 +976,6 @@ fun Application.configureRouting() {
                                             }
                                         }
 
-                                        // Total Value + day change nested in same cell
-                                        tr(classes = "grand-total-row") {
-                                            td { +"Total Value" }
-                                            td {}
-                                            td {
-                                                val cashTotalUsd = cashEntries.sumOf { entry ->
-                                                    val rate =
-                                                        if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
-                                                    if (rate != null) entry.amount * rate else 0.0
-                                                }
-                                                span {
-                                                    id = "grand-total-value"
-                                                    +"${'$'}%.2f".format(portfolio.totalValue + cashTotalUsd)
-                                                }
-                                                div(classes = "summary-subvalue") {
-                                                    id = "total-day-change"
-                                                    val prevGrandTotal =
-                                                        portfolio.previousTotalValue + cashTotalUsd
-                                                    val totalDayChangePercent =
-                                                        if (prevGrandTotal != 0.0) {
-                                                            (portfolio.dailyChangeDollars / abs(
-                                                                prevGrandTotal
-                                                            )) * 100.0
-                                                        } else 0.0
-                                                    span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                                                        +"$daySign${'$'}%.2f".format(
-                                                            abs(
-                                                                portfolio.dailyChangeDollars
-                                                            )
-                                                        )
-                                                    }
-                                                    +" "
-                                                    span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
-                                                        +"($daySign%.2f%%)".format(
-                                                            abs(
-                                                                totalDayChangePercent
-                                                            )
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Last Updated row
-                                        tr(classes = "timestamp-row") {
-                                            td { +"Last Updated" }
-                                            td {}
-                                            td(classes = "timestamp-value loaded") {
-                                                id = "last-update-time"
-                                                val now = java.time.LocalTime.now()
-                                                +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-                                                    .format(now)
-                                            }
-                                        }
                                     }
                                 }
 
