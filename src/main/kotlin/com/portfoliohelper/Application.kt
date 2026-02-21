@@ -10,18 +10,26 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.util.concurrent.CountDownLatch
-import kotlin.io.path.absolute
 
 fun main() {
     val logger = LoggerFactory.getLogger("Application")
-    val csvPath = System.getenv("CSV_FILE_PATH")
-        ?: System.getProperty("csv.file.path")
-        ?: "data/stocks.csv"
+    val csvPath = "data/stocks.csv"
+
+    // Ensure data directory and CSV file exist on the filesystem
+    val csvFilesystemPath = Paths.get(csvPath)
+    Files.createDirectories(csvFilesystemPath.parent)
+    if (!Files.exists(csvFilesystemPath)) {
+        val resourceStream = object {}::class.java.classLoader.getResourceAsStream("data/stocks.csv")
+        if (resourceStream != null) {
+            resourceStream.use { Files.copy(it, csvFilesystemPath) }
+            logger.info("Created default CSV file at ${csvFilesystemPath.toAbsolutePath()} from bundled template")
+        }
+    }
 
     logger.info("Using CSV file path: $csvPath")
-    PortfolioState.csvPath = csvPath
 
     // Create coroutine scope for background tasks
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -83,7 +91,7 @@ fun main() {
 
     // Set up CSV file watcher for hot-reload
     val csvFilePath = Paths.get(csvPath)
-    val fileWatcher = if (java.nio.file.Files.exists(csvFilePath)) {
+    val fileWatcher = if (Files.exists(csvFilePath)) {
         logger.info("Setting up CSV file watcher for hot-reload: ${csvFilePath.toAbsolutePath()}")
         val watcher = CsvFileWatcher(csvFilePath, debounceMillis = 500)
 

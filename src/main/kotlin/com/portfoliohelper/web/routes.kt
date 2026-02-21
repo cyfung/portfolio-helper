@@ -692,28 +692,22 @@ fun Application.configureRouting() {
                                             }
 
                                             // Est Val (Estimated Value from LETF components)
-                                            td(classes = "price") {
-                                                id = "est-val-${stock.label}"
-                                                if (stock.letfComponents != null) {
-                                                    // Compute initial Est Val server-side if data is available
-                                                    val basePrice = stock.lastNav ?: stock.lastClosePrice
-                                                    if (basePrice != null) {
-                                                        val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
-                                                            val quote = YahooMarketDataService.getQuote(sym)
-                                                            if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
-                                                                mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
-                                                            } else {
-                                                                0.0
-                                                            }
-                                                        }
-                                                        val estVal = (1.0 + sumComponent / 100.0) * basePrice
-                                                        +"${'$'}%.2f".format(estVal)
-                                                    } else {
-                                                        +"—"
+                                            val estValText: String? = if (stock.letfComponents != null) {
+                                                val basePrice = stock.lastNav ?: stock.lastClosePrice
+                                                if (basePrice != null) {
+                                                    val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
+                                                        val quote = YahooMarketDataService.getQuote(sym)
+                                                        if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
+                                                            mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
+                                                        } else 0.0
                                                     }
-                                                } else {
-                                                    +"—"
-                                                }
+                                                    "${'$'}%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
+                                                } else null
+                                            } else null
+
+                                            td(classes = if (estValText != null) "price loaded" else "price") {
+                                                id = "est-val-${stock.label}"
+                                                +(estValText ?: "—")
                                             }
 
                                             // Last Close Price
@@ -908,9 +902,10 @@ fun Application.configureRouting() {
                                         td {
                                             +"Last Updated:"
                                         }
-                                        td(classes = "timestamp-value") {
+                                        td(classes = "timestamp-value loaded") {
                                             id = "last-update-time"
-                                            +"Loading..."
+                                            val now = java.time.LocalTime.now()
+                                            +java.time.format.DateTimeFormatter.ofPattern("hh:mm:ss a").format(now)
                                         }
                                     }
                                 }

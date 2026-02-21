@@ -6,7 +6,6 @@ import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
 import java.io.BufferedReader
 import java.io.FileReader
-import java.io.InputStreamReader
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -15,14 +14,10 @@ object CsvStockReader {
     fun readPortfolio(filePath: String): Portfolio {
         val path = Paths.get(filePath)
 
-        // Try to read from file system first, then fall back to classpath
-        val reader = if (Files.exists(path)) {
-            BufferedReader(FileReader(path.toFile()))
-        } else {
-            val inputStream = this::class.java.classLoader.getResourceAsStream(filePath)
-                ?: throw IllegalArgumentException("CSV file not found: $filePath (checked filesystem and classpath)")
-            BufferedReader(InputStreamReader(inputStream))
+        if (!Files.exists(path)) {
+            throw IllegalArgumentException("CSV file not found: ${path.toAbsolutePath()}")
         }
+        val reader = BufferedReader(FileReader(path.toFile()))
         val stocks = mutableListOf<Stock>()
 
         reader.use { bufferedReader ->
