@@ -108,7 +108,7 @@ fun main() {
             symbols += stocks.flatMap { it.letfComponents?.map { c -> c.second } ?: emptyList() }
             symbols += entry.getCash()
                 .map { it.currency }.distinct()
-                .filter { it != "USD" }
+                .filter { it != "USD" && it != "P" }
                 .map { "${it}USD=X" }
         }
         return symbols.distinct()

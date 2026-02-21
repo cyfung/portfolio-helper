@@ -39,12 +39,24 @@ private suspend fun ApplicationCall.renderPortfolioPage(
             // Build FX rate map for non-USD currencies from cached Yahoo quotes (e.g. HKDUSD=X → 0.1286)
             val fxRateMap: Map<String, Double> = cashEntries
                 .map { it.currency }.distinct()
-                .filter { it != "USD" }
+                .filter { it != "USD" && it != "P" }
                 .mapNotNull { ccy ->
                     val rate = YahooMarketDataService.getQuote("${ccy}USD=X")?.regularMarketPrice
                     if (rate != null) ccy to rate else null
                 }
                 .toMap()
+
+            // Helper to resolve a cash entry to its USD value (handles regular, P-reference, and FX entries)
+            fun resolveEntryUsd(e: com.portfoliohelper.model.CashEntry): Double? {
+                return when (e.currency) {
+                    "USD" -> e.amount
+                    "P" -> {
+                        val ref = com.portfoliohelper.service.PortfolioRegistry.get(e.portfolioRef ?: return null) ?: return null
+                        e.amount * com.portfoliohelper.service.yahoo.YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
+                    }
+                    else -> fxRateMap[e.currency]?.let { e.amount * it }
+                }
+            }
 
             respondHtml(HttpStatusCode.OK) {
                 head {
@@ -90,6 +102,8 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                 const portfolioId = "${entry.id}";
                                 // Last known margin USD (set by updateCashTotals, read by updateTotalValue)
                                 let lastMarginUsd = 0;
+                                // Last known equity entries total USD (set by updateCashTotals, read by updateMarginDisplay)
+                                let lastEquityUsd = 0;
 
                                 // Connect to SSE for live price updates
                                 const eventSource = new EventSource('/api/prices/stream');
@@ -382,7 +396,8 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                     if (marginUsd < 0) {
                                         const portfolioEl = document.getElementById('portfolio-total');
                                         const portfolioVal = parsePrice(portfolioEl ? portfolioEl.textContent : null) || 0;
-                                        const pct = portfolioVal !== 0 ? (marginUsd / portfolioVal) * 100 : 0;
+                                        const denominator = portfolioVal + lastEquityUsd + lastMarginUsd;
+                                        const pct = denominator !== 0 ? (marginUsd / denominator) * 100 : 0;
                                         if (marginPctEl) {
                                             marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
                                             marginPctEl.style.display = '';
@@ -395,6 +410,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                 function updateCashTotals() {
                                     let totalUsd = 0;
                                     let marginUsd = 0;
+                                    let equityUsd = 0;
                                     document.querySelectorAll('[data-cash-entry]').forEach(row => {
                                         const ccy = row.dataset.currency;
                                         const amount = parseFloat(row.dataset.amount);
@@ -410,7 +426,9 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                         }
                                         totalUsd += usd;
                                         if (row.dataset.marginFlag === 'true') marginUsd += usd;
+                                        if (row.dataset.equityFlag === 'true') equityUsd += usd;
                                     });
+                                    lastEquityUsd = equityUsd;
                                     const cashTotalEl = document.getElementById('cash-total-usd');
                                     if (cashTotalEl) cashTotalEl.textContent = formatCurrency(totalUsd);
                                     lastMarginUsd = marginUsd;
@@ -811,8 +829,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                     tbody {
                                         // Total Value row — at the top of the summary table
                                         val cashTotalUsdForGrandTotal = cashEntries.sumOf { ce ->
-                                            val rate = if (ce.currency == "USD") 1.0 else fxRateMap[ce.currency]
-                                            if (rate != null) ce.amount * rate else 0.0
+                                            resolveEntryUsd(ce) ?: 0.0
                                         }
                                         val grandTotalDaySign = if (portfolio.dailyChangeDollars >= 0) "+" else "-"
                                         val grandTotalPrevTotal = portfolio.previousTotalValue + cashTotalUsdForGrandTotal
@@ -855,40 +872,58 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                             prevLabel = entry.label
                                             tr {
                                                 attributes["data-cash-entry"] = "true"
-                                                attributes["data-currency"] = entry.currency
-                                                attributes["data-amount"] = entry.amount.toString()
+                                                // P entries: JS treats them as USD (rate=1.0) with pre-resolved amount
+                                                attributes["data-currency"] = if (entry.portfolioRef != null) "USD" else entry.currency
+                                                attributes["data-amount"] = if (entry.portfolioRef != null) {
+                                                    resolveEntryUsd(entry)?.toString() ?: "0"
+                                                } else {
+                                                    entry.amount.toString()
+                                                }
                                                 attributes["data-entry-id"] =
                                                     "${entry.label}-${entry.currency}"
                                                 attributes["data-margin-flag"] =
                                                     entry.marginFlag.toString()
+                                                attributes["data-equity-flag"] =
+                                                    entry.equityFlag.toString()
 
                                                 td { +displayLabel }
                                                 td(classes = "cash-raw-col") {
-                                                    span(classes = "cash-display") {
-                                                        +"${"%.2f".format(entry.amount)} ${entry.currency}"
-                                                    }
-                                                    span(classes = "cash-edit") {
-                                                        input(
-                                                            type = InputType.number,
-                                                            classes = "edit-input cash-amount-input"
-                                                        ) {
-                                                            attributes["step"] = "any"
-                                                            value = entry.amount.toString()
-                                                            attributes["data-key"] = entry.key
-                                                            attributes["data-column"] =
-                                                                "cash-amount"
+                                                    if (entry.portfolioRef != null) {
+                                                        // P entries: show resolved USD amount (non-editable)
+                                                        span(classes = "cash-display") {
+                                                            val resolvedUsd = resolveEntryUsd(entry)
+                                                            if (resolvedUsd != null) {
+                                                                +"${"%.2f".format(resolvedUsd)} USD"
+                                                            } else {
+                                                                +"--- USD"
+                                                            }
                                                         }
-                                                        +" ${entry.currency}"
+                                                    } else {
+                                                        span(classes = "cash-display") {
+                                                            +"${"%.2f".format(entry.amount)} ${entry.currency}"
+                                                        }
+                                                        span(classes = "cash-edit") {
+                                                            input(
+                                                                type = InputType.number,
+                                                                classes = "edit-input cash-amount-input"
+                                                            ) {
+                                                                attributes["step"] = "any"
+                                                                value = entry.amount.toString()
+                                                                attributes["data-key"] = entry.key
+                                                                attributes["data-column"] =
+                                                                    "cash-amount"
+                                                            }
+                                                            +" ${entry.currency}"
+                                                        }
                                                     }
                                                 }
                                                 td {
                                                     span {
                                                         id =
                                                             "cash-usd-${entry.label}-${entry.currency}"
-                                                        val rate =
-                                                            if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
-                                                        if (rate != null) {
-                                                            +"${'$'}%.2f".format(entry.amount * rate)
+                                                        val resolvedUsd = resolveEntryUsd(entry)
+                                                        if (resolvedUsd != null) {
+                                                            +"${'$'}%.2f".format(resolvedUsd)
                                                         } else {
                                                             +"---"
                                                         }
@@ -909,11 +944,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                     span {
                                                         id = "cash-total-usd"
                                                         val cashTotalUsd =
-                                                            cashEntries.sumOf { ce ->
-                                                                val rate =
-                                                                    if (ce.currency == "USD") 1.0 else fxRateMap[ce.currency]
-                                                                if (rate != null) ce.amount * rate else 0.0
-                                                            }
+                                                            cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
                                                         +"${'$'}%.2f".format(cashTotalUsd)
                                                     }
                                                 }
@@ -923,11 +954,10 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                             val hasMarginEntries = cashEntries.any { it.marginFlag }
                                             if (hasMarginEntries) {
                                                 val marginUsd = cashEntries.filter { it.marginFlag }
-                                                    .sumOf { e ->
-                                                        val rate =
-                                                            if (e.currency == "USD") 1.0 else fxRateMap[e.currency]
-                                                        if (rate != null) e.amount * rate else 0.0
-                                                    }
+                                                    .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
+                                                val equityEntriesUsd = cashEntries.filter { it.equityFlag }
+                                                    .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
+                                                val marginDenominator = portfolio.totalValue + equityEntriesUsd + marginUsd
                                                 tr(classes = "margin-row") {
                                                     attributes["data-margin-row"] = "true"
                                                     td { +"Margin" }
@@ -939,8 +969,8 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                         }
                                                         // Always render percent span for JS dynamic updates
                                                         val marginPct =
-                                                            if (portfolio.totalValue != 0.0 && marginUsd < 0)
-                                                                (marginUsd / portfolio.totalValue) * 100.0 else 0.0
+                                                            if (marginDenominator != 0.0 && marginUsd < 0)
+                                                                (marginUsd / marginDenominator) * 100.0 else 0.0
                                                         span(classes = "margin-percent") {
                                                             id = "margin-percent"
                                                             if (marginUsd >= 0) {

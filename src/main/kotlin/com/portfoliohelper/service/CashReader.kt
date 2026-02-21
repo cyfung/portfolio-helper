@@ -14,6 +14,7 @@ object CashReader {
             return emptyList()
         }
 
+        val knownFlags = setOf("M", "E")
         val entries = mutableListOf<CashEntry>()
         file.useLines { lines ->
             for (line in lines) {
@@ -29,26 +30,40 @@ object CashReader {
                 val key = trimmed.substring(0, eqIdx).trim()
                 val valueStr = trimmed.substring(eqIdx + 1).trim()
 
-                val parts = key.split(".")
-                if (parts.size < 2) {
-                    logger.warn("Skipping malformed cash key (no '.'): $key")
+                val allParts = key.split(".")
+                val mutableParts = allParts.toMutableList()
+                val flags = mutableSetOf<String>()
+                while (mutableParts.isNotEmpty() && mutableParts.last().uppercase() in knownFlags) {
+                    flags.add(mutableParts.removeLast().uppercase())
+                }
+
+                if (mutableParts.size < 2) {
+                    logger.warn("Skipping malformed cash key (no currency after stripping flags): $key")
                     continue
                 }
 
-                val marginFlag = parts.size >= 3 && parts.last().uppercase() == "M"
-                val (label, currency) = if (marginFlag) {
-                    parts.dropLast(2).joinToString(".") to parts[parts.size - 2].uppercase()
+                val currency = mutableParts.last().uppercase()
+                val label = mutableParts.dropLast(1).joinToString(".")
+                val marginFlag = "M" in flags
+                val equityFlag = "E" in flags
+
+                if (currency == "P") {
+                    val trimmedVal = valueStr.trim()
+                    val sign = if (trimmedVal.startsWith("-")) -1.0 else 1.0
+                    val portfolioId = trimmedVal.trimStart('+', '-').lowercase()
+                    if (portfolioId.isEmpty()) {
+                        logger.warn("Skipping P entry with empty portfolio reference: $key")
+                        continue
+                    }
+                    entries.add(CashEntry(label, "P", marginFlag, equityFlag, amount = sign, portfolioRef = portfolioId))
                 } else {
-                    parts.dropLast(1).joinToString(".") to parts.last().uppercase()
+                    val amount = valueStr.toDoubleOrNull()
+                    if (amount == null) {
+                        logger.warn("Skipping cash entry with non-numeric amount: $valueStr")
+                        continue
+                    }
+                    entries.add(CashEntry(label, currency, marginFlag, equityFlag, amount))
                 }
-
-                val amount = valueStr.toDoubleOrNull()
-                if (amount == null) {
-                    logger.warn("Skipping cash entry with non-numeric amount: $valueStr")
-                    continue
-                }
-
-                entries.add(CashEntry(label, currency, marginFlag, amount))
             }
         }
 
