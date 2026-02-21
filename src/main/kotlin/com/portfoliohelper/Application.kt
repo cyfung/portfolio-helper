@@ -21,6 +21,7 @@ fun main() {
         ?: "data/stocks.csv"
 
     logger.info("Using CSV file path: $csvPath")
+    PortfolioState.csvPath = csvPath
 
     // Create coroutine scope for background tasks
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

@@ -10,6 +10,9 @@ import java.util.concurrent.atomic.AtomicReference
 object PortfolioState {
     private val currentStocks = AtomicReference<List<Stock>>(emptyList())
 
+    /** Path to the CSV file, set during application startup. */
+    var csvPath: String = "data/stocks.csv"
+
     /**
      * Get the current base stocks.
      */

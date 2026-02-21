@@ -8,12 +8,22 @@ import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
 import io.ktor.server.http.content.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.html.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.*
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
+import org.apache.commons.csv.CSVPrinter
+import java.io.BufferedReader
+import java.io.FileReader
+import java.io.FileWriter
+import java.nio.file.Files
+import java.nio.file.Paths
 
 fun Application.configureRouting() {
     routing {
@@ -437,6 +447,106 @@ fun Application.configureRouting() {
                                         rebalToggle.classList.toggle('active');
                                         localStorage.setItem('ib-viewer-rebal-visible', isVisible);
                                     });
+
+                                    // Edit mode toggle
+                                    const editToggle = document.getElementById('edit-toggle');
+                                    const saveBtn = document.getElementById('save-btn');
+
+                                    editToggle.addEventListener('click', () => {
+                                        const isEditing = body.classList.toggle('editing-active');
+                                        editToggle.classList.toggle('active');
+
+                                        if (isEditing) {
+                                            // Populate inputs from current display values
+                                            document.querySelectorAll('.edit-qty').forEach(input => {
+                                                const sym = input.getAttribute('data-symbol');
+                                                const amountCell = document.getElementById('amount-' + sym);
+                                                const displaySpan = amountCell ? amountCell.querySelector('.display-value') : null;
+                                                if (displaySpan) input.value = displaySpan.textContent.trim();
+                                            });
+                                        }
+                                    });
+
+                                    // Save button
+                                    saveBtn.addEventListener('click', () => {
+                                        const updates = [];
+                                        document.querySelectorAll('.edit-qty').forEach(input => {
+                                            const sym = input.getAttribute('data-symbol');
+                                            const weightInput = document.querySelector('.edit-weight[data-symbol="' + sym + '"]');
+                                            updates.push({
+                                                symbol: sym,
+                                                amount: parseInt(input.value) || 0,
+                                                targetWeight: weightInput ? parseFloat(weightInput.value) || 0 : 0
+                                            });
+                                        });
+
+                                        saveBtn.disabled = true;
+                                        saveBtn.querySelector('.toggle-label').textContent = 'Saving...';
+
+                                        fetch('/api/portfolio/update', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(updates)
+                                        }).then(res => {
+                                            if (!res.ok) throw new Error('Save failed');
+                                            // CSV file watcher will detect changes and trigger SSE reload
+                                            // Exit edit mode visually while waiting for reload
+                                            body.classList.remove('editing-active');
+                                            editToggle.classList.remove('active');
+                                        }).catch(err => {
+                                            alert('Failed to save: ' + err.message);
+                                            saveBtn.disabled = false;
+                                            saveBtn.querySelector('.toggle-label').textContent = 'Save';
+                                        });
+                                    });
+
+                                    // Paste handler for Google Sheets column paste
+                                    document.addEventListener('paste', (e) => {
+                                        if (!body.classList.contains('editing-active')) return;
+
+                                        const activeEl = document.activeElement;
+                                        if (!activeEl || !activeEl.classList.contains('edit-input')) return;
+
+                                        const clipText = (e.clipboardData || window.clipboardData).getData('text');
+                                        const lines = clipText.split(/[\r\n]+/).filter(l => l.trim() !== '');
+
+                                        // Only intercept if multi-line (Google Sheets column paste)
+                                        if (lines.length <= 1) return;
+
+                                        e.preventDefault();
+
+                                        const column = activeEl.getAttribute('data-column');
+                                        const allInputs = Array.from(document.querySelectorAll('.edit-input[data-column="' + column + '"]'));
+                                        const startIdx = allInputs.indexOf(activeEl);
+
+                                        for (let i = 0; i < lines.length && (startIdx + i) < allInputs.length; i++) {
+                                            const val = lines[i].trim().replace(/,/g, '');
+                                            const num = parseFloat(val);
+                                            if (!isNaN(num)) {
+                                                allInputs[startIdx + i].value = column === 'qty' ? Math.round(num).toString() : num.toString();
+                                            }
+                                        }
+                                    });
+
+                                    // Copy column button handler
+                                    document.querySelectorAll('.copy-col-btn').forEach(btn => {
+                                        btn.addEventListener('click', () => {
+                                            const col = btn.getAttribute('data-column');
+                                            const inputs = Array.from(
+                                                document.querySelectorAll('.edit-input[data-column="' + col + '"]')
+                                            );
+                                            const text = inputs.map(i => i.value).join('\n');
+                                            navigator.clipboard.writeText(text).then(() => {
+                                                const orig = btn.innerHTML;
+                                                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                                                btn.classList.add('copied');
+                                                setTimeout(() => {
+                                                    btn.innerHTML = orig;
+                                                    btn.classList.remove('copied');
+                                                }, 1500);
+                                            });
+                                        });
+                                    });
                                 });
                             """.trimIndent())
                         }
@@ -454,6 +564,25 @@ fun Application.configureRouting() {
 
                             // Button group for theme and rebalancing toggle
                             div(classes = "header-buttons") {
+                                // Edit mode toggle button
+                                button(classes = "edit-toggle") {
+                                    attributes["aria-label"] = "Toggle edit mode"
+                                    attributes["id"] = "edit-toggle"
+                                    attributes["type"] = "button"
+                                    attributes["title"] = "Edit Qty and Target Weight"
+
+                                    span(classes = "toggle-label") { +"Edit" }
+                                }
+
+                                // Save button (visible only in edit mode)
+                                button(classes = "save-btn") {
+                                    attributes["id"] = "save-btn"
+                                    attributes["type"] = "button"
+                                    attributes["title"] = "Save changes to CSV"
+
+                                    span(classes = "toggle-label") { +"Save" }
+                                }
+
                                 // Rebalancing toggle button
                                 button(classes = "rebal-toggle") {
                                     attributes["aria-label"] = "Toggle rebalancing columns"
@@ -497,7 +626,15 @@ fun Application.configureRouting() {
                                     thead {
                                     tr {
                                         th { +"Symbol" }
-                                        th { +"Qty" }
+                                        th {
+                                            +"Qty"
+                                            button(classes = "copy-col-btn") {
+                                                attributes["data-column"] = "qty"
+                                                attributes["type"] = "button"
+                                                attributes["title"] = "Copy Qty column to clipboard"
+                                                unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
+                                            }
+                                        }
                                         th { +"Last NAV" }
                                         th { +"Est Val" }
                                         th { +"Last" }
@@ -509,6 +646,15 @@ fun Application.configureRouting() {
                                         th(classes = "rebal-column") { +"Weight" }
                                         th(classes = "rebal-column") { +"Rebal $" }
                                         th(classes = "rebal-column") { +"Rebal Shares" }
+                                        th(classes = "edit-column") {
+                                            +"Target %"
+                                            button(classes = "copy-col-btn") {
+                                                attributes["data-column"] = "weight"
+                                                attributes["type"] = "button"
+                                                attributes["title"] = "Copy Target % column to clipboard"
+                                                unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
+                                            }
+                                        }
                                     }
                                 }
                                 tbody {
@@ -525,7 +671,14 @@ fun Application.configureRouting() {
                                             // Qty (Amount)
                                             td(classes = "amount") {
                                                 id = "amount-${stock.label}"
-                                                +stock.amount.toString()
+                                                span(classes = "display-value") { +stock.amount.toString() }
+                                                input(type = InputType.number, classes = "edit-input edit-qty") {
+                                                    attributes["data-symbol"] = stock.label
+                                                    attributes["data-column"] = "qty"
+                                                    value = stock.amount.toString()
+                                                    attributes["min"] = "0"
+                                                    attributes["step"] = "1"
+                                                }
                                             }
 
                                             // Last NAV
@@ -709,6 +862,18 @@ fun Application.configureRouting() {
                                                     span(classes = "loading") { +"—" }
                                                 }
                                             }
+
+                                            // Target % (edit-only column)
+                                            td(classes = "edit-column") {
+                                                input(type = InputType.number, classes = "edit-input edit-weight") {
+                                                    attributes["data-symbol"] = stock.label
+                                                    attributes["data-column"] = "weight"
+                                                    value = (stock.targetWeight ?: 0.0).toString()
+                                                    attributes["min"] = "0"
+                                                    attributes["max"] = "100"
+                                                    attributes["step"] = "0.1"
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -758,6 +923,79 @@ fun Application.configureRouting() {
                         }
                     }
                 }
+            }
+        }
+
+        // Update portfolio CSV with edited qty/weight values
+        post("/api/portfolio/update") {
+            try {
+                val body = call.receiveText()
+                val updates = Json.parseToJsonElement(body).jsonArray
+
+                val csvPath = PortfolioState.csvPath
+                val path = Paths.get(csvPath)
+
+                // Read existing CSV to preserve row order and letf column
+                val existingRows = mutableListOf<Map<String, String>>()
+                val headers = mutableListOf<String>()
+
+                if (Files.exists(path)) {
+                    BufferedReader(FileReader(path.toFile())).use { reader ->
+                        val csvFormat = CSVFormat.DEFAULT.builder()
+                            .setHeader()
+                            .setSkipHeaderRecord(true)
+                            .build()
+                        CSVParser(reader, csvFormat).use { parser ->
+                            headers.addAll(parser.headerNames)
+                            for (record in parser) {
+                                val row = mutableMapOf<String, String>()
+                                for ((i, h) in headers.withIndex()) {
+                                    row[h] = if (i < record.size()) record.get(i) else ""
+                                }
+                                existingRows.add(row)
+                            }
+                        }
+                    }
+                }
+
+                // Build update map: symbol -> {amount, targetWeight}
+                val updateMap = mutableMapOf<String, Pair<Int, Double>>()
+                for (element in updates) {
+                    val obj = element.jsonObject
+                    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: continue
+                    val amount = obj["amount"]?.jsonPrimitive?.int ?: continue
+                    val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
+                    updateMap[symbol] = amount to targetWeight
+                }
+
+                // Write updated CSV
+                FileWriter(path.toFile()).use { writer ->
+                    val csvFormat = CSVFormat.DEFAULT.builder()
+                        .setHeader(*headers.toTypedArray())
+                        .build()
+                    CSVPrinter(writer, csvFormat).use { printer ->
+                        for (row in existingRows) {
+                            val symbol = row["stock_label"] ?: ""
+                            val update = updateMap[symbol]
+                            val values = headers.map { header ->
+                                when {
+                                    header == "amount" && update != null -> update.first.toString()
+                                    header == "target_weight" && update != null -> update.second.toString()
+                                    else -> row[header] ?: ""
+                                }
+                            }
+                            printer.printRecord(values)
+                        }
+                    }
+                }
+
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
             }
         }
 
