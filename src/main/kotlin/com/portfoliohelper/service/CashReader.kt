@@ -29,14 +29,18 @@ object CashReader {
                 val key = trimmed.substring(0, eqIdx).trim()
                 val valueStr = trimmed.substring(eqIdx + 1).trim()
 
-                val dotIdx = key.lastIndexOf('.')
-                if (dotIdx < 0) {
+                val parts = key.split(".")
+                if (parts.size < 2) {
                     logger.warn("Skipping malformed cash key (no '.'): $key")
                     continue
                 }
 
-                val label = key.substring(0, dotIdx).trim()
-                val currency = key.substring(dotIdx + 1).trim().uppercase()
+                val marginFlag = parts.size >= 3 && parts.last().uppercase() == "M"
+                val (label, currency) = if (marginFlag) {
+                    parts.dropLast(2).joinToString(".") to parts[parts.size - 2].uppercase()
+                } else {
+                    parts.dropLast(1).joinToString(".") to parts.last().uppercase()
+                }
 
                 val amount = valueStr.toDoubleOrNull()
                 if (amount == null) {
@@ -44,7 +48,7 @@ object CashReader {
                     continue
                 }
 
-                entries.add(CashEntry(label, currency, amount))
+                entries.add(CashEntry(label, currency, marginFlag, amount))
             }
         }
 

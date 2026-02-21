@@ -944,6 +944,42 @@ h1 {
 }
 
 /* ============================================
+   Cash Edit Mode
+   ============================================ */
+.cash-edit {
+    display: none;
+    align-items: center;
+    gap: 4px;
+}
+
+.editing-active .cash-edit {
+    display: inline-flex;
+}
+
+.editing-active .cash-display {
+    display: none;
+}
+
+.editing-active .cash-amount-input {
+    width: 100px;
+    text-align: right;
+}
+
+/* ============================================
+   Margin Row
+   ============================================ */
+.summary-table .margin-row td {
+    color: var(--color-negative);
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.margin-percent {
+    color: var(--color-negative);
+    font-size: 0.85em;
+}
+
+/* ============================================
    Accessibility
    ============================================ */
 @media (prefers-reduced-motion: reduce) {

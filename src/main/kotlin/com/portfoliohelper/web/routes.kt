@@ -21,6 +21,7 @@ import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
 import org.apache.commons.csv.CSVPrinter
 import java.io.BufferedReader
+import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
 import java.nio.file.Files
@@ -77,6 +78,8 @@ fun Application.configureRouting() {
                                     fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
                                     append(" }")
                                 }};
+                                // Last known margin USD (set by updateCashTotals, read by updateTotalValue)
+                                let lastMarginUsd = 0;
 
                                 // Connect to SSE for live price updates
                                 const eventSource = new EventSource('/api/prices/stream');
@@ -343,6 +346,9 @@ fun Application.configureRouting() {
                                             '<span class="change-dollars ' + changeClass + '">' + sign + '$' + Math.abs(changeDollars).toFixed(2) + '</span> ' +
                                             '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePercent).toFixed(2) + '%)</span>';
                                     }
+
+                                    // Update margin % when portfolio value changes
+                                    updateMarginDisplay(lastMarginUsd);
                                 }
 
                                 function formatCurrency(val) {
@@ -352,24 +358,47 @@ fun Application.configureRouting() {
                                     });
                                 }
 
+                                function updateMarginDisplay(marginUsd) {
+                                    const marginEl = document.getElementById('margin-total-usd');
+                                    if (!marginEl) return;
+                                    marginEl.textContent = formatCurrency(marginUsd);
+                                    const marginPctEl = document.getElementById('margin-percent');
+                                    if (marginUsd < 0) {
+                                        const portfolioEl = document.getElementById('portfolio-total');
+                                        const portfolioVal = parsePrice(portfolioEl ? portfolioEl.textContent : null) || 0;
+                                        const pct = portfolioVal !== 0 ? (marginUsd / portfolioVal) * 100 : 0;
+                                        if (marginPctEl) {
+                                            marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
+                                            marginPctEl.style.display = '';
+                                        }
+                                    } else {
+                                        if (marginPctEl) marginPctEl.style.display = 'none';
+                                    }
+                                }
+
                                 function updateCashTotals() {
                                     let totalUsd = 0;
+                                    let marginUsd = 0;
                                     document.querySelectorAll('[data-cash-entry]').forEach(row => {
                                         const ccy = row.dataset.currency;
                                         const amount = parseFloat(row.dataset.amount);
                                         const rate = fxRates[ccy];
                                         const entryId = row.dataset.entryId;
                                         const span = document.getElementById('cash-usd-' + entryId);
+                                        let usd = 0;
                                         if (rate !== undefined) {
-                                            const usd = amount * rate;
-                                            totalUsd += usd;
+                                            usd = amount * rate;
                                             if (span) span.textContent = formatCurrency(usd);
                                         } else {
-                                            totalUsd += (ccy === 'USD' ? amount : 0);
+                                            usd = (ccy === 'USD' ? amount : 0);
                                         }
+                                        totalUsd += usd;
+                                        if (row.dataset.marginFlag === 'true') marginUsd += usd;
                                     });
                                     const cashTotalEl = document.getElementById('cash-total-usd');
                                     if (cashTotalEl) cashTotalEl.textContent = formatCurrency(totalUsd);
+                                    lastMarginUsd = marginUsd;
+                                    updateMarginDisplay(marginUsd);
 
                                     // Update grand total
                                     const portfolioEl = document.getElementById('portfolio-total');
@@ -536,12 +565,17 @@ fun Application.configureRouting() {
                                         editToggle.classList.toggle('active');
 
                                         if (isEditing) {
-                                            // Populate inputs from current display values
+                                            // Populate stock qty inputs from current display values
                                             document.querySelectorAll('.edit-qty').forEach(input => {
                                                 const sym = input.getAttribute('data-symbol');
                                                 const amountCell = document.getElementById('amount-' + sym);
                                                 const displaySpan = amountCell ? amountCell.querySelector('.display-value') : null;
                                                 if (displaySpan) input.value = displaySpan.textContent.trim();
+                                            });
+                                            // Populate cash inputs from row data-amount
+                                            document.querySelectorAll('.cash-amount-input').forEach(input => {
+                                                const row = input.closest('[data-cash-entry]');
+                                                if (row) input.value = row.dataset.amount;
                                             });
                                         }
                                     });
@@ -559,19 +593,38 @@ fun Application.configureRouting() {
                                             });
                                         });
 
+                                        const cashUpdates = [];
+                                        document.querySelectorAll('.cash-amount-input').forEach(input => {
+                                            cashUpdates.push({
+                                                key: input.getAttribute('data-key'),
+                                                amount: parseFloat(input.value) || 0
+                                            });
+                                        });
+
                                         saveBtn.disabled = true;
                                         saveBtn.querySelector('.toggle-label').textContent = 'Saving...';
 
-                                        fetch('/api/portfolio/update', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify(updates)
-                                        }).then(res => {
-                                            if (!res.ok) throw new Error('Save failed');
-                                            // CSV file watcher will detect changes and trigger SSE reload
-                                            // Exit edit mode visually while waiting for reload
-                                            body.classList.remove('editing-active');
-                                            editToggle.classList.remove('active');
+                                        const saves = [
+                                            fetch('/api/portfolio/update', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify(updates)
+                                            }),
+                                            cashUpdates.length > 0
+                                                ? fetch('/api/cash/update', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(cashUpdates)
+                                                  })
+                                                : Promise.resolve({ ok: true })
+                                        ];
+
+                                        Promise.all(saves).then(results => {
+                                            if (results.every(r => r.ok)) {
+                                                // File watcher detects changes and triggers SSE reload
+                                                body.classList.remove('editing-active');
+                                                editToggle.classList.remove('active');
+                                            } else throw new Error('Save failed');
                                         }).catch(err => {
                                             alert('Failed to save: ' + err.message);
                                             saveBtn.disabled = false;
@@ -718,10 +771,22 @@ fun Application.configureRouting() {
                                                 attributes["data-currency"] = entry.currency
                                                 attributes["data-amount"] = entry.amount.toString()
                                                 attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
+                                                attributes["data-margin-flag"] = entry.marginFlag.toString()
 
                                                 td { +displayLabel }
                                                 td(classes = "cash-raw-col") {
-                                                    +"${"%.2f".format(entry.amount)} ${entry.currency}"
+                                                    span(classes = "cash-display") {
+                                                        +"${"%.2f".format(entry.amount)} ${entry.currency}"
+                                                    }
+                                                    span(classes = "cash-edit") {
+                                                        input(type = InputType.number, classes = "edit-input cash-amount-input") {
+                                                            attributes["step"] = "any"
+                                                            value = entry.amount.toString()
+                                                            attributes["data-key"] = entry.key
+                                                            attributes["data-column"] = "cash-amount"
+                                                        }
+                                                        +" ${entry.currency}"
+                                                    }
                                                 }
                                                 td {
                                                     span {
@@ -753,6 +818,37 @@ fun Application.configureRouting() {
                                                             if (rate != null) entry.amount * rate else 0.0
                                                         }
                                                         +"${'$'}%.2f".format(cashTotalUsd)
+                                                    }
+                                                }
+                                            }
+
+                                            // Margin row (only when M-flagged entries exist)
+                                            val hasMarginEntries = cashEntries.any { it.marginFlag }
+                                            if (hasMarginEntries) {
+                                                val marginUsd = cashEntries.filter { it.marginFlag }.sumOf { e ->
+                                                    val rate = if (e.currency == "USD") 1.0 else fxRateMap[e.currency]
+                                                    if (rate != null) e.amount * rate else 0.0
+                                                }
+                                                tr(classes = "margin-row") {
+                                                    attributes["data-margin-row"] = "true"
+                                                    td { +"Margin" }
+                                                    td {}
+                                                    td {
+                                                        span {
+                                                            id = "margin-total-usd"
+                                                            +"${'$'}%.2f".format(marginUsd)
+                                                        }
+                                                        // Always render percent span for JS dynamic updates
+                                                        val marginPct = if (portfolio.totalValue != 0.0 && marginUsd < 0)
+                                                            (marginUsd / portfolio.totalValue) * 100.0 else 0.0
+                                                        span(classes = "margin-percent") {
+                                                            id = "margin-percent"
+                                                            if (marginUsd >= 0) {
+                                                                style = "display:none;"
+                                                            } else {
+                                                                +" (${"%.1f%%".format(marginPct)})"
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1154,6 +1250,41 @@ fun Application.configureRouting() {
                     }
                 }
 
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        // Update cash.txt with edited amounts
+        post("/api/cash/update") {
+            try {
+                val body = call.receiveText()
+                val updates = Json.parseToJsonElement(body).jsonArray
+                val cashPath = "data/cash.txt"
+                val file = File(cashPath)
+
+                val updateMap = updates.associate { el ->
+                    val obj = el.jsonObject
+                    obj["key"]!!.jsonPrimitive.content to obj["amount"]!!.jsonPrimitive.double
+                }
+
+                val lines = file.readLines()
+                val newLines = lines.map { line ->
+                    val trimmed = line.trim()
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) return@map line
+                    val eqIdx = trimmed.indexOf('=')
+                    if (eqIdx < 0) return@map line
+                    val key = trimmed.substring(0, eqIdx).trim()
+                    val newAmount = updateMap[key]
+                    if (newAmount != null) "$key=$newAmount" else line
+                }
+                file.writeText(newLines.joinToString("\n") + "\n")
+                // File watcher detects change → SSE reload → page refresh
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
