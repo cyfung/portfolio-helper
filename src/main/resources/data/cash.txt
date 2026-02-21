@@ -1,0 +1,5 @@
+# Cash balances — format: Label.CURRENCY=amount
+Cash.HKD=1234
+Cash.USD=123
+Loan.hkd=123
+Interest.USD=-700

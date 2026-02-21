@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.CashState
 import com.portfoliohelper.service.PortfolioState
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.nav.NavService
@@ -31,6 +32,17 @@ fun Application.configureRouting() {
         get("/") {
             // Get current portfolio state with latest prices from Yahoo Finance
             val portfolio = YahooMarketDataService.getCurrentPortfolio(PortfolioState.getStocks())
+            val cashEntries = CashState.getEntries()
+
+            // Build FX rate map for non-USD currencies from cached Yahoo quotes (e.g. HKDUSD=X → 0.1286)
+            val fxRateMap: Map<String, Double> = cashEntries
+                .map { it.currency }.distinct()
+                .filter { it != "USD" }
+                .mapNotNull { ccy ->
+                    val rate = YahooMarketDataService.getQuote("${ccy}USD=X")?.regularMarketPrice
+                    if (rate != null) ccy to rate else null
+                }
+                .toMap()
 
             call.respondHtml(HttpStatusCode.OK) {
                 head {
@@ -59,6 +71,12 @@ fun Application.configureRouting() {
                             raw("""
                                 // Global store for Day % of all symbols (portfolio + LETF components)
                                 const componentDayPercents = {};
+                                // FX rates keyed by currency code — pre-seeded from server-side cached quotes
+                                const fxRates = ${buildString {
+                                    append("{ USD: 1.0")
+                                    fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
+                                    append(" }")
+                                }};
 
                                 // Connect to SSE for live price updates
                                 const eventSource = new EventSource('/api/prices/stream');
@@ -75,6 +93,16 @@ fun Application.configureRouting() {
                                             // NAV update
                                             updateNavInUI(data.symbol, data.nav);
                                         } else {
+                                            // FX rate update for cash currency conversion
+                                            if (data.symbol && data.symbol.endsWith('USD=X')) {
+                                                const ccy = data.symbol.replace('USD=X', '');
+                                                if (data.markPrice !== null && data.markPrice !== undefined) {
+                                                    fxRates[ccy] = data.markPrice;
+                                                    updateCashTotals();
+                                                }
+                                                return;
+                                            }
+
                                             // Update global timestamp
                                             updateGlobalTimestamp(data.timestamp);
 
@@ -287,6 +315,7 @@ fun Application.configureRouting() {
                                     const changePercent = previousTotal > 0 ? (changeDollars / previousTotal) * 100 : 0;
                                     const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
 
+                                    // Portfolio day change (% relative to previous portfolio value)
                                     const portfolioChangeCell = document.getElementById('portfolio-day-change');
                                     if (portfolioChangeCell) {
                                         const sign = changeDollars >= 0 ? '+' : '-';
@@ -297,6 +326,56 @@ fun Application.configureRouting() {
 
                                     updateCurrentWeights(total);
                                     updateRebalancingColumns(total);
+
+                                    // Update grand total (portfolio + cash)
+                                    const cashEl = document.getElementById('cash-total-usd');
+                                    const cashUsd = cashEl ? (parsePrice(cashEl.textContent) || 0) : 0;
+                                    const grandEl = document.getElementById('grand-total-value');
+                                    if (grandEl) grandEl.textContent = formatCurrency(total + cashUsd);
+
+                                    // Total Value day change: same $ amount, but % relative to previous grand total
+                                    const totalChangeCell = document.getElementById('total-day-change');
+                                    if (totalChangeCell) {
+                                        const prevGrandTotal = previousTotal + cashUsd;
+                                        const totalChangePercent = prevGrandTotal !== 0 ? (changeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
+                                        const sign = changeDollars >= 0 ? '+' : '-';
+                                        totalChangeCell.innerHTML =
+                                            '<span class="change-dollars ' + changeClass + '">' + sign + '$' + Math.abs(changeDollars).toFixed(2) + '</span> ' +
+                                            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePercent).toFixed(2) + '%)</span>';
+                                    }
+                                }
+
+                                function formatCurrency(val) {
+                                    const sign = val < 0 ? '-' : '';
+                                    return sign + '$' + Math.abs(val).toLocaleString('en-US', {
+                                        minimumFractionDigits: 2, maximumFractionDigits: 2
+                                    });
+                                }
+
+                                function updateCashTotals() {
+                                    let totalUsd = 0;
+                                    document.querySelectorAll('[data-cash-entry]').forEach(row => {
+                                        const ccy = row.dataset.currency;
+                                        const amount = parseFloat(row.dataset.amount);
+                                        const rate = fxRates[ccy];
+                                        const entryId = row.dataset.entryId;
+                                        const span = document.getElementById('cash-usd-' + entryId);
+                                        if (rate !== undefined) {
+                                            const usd = amount * rate;
+                                            totalUsd += usd;
+                                            if (span) span.textContent = formatCurrency(usd);
+                                        } else {
+                                            totalUsd += (ccy === 'USD' ? amount : 0);
+                                        }
+                                    });
+                                    const cashTotalEl = document.getElementById('cash-total-usd');
+                                    if (cashTotalEl) cashTotalEl.textContent = formatCurrency(totalUsd);
+
+                                    // Update grand total
+                                    const portfolioEl = document.getElementById('portfolio-total');
+                                    const portfolioVal = parsePrice(portfolioEl ? portfolioEl.textContent : null) || 0;
+                                    const grandEl = document.getElementById('grand-total-value');
+                                    if (grandEl) grandEl.textContent = formatCurrency(portfolioVal + totalUsd);
                                 }
 
                                 function updateCurrentWeights(portfolioTotal) {
@@ -547,6 +626,9 @@ fun Application.configureRouting() {
                                             });
                                         });
                                     });
+
+                                    // Initialize cash totals on page load (USD entries are pre-filled server-side)
+                                    updateCashTotals();
                                 });
                             """.trimIndent())
                         }
@@ -622,6 +704,131 @@ fun Application.configureRouting() {
                             }
                         } else {
                             div(classes = "portfolio-tables-wrapper") {
+                                // Summary table: cash + portfolio totals, above the stock table
+                                table(classes = "summary-table") {
+                                    tbody {
+                                        // Cash entry rows — sorted by label, duplicate labels suppressed
+                                        val sortedCashEntries = cashEntries.sortedBy { it.label.lowercase() }
+                                        var prevLabel: String? = null
+                                        for (entry in sortedCashEntries) {
+                                            val displayLabel = if (entry.label == prevLabel) "" else entry.label
+                                            prevLabel = entry.label
+                                            tr {
+                                                attributes["data-cash-entry"] = "true"
+                                                attributes["data-currency"] = entry.currency
+                                                attributes["data-amount"] = entry.amount.toString()
+                                                attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
+
+                                                td { +displayLabel }
+                                                td(classes = "cash-raw-col") {
+                                                    +"${"%.2f".format(entry.amount)} ${entry.currency}"
+                                                }
+                                                td {
+                                                    span {
+                                                        id = "cash-usd-${entry.label}-${entry.currency}"
+                                                        val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                                        if (rate != null) {
+                                                            +"${'$'}%.2f".format(entry.amount * rate)
+                                                        } else {
+                                                            +"---"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Divider + Total Cash (only shown when cash entries exist)
+                                        if (cashEntries.isNotEmpty()) {
+                                            tr(classes = "summary-divider") {
+                                                td { attributes["colspan"] = "3" }
+                                            }
+                                            tr(classes = "total-cash-row") {
+                                                td { +"Total Cash" }
+                                                td {}
+                                                td {
+                                                    span {
+                                                        id = "cash-total-usd"
+                                                        val cashTotalUsd = cashEntries.sumOf { entry ->
+                                                            val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                                            if (rate != null) entry.amount * rate else 0.0
+                                                        }
+                                                        +"${'$'}%.2f".format(cashTotalUsd)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Section break before portfolio rows
+                                        tr(classes = "summary-section-break") {
+                                            td { attributes["colspan"] = "3" }
+                                        }
+
+                                        // Portfolio Value + day change nested in same cell
+                                        val daySign = if (portfolio.dailyChangeDollars >= 0) "+" else "-"
+                                        tr {
+                                            td { +"Portfolio Value" }
+                                            td {}
+                                            td {
+                                                div {
+                                                    id = "portfolio-total"
+                                                    +"${'$'}%.2f".format(portfolio.totalValue)
+                                                }
+                                                div(classes = "summary-subvalue") {
+                                                    id = "portfolio-day-change"
+                                                    span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
+                                                        +"$daySign${'$'}%.2f".format(Math.abs(portfolio.dailyChangeDollars))
+                                                    }
+                                                    +" "
+                                                    span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
+                                                        +"($daySign%.2f%%)".format(Math.abs(portfolio.dailyChangePercent))
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Total Value + day change nested in same cell
+                                        tr(classes = "grand-total-row") {
+                                            td { +"Total Value" }
+                                            td {}
+                                            td {
+                                                val cashTotalUsd = cashEntries.sumOf { entry ->
+                                                    val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                                    if (rate != null) entry.amount * rate else 0.0
+                                                }
+                                                span {
+                                                    id = "grand-total-value"
+                                                    +"${'$'}%.2f".format(portfolio.totalValue + cashTotalUsd)
+                                                }
+                                                div(classes = "summary-subvalue") {
+                                                    id = "total-day-change"
+                                                    val prevGrandTotal = portfolio.previousTotalValue + cashTotalUsd
+                                                    val totalDayChangePercent = if (prevGrandTotal != 0.0) {
+                                                        (portfolio.dailyChangeDollars / Math.abs(prevGrandTotal)) * 100.0
+                                                    } else 0.0
+                                                    span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
+                                                        +"$daySign${'$'}%.2f".format(Math.abs(portfolio.dailyChangeDollars))
+                                                    }
+                                                    +" "
+                                                    span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
+                                                        +"($daySign%.2f%%)".format(Math.abs(totalDayChangePercent))
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Last Updated row
+                                        tr(classes = "timestamp-row") {
+                                            td { +"Last Updated" }
+                                            td {}
+                                            td(classes = "timestamp-value loaded") {
+                                                id = "last-update-time"
+                                                val now = java.time.LocalTime.now()
+                                                +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(now)
+                                            }
+                                        }
+                                    }
+                                }
+
                                 table(classes = "portfolio-table") {
                                     thead {
                                     tr {
@@ -873,43 +1080,6 @@ fun Application.configureRouting() {
                                 }
                             }
 
-                            // Separate total table to avoid affecting column widths
-                            table(classes = "portfolio-table portfolio-total-table") {
-                                tbody {
-                                    tr(classes = "total-row") {
-                                        td {
-                                            +"Total Portfolio Value:"
-                                        }
-                                        td(classes = "portfolio-footer") {
-                                            div(classes = "total-main") {
-                                                id = "portfolio-total"
-                                                +"${'$'}%.2f".format(portfolio.totalValue)
-                                            }
-                                            div(classes = "total-change") {
-                                                id = "portfolio-day-change"
-                                                val sign = if (portfolio.dailyChangeDollars >= 0) "+" else "-"
-                                                span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                                                    +"$sign${'$'}%.2f".format(Math.abs(portfolio.dailyChangeDollars))
-                                                }
-                                                +" "
-                                                span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
-                                                    +"($sign%.2f%%)".format(Math.abs(portfolio.dailyChangePercent))
-                                                }
-                                            }
-                                        }
-                                    }
-                                    tr(classes = "timestamp-row") {
-                                        td {
-                                            +"Last Updated:"
-                                        }
-                                        td(classes = "timestamp-value loaded") {
-                                            id = "last-update-time"
-                                            val now = java.time.LocalTime.now()
-                                            +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(now)
-                                        }
-                                    }
-                                }
-                            }
                             }
 
                             p(classes = "info") {

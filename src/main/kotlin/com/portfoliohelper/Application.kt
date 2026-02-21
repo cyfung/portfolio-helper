@@ -3,6 +3,8 @@ package com.portfoliohelper
 import com.portfoliohelper.service.*
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.service.CashReader
+import com.portfoliohelper.service.CashState
 import com.portfoliohelper.web.configureRouting
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -48,17 +50,32 @@ fun main() {
     // Initial load of portfolio structure from CSV
     loadPortfolio()
 
+    // Load cash entries from cash.txt (non-fatal if missing)
+    val cashPath = "data/cash.txt"
+    fun loadCash() {
+        try {
+            CashState.update(CashReader.readCash(cashPath))
+        } catch (e: Exception) {
+            logger.warn("Failed to load cash file: ${e.message}. Continuing without cash data.")
+        }
+    }
+    loadCash()
+
     // Initialize Yahoo Finance service
     fun initializeMarketData() {
         try {
             logger.info("Initializing Yahoo Finance market data service...")
             YahooMarketDataService.initialize()
 
-            // Request market data for all symbols + LETF component symbols (starts background polling)
+            // Request market data for all symbols + LETF component symbols + FX pairs for cash currencies
             val stocks = PortfolioState.getStocks()
             val portfolioSymbols = stocks.map { it.label }
             val componentSymbols = stocks.flatMap { it.letfComponents?.map { c -> c.second } ?: emptyList() }
-            val symbols = (portfolioSymbols + componentSymbols).distinct()
+            val fxSymbols = CashState.getEntries()
+                .map { it.currency }.distinct()
+                .filter { it != "USD" }
+                .map { "${it}USD=X" }
+            val symbols = (portfolioSymbols + componentSymbols + fxSymbols).distinct()
             val updateIntervalSeconds = System.getenv("PRICE_UPDATE_INTERVAL")?.toLongOrNull() ?: 60L
             YahooMarketDataService.requestMarketDataForSymbols(symbols, updateIntervalSeconds)
 
@@ -120,6 +137,27 @@ fun main() {
         null
     }
 
+    // Set up cash file watcher for hot-reload
+    val cashFilePath = Paths.get(cashPath)
+    val cashFileWatcher = if (Files.exists(cashFilePath)) {
+        logger.info("Setting up cash file watcher for hot-reload: ${cashFilePath.toAbsolutePath()}")
+        val watcher = CsvFileWatcher(cashFilePath, debounceMillis = 500)
+
+        watcher.onFileChanged {
+            logger.info("Cash file changed, reloading cash entries...")
+            loadCash()
+            initializeMarketData()
+            PortfolioUpdateBroadcaster.broadcastReload()
+            logger.info("Cash entries reloaded successfully")
+        }
+
+        watcher.start(appScope)
+        watcher
+    } else {
+        logger.warn("Cash file watcher disabled (file not found at ${cashFilePath.toAbsolutePath()})")
+        null
+    }
+
     val port = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8080
 
     // Placeholder for server stop — set after successful startup, invoked by shutdown hook
@@ -132,6 +170,7 @@ fun main() {
         runCatching { stopServer() }
         SystemTrayService.shutdown()
         fileWatcher?.stop()
+        cashFileWatcher?.stop()
         NavService.shutdown()
         YahooMarketDataService.shutdown()
         logger.info("Cleanup completed")

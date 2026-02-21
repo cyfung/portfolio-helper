@@ -177,7 +177,7 @@ tasks.register<Zip>("portableDistZip") {
 
     from("src/main/resources/data") {
         into("${project.name}/data")
-        include("*.csv", "README.md")
+        include("*.csv", "*.txt", "README.md")
     }
 
     from("docs") {
@@ -206,7 +206,7 @@ tasks.register<Tar>("portableDistTar") {
 
     from("src/main/resources/data") {
         into("${project.name}/data")
-        include("*.csv", "README.md")
+        include("*.csv", "*.txt", "README.md")
     }
 
     from("docs") {
@@ -240,7 +240,7 @@ tasks.register<Zip>("windowsDistZip") {
 
     from("src/main/resources/data") {
         into("${project.name}/data")
-        include("*.csv", "README.md")
+        include("*.csv", "*.txt", "README.md")
     }
 
     from("docs") {
