@@ -255,25 +255,38 @@ tasks.register<Zip>("windowsDistZip") {
     }
 }
 
+tasks.register<Zip>("jpackageDistZip") {
+    group = "distribution"
+    description = "Creates a ZIP of the self-contained jpackage app image (no Java required)"
+    archiveBaseName.set("${project.name}-jpackage")
+    archiveVersion.set(project.version.toString())
+
+    dependsOn(tasks.named("copyJpackageData"))
+
+    from(layout.buildDirectory.dir("jpackage/Portfolio Helper")) {
+        into("Portfolio Helper")
+    }
+}
+
 // Convenience task for complete jpackage distribution
 tasks.register("jpackageDistribution") {
     group = "distribution"
     description = "Creates a self-contained application bundle with data files using jpackage"
 
-    dependsOn(tasks.jpackage, tasks.named("copyJpackageData"))
+    dependsOn(tasks.jpackage, tasks.named("copyJpackageData"), tasks.named("jpackageDistZip"))
 
     doLast {
         val jpackageDir = layout.buildDirectory.dir("jpackage").get().asFile
         val appImage = File(jpackageDir, "Portfolio Helper")
+        val zipFile = layout.buildDirectory.dir("distributions").get().asFile
+            .listFiles { f -> f.name.startsWith("${project.name}-jpackage") && f.name.endsWith(".zip") }
+            ?.firstOrNull()
 
-        if (appImage.exists() && appImage.isDirectory) {
-            println("✓ App image created: ${appImage.absolutePath}")
-            println("  Contents:")
-            appImage.listFiles()?.forEach { file ->
-                println("    - ${file.name}")
-            }
-        } else {
-            println("✗ No app image found in ${jpackageDir.absolutePath}")
+        if (appImage.exists()) {
+            println("✓ App image: ${appImage.absolutePath}")
+        }
+        if (zipFile != null) {
+            println("✓ ZIP created: ${zipFile.absolutePath}")
         }
     }
 }

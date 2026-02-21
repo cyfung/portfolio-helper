@@ -12,7 +12,6 @@ import kotlinx.coroutines.SupervisorJob
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Paths
-import java.util.concurrent.CountDownLatch
 
 fun main() {
     val logger = LoggerFactory.getLogger("Application")
@@ -121,13 +120,27 @@ fun main() {
         null
     }
 
+    // Placeholder for server stop — set after successful startup, invoked by shutdown hook
+    var stopServer: () -> Unit = {}
+
+    // Register shutdown hook to cleanup resources on any exit path:
+    // normal tray exit, Ctrl+C, or startup failure
+    Runtime.getRuntime().addShutdownHook(Thread {
+        logger.info("Shutting down application (shutdown hook)...")
+        runCatching { stopServer() }
+        SystemTrayService.shutdown()
+        fileWatcher?.stop()
+        NavService.shutdown()
+        YahooMarketDataService.shutdown()
+        logger.info("Cleanup completed")
+    })
+
     // Initialize system tray (if supported)
-    val shutdownLatch = CountDownLatch(1)
     val traySupported = SystemTrayService.initialize(
         serverUrl = "http://localhost:8080",
         onExit = {
             logger.info("Exit requested from system tray")
-            shutdownLatch.countDown()
+            System.exit(0)  // Shutdown hook handles all cleanup
         }
     )
 
@@ -137,21 +150,19 @@ fun main() {
         logger.warn("Running without system tray (not supported on this platform)")
     }
 
-    // Register shutdown hook to cleanup resources (for Ctrl+C or external termination)
-    Runtime.getRuntime().addShutdownHook(Thread {
-        logger.info("Shutting down application (shutdown hook)...")
-        SystemTrayService.shutdown()
-        fileWatcher?.stop()
-        NavService.shutdown()
-        YahooMarketDataService.shutdown()
-        logger.info("Cleanup completed")
-    })
-
-    // Start web server (non-blocking when system tray is active)
+    // Start web server — if this fails (e.g. port in use), exit immediately so the
+    // tray icon doesn't linger with no working server behind it
     logger.info("Starting web server on port 8080...")
-    val server = embeddedServer(Netty, port = 8080) {
-        configureRouting()
-    }.start(wait = false)
+    try {
+        val server = embeddedServer(Netty, port = 8080) {
+            configureRouting()
+        }.start(wait = false)
+        stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
+    } catch (e: Exception) {
+        logger.error("Failed to start web server: ${e.message}", e)
+        System.exit(1)  // Shutdown hook cleans up tray and services
+        return
+    }
 
     // Show startup notification if tray is active
     if (traySupported) {
@@ -161,23 +172,11 @@ fun main() {
         )
     }
 
-    // Keep application running (wait for shutdown signal)
+    // Block main thread indefinitely — System.exit() (tray or Ctrl+C) will terminate the JVM
     logger.info("Application ready. Access at http://localhost:8080 (press Ctrl+C or use tray menu to exit)")
-    shutdownLatch.await()
-
-    // Stop server gracefully
-    logger.info("Stopping server...")
-    server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000)
-
-    // Clean up resources
-    logger.info("Cleaning up resources...")
-    SystemTrayService.shutdown()
-    fileWatcher?.stop()
-    NavService.shutdown()
-    YahooMarketDataService.shutdown()
-
-    logger.info("Application stopped successfully")
-
-    // Exit JVM to ensure complete shutdown
-    System.exit(0)
+    try {
+        Thread.currentThread().join()
+    } catch (_: InterruptedException) {
+        // Normal during JVM shutdown
+    }
 }

@@ -104,7 +104,7 @@ fun Application.configureRouting() {
                                         hour: '2-digit',
                                         minute: '2-digit',
                                         second: '2-digit',
-                                        hour12: true
+                                        hour12: false
                                     });
                                 }
 
@@ -905,7 +905,7 @@ fun Application.configureRouting() {
                                         td(classes = "timestamp-value loaded") {
                                             id = "last-update-time"
                                             val now = java.time.LocalTime.now()
-                                            +java.time.format.DateTimeFormatter.ofPattern("hh:mm:ss a").format(now)
+                                            +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(now)
                                         }
                                     }
                                 }
