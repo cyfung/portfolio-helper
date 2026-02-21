@@ -104,6 +104,9 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                 let lastMarginUsd = 0;
                                 // Last known equity entries total USD (set by updateCashTotals, read by updateMarginDisplay)
                                 let lastEquityUsd = 0;
+                                // Last known portfolio value USD (set by updateTotalValue, read by updateCashTotals/updateMarginDisplay
+                                // when portfolio-total element is absent, i.e. no cash entries)
+                                let lastPortfolioVal = 0;
 
                                 // Connect to SSE for live price updates
                                 const eventSource = new EventSource('/api/prices/stream');
@@ -269,8 +272,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                     positionChangeCell.textContent = '—';
                                                     positionChangeCell.className = 'price-change loaded neutral' + afterHoursClass;
                                                 } else {
-                                                    const sign = positionChange >= 0 ? '+' : '-';
-                                                    positionChangeCell.textContent = sign + '$' + Math.abs(positionChange).toFixed(2);
+                                                    positionChangeCell.textContent = formatSignedCurrency(positionChange);
                                                     const direction = positionChange > 0 ? 'positive' : positionChange < 0 ? 'negative' : 'neutral';
                                                     positionChangeCell.className = 'price-change loaded ' + direction + afterHoursClass;
                                                 }
@@ -285,7 +287,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
 
                                         if (price !== null) {
                                             const newValue = price * amount;
-                                            valueCell.textContent = '$' + newValue.toFixed(2);
+                                            valueCell.textContent = formatCurrency(newValue);
                                             valueCell.classList.add('loaded');
 
                                             // Check if value actually changed (with 1 cent tolerance)
@@ -335,6 +337,8 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                         }
                                     });
 
+                                    lastPortfolioVal = total;
+
                                     // Update portfolio total
                                     const totalCell = document.getElementById('portfolio-total');
                                     if (totalCell) {
@@ -353,7 +357,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                     if (portfolioChangeCell) {
                                         const sign = changeDollars >= 0 ? '+' : '-';
                                         portfolioChangeCell.innerHTML =
-                                            '<span class="change-dollars ' + changeClass + '">' + sign + '$' + Math.abs(changeDollars).toFixed(2) + '</span> ' +
+                                            '<span class="change-dollars ' + changeClass + '">' + formatSignedCurrency(changeDollars) + '</span> ' +
                                             '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
                                     }
 
@@ -373,7 +377,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                         const totalChangePercent = prevGrandTotal !== 0 ? (changeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
                                         const sign = changeDollars >= 0 ? '+' : '-';
                                         totalChangeCell.innerHTML =
-                                            '<span class="change-dollars ' + changeClass + '">' + sign + '$' + Math.abs(changeDollars).toFixed(2) + '</span> ' +
+                                            '<span class="change-dollars ' + changeClass + '">' + formatSignedCurrency(changeDollars) + '</span> ' +
                                             '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePercent).toFixed(2) + '%)</span>';
                                     }
 
@@ -388,6 +392,11 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                     });
                                 }
 
+                                function formatSignedCurrency(val) {
+                                    const sign = val >= 0 ? '+' : '';
+                                    return sign + formatCurrency(val);
+                                }
+
                                 function updateMarginDisplay(marginUsd) {
                                     const marginEl = document.getElementById('margin-total-usd');
                                     if (!marginEl) return;
@@ -395,7 +404,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                     const marginPctEl = document.getElementById('margin-percent');
                                     if (marginUsd < 0) {
                                         const portfolioEl = document.getElementById('portfolio-total');
-                                        const portfolioVal = parsePrice(portfolioEl ? portfolioEl.textContent : null) || 0;
+                                        const portfolioVal = portfolioEl ? (parsePrice(portfolioEl.textContent) || 0) : lastPortfolioVal;
                                         const denominator = portfolioVal + lastEquityUsd + lastMarginUsd;
                                         const pct = denominator !== 0 ? (marginUsd / denominator) * 100 : 0;
                                         if (marginPctEl) {
@@ -408,6 +417,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                 }
 
                                 function updateCashTotals() {
+                                    if (document.querySelectorAll('[data-cash-entry]').length === 0) return;
                                     let totalUsd = 0;
                                     let marginUsd = 0;
                                     let equityUsd = 0;
@@ -436,7 +446,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
 
                                     // Update grand total
                                     const portfolioEl = document.getElementById('portfolio-total');
-                                    const portfolioVal = parsePrice(portfolioEl ? portfolioEl.textContent : null) || 0;
+                                    const portfolioVal = portfolioEl ? (parsePrice(portfolioEl.textContent) || 0) : lastPortfolioVal;
                                     const grandEl = document.getElementById('grand-total-value');
                                     if (grandEl) grandEl.textContent = formatCurrency(portfolioVal + totalUsd);
                                 }
@@ -500,8 +510,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
 
                                             const rebalDollarsCell = document.getElementById('rebal-dollars-' + symbol);
                                             if (rebalDollarsCell) {
-                                                const sign = rebalDollars >= 0 ? '+' : '-';
-                                                rebalDollarsCell.textContent = sign + '$' + Math.abs(rebalDollars).toFixed(2);
+                                                rebalDollarsCell.textContent = formatSignedCurrency(rebalDollars);
 
                                                 // Update color class
                                                 const direction = Math.abs(rebalDollars) > 0.50 ?
@@ -842,12 +851,12 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                             td {
                                                 span {
                                                     id = "grand-total-value"
-                                                    +"${'$'}%.2f".format(portfolio.totalValue + cashTotalUsdForGrandTotal)
+                                                    +"${'$'}%,.2f".format(portfolio.totalValue + cashTotalUsdForGrandTotal)
                                                 }
                                                 div(classes = "summary-subvalue") {
                                                     id = "total-day-change"
                                                     span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                                                        +"$grandTotalDaySign${'$'}%.2f".format(abs(portfolio.dailyChangeDollars))
+                                                        +"$grandTotalDaySign${'$'}%,.2f".format(abs(portfolio.dailyChangeDollars))
                                                     }
                                                     +" "
                                                     span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
@@ -858,8 +867,10 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                         }
 
                                         // Section break after Total Value
-                                        tr(classes = "summary-section-break") {
-                                            td { attributes["colspan"] = "3" }
+                                        if (cashEntries.isNotEmpty()) {
+                                            tr(classes = "summary-section-break") {
+                                                td { attributes["colspan"] = "3" }
+                                            }
                                         }
 
                                         // Cash entry rows — sorted by label, duplicate labels suppressed
@@ -893,14 +904,14 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                         span(classes = "cash-display") {
                                                             val resolvedUsd = resolveEntryUsd(entry)
                                                             if (resolvedUsd != null) {
-                                                                +"${"%.2f".format(resolvedUsd)} USD"
+                                                                +"${"%,.2f".format(resolvedUsd)} USD"
                                                             } else {
                                                                 +"--- USD"
                                                             }
                                                         }
                                                     } else {
                                                         span(classes = "cash-display") {
-                                                            +"${"%.2f".format(entry.amount)} ${entry.currency}"
+                                                            +"${"%,.2f".format(entry.amount)} ${entry.currency}"
                                                         }
                                                         span(classes = "cash-edit") {
                                                             input(
@@ -923,7 +934,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                             "cash-usd-${entry.label}-${entry.currency}"
                                                         val resolvedUsd = resolveEntryUsd(entry)
                                                         if (resolvedUsd != null) {
-                                                            +"${'$'}%.2f".format(resolvedUsd)
+                                                            +"${'$'}%,.2f".format(resolvedUsd)
                                                         } else {
                                                             +"---"
                                                         }
@@ -945,7 +956,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                         id = "cash-total-usd"
                                                         val cashTotalUsd =
                                                             cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
-                                                        +"${'$'}%.2f".format(cashTotalUsd)
+                                                        +"${'$'}%,.2f".format(cashTotalUsd)
                                                     }
                                                 }
                                             }
@@ -965,7 +976,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                     td {
                                                         span {
                                                             id = "margin-total-usd"
-                                                            +"${'$'}%.2f".format(marginUsd)
+                                                            +"${'$'}%,.2f".format(marginUsd)
                                                         }
                                                         // Always render percent span for JS dynamic updates
                                                         val marginPct =
@@ -984,38 +995,40 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                             }
                                         }
 
-                                        // Section break before portfolio rows
-                                        tr(classes = "summary-section-break") {
-                                            td { attributes["colspan"] = "3" }
-                                        }
+                                        // Section break + Portfolio Value row — only when cash entries exist
+                                        if (cashEntries.isNotEmpty()) {
+                                            tr(classes = "summary-section-break") {
+                                                td { attributes["colspan"] = "3" }
+                                            }
 
-                                        // Portfolio Value + day change nested in same cell
-                                        val daySign =
-                                            if (portfolio.dailyChangeDollars >= 0) "+" else "-"
-                                        tr {
-                                            td { +"Portfolio Value" }
-                                            td {}
-                                            td {
-                                                div {
-                                                    id = "portfolio-total"
-                                                    +"${'$'}%.2f".format(portfolio.totalValue)
-                                                }
-                                                div(classes = "summary-subvalue") {
-                                                    id = "portfolio-day-change"
-                                                    span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                                                        +"$daySign${'$'}%.2f".format(
-                                                            abs(
-                                                                portfolio.dailyChangeDollars
-                                                            )
-                                                        )
+                                            // Portfolio Value + day change nested in same cell
+                                            val daySign =
+                                                if (portfolio.dailyChangeDollars >= 0) "+" else "-"
+                                            tr {
+                                                td { +"Portfolio Value" }
+                                                td {}
+                                                td {
+                                                    div {
+                                                        id = "portfolio-total"
+                                                        +"${'$'}%,.2f".format(portfolio.totalValue)
                                                     }
-                                                    +" "
-                                                    span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
-                                                        +"($daySign%.2f%%)".format(
-                                                            abs(
-                                                                portfolio.dailyChangePercent
+                                                    div(classes = "summary-subvalue") {
+                                                        id = "portfolio-day-change"
+                                                        span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
+                                                            +"$daySign${'$'}%,.2f".format(
+                                                                abs(
+                                                                    portfolio.dailyChangeDollars
+                                                                )
                                                             )
-                                                        )
+                                                        }
+                                                        +" "
+                                                        span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
+                                                            +"($daySign%.2f%%)".format(
+                                                                abs(
+                                                                    portfolio.dailyChangePercent
+                                                                )
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1204,7 +1217,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                 td(classes = if (stock.value != null) "value loaded" else "value") {
                                                     id = "value-${stock.label}"
                                                     if (stock.value != null) {
-                                                        +"${'$'}%.2f".format(stock.value)
+                                                        +"${'$'}%,.2f".format(stock.value)
                                                     } else {
                                                         span(classes = "loading") { +"—" }
                                                     }
@@ -1222,7 +1235,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                         } else {
                                                             val sign =
                                                                 if (stock.positionChangeDollars!! >= 0) "+" else "-"
-                                                            +"$sign${'$'}%.2f".format(abs(stock.positionChangeDollars!!))
+                                                            +"$sign${'$'}%,.2f".format(abs(stock.positionChangeDollars!!))
                                                         }
                                                     } else {
                                                         span(classes = "loading") { +"—" }
@@ -1282,7 +1295,7 @@ private suspend fun ApplicationCall.renderPortfolioPage(
                                                         if (rebalDollars != null) {
                                                             val sign =
                                                                 if (rebalDollars >= 0) "+" else "-"
-                                                            +"$sign${'$'}%.2f".format(
+                                                            +"$sign${'$'}%,.2f".format(
                                                                 abs(
                                                                     rebalDollars
                                                                 )
