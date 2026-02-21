@@ -72,6 +72,8 @@ fun Application.configureRouting() {
                             raw("""
                                 // Global store for Day % of all symbols (portfolio + LETF components)
                                 const componentDayPercents = {};
+                                let globalIsMarketClosed = false;
+                                let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
                                 // FX rates keyed by currency code — pre-seeded from server-side cached quotes
                                 const fxRates = ${buildString {
                                     append("{ USD: 1.0")
@@ -110,7 +112,7 @@ fun Application.configureRouting() {
                                             updateGlobalTimestamp(data.timestamp);
 
                                             // Update price in UI
-                                            updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false);
+                                            updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
                                         }
                                     } catch (e) {
                                         console.error('Failed to parse SSE data:', e);
@@ -157,7 +159,13 @@ fun Application.configureRouting() {
                                     updateAllEstVals();
                                 }
 
-                                function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed) {
+                                function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, tradingPeriodEnd) {
+                                    // Update global market state
+                                    globalIsMarketClosed = isMarketClosed;
+                                    if (tradingPeriodEnd !== null && tradingPeriodEnd !== undefined) {
+                                        marketCloseTimeMs = tradingPeriodEnd * 1000; // seconds → ms
+                                    }
+
                                     // Store Day % for LETF Est Val calculations
                                     if (markPrice !== null && lastClosePrice !== null && lastClosePrice !== 0) {
                                         componentDayPercents[symbol] = ((markPrice - lastClosePrice) / lastClosePrice) * 100;
@@ -495,10 +503,24 @@ fun Application.configureRouting() {
                                 }
 
                                 function updateAllEstVals() {
+                                    const stale = globalIsMarketClosed &&
+                                        marketCloseTimeMs !== null &&
+                                        (Date.now() - marketCloseTimeMs > 12 * 3600 * 1000);
+
                                     document.querySelectorAll('tbody tr[data-letf]').forEach(row => {
                                         const symbol = row.querySelector('td:first-child').textContent.trim();
                                         const letfAttr = row.getAttribute('data-letf');
                                         if (!letfAttr) return;
+
+                                        const estValCell = document.getElementById('est-val-' + symbol);
+
+                                        if (stale) {
+                                            if (estValCell) {
+                                                estValCell.textContent = '—';
+                                                estValCell.classList.remove('loaded');
+                                            }
+                                            return;
+                                        }
 
                                         // Parse components: "1,CTA,1,IVV" → [{mult: 1, sym: "CTA"}, {mult: 1, sym: "IVV"}]
                                         const tokens = letfAttr.split(',');
@@ -528,7 +550,6 @@ fun Application.configureRouting() {
                                             sumComponent += comp.mult * dayPct / 100;
                                         }
 
-                                        const estValCell = document.getElementById('est-val-' + symbol);
                                         if (estValCell && allAvailable) {
                                             const estVal = (1 + sumComponent) * basePrice;
                                             estValCell.textContent = '$' + estVal.toFixed(2);
@@ -998,13 +1019,23 @@ fun Application.configureRouting() {
                                             val estValText: String? = if (stock.letfComponents != null) {
                                                 val basePrice = stock.lastNav ?: stock.lastClosePrice
                                                 if (basePrice != null) {
-                                                    val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
-                                                        val quote = YahooMarketDataService.getQuote(sym)
-                                                        if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
-                                                            mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
-                                                        } else 0.0
+                                                    val anyCompQuote = stock.letfComponents
+                                                        .mapNotNull { (_, sym) -> YahooMarketDataService.getQuote(sym) }
+                                                        .firstOrNull()
+                                                    val stale = anyCompQuote?.isMarketClosed == true &&
+                                                        anyCompQuote.tradingPeriodEnd != null &&
+                                                        System.currentTimeMillis() / 1000 - anyCompQuote.tradingPeriodEnd > 12 * 3600
+
+                                                    if (stale) null
+                                                    else {
+                                                        val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
+                                                            val quote = YahooMarketDataService.getQuote(sym)
+                                                            if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
+                                                                mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
+                                                            } else 0.0
+                                                        }
+                                                        "${'$'}%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
                                                     }
-                                                    "${'$'}%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
                                                 } else null
                                             } else null
 
@@ -1313,6 +1344,7 @@ fun Application.configureRouting() {
                     append("\"markPrice\":${quote.regularMarketPrice},")
                     append("\"lastClosePrice\":${quote.previousClose},")
                     append("\"isMarketClosed\":${quote.isMarketClosed},")
+                    append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
                     append("\"timestamp\":${quote.lastUpdateTime}")
                     append("}")
                 }
