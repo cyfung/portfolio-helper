@@ -1,7 +1,7 @@
 package com.portfoliohelper.web
 
-import com.portfoliohelper.service.CashState
-import com.portfoliohelper.service.PortfolioState
+import com.portfoliohelper.service.ManagedPortfolio
+import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
@@ -27,13 +27,14 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import kotlin.math.abs
 
-fun Application.configureRouting() {
-    routing {
-        // Main portfolio page
-        get("/") {
-            // Get current portfolio state with latest prices from Yahoo Finance
-            val portfolio = YahooMarketDataService.getCurrentPortfolio(PortfolioState.getStocks())
-            val cashEntries = CashState.getEntries()
+private suspend fun ApplicationCall.renderPortfolioPage(
+    entry: ManagedPortfolio,
+    allPortfolios: Collection<ManagedPortfolio>,
+    activePortfolioId: String
+) {
+    // Get current portfolio state with latest prices from Yahoo Finance
+    val portfolio = YahooMarketDataService.getCurrentPortfolio(entry.getStocks())
+    val cashEntries = entry.getCash()
 
             // Build FX rate map for non-USD currencies from cached Yahoo quotes (e.g. HKDUSD=X → 0.1286)
             val fxRateMap: Map<String, Double> = cashEntries
@@ -45,7 +46,7 @@ fun Application.configureRouting() {
                 }
                 .toMap()
 
-            call.respondHtml(HttpStatusCode.OK) {
+            respondHtml(HttpStatusCode.OK) {
                 head {
                     title { +"Stock Portfolio Viewer" }
                     meta(charset = "UTF-8")
@@ -85,6 +86,8 @@ fun Application.configureRouting() {
                                         append(" }")
                                     }
                                 };
+                                // Portfolio ID for save requests
+                                const portfolioId = "${entry.id}";
                                 // Last known margin USD (set by updateCashTotals, read by updateTotalValue)
                                 let lastMarginUsd = 0;
 
@@ -631,13 +634,13 @@ fun Application.configureRouting() {
                                         saveBtn.querySelector('.toggle-label').textContent = 'Saving...';
 
                                         const saves = [
-                                            fetch('/api/portfolio/update', {
+                                            fetch('/api/portfolio/update?portfolio=' + portfolioId, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify(updates)
                                             }),
                                             cashUpdates.length > 0
-                                                ? fetch('/api/cash/update', {
+                                                ? fetch('/api/cash/update?portfolio=' + portfolioId, {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json' },
                                                     body: JSON.stringify(cashUpdates)
@@ -723,7 +726,7 @@ fun Application.configureRouting() {
                     div(classes = "container") {
                         div(classes = "portfolio-header") {
                             div(classes = "header-title-group") {
-                                h1 { +"Stock Portfolio" }
+                                h1 { +(if (allPortfolios.size > 1) entry.name else "Stock Portfolio") }
                                 span(classes = "header-timestamp") {
                                     id = "last-update-time"
                                     val now = java.time.LocalTime.now()
@@ -785,6 +788,18 @@ fun Application.configureRouting() {
                             }
                         }
 
+                        // Tab bar — only shown when multiple portfolios exist
+                        if (allPortfolios.size > 1) {
+                            div(classes = "portfolio-tabs") {
+                                for (p in allPortfolios) {
+                                    val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
+                                    a(href = href, classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}") {
+                                        +p.name
+                                    }
+                                }
+                            }
+                        }
+
                         if (portfolio.stocks.isEmpty()) {
                             p(classes = "error") {
                                 +"No stocks found in the portfolio. Please add stocks to the CSV file."
@@ -795,9 +810,9 @@ fun Application.configureRouting() {
                                 table(classes = "summary-table") {
                                     tbody {
                                         // Total Value row — at the top of the summary table
-                                        val cashTotalUsdForGrandTotal = cashEntries.sumOf { entry ->
-                                            val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
-                                            if (rate != null) entry.amount * rate else 0.0
+                                        val cashTotalUsdForGrandTotal = cashEntries.sumOf { ce ->
+                                            val rate = if (ce.currency == "USD") 1.0 else fxRateMap[ce.currency]
+                                            if (rate != null) ce.amount * rate else 0.0
                                         }
                                         val grandTotalDaySign = if (portfolio.dailyChangeDollars >= 0) "+" else "-"
                                         val grandTotalPrevTotal = portfolio.previousTotalValue + cashTotalUsdForGrandTotal
@@ -894,10 +909,10 @@ fun Application.configureRouting() {
                                                     span {
                                                         id = "cash-total-usd"
                                                         val cashTotalUsd =
-                                                            cashEntries.sumOf { entry ->
+                                                            cashEntries.sumOf { ce ->
                                                                 val rate =
-                                                                    if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
-                                                                if (rate != null) entry.amount * rate else 0.0
+                                                                    if (ce.currency == "USD") 1.0 else fxRateMap[ce.currency]
+                                                                if (rate != null) ce.amount * rate else 0.0
                                                             }
                                                         +"${'$'}%.2f".format(cashTotalUsd)
                                                     }
@@ -1305,13 +1320,33 @@ fun Application.configureRouting() {
             }
         }
 
+fun Application.configureRouting() {
+    routing {
+        get("/") {
+            call.renderPortfolioPage(
+                PortfolioRegistry.main(),
+                PortfolioRegistry.entries,
+                "main"
+            )
+        }
+
+        get("/portfolio/{name}") {
+            val id = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val entry = PortfolioRegistry.get(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.renderPortfolioPage(entry, PortfolioRegistry.entries, id)
+        }
+
         // Update portfolio CSV with edited qty/weight values
         post("/api/portfolio/update") {
             try {
+                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+
                 val body = call.receiveText()
                 val updates = Json.parseToJsonElement(body).jsonArray
 
-                val csvPath = PortfolioState.csvPath
+                val csvPath = portfolioEntry.csvPath
                 val path = Paths.get(csvPath)
 
                 // Read existing CSV to preserve row order and letf column
@@ -1381,9 +1416,13 @@ fun Application.configureRouting() {
         // Update cash.txt with edited amounts
         post("/api/cash/update") {
             try {
+                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+
                 val body = call.receiveText()
                 val updates = Json.parseToJsonElement(body).jsonArray
-                val cashPath = "data/cash.txt"
+                val cashPath = portfolioEntry.cashPath
                 val file = File(cashPath)
 
                 val updateMap = updates.associate { el ->
