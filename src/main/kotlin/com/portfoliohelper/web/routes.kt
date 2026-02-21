@@ -12,10 +12,9 @@ import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.html.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.html.*
 import kotlinx.serialization.json.*
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
@@ -26,6 +25,7 @@ import java.io.FileReader
 import java.io.FileWriter
 import java.nio.file.Files
 import java.nio.file.Paths
+import kotlin.math.abs
 
 fun Application.configureRouting() {
     routing {
@@ -54,13 +54,15 @@ fun Application.configureRouting() {
                     // Inline script to prevent flash of wrong theme
                     script {
                         unsafe {
-                            raw("""
+                            raw(
+                                """
                                 (function(){
                                     const t=localStorage.getItem('ib-viewer-theme')||
                                             (window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
                                     document.documentElement.setAttribute('data-theme',t);
                                 })();
-                            """.trimIndent())
+                            """.trimIndent()
+                            )
                         }
                     }
 
@@ -69,17 +71,20 @@ fun Application.configureRouting() {
                     // JavaScript for SSE updates and theme switching
                     script {
                         unsafe {
-                            raw("""
+                            raw(
+                                """
                                 // Global store for Day % of all symbols (portfolio + LETF components)
                                 const componentDayPercents = {};
                                 let globalIsMarketClosed = false;
                                 let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
                                 // FX rates keyed by currency code — pre-seeded from server-side cached quotes
-                                const fxRates = ${buildString {
-                                    append("{ USD: 1.0")
-                                    fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
-                                    append(" }")
-                                }};
+                                const fxRates = ${
+                                    buildString {
+                                        append("{ USD: 1.0")
+                                        fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
+                                        append(" }")
+                                    }
+                                };
                                 // Last known margin USD (set by updateCashTotals, read by updateTotalValue)
                                 let lastMarginUsd = 0;
 
@@ -704,7 +709,8 @@ fun Application.configureRouting() {
                                     // Initialize cash totals on page load (USD entries are pre-filled server-side)
                                     updateCashTotals();
                                 });
-                            """.trimIndent())
+                            """.trimIndent()
+                            )
                         }
                     }
 
@@ -782,17 +788,21 @@ fun Application.configureRouting() {
                                 table(classes = "summary-table") {
                                     tbody {
                                         // Cash entry rows — sorted by label, duplicate labels suppressed
-                                        val sortedCashEntries = cashEntries.sortedBy { it.label.lowercase() }
+                                        val sortedCashEntries =
+                                            cashEntries.sortedBy { it.label.lowercase() }
                                         var prevLabel: String? = null
                                         for (entry in sortedCashEntries) {
-                                            val displayLabel = if (entry.label == prevLabel) "" else entry.label
+                                            val displayLabel =
+                                                if (entry.label == prevLabel) "" else entry.label
                                             prevLabel = entry.label
                                             tr {
                                                 attributes["data-cash-entry"] = "true"
                                                 attributes["data-currency"] = entry.currency
                                                 attributes["data-amount"] = entry.amount.toString()
-                                                attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
-                                                attributes["data-margin-flag"] = entry.marginFlag.toString()
+                                                attributes["data-entry-id"] =
+                                                    "${entry.label}-${entry.currency}"
+                                                attributes["data-margin-flag"] =
+                                                    entry.marginFlag.toString()
 
                                                 td { +displayLabel }
                                                 td(classes = "cash-raw-col") {
@@ -800,19 +810,25 @@ fun Application.configureRouting() {
                                                         +"${"%.2f".format(entry.amount)} ${entry.currency}"
                                                     }
                                                     span(classes = "cash-edit") {
-                                                        input(type = InputType.number, classes = "edit-input cash-amount-input") {
+                                                        input(
+                                                            type = InputType.number,
+                                                            classes = "edit-input cash-amount-input"
+                                                        ) {
                                                             attributes["step"] = "any"
                                                             value = entry.amount.toString()
                                                             attributes["data-key"] = entry.key
-                                                            attributes["data-column"] = "cash-amount"
+                                                            attributes["data-column"] =
+                                                                "cash-amount"
                                                         }
                                                         +" ${entry.currency}"
                                                     }
                                                 }
                                                 td {
                                                     span {
-                                                        id = "cash-usd-${entry.label}-${entry.currency}"
-                                                        val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                                        id =
+                                                            "cash-usd-${entry.label}-${entry.currency}"
+                                                        val rate =
+                                                            if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
                                                         if (rate != null) {
                                                             +"${'$'}%.2f".format(entry.amount * rate)
                                                         } else {
@@ -834,10 +850,12 @@ fun Application.configureRouting() {
                                                 td {
                                                     span {
                                                         id = "cash-total-usd"
-                                                        val cashTotalUsd = cashEntries.sumOf { entry ->
-                                                            val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
-                                                            if (rate != null) entry.amount * rate else 0.0
-                                                        }
+                                                        val cashTotalUsd =
+                                                            cashEntries.sumOf { entry ->
+                                                                val rate =
+                                                                    if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                                                if (rate != null) entry.amount * rate else 0.0
+                                                            }
                                                         +"${'$'}%.2f".format(cashTotalUsd)
                                                     }
                                                 }
@@ -846,10 +864,12 @@ fun Application.configureRouting() {
                                             // Margin row (only when M-flagged entries exist)
                                             val hasMarginEntries = cashEntries.any { it.marginFlag }
                                             if (hasMarginEntries) {
-                                                val marginUsd = cashEntries.filter { it.marginFlag }.sumOf { e ->
-                                                    val rate = if (e.currency == "USD") 1.0 else fxRateMap[e.currency]
-                                                    if (rate != null) e.amount * rate else 0.0
-                                                }
+                                                val marginUsd = cashEntries.filter { it.marginFlag }
+                                                    .sumOf { e ->
+                                                        val rate =
+                                                            if (e.currency == "USD") 1.0 else fxRateMap[e.currency]
+                                                        if (rate != null) e.amount * rate else 0.0
+                                                    }
                                                 tr(classes = "margin-row") {
                                                     attributes["data-margin-row"] = "true"
                                                     td { +"Margin" }
@@ -860,8 +880,9 @@ fun Application.configureRouting() {
                                                             +"${'$'}%.2f".format(marginUsd)
                                                         }
                                                         // Always render percent span for JS dynamic updates
-                                                        val marginPct = if (portfolio.totalValue != 0.0 && marginUsd < 0)
-                                                            (marginUsd / portfolio.totalValue) * 100.0 else 0.0
+                                                        val marginPct =
+                                                            if (portfolio.totalValue != 0.0 && marginUsd < 0)
+                                                                (marginUsd / portfolio.totalValue) * 100.0 else 0.0
                                                         span(classes = "margin-percent") {
                                                             id = "margin-percent"
                                                             if (marginUsd >= 0) {
@@ -881,7 +902,8 @@ fun Application.configureRouting() {
                                         }
 
                                         // Portfolio Value + day change nested in same cell
-                                        val daySign = if (portfolio.dailyChangeDollars >= 0) "+" else "-"
+                                        val daySign =
+                                            if (portfolio.dailyChangeDollars >= 0) "+" else "-"
                                         tr {
                                             td { +"Portfolio Value" }
                                             td {}
@@ -893,11 +915,19 @@ fun Application.configureRouting() {
                                                 div(classes = "summary-subvalue") {
                                                     id = "portfolio-day-change"
                                                     span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                                                        +"$daySign${'$'}%.2f".format(Math.abs(portfolio.dailyChangeDollars))
+                                                        +"$daySign${'$'}%.2f".format(
+                                                            abs(
+                                                                portfolio.dailyChangeDollars
+                                                            )
+                                                        )
                                                     }
                                                     +" "
                                                     span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
-                                                        +"($daySign%.2f%%)".format(Math.abs(portfolio.dailyChangePercent))
+                                                        +"($daySign%.2f%%)".format(
+                                                            abs(
+                                                                portfolio.dailyChangePercent
+                                                            )
+                                                        )
                                                     }
                                                 }
                                             }
@@ -909,7 +939,8 @@ fun Application.configureRouting() {
                                             td {}
                                             td {
                                                 val cashTotalUsd = cashEntries.sumOf { entry ->
-                                                    val rate = if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
+                                                    val rate =
+                                                        if (entry.currency == "USD") 1.0 else fxRateMap[entry.currency]
                                                     if (rate != null) entry.amount * rate else 0.0
                                                 }
                                                 span {
@@ -918,16 +949,28 @@ fun Application.configureRouting() {
                                                 }
                                                 div(classes = "summary-subvalue") {
                                                     id = "total-day-change"
-                                                    val prevGrandTotal = portfolio.previousTotalValue + cashTotalUsd
-                                                    val totalDayChangePercent = if (prevGrandTotal != 0.0) {
-                                                        (portfolio.dailyChangeDollars / Math.abs(prevGrandTotal)) * 100.0
-                                                    } else 0.0
+                                                    val prevGrandTotal =
+                                                        portfolio.previousTotalValue + cashTotalUsd
+                                                    val totalDayChangePercent =
+                                                        if (prevGrandTotal != 0.0) {
+                                                            (portfolio.dailyChangeDollars / abs(
+                                                                prevGrandTotal
+                                                            )) * 100.0
+                                                        } else 0.0
                                                     span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                                                        +"$daySign${'$'}%.2f".format(Math.abs(portfolio.dailyChangeDollars))
+                                                        +"$daySign${'$'}%.2f".format(
+                                                            abs(
+                                                                portfolio.dailyChangeDollars
+                                                            )
+                                                        )
                                                     }
                                                     +" "
                                                     span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
-                                                        +"($daySign%.2f%%)".format(Math.abs(totalDayChangePercent))
+                                                        +"($daySign%.2f%%)".format(
+                                                            abs(
+                                                                totalDayChangePercent
+                                                            )
+                                                        )
                                                     }
                                                 }
                                             }
@@ -940,7 +983,8 @@ fun Application.configureRouting() {
                                             td(classes = "timestamp-value loaded") {
                                                 id = "last-update-time"
                                                 val now = java.time.LocalTime.now()
-                                                +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(now)
+                                                +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+                                                    .format(now)
                                             }
                                         }
                                     }
@@ -948,264 +992,318 @@ fun Application.configureRouting() {
 
                                 table(classes = "portfolio-table") {
                                     thead {
-                                    tr {
-                                        th { +"Symbol" }
-                                        th {
-                                            +"Qty"
-                                            button(classes = "copy-col-btn") {
-                                                attributes["data-column"] = "qty"
-                                                attributes["type"] = "button"
-                                                attributes["title"] = "Copy Qty column to clipboard"
-                                                unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
-                                            }
-                                        }
-                                        th { +"Last NAV" }
-                                        th { +"Est Val" }
-                                        th { +"Last" }
-                                        th { +"Mark" }
-                                        th { +"Day Chg" }
-                                        th { +"Day %" }
-                                        th { +"Mkt Val" }
-                                        th { +"Mkt Val Chg" }
-                                        th(classes = "rebal-column") { +"Weight" }
-                                        th(classes = "rebal-column") { +"Rebal $" }
-                                        th(classes = "rebal-column") { +"Rebal Shares" }
-                                        th(classes = "edit-column") {
-                                            +"Target %"
-                                            button(classes = "copy-col-btn") {
-                                                attributes["data-column"] = "weight"
-                                                attributes["type"] = "button"
-                                                attributes["title"] = "Copy Target % column to clipboard"
-                                                unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
-                                            }
-                                        }
-                                    }
-                                }
-                                tbody {
-                                    for (stock in portfolio.stocks) {
                                         tr {
-                                            // Add LETF data attribute if stock has components
-                                            if (stock.letfComponents != null) {
-                                                attributes["data-letf"] = stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
-                                            }
-
-                                            // Symbol
-                                            td { +stock.label }
-
-                                            // Qty (Amount)
-                                            td(classes = "amount") {
-                                                id = "amount-${stock.label}"
-                                                span(classes = "display-value") { +stock.amount.toString() }
-                                                input(type = InputType.number, classes = "edit-input edit-qty") {
-                                                    attributes["data-symbol"] = stock.label
+                                            th { +"Symbol" }
+                                            th {
+                                                +"Qty"
+                                                button(classes = "copy-col-btn") {
                                                     attributes["data-column"] = "qty"
-                                                    value = stock.amount.toString()
-                                                    attributes["min"] = "0"
-                                                    attributes["step"] = "1"
+                                                    attributes["type"] = "button"
+                                                    attributes["title"] =
+                                                        "Copy Qty column to clipboard"
+                                                    unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
                                                 }
                                             }
-
-                                            // Last NAV
-                                            td(classes = if (stock.lastNav != null) "price loaded" else "price") {
-                                                id = "nav-${stock.label}"
-                                                if (stock.lastNav != null) {
-                                                    +"${'$'}%.2f".format(stock.lastNav)
-                                                } else {
-                                                    +"—"
-                                                }
-                                            }
-
-                                            // Est Val (Estimated Value from LETF components)
-                                            val estValText: String? = if (stock.letfComponents != null) {
-                                                val basePrice = stock.lastNav ?: stock.lastClosePrice
-                                                if (basePrice != null) {
-                                                    val anyCompQuote = stock.letfComponents
-                                                        .mapNotNull { (_, sym) -> YahooMarketDataService.getQuote(sym) }
-                                                        .firstOrNull()
-                                                    val stale = anyCompQuote?.isMarketClosed == true &&
-                                                        anyCompQuote.tradingPeriodEnd != null &&
-                                                        System.currentTimeMillis() / 1000 - anyCompQuote.tradingPeriodEnd > 12 * 3600
-
-                                                    if (stale) null
-                                                    else {
-                                                        val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
-                                                            val quote = YahooMarketDataService.getQuote(sym)
-                                                            if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
-                                                                mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
-                                                            } else 0.0
-                                                        }
-                                                        "${'$'}%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
-                                                    }
-                                                } else null
-                                            } else null
-
-                                            td(classes = if (estValText != null) "price loaded" else "price") {
-                                                id = "est-val-${stock.label}"
-                                                +(estValText ?: "—")
-                                            }
-
-                                            // Last Close Price
-                                            td(classes = if (stock.lastClosePrice != null) "price loaded" else "price") {
-                                                id = "close-${stock.label}"
-                                                if (stock.lastClosePrice != null) {
-                                                    +"${'$'}%.2f".format(stock.lastClosePrice)
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Mark Price
-                                            td(classes = if (stock.markPrice != null) "price loaded" else "price") {
-                                                id = "mark-${stock.label}"
-                                                if (stock.markPrice != null) {
-                                                    +"${'$'}%.2f".format(stock.markPrice)
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Day Chg ($ change)
-                                            val isZeroChange = stock.priceChangeDollars?.let { Math.abs(it) < 0.001 } ?: false
-                                            val changeDirection = if (isZeroChange) "neutral" else stock.priceChangeDirection
-                                            val afterHoursClass = if (stock.isMarketClosed) "after-hours" else ""
-
-                                            td(classes = "price-change $changeDirection $afterHoursClass") {
-                                                id = "day-change-${stock.label}"
-                                                if (stock.priceChangeDollars != null) {
-                                                    // Hide if change is effectively zero (within 0.001 tolerance)
-                                                    if (isZeroChange) {
-                                                        +"—"
-                                                    } else {
-                                                        val sign = if (stock.priceChangeDollars!! >= 0) "+" else "-"
-                                                        +"$sign${'$'}%.2f".format(Math.abs(stock.priceChangeDollars!!))
-                                                    }
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Day % (% change)
-                                            td(classes = "price-change $changeDirection $afterHoursClass") {
-                                                id = "day-percent-${stock.label}"
-                                                if (stock.priceChangePercent != null) {
-                                                    if (isZeroChange) {
-                                                        +"—"
-                                                    } else {
-                                                        val sign = if (stock.priceChangePercent!! >= 0) "+" else "-"
-                                                        +"$sign%.2f%%".format(Math.abs(stock.priceChangePercent!!))
-                                                    }
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Mkt Val (Total Value)
-                                            td(classes = if (stock.value != null) "value loaded" else "value") {
-                                                id = "value-${stock.label}"
-                                                if (stock.value != null) {
-                                                    +"${'$'}%.2f".format(stock.value)
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Mkt Val Chg (Position value change)
-                                            // IMPORTANT: positionChangeDollars is calculated as priceChangeDollars * amount
-                                            // This ensures it's always zero when price change is zero (no floating point errors)
-                                            td(classes = "price-change $changeDirection $afterHoursClass") {
-                                                id = "position-change-${stock.label}"
-                                                if (stock.positionChangeDollars != null) {
-                                                    // Hide if change is effectively zero (within 0.001 tolerance)
-                                                    if (isZeroChange) {
-                                                        +"—"
-                                                    } else {
-                                                        val sign = if (stock.positionChangeDollars!! >= 0) "+" else "-"
-                                                        +"$sign${'$'}%.2f".format(Math.abs(stock.positionChangeDollars!!))
-                                                    }
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Weight (Current vs Target)
-                                            td(classes = "weight-display rebal-column") {
-                                                id = "current-weight-${stock.label}"
-                                                val stockValue = stock.value
-                                                if (stockValue != null && portfolio.totalValue > 0) {
-                                                    val currentWeight = (stockValue / portfolio.totalValue) * 100
-
-                                                    if (stock.targetWeight != null) {
-                                                        val diff = currentWeight - stock.targetWeight!!
-                                                        val sign = if (diff >= 0) "+" else "-"
-                                                        val diffClass = when {
-                                                            Math.abs(diff) > 2.0 -> "alert"
-                                                            Math.abs(diff) > 1.0 -> "warning"
-                                                            else -> "good"
-                                                        }
-                                                        +"%.1f%% ".format(currentWeight)
-                                                        span(classes = "weight-diff $diffClass") {
-                                                            +"($sign%.1f%%)".format(Math.abs(diff))
-                                                        }
-                                                        // Hidden span for JavaScript access
-                                                        span(classes = "target-weight-hidden") {
-                                                            style = "display:none;"
-                                                            +stock.targetWeight.toString()
-                                                        }
-                                                    } else {
-                                                        +"%.1f%%".format(currentWeight)
-                                                    }
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Rebalance $ (dollar amount to add/reduce)
-                                            td(classes = "price-change ${stock.rebalanceDirection(portfolio.totalValue)} rebal-column") {
-                                                id = "rebal-dollars-${stock.label}"
-                                                if (stock.targetWeight != null) {
-                                                    val rebalDollars = stock.rebalanceDollars(portfolio.totalValue)
-                                                    if (rebalDollars != null) {
-                                                        val sign = if (rebalDollars >= 0) "+" else "-"
-                                                        +"$sign${'$'}%.2f".format(Math.abs(rebalDollars))
-                                                    } else {
-                                                        span(classes = "loading") { +"—" }
-                                                    }
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Rebalance Shares (number of shares to buy/sell)
-                                            td(classes = "price-change ${stock.rebalanceDirection(portfolio.totalValue)} rebal-column") {
-                                                id = "rebal-shares-${stock.label}"
-                                                if (stock.targetWeight != null) {
-                                                    val rebalShares = stock.rebalanceShares(portfolio.totalValue)
-                                                    if (rebalShares != null) {
-                                                        val sign = if (rebalShares >= 0) "+" else "-"
-                                                        +"$sign%.2f".format(Math.abs(rebalShares))
-                                                    } else {
-                                                        span(classes = "loading") { +"—" }
-                                                    }
-                                                } else {
-                                                    span(classes = "loading") { +"—" }
-                                                }
-                                            }
-
-                                            // Target % (edit-only column)
-                                            td(classes = "edit-column") {
-                                                input(type = InputType.number, classes = "edit-input edit-weight") {
-                                                    attributes["data-symbol"] = stock.label
+                                            th { +"Last NAV" }
+                                            th { +"Est Val" }
+                                            th { +"Last" }
+                                            th { +"Mark" }
+                                            th { +"Day Chg" }
+                                            th { +"Day %" }
+                                            th { +"Mkt Val" }
+                                            th { +"Mkt Val Chg" }
+                                            th(classes = "rebal-column") { +"Weight" }
+                                            th(classes = "rebal-column") { +"Rebal $" }
+                                            th(classes = "rebal-column") { +"Rebal Shares" }
+                                            th(classes = "edit-column") {
+                                                +"Target %"
+                                                button(classes = "copy-col-btn") {
                                                     attributes["data-column"] = "weight"
-                                                    value = (stock.targetWeight ?: 0.0).toString()
-                                                    attributes["min"] = "0"
-                                                    attributes["max"] = "100"
-                                                    attributes["step"] = "0.1"
+                                                    attributes["type"] = "button"
+                                                    attributes["title"] =
+                                                        "Copy Target % column to clipboard"
+                                                    unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    tbody {
+                                        for (stock in portfolio.stocks) {
+                                            tr {
+                                                // Add LETF data attribute if stock has components
+                                                if (stock.letfComponents != null) {
+                                                    attributes["data-letf"] =
+                                                        stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
+                                                }
+
+                                                // Symbol
+                                                td { +stock.label }
+
+                                                // Qty (Amount)
+                                                td(classes = "amount") {
+                                                    id = "amount-${stock.label}"
+                                                    span(classes = "display-value") { +stock.amount.toString() }
+                                                    input(
+                                                        type = InputType.number,
+                                                        classes = "edit-input edit-qty"
+                                                    ) {
+                                                        attributes["data-symbol"] = stock.label
+                                                        attributes["data-column"] = "qty"
+                                                        value = stock.amount.toString()
+                                                        attributes["min"] = "0"
+                                                        attributes["step"] = "1"
+                                                    }
+                                                }
+
+                                                // Last NAV
+                                                td(classes = if (stock.lastNav != null) "price loaded" else "price") {
+                                                    id = "nav-${stock.label}"
+                                                    if (stock.lastNav != null) {
+                                                        +"${'$'}%.2f".format(stock.lastNav)
+                                                    } else {
+                                                        +"—"
+                                                    }
+                                                }
+
+                                                // Est Val (Estimated Value from LETF components)
+                                                val estValText: String? =
+                                                    if (stock.letfComponents != null) {
+                                                        val basePrice =
+                                                            stock.lastNav ?: stock.lastClosePrice
+                                                        if (basePrice != null) {
+                                                            val anyCompQuote = stock.letfComponents
+                                                                .mapNotNull { (_, sym) ->
+                                                                    YahooMarketDataService.getQuote(
+                                                                        sym
+                                                                    )
+                                                                }
+                                                                .firstOrNull()
+                                                            val stale =
+                                                                anyCompQuote?.isMarketClosed == true &&
+                                                                        anyCompQuote.tradingPeriodEnd != null &&
+                                                                        System.currentTimeMillis() / 1000 - anyCompQuote.tradingPeriodEnd > 12 * 3600
+
+                                                            if (stale) null
+                                                            else {
+                                                                val sumComponent =
+                                                                    stock.letfComponents.sumOf { (mult, sym) ->
+                                                                        val quote =
+                                                                            YahooMarketDataService.getQuote(
+                                                                                sym
+                                                                            )
+                                                                        if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
+                                                                            mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
+                                                                        } else 0.0
+                                                                    }
+                                                                "${'$'}%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
+                                                            }
+                                                        } else null
+                                                    } else null
+
+                                                td(classes = if (estValText != null) "price loaded" else "price") {
+                                                    id = "est-val-${stock.label}"
+                                                    +(estValText ?: "—")
+                                                }
+
+                                                // Last Close Price
+                                                td(classes = if (stock.lastClosePrice != null) "price loaded" else "price") {
+                                                    id = "close-${stock.label}"
+                                                    if (stock.lastClosePrice != null) {
+                                                        +"${'$'}%.2f".format(stock.lastClosePrice)
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Mark Price
+                                                td(classes = if (stock.markPrice != null) "price loaded" else "price") {
+                                                    id = "mark-${stock.label}"
+                                                    if (stock.markPrice != null) {
+                                                        +"${'$'}%.2f".format(stock.markPrice)
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Day Chg ($ change)
+                                                val isZeroChange =
+                                                    stock.priceChangeDollars?.let { abs(it) < 0.001 }
+                                                        ?: false
+                                                val changeDirection =
+                                                    if (isZeroChange) "neutral" else stock.priceChangeDirection
+                                                val afterHoursClass =
+                                                    if (stock.isMarketClosed) "after-hours" else ""
+
+                                                td(classes = "price-change $changeDirection $afterHoursClass") {
+                                                    id = "day-change-${stock.label}"
+                                                    if (stock.priceChangeDollars != null) {
+                                                        // Hide if change is effectively zero (within 0.001 tolerance)
+                                                        if (isZeroChange) {
+                                                            +"—"
+                                                        } else {
+                                                            val sign =
+                                                                if (stock.priceChangeDollars!! >= 0) "+" else "-"
+                                                            +"$sign${'$'}%.2f".format(abs(stock.priceChangeDollars!!))
+                                                        }
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Day % (% change)
+                                                td(classes = "price-change $changeDirection $afterHoursClass") {
+                                                    id = "day-percent-${stock.label}"
+                                                    if (stock.priceChangePercent != null) {
+                                                        if (isZeroChange) {
+                                                            +"—"
+                                                        } else {
+                                                            val sign =
+                                                                if (stock.priceChangePercent!! >= 0) "+" else "-"
+                                                            +"$sign%.2f%%".format(abs(stock.priceChangePercent!!))
+                                                        }
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Mkt Val (Total Value)
+                                                td(classes = if (stock.value != null) "value loaded" else "value") {
+                                                    id = "value-${stock.label}"
+                                                    if (stock.value != null) {
+                                                        +"${'$'}%.2f".format(stock.value)
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Mkt Val Chg (Position value change)
+                                                // IMPORTANT: positionChangeDollars is calculated as priceChangeDollars * amount
+                                                // This ensures it's always zero when price change is zero (no floating point errors)
+                                                td(classes = "price-change $changeDirection $afterHoursClass") {
+                                                    id = "position-change-${stock.label}"
+                                                    if (stock.positionChangeDollars != null) {
+                                                        // Hide if change is effectively zero (within 0.001 tolerance)
+                                                        if (isZeroChange) {
+                                                            +"—"
+                                                        } else {
+                                                            val sign =
+                                                                if (stock.positionChangeDollars!! >= 0) "+" else "-"
+                                                            +"$sign${'$'}%.2f".format(abs(stock.positionChangeDollars!!))
+                                                        }
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Weight (Current vs Target)
+                                                td(classes = "weight-display rebal-column") {
+                                                    id = "current-weight-${stock.label}"
+                                                    val stockValue = stock.value
+                                                    if (stockValue != null && portfolio.totalValue > 0) {
+                                                        val currentWeight =
+                                                            (stockValue / portfolio.totalValue) * 100
+
+                                                        if (stock.targetWeight != null) {
+                                                            val diff =
+                                                                currentWeight - stock.targetWeight!!
+                                                            val sign = if (diff >= 0) "+" else "-"
+                                                            val diffClass = when {
+                                                                abs(diff) > 2.0 -> "alert"
+                                                                abs(diff) > 1.0 -> "warning"
+                                                                else -> "good"
+                                                            }
+                                                            +"%.1f%% ".format(currentWeight)
+                                                            span(classes = "weight-diff $diffClass") {
+                                                                +"($sign%.1f%%)".format(
+                                                                    abs(
+                                                                        diff
+                                                                    )
+                                                                )
+                                                            }
+                                                            // Hidden span for JavaScript access
+                                                            span(classes = "target-weight-hidden") {
+                                                                style = "display:none;"
+                                                                +stock.targetWeight.toString()
+                                                            }
+                                                        } else {
+                                                            +"%.1f%%".format(currentWeight)
+                                                        }
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Rebalance $ (dollar amount to add/reduce)
+                                                td(
+                                                    classes = "price-change ${
+                                                        stock.rebalanceDirection(
+                                                            portfolio.totalValue
+                                                        )
+                                                    } rebal-column"
+                                                ) {
+                                                    id = "rebal-dollars-${stock.label}"
+                                                    if (stock.targetWeight != null) {
+                                                        val rebalDollars =
+                                                            stock.rebalanceDollars(portfolio.totalValue)
+                                                        if (rebalDollars != null) {
+                                                            val sign =
+                                                                if (rebalDollars >= 0) "+" else "-"
+                                                            +"$sign${'$'}%.2f".format(
+                                                                abs(
+                                                                    rebalDollars
+                                                                )
+                                                            )
+                                                        } else {
+                                                            span(classes = "loading") { +"—" }
+                                                        }
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Rebalance Shares (number of shares to buy/sell)
+                                                td(
+                                                    classes = "price-change ${
+                                                        stock.rebalanceDirection(
+                                                            portfolio.totalValue
+                                                        )
+                                                    } rebal-column"
+                                                ) {
+                                                    id = "rebal-shares-${stock.label}"
+                                                    if (stock.targetWeight != null) {
+                                                        val rebalShares =
+                                                            stock.rebalanceShares(portfolio.totalValue)
+                                                        if (rebalShares != null) {
+                                                            val sign =
+                                                                if (rebalShares >= 0) "+" else "-"
+                                                            +"$sign%.2f".format(abs(rebalShares))
+                                                        } else {
+                                                            span(classes = "loading") { +"—" }
+                                                        }
+                                                    } else {
+                                                        span(classes = "loading") { +"—" }
+                                                    }
+                                                }
+
+                                                // Target % (edit-only column)
+                                                td(classes = "edit-column") {
+                                                    input(
+                                                        type = InputType.number,
+                                                        classes = "edit-input edit-weight"
+                                                    ) {
+                                                        attributes["data-symbol"] = stock.label
+                                                        attributes["data-column"] = "weight"
+                                                        value =
+                                                            (stock.targetWeight ?: 0.0).toString()
+                                                        attributes["min"] = "0"
+                                                        attributes["max"] = "100"
+                                                        attributes["step"] = "0.1"
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
 
                             }
 
@@ -1337,34 +1435,36 @@ fun Application.configureRouting() {
             val channel = Channel<String>(Channel.BUFFERED)
 
             // Register callback for price updates
-            val callback: (String, com.portfoliohelper.service.yahoo.YahooQuote) -> Unit = { symbol, quote ->
-                val json = buildString {
-                    append("{")
-                    append("\"symbol\":\"$symbol\",")
-                    append("\"markPrice\":${quote.regularMarketPrice},")
-                    append("\"lastClosePrice\":${quote.previousClose},")
-                    append("\"isMarketClosed\":${quote.isMarketClosed},")
-                    append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
-                    append("\"timestamp\":${quote.lastUpdateTime}")
-                    append("}")
+            val callback: (String, com.portfoliohelper.service.yahoo.YahooQuote) -> Unit =
+                { symbol, quote ->
+                    val json = buildString {
+                        append("{")
+                        append("\"symbol\":\"$symbol\",")
+                        append("\"markPrice\":${quote.regularMarketPrice},")
+                        append("\"lastClosePrice\":${quote.previousClose},")
+                        append("\"isMarketClosed\":${quote.isMarketClosed},")
+                        append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
+                        append("\"timestamp\":${quote.lastUpdateTime}")
+                        append("}")
+                    }
+                    channel.trySend("data: $json\n\n")
                 }
-                channel.trySend("data: $json\n\n")
-            }
 
             YahooMarketDataService.onPriceUpdate(callback)
 
             // Register callback for NAV updates
-            val navCallback: (String, com.portfoliohelper.service.nav.NavData) -> Unit = { symbol, navData ->
-                val json = buildString {
-                    append("{")
-                    append("\"type\":\"nav\",")
-                    append("\"symbol\":\"$symbol\",")
-                    append("\"nav\":${navData.nav},")
-                    append("\"timestamp\":${navData.lastFetchTime}")
-                    append("}")
+            val navCallback: (String, com.portfoliohelper.service.nav.NavData) -> Unit =
+                { symbol, navData ->
+                    val json = buildString {
+                        append("{")
+                        append("\"type\":\"nav\",")
+                        append("\"symbol\":\"$symbol\",")
+                        append("\"nav\":${navData.nav},")
+                        append("\"timestamp\":${navData.lastFetchTime}")
+                        append("}")
+                    }
+                    channel.trySend("data: $json\n\n")
                 }
-                channel.trySend("data: $json\n\n")
-            }
 
             NavService.onNavUpdate(navCallback)
 
@@ -1389,7 +1489,7 @@ fun Application.configureRouting() {
                         flush()
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Client disconnected
                 channel.close()
             }
