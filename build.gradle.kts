@@ -134,7 +134,7 @@ tasks.register<Copy>("copyJpackageData") {
         into("data")
     }
     from("src/main/resources") {
-        include("application.conf", "logback.xml")
+        include("logback.xml")
         into("config")
     }
 
@@ -188,7 +188,7 @@ tasks.register<Zip>("portableDistZip") {
 
     from("src/main/resources") {
         into("${project.name}/config")
-        include("application.conf", "logback.xml")
+        include("logback.xml")
     }
 }
 
@@ -217,7 +217,7 @@ tasks.register<Tar>("portableDistTar") {
 
     from("src/main/resources") {
         into("${project.name}/config")
-        include("application.conf", "logback.xml")
+        include("logback.xml")
     }
 }
 
@@ -251,7 +251,7 @@ tasks.register<Zip>("windowsDistZip") {
 
     from("src/main/resources") {
         into("${project.name}/config")
-        include("application.conf", "logback.xml")
+        include("logback.xml")
     }
 }
 

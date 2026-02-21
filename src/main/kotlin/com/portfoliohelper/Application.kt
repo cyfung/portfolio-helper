@@ -120,6 +120,8 @@ fun main() {
         null
     }
 
+    val port = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8080
+
     // Placeholder for server stop — set after successful startup, invoked by shutdown hook
     var stopServer: () -> Unit = {}
 
@@ -137,7 +139,7 @@ fun main() {
 
     // Initialize system tray (if supported)
     val traySupported = SystemTrayService.initialize(
-        serverUrl = "http://localhost:8080",
+        serverUrl = "http://localhost:$port",
         onExit = {
             logger.info("Exit requested from system tray")
             System.exit(0)  // Shutdown hook handles all cleanup
@@ -152,9 +154,9 @@ fun main() {
 
     // Start web server — if this fails (e.g. port in use), exit immediately so the
     // tray icon doesn't linger with no working server behind it
-    logger.info("Starting web server on port 8080...")
+    logger.info("Starting web server on port $port...")
     try {
-        val server = embeddedServer(Netty, port = 8080) {
+        val server = embeddedServer(Netty, port = port) {
             configureRouting()
         }.start(wait = false)
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
@@ -168,12 +170,12 @@ fun main() {
     if (traySupported) {
         SystemTrayService.showNotification(
             "Portfolio Helper",
-            "Server started on http://localhost:8080"
+            "Server started on http://localhost:$port"
         )
     }
 
     // Block main thread indefinitely — System.exit() (tray or Ctrl+C) will terminate the JVM
-    logger.info("Application ready. Access at http://localhost:8080 (press Ctrl+C or use tray menu to exit)")
+    logger.info("Application ready. Access at http://localhost:$port (press Ctrl+C or use tray menu to exit)")
     try {
         Thread.currentThread().join()
     } catch (_: InterruptedException) {
