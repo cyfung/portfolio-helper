@@ -32,6 +32,24 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
         }
     }
 
+    /**
+     * Like [startPolling] but the delay before each subsequent fetch is computed
+     * dynamically by [nextDelayMs]. The first fetch still runs immediately.
+     */
+    protected fun startPollingWithSchedule(symbols: List<String>, nextDelayMs: () -> Long) {
+        serviceScope.launch { fetchAll(symbols) }
+        updateJob?.cancel()
+        updateJob = serviceScope.launch {
+            while (isActive) {
+                val delayMs = nextDelayMs()
+                val nextAt = java.time.Instant.ofEpochMilli(System.currentTimeMillis() + delayMs)
+                logger.info("$serviceName: next fetch scheduled at $nextAt (in ${delayMs / 60_000} min)")
+                delay(delayMs)
+                if (isActive) fetchAll(symbols)
+            }
+        }
+    }
+
     protected abstract suspend fun fetchItem(symbol: String): TData?
 
     private suspend fun fetchAll(symbols: List<String>) {

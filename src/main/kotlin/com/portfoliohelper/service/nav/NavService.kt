@@ -1,6 +1,7 @@
 package com.portfoliohelper.service.nav
 
 import com.portfoliohelper.service.PollingService
+import com.portfoliohelper.service.TradingDaySchedule
 
 object NavService : PollingService<NavData>("NAV") {
 
@@ -9,7 +10,7 @@ object NavService : PollingService<NavData>("NAV") {
         CtaNavProvider
     ).associateBy { it.symbol }
 
-    fun requestNavForSymbols(symbols: List<String>, intervalSeconds: Long = 300) {
+    fun requestNavForSymbols(symbols: List<String>) {
         val supportedSymbols = symbols.filter { it in providers }
 
         if (supportedSymbols.isEmpty()) {
@@ -17,8 +18,8 @@ object NavService : PollingService<NavData>("NAV") {
             return
         }
 
-        logger.info("Starting NAV polling for ${supportedSymbols.size} symbols: $supportedSymbols (interval: ${intervalSeconds}s)")
-        startPolling(supportedSymbols, intervalSeconds)
+        logger.info("Starting NAV polling for ${supportedSymbols.size} symbols: $supportedSymbols (next: ${TradingDaySchedule.describeNextFetch()})")
+        startPollingWithSchedule(supportedSymbols, TradingDaySchedule::nextNavFetchDelayMs)
     }
 
     override suspend fun fetchItem(symbol: String): NavData? {

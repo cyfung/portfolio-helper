@@ -138,14 +138,12 @@ fun main() {
     // ---------------------------------------------------------------
     // 7. Initialize NAV service
     // ---------------------------------------------------------------
-    val navIntervalSeconds = System.getenv("NAV_UPDATE_INTERVAL")?.toLongOrNull() ?: 300L
-
     fun initializeNavData() {
         try {
             logger.info("Initializing NAV service...")
             NavService.initialize()
             val symbols = PortfolioRegistry.entries.flatMap { it.getStocks().map { s -> s.label } }.distinct()
-            NavService.requestNavForSymbols(symbols, navIntervalSeconds)
+            NavService.requestNavForSymbols(symbols)
         } catch (e: Exception) {
             logger.error("Failed to initialize NAV service", e)
             logger.warn("Application will continue without NAV data")
