@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.nav.NavData
@@ -243,6 +244,16 @@ fun Application.configureRouting() {
                 // Client disconnected
                 channel.close()
             }
+        }
+
+        // Manual reload for IBKR margin rates
+        post("/api/margin-rates/reload") {
+            if (!IbkrMarginRateService.canReload()) {
+                call.respond(HttpStatusCode.TooManyRequests, "Reload not allowed within 10 minutes of last fetch")
+                return@post
+            }
+            IbkrMarginRateService.reloadNow()
+            call.respond(HttpStatusCode.OK, IbkrMarginRateService.getLastFetchMillis().toString())
         }
 
         // Serve static files (CSS, JS)

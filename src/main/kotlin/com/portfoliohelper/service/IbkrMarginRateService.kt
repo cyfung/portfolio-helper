@@ -49,6 +49,7 @@ object IbkrMarginRateService {
     private val logger = LoggerFactory.getLogger(IbkrMarginRateService::class.java)
     private val ratesCache = ConcurrentHashMap<String, CurrencyRates>()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lastFetchMillis = java.util.concurrent.atomic.AtomicLong(0L)
 
     private val numberRegex = Regex("[\\d,]+")
     private val rateRegex = Regex("(\\d+\\.\\d+)%")
@@ -64,6 +65,15 @@ object IbkrMarginRateService {
     }
 
     fun getRates(currency: String): CurrencyRates? = ratesCache[currency.uppercase()]
+
+    fun getLastFetchMillis(): Long = lastFetchMillis.get()
+
+    fun canReload(): Boolean {
+        val last = lastFetchMillis.get()
+        return last == 0L || System.currentTimeMillis() - last > 10 * 60 * 1000L
+    }
+
+    suspend fun reloadNow() = kotlinx.coroutines.withContext(Dispatchers.IO) { fetchRates() }
 
     fun shutdown() {
         serviceScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
@@ -129,6 +139,7 @@ object IbkrMarginRateService {
             if (newRates.isNotEmpty()) {
                 ratesCache.clear()
                 ratesCache.putAll(newRates)
+                lastFetchMillis.set(System.currentTimeMillis())
                 logger.info("Fetched IBKR margin rates for ${newRates.size} currencies: ${newRates.keys.sorted()}")
             } else {
                 logger.warn("IBKR margin rates page parsed but no valid rates found")

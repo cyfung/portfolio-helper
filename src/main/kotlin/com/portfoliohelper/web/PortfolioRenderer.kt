@@ -2,6 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
+import com.portfoliohelper.service.CurrencyConventions
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
@@ -481,40 +482,76 @@ private fun FlowContent.buildIbkrRatesTable(
         .filter { it.marginFlag }
         .sumOf { abs(resolveEntryUsd(it) ?: 0.0) }
 
-    data class RateRow(val currency: String, val display: String)
+    data class RateRow(val currency: String, val rateDisplay: String, val dailyInterestUsd: Double)
     val rows = marginCurrencies.mapNotNull { ccy ->
         val currencyRates = IbkrMarginRateService.getRates(ccy) ?: return@mapNotNull null
         // Convert total margin to this currency for tier lookup
         val fxRate = if (ccy == "USD") 1.0 else (fxRateMap[ccy] ?: return@mapNotNull null)
         val loanAmount = totalMarginUsd / fxRate
         val blended = if (loanAmount > 0) currencyRates.blendedRateIfMultiTier(loanAmount) else null
-        val text = if (blended != null)
+        val effectiveRate = blended ?: currencyRates.baseRate
+        val daysInYear = CurrencyConventions.getDaysInYear(ccy)
+        // fxRate cancels: (totalMarginUsd / fxRate) * effectiveRate/100 / daysInYear * fxRate
+        val dailyInterestUsd = totalMarginUsd * effectiveRate / 100.0 / daysInYear
+        val rateDisplay = if (blended != null)
             "%.3f%% (%.3f%%)".format(blended, currencyRates.baseRate)
         else
             "%.3f%%".format(currencyRates.baseRate)
-        RateRow(ccy, text)
+        RateRow(ccy, rateDisplay, dailyInterestUsd)
     }
 
     if (rows.isEmpty()) return
 
+    val minDailyInterest = rows.minOf { it.dailyInterestUsd }
+    val lastFetchMillis = IbkrMarginRateService.getLastFetchMillis()
+
+    div(classes = "ibkr-rates-wrapper") {
     table(classes = "ibkr-rates-table") {
         thead {
             tr {
-                th {
-                    attributes["colspan"] = "2"
-                    +"IBKR Pro Margin Rates"
-                }
+                th { +"CCY" }
+                th { +"IBKR Pro Rate" }
+                th { +"Daily Interest (USD)" }
             }
         }
         tbody {
             for (row in rows) {
                 tr {
                     td(classes = "ibkr-rate-currency") { +row.currency }
-                    td(classes = "ibkr-rate-value") { +row.display }
+                    td(classes = "ibkr-rate-value") { +row.rateDisplay }
+                    td(classes = "ibkr-rate-daily") {
+                        +"${"$"}%,.2f".format(row.dailyInterestUsd)
+                        val diff = row.dailyInterestUsd - minDailyInterest
+                        if (diff >= 0.005) {
+                            span(classes = "ibkr-rate-diff") {
+                                +" (+${"$"}%,.2f)".format(diff)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+    div(classes = "ibkr-rates-footer") {
+        span(classes = "ibkr-last-fetch") {
+            id = "ibkr-last-fetch"
+            if (lastFetchMillis > 0L) {
+                val time = java.time.Instant.ofEpochMilli(lastFetchMillis)
+                    .atZone(java.time.ZoneId.systemDefault())
+                +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(time)
+            } else {
+                +"—"
+            }
+        }
+        button(classes = "ibkr-reload-btn") {
+            id = "ibkr-reload-btn"
+            attributes["type"] = "button"
+            attributes["data-last-fetch"] = lastFetchMillis.toString()
+            attributes["title"] = "Reload IBKR margin rates"
+            +"↻"
+        }
+    }
+    } // end ibkr-rates-wrapper
 }
 
 private fun FlowContent.buildStockTable(portfolio: Portfolio) {

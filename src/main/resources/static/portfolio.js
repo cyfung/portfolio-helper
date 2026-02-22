@@ -802,4 +802,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateRebalTargetPlaceholder();
     updateMarginTargetDisplay();
+
+    // IBKR margin rates reload button
+    const ibkrReloadBtn = document.getElementById('ibkr-reload-btn');
+    if (ibkrReloadBtn) {
+        const COOLDOWN_MS = 10 * 60 * 1000;
+        const lastFetch = parseInt(ibkrReloadBtn.dataset.lastFetch || '0', 10);
+        const elapsed = lastFetch > 0 ? Date.now() - lastFetch : COOLDOWN_MS + 1;
+        if (elapsed < COOLDOWN_MS) {
+            ibkrReloadBtn.disabled = true;
+            setTimeout(() => { ibkrReloadBtn.disabled = false; }, COOLDOWN_MS - elapsed);
+        }
+        ibkrReloadBtn.addEventListener('click', async () => {
+            ibkrReloadBtn.disabled = true;
+            ibkrReloadBtn.textContent = '…';
+            try {
+                const resp = await fetch('/api/margin-rates/reload', { method: 'POST' });
+                if (resp.ok) {
+                    location.reload();
+                } else {
+                    ibkrReloadBtn.textContent = '↻';
+                    // If server says cooldown still active, re-check after 1 min
+                    setTimeout(() => { ibkrReloadBtn.disabled = false; }, 60_000);
+                }
+            } catch (e) {
+                ibkrReloadBtn.textContent = '↻';
+                ibkrReloadBtn.disabled = false;
+            }
+        });
+    }
 });
