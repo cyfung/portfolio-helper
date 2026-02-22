@@ -358,12 +358,13 @@ private fun TBODY.buildSummaryRows(
             val marginDenominator = portfolio.totalValue + equityEntriesUsd + marginUsd
             tr(classes = "margin-row") {
                 attributes["data-margin-row"] = "true"
+                if (marginUsd >= 0) style = "display:none;"
                 td { +"Margin" }
                 td {}
                 td {
                     span {
                         id = "margin-total-usd"
-                        +"${'$'}%,.2f".format(marginUsd)
+                        +"${'$'}%,.2f".format(abs(marginUsd))
                     }
                     val marginPct =
                         if (marginDenominator != 0.0 && marginUsd < 0)
@@ -373,7 +374,7 @@ private fun TBODY.buildSummaryRows(
                         if (marginUsd >= 0) {
                             style = "display:none;"
                         } else {
-                            +" (${"%.1f%%".format(marginPct)})"
+                            +" (${"%.1f%%".format(abs(marginPct))})"
                         }
                     }
                 }
@@ -402,6 +403,48 @@ private fun TBODY.buildSummaryRows(
                     +" "
                     span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
                         +"($daySign%.2f%%)".format(abs(portfolio.dailyChangePercent))
+                    }
+                }
+            }
+        }
+    }
+
+    // Rebalance Target input row — always shown
+    tr(classes = "rebal-target-row") {
+        td { +"Rebalance Target" }
+        td {}
+        td {
+            input(type = InputType.text, classes = "rebal-target-input") {
+                attributes["id"] = "rebal-target-input"
+                attributes["placeholder"] = "%,.2f".format(portfolio.totalValue)
+                attributes["autocomplete"] = "off"
+            }
+        }
+    }
+
+    // Margin Target row — only rendered when margin entries are configured
+    val hasMarginForTarget = cashEntries.any { it.marginFlag }
+    if (hasMarginForTarget) {
+        val mUsd = cashEntries.filter { it.marginFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
+        val eUsd = cashEntries.filter { it.equityFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
+        val mDenom = portfolio.totalValue + eUsd + mUsd
+        val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
+        tr(classes = "margin-row") {
+            attributes["id"] = "margin-target-row"
+            if (mUsd >= 0) style = "display:none;"
+            td { +"Margin Target" }
+            td {}
+            td {
+                span {
+                    id = "margin-target-usd"
+                    +"${'$'}%,.2f".format(abs(mUsd))
+                }
+                span(classes = "margin-percent") {
+                    id = "margin-target-percent"
+                    if (mUsd >= 0) {
+                        style = "display:none;"
+                    } else {
+                        +" (${"%.1f%%".format(abs(mPct))})"
                     }
                 }
             }

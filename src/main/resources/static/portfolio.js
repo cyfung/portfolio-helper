@@ -4,6 +4,7 @@ let globalIsMarketClosed = false;
 let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
 // Display currency (USD by default; lastPortfolioVal/lastCashTotalUsd/etc. declared in inline script)
 let currentDisplayCurrency = 'USD';
+let rebalTargetUsd = null; // null = use lastPortfolioVal
 
 // Connect to SSE for live price updates
 const eventSource = new EventSource('/api/prices/stream');
@@ -236,6 +237,7 @@ function updateTotalValue() {
 
     lastPortfolioVal = total;
     lastPrevPortfolioVal = previousTotal;
+    updateRebalTargetPlaceholder();
 
     // Update portfolio total
     const totalCell = document.getElementById('portfolio-total');
@@ -257,7 +259,8 @@ function updateTotalValue() {
     }
 
     updateCurrentWeights(total);
-    updateRebalancingColumns(total);
+    updateRebalancingColumns(getRebalTotal());
+    updateMarginTargetDisplay();
 
     // Update grand total (portfolio + cash)
     const grandEl = document.getElementById('grand-total-value');
@@ -309,20 +312,63 @@ function formatSignedDisplayCurrency(usdVal) {
     return (converted >= 0 ? '+' : '') + formatDisplayCurrency(usdVal);
 }
 
+function getRebalTotal() {
+    return (rebalTargetUsd !== null && rebalTargetUsd > 0) ? rebalTargetUsd : lastPortfolioVal;
+}
+
+function updateRebalTargetPlaceholder() {
+    const input = document.getElementById('rebal-target-input');
+    if (!input) return;
+    const converted = toDisplayCurrency(lastPortfolioVal);
+    input.placeholder = Math.abs(converted).toLocaleString('en-US', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+    });
+}
+
+function updateMarginTargetDisplay() {
+    const marginTargetRow = document.getElementById('margin-target-row');
+    if (!marginTargetRow) return;
+
+    const rebalTotal = getRebalTotal();
+    const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
+
+    if (marginTargetUsd >= 0) {
+        marginTargetRow.style.display = 'none';
+        return;
+    }
+    marginTargetRow.style.display = '';
+
+    const marginTargetEl = document.getElementById('margin-target-usd');
+    if (marginTargetEl) marginTargetEl.textContent = formatDisplayCurrency(-marginTargetUsd);
+
+    const marginTargetPctEl = document.getElementById('margin-target-percent');
+    const denominator = rebalTotal + lastEquityUsd + marginTargetUsd;
+    const pct = denominator !== 0 ? Math.abs(marginTargetUsd / denominator) * 100 : 0;
+    if (marginTargetPctEl) {
+        marginTargetPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
+        marginTargetPctEl.style.display = '';
+    }
+}
+
 function updateMarginDisplay(marginUsd) {
+    const marginRow = document.querySelector('[data-margin-row]');
     const marginEl = document.getElementById('margin-total-usd');
     if (!marginEl) return;
-    marginEl.textContent = formatDisplayCurrency(marginUsd);
+
+    if (marginUsd >= 0) {
+        if (marginRow) marginRow.style.display = 'none';
+        return;
+    }
+    if (marginRow) marginRow.style.display = '';
+
+    marginEl.textContent = formatDisplayCurrency(-marginUsd);
+
     const marginPctEl = document.getElementById('margin-percent');
-    if (marginUsd < 0) {
-        const denominator = lastPortfolioVal + lastEquityUsd + lastMarginUsd;
-        const pct = denominator !== 0 ? (marginUsd / denominator) * 100 : 0;
-        if (marginPctEl) {
-            marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
-            marginPctEl.style.display = '';
-        }
-    } else {
-        if (marginPctEl) marginPctEl.style.display = 'none';
+    const denominator = lastPortfolioVal + lastEquityUsd + lastMarginUsd;
+    const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
+    if (marginPctEl) {
+        marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
+        marginPctEl.style.display = '';
     }
 }
 
@@ -503,6 +549,11 @@ function updateAllEstVals() {
 }
 
 function refreshDisplayCurrency() {
+    // Clear stale rebalance target when currency changes
+    const rebalInput = document.getElementById('rebal-target-input');
+    if (rebalInput) rebalInput.value = '';
+    rebalTargetUsd = null;
+
     // Portfolio total
     const totalCell = document.getElementById('portfolio-total');
     if (totalCell) totalCell.textContent = formatDisplayCurrency(lastPortfolioVal);
@@ -545,6 +596,10 @@ function refreshDisplayCurrency() {
             '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
             '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePct).toFixed(2) + '%)</span>';
     }
+
+    updateRebalTargetPlaceholder();
+    updateRebalancingColumns(getRebalTotal());
+    updateMarginTargetDisplay();
 }
 
 // Rebalancing columns toggle
@@ -720,6 +775,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Rebalance Target input
+    const rebalTargetInput = document.getElementById('rebal-target-input');
+    if (rebalTargetInput) {
+        rebalTargetInput.addEventListener('input', () => {
+            const raw = rebalTargetInput.value.trim().replace(/,/g, '');
+            if (raw === '' || isNaN(parseFloat(raw))) {
+                rebalTargetUsd = null;
+            } else {
+                const inputNum = parseFloat(raw);
+                const rate = fxRates[currentDisplayCurrency];
+                rebalTargetUsd = (rate && rate !== 0) ? inputNum * rate : inputNum;
+            }
+            updateRebalancingColumns(getRebalTotal());
+            updateMarginTargetDisplay();
+        });
+    }
+
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
     updateCashTotals();
 
@@ -727,4 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentDisplayCurrency !== 'USD') {
         refreshDisplayCurrency();
     }
+
+    updateRebalTargetPlaceholder();
+    updateMarginTargetDisplay();
 });
