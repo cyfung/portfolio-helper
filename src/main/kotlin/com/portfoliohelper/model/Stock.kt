@@ -12,7 +12,7 @@ package com.portfoliohelper.model
  */
 data class Stock(
     val label: String,
-    val amount: Int,
+    val amount: Double,
     val markPrice: Double? = null,
     val lastClosePrice: Double? = null,
     val targetWeight: Double? = null,

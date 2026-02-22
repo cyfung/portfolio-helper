@@ -158,7 +158,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
         // Update position value change (Mkt Val Chg)
         // IMPORTANT: Always calculate from changeDollars * amount to avoid floating point errors
         if (amountCell) {
-            const amount = parseInt(amountCell.textContent);
+            const amount = parseFloat(amountCell.textContent);
             const positionChange = changeDollars * amount;
 
             const positionChangeCell = document.getElementById('position-change-' + symbol);
@@ -177,7 +177,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
 
     // Calculate and update value (prefer mark price)
     if (valueCell && amountCell) {
-        const amount = parseInt(amountCell.textContent);
+        const amount = parseFloat(amountCell.textContent);
         const price = markPrice !== null ? markPrice : lastClosePrice;
 
         if (price !== null) {
@@ -223,7 +223,7 @@ function updateTotalValue() {
         const closeCell = document.getElementById('close-' + symbol);
 
         if (amountCell && markCell && closeCell) {
-            const amount = parseInt(amountCell.textContent);
+            const amount = parseFloat(amountCell.textContent);
             const markPrice = parsePrice(markCell.textContent);
             const closePrice = parsePrice(closeCell.textContent);
 
@@ -539,7 +539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const weightInput = document.querySelector('.edit-weight[data-symbol="' + sym + '"]');
             updates.push({
                 symbol: sym,
-                amount: parseInt(input.value) || 0,
+                amount: parseFloat(input.value) || 0,
                 targetWeight: weightInput ? parseFloat(weightInput.value) || 0 : 0
             });
         });
@@ -606,7 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const val = lines[i].trim().replace(/,/g, '');
             const num = parseFloat(val);
             if (!isNaN(num)) {
-                allInputs[startIdx + i].value = column === 'qty' ? Math.round(num).toString() : num.toString();
+                allInputs[startIdx + i].value = num.toString();
             }
         }
     });

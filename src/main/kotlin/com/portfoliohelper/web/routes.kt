@@ -25,6 +25,23 @@ import java.io.FileWriter
 import java.nio.file.Files
 import java.nio.file.Paths
 
+private val cashKeyKnownFlags = setOf("M", "E")
+
+private fun formatQty(amount: Double) =
+    if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()
+
+private fun normalizeCashKey(raw: String): String {
+    val parts = raw.split(".").toMutableList()
+    val flags = mutableListOf<String>()
+    while (parts.isNotEmpty() && parts.last().uppercase() in cashKeyKnownFlags) {
+        flags.add(0, parts.removeLast().uppercase())
+    }
+    if (parts.isNotEmpty()) {
+        parts[parts.size - 1] = parts[parts.size - 1].uppercase()
+    }
+    return (parts + flags).joinToString(".")
+}
+
 fun Application.configureRouting() {
     routing {
         get("/") {
@@ -78,11 +95,11 @@ fun Application.configureRouting() {
                 }
 
                 // Build update map: symbol -> {amount, targetWeight}
-                val updateMap = mutableMapOf<String, Pair<Int, Double>>()
+                val updateMap = mutableMapOf<String, Pair<Double, Double>>()
                 for (element in updates) {
                     val obj = element.jsonObject
                     val symbol = obj["symbol"]?.jsonPrimitive?.content ?: continue
-                    val amount = obj["amount"]?.jsonPrimitive?.int ?: continue
+                    val amount = obj["amount"]?.jsonPrimitive?.double ?: continue
                     val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
                     updateMap[symbol] = amount to targetWeight
                 }
@@ -98,7 +115,7 @@ fun Application.configureRouting() {
                             val update = updateMap[symbol]
                             val values = headers.map { header ->
                                 when {
-                                    header == "amount" && update != null -> update.first.toString()
+                                    header == "amount" && update != null -> formatQty(update.first)
                                     header == "target_weight" && update != null -> update.second.toString()
                                     else -> row[header] ?: ""
                                 }
@@ -142,7 +159,8 @@ fun Application.configureRouting() {
                     val eqIdx = trimmed.indexOf('=')
                     if (eqIdx < 0) return@map line
                     val key = trimmed.substring(0, eqIdx).trim()
-                    val newAmount = updateMap[key]
+                    val normalizedKey = normalizeCashKey(key)
+                    val newAmount = updateMap[normalizedKey]
                     if (newAmount != null) "$key=$newAmount" else line
                 }
                 file.writeText(newLines.joinToString("\n") + "\n")

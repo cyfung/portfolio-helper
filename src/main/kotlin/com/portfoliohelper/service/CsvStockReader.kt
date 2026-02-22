@@ -30,7 +30,7 @@ object CsvStockReader {
             for (record in parser) {
                 try {
                     val label = record.get("stock_label")
-                    val amount = record.get("amount").toInt()
+                    val amount = record.get("amount").toDouble()
 
                     // Read target_weight if column exists (backward compatible)
                     val targetWeight = try {

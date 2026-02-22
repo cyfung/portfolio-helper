@@ -10,6 +10,9 @@ import io.ktor.server.html.*
 import kotlinx.html.*
 import kotlin.math.abs
 
+private fun formatQty(amount: Double) =
+    if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()
+
 internal suspend fun ApplicationCall.renderPortfolioPage(
     entry: ManagedPortfolio,
     allPortfolios: Collection<ManagedPortfolio>,
@@ -417,13 +420,13 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Qty (Amount)
                     td(classes = "amount") {
                         id = "amount-${stock.label}"
-                        span(classes = "display-value") { +stock.amount.toString() }
+                        span(classes = "display-value") { +formatQty(stock.amount) }
                         input(type = InputType.number, classes = "edit-input edit-qty") {
                             attributes["data-symbol"] = stock.label
                             attributes["data-column"] = "qty"
-                            value = stock.amount.toString()
+                            value = formatQty(stock.amount)
                             attributes["min"] = "0"
-                            attributes["step"] = "1"
+                            attributes["step"] = "any"
                         }
                     }
 
