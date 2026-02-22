@@ -2,6 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
+import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import io.ktor.http.*
@@ -216,9 +217,15 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
                 } else {
                     div(classes = "portfolio-tables-wrapper") {
-                        table(classes = "summary-table") {
-                            tbody {
-                                buildSummaryRows(cashEntries, ::resolveEntryUsd, portfolio, cashTotalUsd)
+                        div(classes = "summary-and-rates") {
+                            table(classes = "summary-table") {
+                                tbody {
+                                    buildSummaryRows(cashEntries, ::resolveEntryUsd, portfolio, cashTotalUsd)
+                                }
+                            }
+
+                            if (cashEntries.any { it.marginFlag }) {
+                                buildIbkrRatesTable(cashEntries, ::resolveEntryUsd, fxRateMap)
                             }
                         }
 
@@ -448,6 +455,62 @@ private fun TBODY.buildSummaryRows(
                     } else {
                         +" (${"%.1f%%".format(abs(mPct))})"
                     }
+                }
+            }
+        }
+    }
+}
+
+private fun FlowContent.buildIbkrRatesTable(
+    cashEntries: List<CashEntry>,
+    resolveEntryUsd: (CashEntry) -> Double?,
+    fxRateMap: Map<String, Double>
+) {
+    // Always show USD; add non-USD, non-P margin currencies sorted alphabetically
+    val marginCurrencies: List<String> = buildList {
+        add("USD")
+        cashEntries.filter { it.marginFlag }
+            .map { it.currency.uppercase() }
+            .filter { it != "USD" && it != "P" }
+            .distinct().sorted()
+            .forEach { add(it) }
+    }
+
+    // Total margin loan in USD (sum of absolute values of all margin entries)
+    val totalMarginUsd = cashEntries
+        .filter { it.marginFlag }
+        .sumOf { abs(resolveEntryUsd(it) ?: 0.0) }
+
+    data class RateRow(val currency: String, val display: String)
+    val rows = marginCurrencies.mapNotNull { ccy ->
+        val currencyRates = IbkrMarginRateService.getRates(ccy) ?: return@mapNotNull null
+        // Convert total margin to this currency for tier lookup
+        val fxRate = if (ccy == "USD") 1.0 else (fxRateMap[ccy] ?: return@mapNotNull null)
+        val loanAmount = totalMarginUsd / fxRate
+        val blended = if (loanAmount > 0) currencyRates.blendedRateIfMultiTier(loanAmount) else null
+        val text = if (blended != null)
+            "%.3f%% (%.3f%%)".format(blended, currencyRates.baseRate)
+        else
+            "%.3f%%".format(currencyRates.baseRate)
+        RateRow(ccy, text)
+    }
+
+    if (rows.isEmpty()) return
+
+    table(classes = "ibkr-rates-table") {
+        thead {
+            tr {
+                th {
+                    attributes["colspan"] = "2"
+                    +"IBKR Pro Margin Rates"
+                }
+            }
+        }
+        tbody {
+            for (row in rows) {
+                tr {
+                    td(classes = "ibkr-rate-currency") { +row.currency }
+                    td(classes = "ibkr-rate-value") { +row.display }
                 }
             }
         }

@@ -1,6 +1,7 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.*
+import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.service.CashReader
@@ -154,7 +155,18 @@ fun main() {
     initializeNavData()
 
     // ---------------------------------------------------------------
-    // 8. File watchers — one CSV + one cash per portfolio
+    // 8. Initialize IBKR margin rate service
+    // ---------------------------------------------------------------
+    try {
+        logger.info("Initializing IBKR margin rate service...")
+        IbkrMarginRateService.initialize()
+    } catch (e: Exception) {
+        logger.error("Failed to initialize IBKR margin rate service", e)
+        logger.warn("Application will continue without IBKR margin rate data")
+    }
+
+    // ---------------------------------------------------------------
+    // 9. File watchers — one CSV + one cash per portfolio
     // ---------------------------------------------------------------
     val fileWatchers = mutableListOf<CsvFileWatcher>()
 
@@ -196,7 +208,7 @@ fun main() {
     }
 
     // ---------------------------------------------------------------
-    // 9. Shutdown hook
+    // 10. Shutdown hook
     // ---------------------------------------------------------------
     val port = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8080
     var stopServer: () -> Unit = {}
@@ -206,13 +218,14 @@ fun main() {
         runCatching { stopServer() }
         SystemTrayService.shutdown()
         fileWatchers.forEach { it.stop() }
+        IbkrMarginRateService.shutdown()
         NavService.shutdown()
         YahooMarketDataService.shutdown()
         logger.info("Cleanup completed")
     })
 
     // ---------------------------------------------------------------
-    // 10. System tray
+    // 11. System tray
     // ---------------------------------------------------------------
     val traySupported = SystemTrayService.initialize(
         serverUrl = "http://localhost:$port",
@@ -229,7 +242,7 @@ fun main() {
     }
 
     // ---------------------------------------------------------------
-    // 11. Start web server
+    // 12. Start web server
     // ---------------------------------------------------------------
     logger.info("Starting web server on port $port...")
     try {
