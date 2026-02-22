@@ -126,13 +126,10 @@ tasks.jpackage {
     icon.set(file("${projectDir}/src/main/resources/static/images/app-icon.ico"))
 }
 
-// Copy data and config files into jpackage output
+// Copy config files into jpackage output (data/ is generated at runtime on first run)
 tasks.register<Copy>("copyJpackageData") {
     dependsOn(tasks.jpackage)
 
-    from("src/main/resources/data") {
-        into("data")
-    }
     from("src/main/resources") {
         include("logback.xml")
         into("config")
@@ -167,17 +164,12 @@ launch4j {
 // Portable Distribution Tasks
 tasks.register<Zip>("portableDistZip") {
     group = "distribution"
-    description = "Creates a portable ZIP distribution with shadow JAR, data, and config"
+    description = "Creates a portable ZIP distribution with shadow JAR and config (data/ generated at runtime)"
     archiveBaseName.set("${project.name}-portable")
     archiveClassifier.set("complete")
 
     from(tasks.shadowJar) {
         into("${project.name}")
-    }
-
-    from("src/main/resources/data") {
-        into("${project.name}/data")
-        include("*.csv", "*.txt", "README.md")
     }
 
     from("docs") {
@@ -194,7 +186,7 @@ tasks.register<Zip>("portableDistZip") {
 
 tasks.register<Tar>("portableDistTar") {
     group = "distribution"
-    description = "Creates a portable TAR.GZ distribution with shadow JAR, data, and config"
+    description = "Creates a portable TAR.GZ distribution with shadow JAR and config (data/ generated at runtime)"
     archiveBaseName.set("${project.name}-portable")
     archiveClassifier.set("complete")
     compression = Compression.GZIP
@@ -202,11 +194,6 @@ tasks.register<Tar>("portableDistTar") {
 
     from(tasks.shadowJar) {
         into("${project.name}")
-    }
-
-    from("src/main/resources/data") {
-        into("${project.name}/data")
-        include("*.csv", "*.txt", "README.md")
     }
 
     from("docs") {
@@ -223,7 +210,7 @@ tasks.register<Tar>("portableDistTar") {
 
 tasks.register<Zip>("windowsDistZip") {
     group = "distribution"
-    description = "Creates a Windows distribution with EXE launcher"
+    description = "Creates a Windows distribution with EXE launcher (data/ generated at runtime)"
     archiveBaseName.set("${project.name}-windows")
     archiveClassifier.set("exe")
 
@@ -236,11 +223,6 @@ tasks.register<Zip>("windowsDistZip") {
 
     from(tasks.shadowJar) {
         into("${project.name}/lib")
-    }
-
-    from("src/main/resources/data") {
-        into("${project.name}/data")
-        include("*.csv", "*.txt", "README.md")
     }
 
     from("docs") {
