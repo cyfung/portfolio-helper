@@ -221,6 +221,62 @@ h1 {
 }
 
 /* ============================================
+   Currency Toggle Button & Select
+   ============================================ */
+.currency-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-sm) var(--spacing-xl);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.currency-toggle:hover {
+    background-color: var(--color-bg-hover);
+    border-color: var(--color-accent-primary);
+}
+
+.currency-toggle:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+}
+
+[data-theme="dark"] .currency-toggle:focus {
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+.currency-select {
+    padding: var(--spacing-sm) var(--spacing-xl);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.currency-select:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+}
+
+[data-theme="dark"] .currency-select:focus {
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+/* ============================================
    Theme Toggle Button
    ============================================ */
 .theme-toggle {

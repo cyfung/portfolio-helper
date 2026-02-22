@@ -43,6 +43,15 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
         }
     }
 
+    // Compute totals and display currencies at function level so they can be used in both head and body
+    val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
+    val displayCurrencies: List<String> = buildList {
+        add("USD")
+        cashEntries.map { it.currency.uppercase() }
+            .distinct().filter { it != "P" && it != "USD" }
+            .sorted().forEach { add(it) }
+    }
+
     respondHtml(HttpStatusCode.OK) {
         head {
             title { +"Stock Portfolio Viewer" }
@@ -79,9 +88,19 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                 append(" }")
                             }
                         };
+                        const displayCurrencies = ${
+                            buildString {
+                                append("[")
+                                displayCurrencies.joinTo(this, ",") { "\"$it\"" }
+                                append("]")
+                            }
+                        };
                         let lastMarginUsd = 0;
                         let lastEquityUsd = 0;
-                        let lastPortfolioVal = 0;
+                        let lastPortfolioVal = ${"%.2f".format(portfolio.totalValue)};
+                        let lastPrevPortfolioVal = ${"%.2f".format(portfolio.previousTotalValue)};
+                        let lastPortfolioDayChangeUsd = ${"%.2f".format(portfolio.dailyChangeDollars)};
+                        let lastCashTotalUsd = ${"%.2f".format(cashTotalUsd)};
                         """.trimIndent()
                     )
                 }
@@ -133,6 +152,28 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Rebalancing" }
                         }
 
+                        if (displayCurrencies.size > 1) {
+                            if (displayCurrencies.size <= 3) {
+                                button(classes = "currency-toggle") {
+                                    attributes["id"] = "currency-toggle"
+                                    attributes["type"] = "button"
+                                    attributes["data-currencies"] = displayCurrencies.joinToString(",")
+                                    attributes["title"] = "Switch display currency"
+                                    span(classes = "toggle-label") { +"USD" }
+                                }
+                            } else {
+                                select(classes = "currency-select") {
+                                    attributes["id"] = "currency-select"
+                                    for (ccy in displayCurrencies) {
+                                        option {
+                                            attributes["value"] = ccy
+                                            +ccy
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         button(classes = "theme-toggle") {
                             attributes["aria-label"] = "Toggle theme"
                             attributes["id"] = "theme-toggle"
@@ -173,8 +214,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
                 } else {
                     div(classes = "portfolio-tables-wrapper") {
-                        val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
-
                         table(classes = "summary-table") {
                             tbody {
                                 buildSummaryRows(cashEntries, ::resolveEntryUsd, portfolio, cashTotalUsd)

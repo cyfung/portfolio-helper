@@ -2,6 +2,8 @@
 const componentDayPercents = {};
 let globalIsMarketClosed = false;
 let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
+// Display currency (USD by default; lastPortfolioVal/lastCashTotalUsd/etc. declared in inline script)
+let currentDisplayCurrency = 'USD';
 
 // Connect to SSE for live price updates
 const eventSource = new EventSource('/api/prices/stream');
@@ -233,17 +235,15 @@ function updateTotalValue() {
     });
 
     lastPortfolioVal = total;
+    lastPrevPortfolioVal = previousTotal;
 
     // Update portfolio total
     const totalCell = document.getElementById('portfolio-total');
-    if (totalCell) {
-        totalCell.textContent = '$' + total.toLocaleString('en-US', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2
-        });
-    }
+    if (totalCell) totalCell.textContent = formatDisplayCurrency(total);
 
     // Update portfolio daily change
     const changeDollars = total - previousTotal;
+    lastPortfolioDayChangeUsd = changeDollars;
     const changePercent = previousTotal > 0 ? (changeDollars / previousTotal) * 100 : 0;
     const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
 
@@ -252,7 +252,7 @@ function updateTotalValue() {
     if (portfolioChangeCell) {
         const sign = changeDollars >= 0 ? '+' : '-';
         portfolioChangeCell.innerHTML =
-            '<span class="change-dollars ' + changeClass + '">' + formatSignedCurrency(changeDollars) + '</span> ' +
+            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
             '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
     }
 
@@ -260,19 +260,17 @@ function updateTotalValue() {
     updateRebalancingColumns(total);
 
     // Update grand total (portfolio + cash)
-    const cashEl = document.getElementById('cash-total-usd');
-    const cashUsd = cashEl ? (parsePrice(cashEl.textContent) || 0) : 0;
     const grandEl = document.getElementById('grand-total-value');
-    if (grandEl) grandEl.textContent = formatCurrency(total + cashUsd);
+    if (grandEl) grandEl.textContent = formatDisplayCurrency(total + lastCashTotalUsd);
 
     // Total Value day change: same $ amount, but % relative to previous grand total
     const totalChangeCell = document.getElementById('total-day-change');
     if (totalChangeCell) {
-        const prevGrandTotal = previousTotal + cashUsd;
+        const prevGrandTotal = previousTotal + lastCashTotalUsd;
         const totalChangePercent = prevGrandTotal !== 0 ? (changeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
         const sign = changeDollars >= 0 ? '+' : '-';
         totalChangeCell.innerHTML =
-            '<span class="change-dollars ' + changeClass + '">' + formatSignedCurrency(changeDollars) + '</span> ' +
+            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
             '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePercent).toFixed(2) + '%)</span>';
     }
 
@@ -292,15 +290,32 @@ function formatSignedCurrency(val) {
     return sign + formatCurrency(val);
 }
 
+function toDisplayCurrency(usdVal) {
+    const rate = fxRates[currentDisplayCurrency];
+    return (rate && rate !== 0) ? usdVal / rate : usdVal;
+}
+
+function formatDisplayCurrency(usdVal) {
+    const converted = toDisplayCurrency(usdVal);
+    const ccy = currentDisplayCurrency;
+    const absVal = Math.abs(converted);
+    const sign = converted < 0 ? '-' : '';
+    const formatted = absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return ccy === 'USD' ? (sign + '$' + formatted) : (sign + formatted + '\u00A0' + ccy);
+}
+
+function formatSignedDisplayCurrency(usdVal) {
+    const converted = toDisplayCurrency(usdVal);
+    return (converted >= 0 ? '+' : '') + formatDisplayCurrency(usdVal);
+}
+
 function updateMarginDisplay(marginUsd) {
     const marginEl = document.getElementById('margin-total-usd');
     if (!marginEl) return;
-    marginEl.textContent = formatCurrency(marginUsd);
+    marginEl.textContent = formatDisplayCurrency(marginUsd);
     const marginPctEl = document.getElementById('margin-percent');
     if (marginUsd < 0) {
-        const portfolioEl = document.getElementById('portfolio-total');
-        const portfolioVal = portfolioEl ? (parsePrice(portfolioEl.textContent) || 0) : lastPortfolioVal;
-        const denominator = portfolioVal + lastEquityUsd + lastMarginUsd;
+        const denominator = lastPortfolioVal + lastEquityUsd + lastMarginUsd;
         const pct = denominator !== 0 ? (marginUsd / denominator) * 100 : 0;
         if (marginPctEl) {
             marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
@@ -325,7 +340,7 @@ function updateCashTotals() {
         let usd = 0;
         if (rate !== undefined) {
             usd = amount * rate;
-            if (span) span.textContent = formatCurrency(usd);
+            if (span) span.textContent = formatDisplayCurrency(usd);
         } else {
             usd = (ccy === 'USD' ? amount : 0);
         }
@@ -334,16 +349,15 @@ function updateCashTotals() {
         if (row.dataset.equityFlag === 'true') equityUsd += usd;
     });
     lastEquityUsd = equityUsd;
+    lastCashTotalUsd = totalUsd;
     const cashTotalEl = document.getElementById('cash-total-usd');
-    if (cashTotalEl) cashTotalEl.textContent = formatCurrency(totalUsd);
+    if (cashTotalEl) cashTotalEl.textContent = formatDisplayCurrency(totalUsd);
     lastMarginUsd = marginUsd;
     updateMarginDisplay(marginUsd);
 
     // Update grand total
-    const portfolioEl = document.getElementById('portfolio-total');
-    const portfolioVal = portfolioEl ? (parsePrice(portfolioEl.textContent) || 0) : lastPortfolioVal;
     const grandEl = document.getElementById('grand-total-value');
-    if (grandEl) grandEl.textContent = formatCurrency(portfolioVal + totalUsd);
+    if (grandEl) grandEl.textContent = formatDisplayCurrency(lastPortfolioVal + totalUsd);
 }
 
 function updateCurrentWeights(portfolioTotal) {
@@ -486,6 +500,51 @@ function updateAllEstVals() {
             estValCell.classList.add('loaded');
         }
     });
+}
+
+function refreshDisplayCurrency() {
+    // Portfolio total
+    const totalCell = document.getElementById('portfolio-total');
+    if (totalCell) totalCell.textContent = formatDisplayCurrency(lastPortfolioVal);
+
+    // Portfolio day change
+    const changeDollars = lastPortfolioDayChangeUsd;
+    const changePercent = lastPrevPortfolioVal > 0 ? (changeDollars / lastPrevPortfolioVal) * 100 : 0;
+    const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
+    const portfolioChangeCell = document.getElementById('portfolio-day-change');
+    if (portfolioChangeCell) {
+        const sign = changeDollars >= 0 ? '+' : '-';
+        portfolioChangeCell.innerHTML =
+            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
+            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
+    }
+
+    // Cash entry USD spans
+    document.querySelectorAll('[data-cash-entry]').forEach(row => {
+        const ccy = row.dataset.currency;
+        const amount = parseFloat(row.dataset.amount);
+        const rate = fxRates[ccy];
+        const span = document.getElementById('cash-usd-' + row.dataset.entryId);
+        if (span && rate !== undefined) span.textContent = formatDisplayCurrency(amount * rate);
+    });
+
+    // Cash total, margin, grand total
+    const cashTotalEl = document.getElementById('cash-total-usd');
+    if (cashTotalEl) cashTotalEl.textContent = formatDisplayCurrency(lastCashTotalUsd);
+    updateMarginDisplay(lastMarginUsd);
+    const grandEl = document.getElementById('grand-total-value');
+    if (grandEl) grandEl.textContent = formatDisplayCurrency(lastPortfolioVal + lastCashTotalUsd);
+
+    // Total day change
+    const totalChangeCell = document.getElementById('total-day-change');
+    if (totalChangeCell) {
+        const prevGrand = lastPrevPortfolioVal + lastCashTotalUsd;
+        const totalChangePct = prevGrand !== 0 ? (changeDollars / Math.abs(prevGrand)) * 100 : 0;
+        const sign = changeDollars >= 0 ? '+' : '-';
+        totalChangeCell.innerHTML =
+            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
+            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePct).toFixed(2) + '%)</span>';
+    }
 }
 
 // Rebalancing columns toggle
@@ -631,6 +690,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Currency toggle button (≤3 currencies)
+    const currencyToggle = document.getElementById('currency-toggle');
+    if (currencyToggle) {
+        const currencies = currencyToggle.getAttribute('data-currencies').split(',');
+        const saved = localStorage.getItem('ib-viewer-display-currency');
+        if (saved && currencies.includes(saved)) {
+            currentDisplayCurrency = saved;
+            currencyToggle.querySelector('.toggle-label').textContent = saved;
+        }
+        currencyToggle.addEventListener('click', () => {
+            const idx = currencies.indexOf(currentDisplayCurrency);
+            currentDisplayCurrency = currencies[(idx + 1) % currencies.length];
+            currencyToggle.querySelector('.toggle-label').textContent = currentDisplayCurrency;
+            localStorage.setItem('ib-viewer-display-currency', currentDisplayCurrency);
+            refreshDisplayCurrency();
+        });
+    }
+
+    // Currency select dropdown (>3 currencies)
+    const currencySelect = document.getElementById('currency-select');
+    if (currencySelect) {
+        const savedSel = localStorage.getItem('ib-viewer-display-currency');
+        if (savedSel) { currentDisplayCurrency = savedSel; currencySelect.value = savedSel; }
+        currencySelect.addEventListener('change', () => {
+            currentDisplayCurrency = currencySelect.value;
+            localStorage.setItem('ib-viewer-display-currency', currentDisplayCurrency);
+            refreshDisplayCurrency();
+        });
+    }
+
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
     updateCashTotals();
+
+    // Refresh display currency for any server-rendered values (portfolio total, day change)
+    if (currentDisplayCurrency !== 'USD') {
+        refreshDisplayCurrency();
+    }
 });

@@ -1,4 +1,4 @@
 # Cash balances — format: Label.Currency[.M]=Amount  (append .M to mark as margin balance)
 Cash.HKD.M=1234
 Cash.USD.M=123
-Interest.USD.M=-700
+New Capital.HKD.E=1000
