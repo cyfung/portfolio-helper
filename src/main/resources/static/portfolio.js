@@ -329,6 +329,11 @@ function updateMarginTargetDisplay() {
     const marginTargetRow = document.getElementById('margin-target-row');
     if (!marginTargetRow) return;
 
+    if (rebalTargetUsd === null) {
+        marginTargetRow.style.display = 'none';
+        return;
+    }
+
     const rebalTotal = getRebalTotal();
     const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
 
