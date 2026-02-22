@@ -225,12 +225,22 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                 }
                             }
 
+                            buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
+
                             if (cashEntries.any { it.marginFlag }) {
                                 buildIbkrRatesTable(cashEntries, ::resolveEntryUsd, fxRateMap)
                             }
                         }
 
                         buildStockTable(portfolio)
+
+                        div(classes = "edit-add-buttons") {
+                            button(classes = "add-stock-btn") {
+                                attributes["type"] = "button"
+                                id = "add-stock-btn"
+                                +"+ Add Stock"
+                            }
+                        }
                     }
 
                     p(classes = "info") {
@@ -304,28 +314,10 @@ private fun TBODY.buildSummaryRows(
             td { +displayLabel }
             td(classes = "cash-raw-col") {
                 if (entry.portfolioRef != null) {
-                    // P entries: show resolved USD amount (non-editable)
-                    span(classes = "cash-display") {
-                        val resolvedUsd = resolveEntryUsd(entry)
-                        if (resolvedUsd != null) {
-                            +"${"%,.2f".format(resolvedUsd)} USD"
-                        } else {
-                            +"--- USD"
-                        }
-                    }
+                    val resolvedUsd = resolveEntryUsd(entry)
+                    if (resolvedUsd != null) +"${"%,.2f".format(resolvedUsd)} USD" else +"--- USD"
                 } else {
-                    span(classes = "cash-display") {
-                        +"${"%,.2f".format(entry.amount)} ${entry.currency}"
-                    }
-                    span(classes = "cash-edit") {
-                        input(type = InputType.number, classes = "edit-input cash-amount-input") {
-                            attributes["step"] = "any"
-                            value = entry.amount.toString()
-                            attributes["data-key"] = entry.key
-                            attributes["data-column"] = "cash-amount"
-                        }
-                        +" ${entry.currency}"
-                    }
+                    +"${"%,.2f".format(entry.amount)} ${entry.currency}"
                 }
             }
             td {
@@ -477,22 +469,23 @@ private fun FlowContent.buildIbkrRatesTable(
             .forEach { add(it) }
     }
 
-    // Total margin loan in USD (sum of absolute values of all margin entries)
-    val totalMarginUsd = cashEntries
+    // Net margin in USD — negative means the user is actually borrowing
+    val netMarginUsd = cashEntries
         .filter { it.marginFlag }
-        .sumOf { abs(resolveEntryUsd(it) ?: 0.0) }
+        .sumOf { resolveEntryUsd(it) ?: 0.0 }
+    val totalMarginLoanUsd = if (netMarginUsd < 0) -netMarginUsd else 0.0
 
-    data class RateRow(val currency: String, val rateDisplay: String, val dailyInterestUsd: Double)
+    data class RateRow(val currency: String, val rateDisplay: String, val dailyInterestUsd: Double?)
     val rows = marginCurrencies.mapNotNull { ccy ->
         val currencyRates = IbkrMarginRateService.getRates(ccy) ?: return@mapNotNull null
-        // Convert total margin to this currency for tier lookup
         val fxRate = if (ccy == "USD") 1.0 else (fxRateMap[ccy] ?: return@mapNotNull null)
-        val loanAmount = totalMarginUsd / fxRate
+        val loanAmount = totalMarginLoanUsd / fxRate
         val blended = if (loanAmount > 0) currencyRates.blendedRateIfMultiTier(loanAmount) else null
         val effectiveRate = blended ?: currencyRates.baseRate
         val daysInYear = CurrencyConventions.getDaysInYear(ccy)
-        // fxRate cancels: (totalMarginUsd / fxRate) * effectiveRate/100 / daysInYear * fxRate
-        val dailyInterestUsd = totalMarginUsd * effectiveRate / 100.0 / daysInYear
+        val dailyInterestUsd = if (totalMarginLoanUsd > 0)
+            totalMarginLoanUsd * effectiveRate / 100.0 / daysInYear
+        else null
         val rateDisplay = if (blended != null)
             "%.3f%% (%.3f%%)".format(blended, currencyRates.baseRate)
         else
@@ -502,7 +495,7 @@ private fun FlowContent.buildIbkrRatesTable(
 
     if (rows.isEmpty()) return
 
-    val minDailyInterest = rows.minOf { it.dailyInterestUsd }
+    val minDailyInterest = rows.mapNotNull { it.dailyInterestUsd }.minOrNull()
     val lastFetchMillis = IbkrMarginRateService.getLastFetchMillis()
 
     div(classes = "ibkr-rates-wrapper") {
@@ -520,11 +513,16 @@ private fun FlowContent.buildIbkrRatesTable(
                     td(classes = "ibkr-rate-currency") { +row.currency }
                     td(classes = "ibkr-rate-value") { +row.rateDisplay }
                     td(classes = "ibkr-rate-daily") {
-                        +"${"$"}%,.2f".format(row.dailyInterestUsd)
-                        val diff = row.dailyInterestUsd - minDailyInterest
-                        if (diff >= 0.005) {
-                            span(classes = "ibkr-rate-diff") {
-                                +" (+${"$"}%,.2f)".format(diff)
+                        val interest = row.dailyInterestUsd
+                        if (interest == null) {
+                            +"—"
+                        } else {
+                            +"${"$"}%,.2f".format(interest)
+                            val diff = interest - (minDailyInterest ?: 0.0)
+                            if (diff >= 0.005) {
+                                span(classes = "ibkr-rate-diff") {
+                                    +" (+${"$"}%,.2f)".format(diff)
+                                }
                             }
                         }
                     }
@@ -552,6 +550,50 @@ private fun FlowContent.buildIbkrRatesTable(
         }
     }
     } // end ibkr-rates-wrapper
+}
+
+private fun FlowContent.buildCashEditTable(sortedEntries: List<CashEntry>) {
+    div(classes = "cash-edit-table-wrapper") {
+        table(classes = "cash-edit-table") {
+            tbody {
+                for (entry in sortedEntries) {
+                    val valueStr = if (entry.portfolioRef != null) {
+                        if (entry.amount < 0) "-${entry.portfolioRef}" else entry.portfolioRef
+                    } else {
+                        entry.amount.toString()
+                    }
+                    tr {
+                        attributes["data-cash-edit-row"] = "true"
+                        td {
+                            input(type = InputType.text, classes = "edit-input cash-edit-key") {
+                                attributes["data-original-key"] = entry.key
+                                attributes["data-column"] = "cash-key"
+                                value = entry.key
+                            }
+                        }
+                        td {
+                            input(type = InputType.text, classes = "edit-input cash-edit-value") {
+                                attributes["data-original-value"] = valueStr
+                                attributes["data-column"] = "cash-value"
+                                value = valueStr
+                            }
+                        }
+                        td {
+                            button(classes = "delete-cash-btn") {
+                                attributes["type"] = "button"
+                                +"×"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        button(classes = "add-cash-btn") {
+            attributes["type"] = "button"
+            id = "add-cash-btn"
+            +"+ Add Entry"
+        }
+    }
 }
 
 private fun FlowContent.buildStockTable(portfolio: Portfolio) {
@@ -588,6 +630,8 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         unsafe { raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>""") }
                     }
                 }
+                th(classes = "edit-column") { +"Letf" }
+                th(classes = "edit-column") { }
             }
         }
         tbody {
@@ -598,8 +642,15 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                             stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
                     }
 
-                    // Symbol
-                    td { +stock.label }
+                    // Symbol (editable in edit mode)
+                    td {
+                        span(classes = "display-value") { +stock.label }
+                        input(type = InputType.text, classes = "edit-input edit-symbol") {
+                            attributes["data-original-symbol"] = stock.label
+                            attributes["data-column"] = "symbol"
+                            value = stock.label
+                        }
+                    }
 
                     // Qty (Amount)
                     td(classes = "amount") {
@@ -742,7 +793,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                             val currentWeight = (stockValue / portfolio.totalValue) * 100
 
                             if (stock.targetWeight != null) {
-                                val diff = currentWeight - stock.targetWeight!!
+                                val diff = currentWeight - stock.targetWeight
                                 val sign = if (diff >= 0) "+" else "-"
                                 val diffClass = when {
                                     abs(diff) > 2.0 -> "alert"
@@ -806,6 +857,28 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                             attributes["min"] = "0"
                             attributes["max"] = "100"
                             attributes["step"] = "0.1"
+                        }
+                    }
+
+                    // Letf (edit-only column)
+                    val letfRaw = stock.letfComponents
+                        ?.joinToString(" ") { (mult, sym) ->
+                            "${if (mult == mult.toLong().toDouble()) mult.toLong() else mult} $sym"
+                        } ?: ""
+                    td(classes = "edit-column") {
+                        input(type = InputType.text, classes = "edit-input edit-letf") {
+                            attributes["data-symbol"] = stock.label
+                            attributes["data-column"] = "letf"
+                            value = letfRaw
+                            style = "text-align:left;width:120px"
+                        }
+                    }
+
+                    // Delete (edit-only column)
+                    td(classes = "edit-column") {
+                        button(classes = "delete-row-btn") {
+                            attributes["type"] = "button"
+                            +"×"
                         }
                     }
                 }

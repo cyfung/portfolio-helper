@@ -1058,27 +1058,6 @@ h1 {
     display: none;
 }
 
-/* ============================================
-   Cash Edit Mode
-   ============================================ */
-.cash-edit {
-    display: none;
-    align-items: center;
-    gap: 4px;
-}
-
-.editing-active .cash-edit {
-    display: inline-flex;
-}
-
-.editing-active .cash-display {
-    display: none;
-}
-
-.editing-active .cash-amount-input {
-    width: 100px;
-    text-align: right;
-}
 
 /* ============================================
    Margin Row
@@ -1525,4 +1504,115 @@ a.loan-calc-link:hover {
 .ibkr-reload-btn:disabled {
     cursor: not-allowed;
     opacity: 0.35;
+}
+
+/* ============================================
+   Delete Row / Cash Buttons
+   ============================================ */
+.delete-row-btn,
+.delete-cash-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+}
+
+.delete-row-btn:hover,
+.delete-cash-btn:hover {
+    background: #e53e3e;
+    color: #fff;
+}
+
+
+/* ============================================
+   Add Stock / Add Entry Buttons
+   ============================================ */
+.edit-add-buttons {
+    display: none;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) 0;
+}
+
+body.editing-active .edit-add-buttons {
+    display: flex;
+}
+
+.add-stock-btn,
+.add-cash-btn {
+    background: none;
+    border: 1px dashed var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-sm) var(--spacing-lg);
+}
+
+.add-stock-btn:hover,
+.add-cash-btn:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text-primary);
+}
+
+/* ============================================
+   Edit Mode: Hide non-editable sections
+   ============================================ */
+
+/* Hide IBKR rates table in edit mode */
+body.editing-active .ibkr-rates-wrapper {
+    display: none;
+}
+
+/* Hide summary table in edit mode (replaced by cash-edit-table) */
+body.editing-active .summary-table {
+    display: none;
+}
+
+/* ============================================
+   Cash Edit Table (edit mode only)
+   ============================================ */
+.cash-edit-table-wrapper {
+    display: none;
+}
+
+body.editing-active .cash-edit-table-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: fit-content;
+}
+
+.cash-edit-table {
+    border-collapse: collapse;
+    width: auto;
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.cash-edit-table td {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    vertical-align: middle;
+}
+
+/* Symbol input: left-aligned text */
+body.editing-active .edit-symbol {
+    text-align: left;
+    width: 80px;
+}
+
+/* Cash key input: wider, left-aligned */
+body.editing-active .cash-edit-key {
+    text-align: left;
+    width: 160px;
+}
+
+/* Cash value input */
+body.editing-active .cash-edit-value {
+    width: 100px;
+    text-align: right;
 }

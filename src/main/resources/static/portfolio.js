@@ -220,6 +220,7 @@ function updateTotalValue() {
 
     // Calculate current total and previous day's total
     document.querySelectorAll('tbody tr').forEach(row => {
+        if (row.dataset.deleted) return;
         const symbol = row.querySelector('td:first-child').textContent.trim();
         const amountCell = document.getElementById('amount-' + symbol);
         const markCell = document.getElementById('mark-' + symbol);
@@ -642,10 +643,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 const displaySpan = amountCell ? amountCell.querySelector('.display-value') : null;
                 if (displaySpan) input.value = displaySpan.textContent.trim();
             });
-            // Populate cash inputs from row data-amount
-            document.querySelectorAll('.cash-amount-input').forEach(input => {
-                const row = input.closest('[data-cash-entry]');
-                if (row) input.value = row.dataset.amount;
+
+        } else {
+            // Restore deleted rows
+            document.querySelectorAll('[data-deleted="true"]').forEach(el => {
+                el.removeAttribute('data-deleted');
+                el.style.display = '';
+            });
+            // Remove dynamically added new rows
+            document.querySelectorAll('[data-new-stock], [data-new-cash]').forEach(el => el.remove());
+            // Reset symbol inputs to original values
+            document.querySelectorAll('.edit-symbol').forEach(input => {
+                input.value = input.getAttribute('data-original-symbol') || '';
+            });
+            // Reset cash edit table inputs to original values
+            document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
+                const keyInput = tr.querySelector('.cash-edit-key');
+                const valInput = tr.querySelector('.cash-edit-value');
+                if (keyInput) keyInput.value = keyInput.getAttribute('data-original-key') || '';
+                if (valInput) valInput.value = valInput.getAttribute('data-original-value') || '';
             });
         }
     });
@@ -653,22 +669,43 @@ document.addEventListener('DOMContentLoaded', () => {
     // Save button
     saveBtn.addEventListener('click', () => {
         const updates = [];
-        document.querySelectorAll('.edit-qty').forEach(input => {
-            const sym = input.getAttribute('data-symbol');
-            const weightInput = document.querySelector('.edit-weight[data-symbol="' + sym + '"]');
+        // Existing stock rows (not dynamically added)
+        document.querySelectorAll('.portfolio-table tbody tr:not([data-new-stock])').forEach(tr => {
+            if (tr.dataset.deleted) return;
+            const symInput = tr.querySelector('.edit-symbol');
+            const sym = symInput ? symInput.value.trim().toUpperCase() : null;
+            if (!sym) return;
+            const qtyInput = tr.querySelector('.edit-qty');
+            const weightInput = tr.querySelector('.edit-weight');
+            const letfInput = tr.querySelector('.edit-letf');
             updates.push({
                 symbol: sym,
-                amount: parseFloat(input.value) || 0,
-                targetWeight: weightInput ? parseFloat(weightInput.value) || 0 : 0
+                amount: parseFloat(qtyInput?.value) || 0,
+                targetWeight: weightInput ? parseFloat(weightInput.value) || 0 : 0,
+                letf: letfInput?.value || ''
+            });
+        });
+        // New stock rows added in edit mode
+        document.querySelectorAll('.portfolio-table tbody tr[data-new-stock]').forEach(tr => {
+            if (tr.dataset.deleted) return;
+            const sym = (tr.querySelector('.new-symbol-input')?.value || '').trim().toUpperCase();
+            if (!sym) return;
+            updates.push({
+                symbol: sym,
+                amount: parseFloat(tr.querySelector('input[data-column="qty"]')?.value) || 0,
+                targetWeight: parseFloat(tr.querySelector('input[data-column="weight"]')?.value) || 0,
+                letf: tr.querySelector('input[data-column="letf"]')?.value || ''
             });
         });
 
         const cashUpdates = [];
-        document.querySelectorAll('.cash-amount-input').forEach(input => {
-            cashUpdates.push({
-                key: input.getAttribute('data-key'),
-                amount: parseFloat(input.value) || 0
-            });
+        // All cash edit rows (existing server-rendered + dynamically added, same structure)
+        document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
+            if (tr.dataset.deleted) return;
+            const key = (tr.querySelector('.cash-edit-key')?.value || '').trim();
+            const value = (tr.querySelector('.cash-edit-value')?.value || '').trim();
+            if (!key) return;
+            cashUpdates.push({ key, value });
         });
 
         saveBtn.disabled = true;
@@ -680,13 +717,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updates)
             }),
-            cashUpdates.length > 0
-                ? fetch('/api/cash/update?portfolio=' + portfolioId, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(cashUpdates)
-                  })
-                : Promise.resolve({ ok: true })
+            fetch('/api/cash/update?portfolio=' + portfolioId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cashUpdates)
+            })
         ];
 
         Promise.all(saves).then(results => {
@@ -703,6 +738,60 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Paste handler for Google Sheets column paste
+    // --- Edit mode helpers ---
+
+    const STOCK_ROW_HTML =
+        '<td><input type="text" class="edit-input new-symbol-input" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
+        '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
+        '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
+        '<td class="edit-column"><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
+        '<td class="edit-column"><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:120px" /></td>' +
+        '<td class="edit-column"><button type="button" class="delete-row-btn">\u00d7</button></td>';
+
+    const CASH_ROW_HTML =
+        '<td><input type="text" class="edit-input cash-edit-key" placeholder="Cash.USD.M" /></td>' +
+        '<td><input type="text" class="edit-input cash-edit-value" placeholder="0" /></td>' +
+        '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>';
+
+    const addStockRow = () => {
+        const tbody = document.querySelector('.portfolio-table tbody');
+        if (!tbody) return null;
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-new-stock', 'true');
+        tr.innerHTML = STOCK_ROW_HTML;
+        tbody.appendChild(tr);
+        return tr;
+    };
+
+    const addCashRow = () => {
+        const tbody = document.querySelector('.cash-edit-table tbody');
+        if (!tbody) return null;
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-cash-edit-row', 'true');
+        tr.setAttribute('data-new-cash', 'true');
+        tr.innerHTML = CASH_ROW_HTML;
+        tbody.appendChild(tr);
+        return tr;
+    };
+
+    // Returns [symInput, qtyInput, weightInput, letfInput] for any stock row (existing or new)
+    const getStockRowInputs = (tr) => [
+        tr.querySelector('.edit-symbol') || tr.querySelector('.new-symbol-input'),
+        tr.querySelector('.edit-qty')    || tr.querySelector('input[data-column="qty"]'),
+        tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]'),
+        tr.querySelector('.edit-letf')   || tr.querySelector('input[data-column="letf"]'),
+    ].filter(Boolean);
+
+    // Returns 0=sym, 1=qty, 2=weight, 3=letf — or -1 if not a stock input
+    const getStockColIndex = (el) => {
+        if (el.classList.contains('edit-symbol') || el.classList.contains('new-symbol-input')) return 0;
+        const col = el.getAttribute('data-column');
+        if (el.classList.contains('edit-qty')    || col === 'qty')    return 1;
+        if (el.classList.contains('edit-weight') || col === 'weight') return 2;
+        if (el.classList.contains('edit-letf')   || col === 'letf')   return 3;
+        return -1;
+    };
+
     document.addEventListener('paste', (e) => {
         if (!body.classList.contains('editing-active')) return;
 
@@ -712,21 +801,77 @@ document.addEventListener('DOMContentLoaded', () => {
         const clipText = (e.clipboardData || window.clipboardData).getData('text');
         const lines = clipText.split(/[\r\n]+/).filter(l => l.trim() !== '');
 
-        // Only intercept if multi-line (Google Sheets column paste)
+        // Only intercept multi-line
         if (lines.length <= 1) return;
 
         e.preventDefault();
 
-        const column = activeEl.getAttribute('data-column');
-        const allInputs = Array.from(document.querySelectorAll('.edit-input[data-column="' + column + '"]'));
-        const startIdx = allInputs.indexOf(activeEl);
+        const rows = lines.map(l => l.split('\t'));
+        const isMultiCol = rows.some(r => r.length >= 2);
 
-        for (let i = 0; i < lines.length && (startIdx + i) < allInputs.length; i++) {
-            const val = lines[i].trim().replace(/,/g, '');
-            const num = parseFloat(val);
-            if (!isNaN(num)) {
-                allInputs[startIdx + i].value = num.toString();
+        const isCashKey   = activeEl.classList.contains('cash-edit-key');
+        const isCashValue = activeEl.classList.contains('cash-edit-value');
+
+        if (isCashKey || isCashValue) {
+            // === Cash edit table ===
+            if (isMultiCol) {
+                // Multi-column: col0 → key, col1 → value (any extra cols ignored)
+                const tbody = document.querySelector('.cash-edit-table tbody');
+                if (!tbody) return;
+                let allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])'));
+                const startRow = activeEl.closest('tr');
+                let startIdx = allRows.indexOf(startRow);
+                if (startIdx < 0) startIdx = allRows.length;
+
+                rows.forEach((cols, i) => {
+                    let tr = allRows[startIdx + i];
+                    if (!tr) { tr = addCashRow(); allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])')); }
+                    if (!tr) return;
+                    const k = tr.querySelector('.cash-edit-key');
+                    const v = tr.querySelector('.cash-edit-value');
+                    if (k) k.value = cols[0].trim();
+                    if (v && cols[1] !== undefined) v.value = cols[1].trim();
+                });
+            } else {
+                // Single-column: fill focused column only, add rows as needed
+                const sel = isCashKey ? '.cash-edit-key' : '.cash-edit-value';
+                let allInputs = Array.from(document.querySelectorAll(sel));
+                const startIdx = allInputs.indexOf(activeEl);
+                if (startIdx < 0) return;
+                lines.forEach((line, i) => {
+                    if (startIdx + i < allInputs.length) {
+                        allInputs[startIdx + i].value = line.trim();
+                    } else {
+                        const tr = addCashRow();
+                        if (!tr) return;
+                        allInputs = Array.from(document.querySelectorAll(sel));
+                        const inp = tr.querySelector(sel);
+                        if (inp) inp.value = line.trim();
+                    }
+                });
             }
+        } else {
+            // === Stock table ===
+            const startColIdx = getStockColIndex(activeEl);
+            if (startColIdx < 0) return;
+
+            const tbody = document.querySelector('.portfolio-table tbody');
+            if (!tbody) return;
+            let allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])'));
+            const startRow = activeEl.closest('tr');
+            let startRowIdx = allRows.indexOf(startRow);
+            if (startRowIdx < 0) startRowIdx = allRows.length;
+
+            rows.forEach((cols, i) => {
+                let tr = allRows[startRowIdx + i];
+                if (!tr) { tr = addStockRow(); allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])')); }
+                if (!tr) return;
+                const inputs = getStockRowInputs(tr);
+                cols.forEach((val, j) => {
+                    const idx = startColIdx + j;
+                    if (idx < inputs.length) inputs[idx].value = val.trim();
+                });
+            });
         }
     });
 
@@ -807,6 +952,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateRebalTargetPlaceholder();
     updateMarginTargetDisplay();
+
+    // Delete button handler (event delegation for both static and dynamic rows)
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.delete-row-btn, .delete-cash-btn');
+        if (!btn || !body.classList.contains('editing-active')) return;
+        const row = btn.closest('tr');
+        if (row) {
+            row.setAttribute('data-deleted', 'true');
+            row.style.display = 'none';
+        }
+    });
+
+    // Add Stock button handler
+    document.getElementById('add-stock-btn')?.addEventListener('click', () => {
+        const tr = addStockRow();
+        if (tr) tr.querySelector('.new-symbol-input').focus();
+    });
+
+    // Add Cash Entry button handler
+    document.getElementById('add-cash-btn')?.addEventListener('click', () => {
+        const tr = addCashRow();
+        if (tr) tr.querySelector('.cash-edit-key').focus();
+    });
 
     // IBKR margin rates reload button
     const ibkrReloadBtn = document.getElementById('ibkr-reload-btn');

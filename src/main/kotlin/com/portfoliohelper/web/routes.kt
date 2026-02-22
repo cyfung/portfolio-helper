@@ -17,14 +17,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import org.apache.commons.csv.CSVFormat
-import org.apache.commons.csv.CSVParser
 import org.apache.commons.csv.CSVPrinter
-import java.io.BufferedReader
 import java.io.File
-import java.io.FileReader
 import java.io.FileWriter
-import java.nio.file.Files
-import java.nio.file.Paths
 
 private val cashKeyKnownFlags = setOf("M", "E")
 
@@ -63,7 +58,7 @@ fun Application.configureRouting() {
             call.renderLoanCalculatorPage()
         }
 
-        // Update portfolio CSV with edited qty/weight values
+        // Update portfolio CSV — client sends full state: [{symbol, amount, targetWeight, letf}]
         post("/api/portfolio/update") {
             try {
                 val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
@@ -74,58 +69,19 @@ fun Application.configureRouting() {
                 val updates = Json.parseToJsonElement(body).jsonArray
 
                 val csvPath = portfolioEntry.csvPath
-                val path = Paths.get(csvPath)
-
-                // Read existing CSV to preserve row order and letf column
-                val existingRows = mutableListOf<Map<String, String>>()
-                val headers = mutableListOf<String>()
-
-                if (Files.exists(path)) {
-                    BufferedReader(FileReader(path.toFile())).use { reader ->
-                        val csvFormat = CSVFormat.DEFAULT.builder()
-                            .setHeader()
-                            .setSkipHeaderRecord(true)
-                            .build()
-                        CSVParser(reader, csvFormat).use { parser ->
-                            headers.addAll(parser.headerNames)
-                            for (record in parser) {
-                                val row = mutableMapOf<String, String>()
-                                for ((i, h) in headers.withIndex()) {
-                                    row[h] = if (i < record.size()) record.get(i) else ""
-                                }
-                                existingRows.add(row)
-                            }
-                        }
-                    }
-                }
-
-                // Build update map: symbol -> {amount, targetWeight}
-                val updateMap = mutableMapOf<String, Pair<Double, Double>>()
-                for (element in updates) {
-                    val obj = element.jsonObject
-                    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: continue
-                    val amount = obj["amount"]?.jsonPrimitive?.double ?: continue
-                    val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
-                    updateMap[symbol] = amount to targetWeight
-                }
-
-                // Write updated CSV
-                FileWriter(path.toFile()).use { writer ->
+                FileWriter(File(csvPath)).use { writer ->
                     val csvFormat = CSVFormat.DEFAULT.builder()
-                        .setHeader(*headers.toTypedArray())
+                        .setHeader("stock_label", "amount", "target_weight", "letf")
                         .build()
                     CSVPrinter(writer, csvFormat).use { printer ->
-                        for (row in existingRows) {
-                            val symbol = row["stock_label"] ?: ""
-                            val update = updateMap[symbol]
-                            val values = headers.map { header ->
-                                when {
-                                    header == "amount" && update != null -> formatQty(update.first)
-                                    header == "target_weight" && update != null -> update.second.toString()
-                                    else -> row[header] ?: ""
-                                }
-                            }
-                            printer.printRecord(values)
+                        for (element in updates) {
+                            val obj = element.jsonObject
+                            val symbol = obj["symbol"]?.jsonPrimitive?.content ?: continue
+                            val amount = obj["amount"]?.jsonPrimitive?.double ?: continue
+                            val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
+                            val letf = obj["letf"]?.jsonPrimitive?.content ?: ""
+                            val weightStr = if (targetWeight > 0) "%.2f".format(targetWeight) else ""
+                            printer.printRecord(symbol, formatQty(amount), weightStr, letf)
                         }
                     }
                 }
@@ -140,7 +96,7 @@ fun Application.configureRouting() {
             }
         }
 
-        // Update cash.txt with edited amounts
+        // Update cash.txt — full-state write: [{key, value}]; preserves comments; deletes unlisted entries
         post("/api/cash/update") {
             try {
                 val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
@@ -152,23 +108,49 @@ fun Application.configureRouting() {
                 val cashPath = portfolioEntry.cashPath
                 val file = File(cashPath)
 
-                val updateMap = updates.associate { el ->
+                // Build update map: normalizedKey -> (payloadKey, rawValue)
+                val updateMap = mutableMapOf<String, Pair<String, String>>()
+                for (el in updates) {
                     val obj = el.jsonObject
-                    obj["key"]!!.jsonPrimitive.content to obj["amount"]!!.jsonPrimitive.double
+                    val key = obj["key"]!!.jsonPrimitive.content
+                    val value = obj["value"]!!.jsonPrimitive.content
+                    updateMap[normalizeCashKey(key)] = key to value
                 }
 
-                val lines = file.readLines()
-                val newLines = lines.map { line ->
-                    val trimmed = line.trim()
-                    if (trimmed.isEmpty() || trimmed.startsWith("#")) return@map line
-                    val eqIdx = trimmed.indexOf('=')
-                    if (eqIdx < 0) return@map line
-                    val key = trimmed.substring(0, eqIdx).trim()
-                    val normalizedKey = normalizeCashKey(key)
-                    val newAmount = updateMap[normalizedKey]
-                    if (newAmount != null) "$key=$newAmount" else line
+                val keysSeen = mutableSetOf<String>()
+                val outputLines = mutableListOf<String>()
+
+                if (file.exists()) {
+                    file.readLines().forEach { line ->
+                        val trimmed = line.trim()
+                        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                            outputLines.add(line)
+                            return@forEach
+                        }
+                        val eqIdx = trimmed.indexOf('=')
+                        if (eqIdx < 0) {
+                            outputLines.add(line)
+                            return@forEach
+                        }
+                        val rawKey = trimmed.substring(0, eqIdx).trim()
+                        val normalizedKey = normalizeCashKey(rawKey)
+                        val entry = updateMap[normalizedKey]
+                        if (entry != null) {
+                            outputLines.add("$rawKey=${entry.second}")
+                            keysSeen.add(normalizedKey)
+                        }
+                        // else: not in update list → deleted → skip
+                    }
                 }
-                file.writeText(newLines.joinToString("\n") + "\n")
+
+                // Append new entries (key not seen in existing file)
+                for ((normalizedKey, pair) in updateMap) {
+                    if (normalizedKey !in keysSeen) {
+                        outputLines.add("${pair.first}=${pair.second}")
+                    }
+                }
+
+                file.writeText(outputLines.joinToString("\n") + if (outputLines.isNotEmpty()) "\n" else "")
                 // File watcher detects change → SSE reload → page refresh
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {

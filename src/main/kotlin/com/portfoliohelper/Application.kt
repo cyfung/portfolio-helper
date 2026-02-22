@@ -22,17 +22,22 @@ fun main() {
     val logger = LoggerFactory.getLogger("Application")
 
     // ---------------------------------------------------------------
-    // 1. Ensure data directory exists and copy default CSV if missing
+    // 1. Ensure data directory exists; seed all bundled files if new
     // ---------------------------------------------------------------
     val mainCsvPath = "data/stocks.csv"
-    val mainCsvFilesystemPath = Paths.get(mainCsvPath)
-    Files.createDirectories(mainCsvFilesystemPath.parent)
-    if (!Files.exists(mainCsvFilesystemPath)) {
-        val resourceStream = object {}::class.java.classLoader.getResourceAsStream("data/stocks.csv")
-        if (resourceStream != null) {
-            resourceStream.use { Files.copy(it, mainCsvFilesystemPath) }
-            logger.info("Created default CSV file at ${mainCsvFilesystemPath.toAbsolutePath()} from bundled template")
+    val dataDir = Paths.get("data")
+    if (!Files.exists(dataDir)) {
+        Files.createDirectories(dataDir)
+        val cl = object {}::class.java.classLoader
+        listOf("stocks.csv", "cash.txt", "README.md").forEach { name ->
+            cl.getResourceAsStream("data/$name")?.use { Files.copy(it, dataDir.resolve(name)) }
         }
+        logger.info("Created data/ directory and seeded bundled default files")
+    } else if (!Files.exists(dataDir.resolve("stocks.csv"))) {
+        // data/ exists but stocks.csv is missing — copy just that
+        val cl = object {}::class.java.classLoader
+        cl.getResourceAsStream("data/stocks.csv")?.use { Files.copy(it, dataDir.resolve("stocks.csv")) }
+        logger.info("Created default stocks.csv from bundled template")
     }
 
     // ---------------------------------------------------------------
@@ -49,7 +54,6 @@ fun main() {
     // ---------------------------------------------------------------
     // 3. Discover subfolder portfolios under data/
     // ---------------------------------------------------------------
-    val dataDir = Paths.get("data")
     if (Files.isDirectory(dataDir)) {
         Files.list(dataDir)
             .filter { Files.isDirectory(it) }
@@ -188,21 +192,17 @@ fun main() {
         }
 
         val cashFilePath = Paths.get(entry.cashPath)
-        if (Files.exists(cashFilePath)) {
-            logger.info("Setting up cash file watcher for '${entry.name}': ${cashFilePath.toAbsolutePath()}")
-            val watcher = CsvFileWatcher(cashFilePath, debounceMillis = 500)
-            watcher.onFileChanged {
-                logger.info("Cash file changed for '${entry.name}', reloading...")
-                loadCash(entry)
-                initializeMarketData()
-                PortfolioUpdateBroadcaster.broadcastReload()
-                logger.info("Cash '${entry.name}' reloaded")
-            }
-            watcher.start(appScope)
-            fileWatchers += watcher
-        } else {
-            logger.warn("Cash watcher disabled for '${entry.name}' (file not found at ${cashFilePath.toAbsolutePath()})")
+        val cashWatcher = CsvFileWatcher(cashFilePath, debounceMillis = 500)
+        cashWatcher.onFileChanged {
+            logger.info("Cash file changed for '${entry.name}', reloading...")
+            loadCash(entry)
+            initializeMarketData()
+            PortfolioUpdateBroadcaster.broadcastReload()
+            logger.info("Cash '${entry.name}' reloaded")
         }
+        cashWatcher.start(appScope)
+        fileWatchers += cashWatcher
+        logger.info("Cash file watcher started for '${entry.name}': ${cashFilePath.toAbsolutePath()}")
     }
 
     // ---------------------------------------------------------------
