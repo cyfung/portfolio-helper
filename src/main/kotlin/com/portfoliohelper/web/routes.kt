@@ -58,6 +58,10 @@ fun Application.configureRouting() {
             call.renderPortfolioPage(entry, PortfolioRegistry.entries, id)
         }
 
+        get("/loan") {
+            call.renderLoanCalculatorPage()
+        }
+
         // Update portfolio CSV with edited qty/weight values
         post("/api/portfolio/update") {
             try {

@@ -129,6 +129,8 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
 
                     div(classes = "header-buttons") {
+                        a(href = "/loan", classes = "loan-calc-link") { +"Loan Calc" }
+
                         button(classes = "edit-toggle") {
                             attributes["aria-label"] = "Toggle edit mode"
                             attributes["id"] = "edit-toggle"
