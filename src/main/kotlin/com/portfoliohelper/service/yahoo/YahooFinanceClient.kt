@@ -59,11 +59,12 @@ object YahooFinanceClient {
             val tradingPeriodStart = regularPeriod?.get("start")?.jsonPrimitive?.longOrNull
             val tradingPeriodEnd = regularPeriod?.get("end")?.jsonPrimitive?.longOrNull
 
-            // Determine if market is closed (before open or after close)
+            // Determine if market is closed (before open or after close).
+            // Null trading period = unknown, assume closed.
             val isMarketClosed = run {
                 val currentTimeSeconds = System.currentTimeMillis() / 1000
-                val beforeOpen = tradingPeriodStart?.let { currentTimeSeconds < it } ?: false
-                val afterClose = tradingPeriodEnd?.let { currentTimeSeconds >= it } ?: false
+                val beforeOpen = tradingPeriodStart?.let { currentTimeSeconds < it } ?: true
+                val afterClose = tradingPeriodEnd?.let { currentTimeSeconds >= it } ?: true
                 beforeOpen || afterClose
             }
 

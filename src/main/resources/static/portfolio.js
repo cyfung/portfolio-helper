@@ -89,7 +89,10 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
     // Update global market state
     globalIsMarketClosed = isMarketClosed;
     if (tradingPeriodEnd !== null && tradingPeriodEnd !== undefined) {
-        marketCloseTimeMs = tradingPeriodEnd * 1000; // seconds → ms
+        const endMs = tradingPeriodEnd * 1000;
+        if (endMs <= Date.now()) {          // only set if close is actually in the past
+            marketCloseTimeMs = endMs;
+        }
     }
 
     // Store raw prices for high-precision rebalancing calculations
@@ -547,9 +550,10 @@ function updateRebalancingColumns(portfolioTotal) {
 }
 
 function updateAllEstVals() {
-    const stale = globalIsMarketClosed &&
-        marketCloseTimeMs !== null &&
-        (Date.now() - marketCloseTimeMs > 12 * 3600 * 1000);
+    const stale = globalIsMarketClosed && (
+        marketCloseTimeMs === null ||
+        Date.now() - marketCloseTimeMs > 12 * 3600 * 1000
+    );
 
     document.querySelectorAll('tbody tr[data-letf]').forEach(row => {
         const symbol = row.querySelector('td:first-child').textContent.trim();
@@ -603,10 +607,18 @@ function updateAllEstVals() {
 }
 
 function refreshDisplayCurrency() {
-    // Clear stale rebalance target when currency changes
+    // Convert rebalance target input to new display currency (USD value stays intact)
     const rebalInput = document.getElementById('rebal-target-input');
-    if (rebalInput) rebalInput.value = '';
-    rebalTargetUsd = null;
+    if (rebalInput) {
+        if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
+            const displayVal = toDisplayCurrency(rebalTargetUsd);
+            rebalInput.value = displayVal.toLocaleString('en-US', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            });
+        } else {
+            rebalInput.value = '';
+        }
+    }
 
     // Portfolio total
     const totalCell = document.getElementById('portfolio-total');

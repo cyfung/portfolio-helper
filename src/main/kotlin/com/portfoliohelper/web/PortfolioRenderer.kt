@@ -147,6 +147,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Restore" }
                         }
 
+                        button(classes = "save-btn") {
+                            attributes["id"] = "save-btn"
+                            attributes["type"] = "button"
+                            attributes["title"] = "Save changes to CSV"
+                            span(classes = "toggle-label") { +"Save" }
+                        }
+
                         button(classes = "edit-toggle") {
                             attributes["aria-label"] = "Toggle edit mode"
                             attributes["id"] = "edit-toggle"
@@ -155,11 +162,11 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Edit" }
                         }
 
-                        button(classes = "save-btn") {
-                            attributes["id"] = "save-btn"
+                        button(classes = "virtual-rebal-btn") {
+                            attributes["id"] = "virtual-rebal-btn"
                             attributes["type"] = "button"
-                            attributes["title"] = "Save changes to CSV"
-                            span(classes = "toggle-label") { +"Save" }
+                            attributes["title"] = "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+                            span(classes = "toggle-label") { +"Virtual Rebalance" }
                         }
 
                         button(classes = "rebal-toggle") {
@@ -168,13 +175,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             attributes["type"] = "button"
                             attributes["title"] = "Show/Hide Weight and Rebalancing columns"
                             span(classes = "toggle-label") { +"Rebalancing" }
-                        }
-
-                        button(classes = "virtual-rebal-btn") {
-                            attributes["id"] = "virtual-rebal-btn"
-                            attributes["type"] = "button"
-                            attributes["title"] = "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
-                            span(classes = "toggle-label") { +"Virtual Rebalance" }
                         }
 
                         if (displayCurrencies.size > 1) {
@@ -717,10 +717,13 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                                 val anyCompQuote = stock.letfComponents
                                     .mapNotNull { (_, sym) -> YahooMarketDataService.getQuote(sym) }
                                     .firstOrNull()
+                                val nowSeconds = System.currentTimeMillis() / 1000
+                                val pastCloseTime = anyCompQuote?.tradingPeriodEnd?.takeIf { it <= nowSeconds }
                                 val stale =
-                                    anyCompQuote?.isMarketClosed == true &&
-                                            anyCompQuote.tradingPeriodEnd != null &&
-                                            System.currentTimeMillis() / 1000 - anyCompQuote.tradingPeriodEnd > 12 * 3600
+                                    anyCompQuote?.isMarketClosed == true && (
+                                        pastCloseTime == null ||
+                                        nowSeconds - pastCloseTime > 12 * 3600
+                                    )
 
                                 if (stale) null
                                 else {
