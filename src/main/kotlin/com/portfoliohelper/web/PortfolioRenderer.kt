@@ -861,10 +861,10 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = "weight-display rebal-column") {
                         id = "current-weight-${stock.label}"
                         val stockValue = stock.value
+                        val effectiveTarget = stock.targetWeight ?: 0.0
                         if (stockValue != null && portfolio.totalValue > 0) {
                             val currentWeight = (stockValue / portfolio.totalValue) * 100
 
-                            val effectiveTarget = stock.targetWeight ?: 0.0
                             val diff = currentWeight - effectiveTarget
                             val sign = if (diff >= 0) "-" else "+"
                             val diffClass = when {
@@ -876,12 +876,14 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                             span(classes = "weight-diff $diffClass") {
                                 +"($sign%.1f%%)".format(abs(diff))
                             }
-                            span(classes = "target-weight-hidden") {
-                                style = "display:none;"
-                                +effectiveTarget.toString()
-                            }
                         } else {
                             span(classes = "loading") { +"—" }
+                        }
+                        // Always render the hidden span so edit mode can restore the correct target weight
+                        // even for stocks that have no price yet (loading state)
+                        span(classes = "target-weight-hidden") {
+                            style = "display:none;"
+                            +effectiveTarget.toString()
                         }
                     }
 
