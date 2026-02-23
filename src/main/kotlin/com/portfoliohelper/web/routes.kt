@@ -291,23 +291,30 @@ fun Application.configureRouting() {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
             val portfolioEntry = PortfolioRegistry.get(portfolioId)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
-            val prefix = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
-            val force  = call.request.queryParameters["force"] == "true"
-            BackupService.backupNow(portfolioEntry, prefix, force)
+            val prefix    = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
+            val subfolder = call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
+            BackupService.backupNow(portfolioEntry, prefix, subfolder)
             call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
         }
 
-        // List available backups for a portfolio
+        // List available backups grouped by subfolder ("default" = root .backup/ dir)
         get("/api/backup/list") {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
             val portfolioEntry = PortfolioRegistry.get(portfolioId)
                 ?: return@get call.respond(HttpStatusCode.NotFound)
-            val dates = BackupService.listBackups(portfolioEntry)
-            val json = "[${dates.joinToString(",") { "\"$it\"" }}]"
+            val all = BackupService.listAllBackups(portfolioEntry)
+            val json = buildString {
+                append("{")
+                all.entries.forEachIndexed { i, (key, dates) ->
+                    if (i > 0) append(",")
+                    append("\"$key\":[${dates.joinToString(",") { "\"$it\"" }}]")
+                }
+                append("}")
+            }
             call.respondText(json, ContentType.Application.Json)
         }
 
-        // Restore a portfolio from a dated backup ZIP
+        // Restore a portfolio from a dated backup ZIP (optional subfolder param)
         post("/api/backup/restore") {
             try {
                 val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
@@ -315,7 +322,8 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val date = call.request.queryParameters["date"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing date parameter")
-                BackupService.restoreBackup(portfolioEntry, date)
+                val subfolder = call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
+                BackupService.restoreBackup(portfolioEntry, date, subfolder)
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(

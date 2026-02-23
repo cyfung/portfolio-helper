@@ -1145,9 +1145,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Virtual Rebalance button — backup current state, enter edit mode, set qty to target weight allocation
     document.getElementById('virtual-rebal-btn')?.addEventListener('click', async () => {
-        // Snapshot current state before modifying (forced, prefix = pre-rebal)
+        // Snapshot current state before modifying (separate rebalance backup folder)
         try {
-            await fetch('/api/backup/trigger?portfolio=' + portfolioId + '&prefix=pre-rebal&force=true', { method: 'POST' });
+            await fetch('/api/backup/trigger?portfolio=' + portfolioId + '&subfolder=rebalance', { method: 'POST' });
         } catch (_) { /* non-fatal */ }
 
         // Enter edit mode if not already active
@@ -1182,14 +1182,17 @@ document.addEventListener('DOMContentLoaded', () => {
             await fetch('/api/backup/trigger?portfolio=' + portfolioId, { method: 'POST' });
         } catch (_) { /* non-fatal */ }
 
-        let dates;
+        let allBackups;
         try {
             const resp = await fetch('/api/backup/list?portfolio=' + portfolioId);
-            dates = await resp.json();
+            allBackups = await resp.json();
         } catch (e) {
             alert('Failed to load backup list.');
             return;
         }
+
+        const groups = Object.entries(allBackups); // [["default", [...]], ["rebalance", [...]]]
+        const totalCount = groups.reduce((sum, [, v]) => sum + v.length, 0);
 
         // Build modal
         const overlay = document.createElement('div');
@@ -1200,51 +1203,93 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-modal', 'true');
 
-        const title = document.createElement('p');
-        title.className = 'backup-modal-title';
-        title.textContent = 'Restore from Backup';
-        modal.appendChild(title);
+        const titleEl = document.createElement('p');
+        titleEl.className = 'backup-modal-title';
+        titleEl.textContent = 'Restore from Backup';
+        modal.appendChild(titleEl);
 
-        if (dates.length === 0) {
+        if (totalCount === 0) {
             const empty = document.createElement('p');
             empty.className = 'backup-modal-empty';
             empty.textContent = 'No backups available.';
             modal.appendChild(empty);
         } else {
-            const list = document.createElement('ul');
-            list.className = 'backup-modal-list';
-            dates.forEach(date => {
-                const item = document.createElement('li');
-                item.className = 'backup-modal-item';
-                const label = document.createElement('span');
-                label.textContent = date;
-                const restoreBtn = document.createElement('button');
-                restoreBtn.textContent = 'Restore';
-                restoreBtn.addEventListener('click', async () => {
-                    restoreBtn.disabled = true;
-                    restoreBtn.textContent = '…';
-                    try {
-                        const r = await fetch('/api/backup/restore?portfolio=' + portfolioId + '&date=' + date, { method: 'POST' });
-                        const json = await r.json();
-                        if (json.status === 'ok') {
-                            document.body.removeChild(overlay);
-                            location.reload();
-                        } else {
-                            alert('Restore failed: ' + (json.message || 'Unknown error'));
-                            restoreBtn.disabled = false;
-                            restoreBtn.textContent = 'Restore';
-                        }
-                    } catch (e) {
-                        alert('Restore failed.');
-                        restoreBtn.disabled = false;
+            const bodyEl = document.createElement('div');
+            bodyEl.className = 'backup-modal-body';
+
+            const tabBar = document.createElement('div');
+            tabBar.className = 'backup-modal-tabs';
+
+            const panels = {};
+            groups.forEach(([key, dates], idx) => {
+                const displayName = key === 'default' ? 'Daily' : key.charAt(0).toUpperCase() + key.slice(1);
+
+                // Tab button (only rendered when multiple groups exist)
+                if (groups.length > 1) {
+                    const tab = document.createElement('button');
+                    tab.className = 'backup-modal-tab' + (idx === 0 ? ' active' : '');
+                    tab.textContent = displayName;
+                    tab.addEventListener('click', () => {
+                        tabBar.querySelectorAll('.backup-modal-tab').forEach(t => t.classList.remove('active'));
+                        tab.classList.add('active');
+                        Object.entries(panels).forEach(([k, p]) => { p.hidden = k !== key; });
+                    });
+                    tabBar.appendChild(tab);
+                }
+
+                // Panel
+                const panel = document.createElement('div');
+                panel.className = 'backup-modal-panel';
+                panel.hidden = idx !== 0;
+
+                if (dates.length === 0) {
+                    const empty = document.createElement('p');
+                    empty.className = 'backup-modal-empty';
+                    empty.textContent = 'No backups available.';
+                    panel.appendChild(empty);
+                } else {
+                    const list = document.createElement('ul');
+                    list.className = 'backup-modal-list';
+                    dates.forEach(date => {
+                        const item = document.createElement('li');
+                        item.className = 'backup-modal-item';
+                        const label = document.createElement('span');
+                        label.textContent = date;
+                        const restoreBtn = document.createElement('button');
                         restoreBtn.textContent = 'Restore';
-                    }
-                });
-                item.appendChild(label);
-                item.appendChild(restoreBtn);
-                list.appendChild(item);
+                        restoreBtn.addEventListener('click', async () => {
+                            restoreBtn.disabled = true;
+                            restoreBtn.textContent = '…';
+                            const subParam = key !== 'default' ? '&subfolder=' + encodeURIComponent(key) : '';
+                            try {
+                                const r = await fetch('/api/backup/restore?portfolio=' + portfolioId + '&date=' + encodeURIComponent(date) + subParam, { method: 'POST' });
+                                const json = await r.json();
+                                if (json.status === 'ok') {
+                                    document.body.removeChild(overlay);
+                                    location.reload();
+                                } else {
+                                    alert('Restore failed: ' + (json.message || 'Unknown error'));
+                                    restoreBtn.disabled = false;
+                                    restoreBtn.textContent = 'Restore';
+                                }
+                            } catch (e) {
+                                alert('Restore failed.');
+                                restoreBtn.disabled = false;
+                                restoreBtn.textContent = 'Restore';
+                            }
+                        });
+                        item.appendChild(label);
+                        item.appendChild(restoreBtn);
+                        list.appendChild(item);
+                    });
+                    panel.appendChild(list);
+                }
+                panels[key] = panel;
             });
-            modal.appendChild(list);
+
+            if (groups.length > 1) bodyEl.appendChild(tabBar);
+            Object.values(panels).forEach(p => bodyEl.appendChild(p));
+            modal.appendChild(bodyEl);
         }
 
         const footer = document.createElement('div');
