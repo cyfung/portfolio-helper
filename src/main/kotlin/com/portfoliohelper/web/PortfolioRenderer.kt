@@ -821,7 +821,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
 
                             if (stock.targetWeight != null) {
                                 val diff = currentWeight - stock.targetWeight
-                                val sign = if (diff >= 0) "+" else "-"
+                                val sign = if (diff >= 0) "-" else "+"
                                 val diffClass = when {
                                     abs(diff) > 2.0 -> "alert"
                                     abs(diff) > 1.0 -> "warning"

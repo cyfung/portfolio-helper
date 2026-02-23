@@ -465,7 +465,7 @@ function updateCurrentWeights(portfolioTotal) {
 
             if (targetWeight !== null) {
                 const diff = currentWeight - targetWeight;
-                const sign = diff >= 0 ? '+' : '-';
+                const sign = diff >= 0 ? '-' : '+';
                 const diffClass = Math.abs(diff) > 2.0 ? 'alert' :
                                   Math.abs(diff) > 1.0 ? 'warning' : 'good';
 
