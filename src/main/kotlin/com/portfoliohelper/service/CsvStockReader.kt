@@ -34,7 +34,7 @@ object CsvStockReader {
 
                     // Read target_weight if column exists (backward compatible)
                     val targetWeight = try {
-                        record.get("target_weight")?.toDoubleOrNull()
+                        record.get("target_weight")?.toDoubleOrNull()?:0.0
                     } catch (e: IllegalArgumentException) {
                         null  // Column doesn't exist in CSV
                     }
