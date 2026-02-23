@@ -54,11 +54,8 @@ application {
 }
 
 // Java Toolchain Configuration (replaces sourceCompatibility/targetCompatibility)
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(11))
-        vendor.set(JvmVendorSpec.ADOPTIUM)  // Eclipse Adoptium (Temurin)
-    }
+kotlin {
+    jvmToolchain(17)
 }
 
 // Kotlin will automatically use the Java toolchain
