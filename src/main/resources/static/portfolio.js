@@ -378,6 +378,39 @@ function updateMarginDisplay(marginUsd) {
     }
 }
 
+function updateIbkrDailyInterest() {
+    const rows = document.querySelectorAll('.ibkr-rates-table tbody tr[data-ibkr-rate]');
+    if (!rows.length) return;
+
+    const loanUsd = lastMarginUsd < 0 ? -lastMarginUsd : 0;
+
+    // First pass: compute all interests to find the minimum
+    const interests = Array.from(rows).map(tr => {
+        const rate = parseFloat(tr.dataset.ibkrRate);
+        const days = parseInt(tr.dataset.ibkrDays, 10);
+        return loanUsd > 0 ? loanUsd * rate / 100 / days : null;
+    });
+    const minInterest = interests.reduce((m, v) => (v !== null && (m === null || v < m)) ? v : m, null);
+
+    // Second pass: update DOM
+    rows.forEach((tr, i) => {
+        const ccy = tr.querySelector('.ibkr-rate-currency')?.textContent?.trim();
+        if (!ccy) return;
+        const cell = document.getElementById('ibkr-daily-' + ccy);
+        if (!cell) return;
+        const interest = interests[i];
+        if (interest === null) { cell.textContent = '—'; return; }
+        const diff = interest - (minInterest ?? 0);
+        cell.textContent = formatCurrency(interest);
+        if (diff >= 0.005) {
+            const s = document.createElement('span');
+            s.className = 'ibkr-rate-diff';
+            s.textContent = ' (+' + formatCurrency(diff) + ')';
+            cell.appendChild(s);
+        }
+    });
+}
+
 function updateCashTotals() {
     if (document.querySelectorAll('[data-cash-entry]').length === 0) return;
     let totalUsd = 0;
@@ -406,6 +439,7 @@ function updateCashTotals() {
     if (cashTotalEl) cashTotalEl.textContent = formatDisplayCurrency(totalUsd);
     lastMarginUsd = marginUsd;
     updateMarginDisplay(marginUsd);
+    updateIbkrDailyInterest();
 
     // Update grand total
     const grandEl = document.getElementById('grand-total-value');

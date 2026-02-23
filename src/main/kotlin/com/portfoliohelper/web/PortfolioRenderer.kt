@@ -478,7 +478,13 @@ private fun FlowContent.buildIbkrRatesTable(
         .sumOf { resolveEntryUsd(it) ?: 0.0 }
     val totalMarginLoanUsd = if (netMarginUsd < 0) -netMarginUsd else 0.0
 
-    data class RateRow(val currency: String, val rateDisplay: String, val dailyInterestUsd: Double?)
+    data class RateRow(
+        val currency: String,
+        val rateDisplay: String,
+        val dailyInterestUsd: Double?,
+        val effectiveRate: Double,
+        val daysInYear: Int
+    )
     val rows = marginCurrencies.mapNotNull { ccy ->
         val currencyRates = IbkrMarginRateService.getRates(ccy) ?: return@mapNotNull null
         val fxRate = if (ccy == "USD") 1.0 else (fxRateMap[ccy] ?: return@mapNotNull null)
@@ -493,7 +499,7 @@ private fun FlowContent.buildIbkrRatesTable(
             "%.3f%% (%.3f%%)".format(blended, currencyRates.baseRate)
         else
             "%.3f%%".format(currencyRates.baseRate)
-        RateRow(ccy, rateDisplay, dailyInterestUsd)
+        RateRow(ccy, rateDisplay, dailyInterestUsd, effectiveRate, daysInYear)
     }
 
     if (rows.isEmpty()) return
@@ -513,9 +519,12 @@ private fun FlowContent.buildIbkrRatesTable(
         tbody {
             for (row in rows) {
                 tr {
+                    attributes["data-ibkr-rate"] = "%.8f".format(row.effectiveRate)
+                    attributes["data-ibkr-days"] = row.daysInYear.toString()
                     td(classes = "ibkr-rate-currency") { +row.currency }
                     td(classes = "ibkr-rate-value") { +row.rateDisplay }
                     td(classes = "ibkr-rate-daily") {
+                        id = "ibkr-daily-${row.currency}"
                         val interest = row.dailyInterestUsd
                         if (interest == null) {
                             +"—"
