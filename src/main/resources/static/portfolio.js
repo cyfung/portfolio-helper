@@ -711,6 +711,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (displaySpan) input.value = displaySpan.textContent.trim();
             });
 
+            // Populate target weight and letf inputs from current live data
+            document.querySelectorAll('.portfolio-table tbody tr').forEach(tr => {
+                if (tr.dataset.deleted || tr.dataset.newStock) return;
+                const sym = tr.querySelector('.edit-symbol')?.getAttribute('data-original-symbol');
+                if (!sym) return;
+
+                const weightInput = tr.querySelector('.edit-weight');
+                if (weightInput) {
+                    const hiddenSpan = document.getElementById('current-weight-' + sym)?.querySelector('.target-weight-hidden');
+                    weightInput.value = hiddenSpan ? hiddenSpan.textContent.trim() : '0';
+                }
+
+                const letfInput = tr.querySelector('.edit-letf');
+                if (letfInput) {
+                    const letfAttr = tr.getAttribute('data-letf');
+                    if (letfAttr) {
+                        const tokens = letfAttr.split(',');
+                        const parts = [];
+                        for (let i = 0; i + 1 < tokens.length; i += 2) parts.push(tokens[i] + ' ' + tokens[i + 1]);
+                        letfInput.value = parts.join(' ');
+                    } else {
+                        letfInput.value = '';
+                    }
+                }
+            });
+
             // Add empty row if stock table has no entries
             const stockTbody = document.querySelector('.portfolio-table tbody');
             if (stockTbody && stockTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
@@ -882,8 +908,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const clipText = (e.clipboardData || window.clipboardData).getData('text');
         const lines = clipText.split(/[\r\n]+/).filter(l => l.trim() !== '');
 
-        // Only intercept multi-line
-        if (lines.length <= 1) return;
+        // For single-value paste into a weight field, strip % before the browser rejects it
+        if (lines.length <= 1) {
+            if (activeEl.classList.contains('edit-weight') || activeEl.getAttribute('data-column') === 'weight') {
+                const stripped = clipText.replace(/%/g, '').trim();
+                if (stripped !== clipText.trim()) {
+                    e.preventDefault();
+                    activeEl.value = stripped;
+                    activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }
+            return;
+        }
 
         e.preventDefault();
 
@@ -950,9 +986,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const inputs = getStockRowInputs(tr);
                 cols.forEach((val, j) => {
                     const idx = startColIdx + j;
-                    if (idx < inputs.length) inputs[idx].value = val.trim();
+                    if (idx < inputs.length) {
+                        const inp = inputs[idx];
+                        const isWeight = inp.classList.contains('edit-weight') || inp.getAttribute('data-column') === 'weight';
+                        inp.value = isWeight ? val.replace(/%/g, '').trim() : val.trim();
+                    }
                 });
             });
+            updateTargetWeightTotal();
         }
     });
 
@@ -1068,9 +1109,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Input handler for target weight column (live total update in edit mode)
+    // Input handler for target weight column: strip % and update live total
     document.addEventListener('input', e => {
         if (e.target.classList.contains('edit-weight') || e.target.getAttribute('data-column') === 'weight') {
+            if (e.target.value.includes('%')) e.target.value = e.target.value.replace(/%/g, '');
             updateTargetWeightTotal();
         }
     });
