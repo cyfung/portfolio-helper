@@ -394,31 +394,48 @@ function updateIbkrDailyInterest() {
 
     const loanUsd = lastMarginUsd < 0 ? -lastMarginUsd : 0;
 
-    // First pass: compute all interests to find the minimum
-    const interests = Array.from(rows).map(tr => {
-        const rate = parseFloat(tr.dataset.ibkrRate);
-        const days = parseInt(tr.dataset.ibkrDays, 10);
-        return loanUsd > 0 ? loanUsd * rate / 100 / days : null;
-    });
-    const minInterest = interests.reduce((m, v) => (v !== null && (m === null || v < m)) ? v : m, null);
-
-    // Second pass: update DOM
-    rows.forEach((tr, i) => {
+    // Current: sum of per-currency native daily interest converted to USD
+    let currentUsd = 0;
+    rows.forEach(tr => {
         const ccy = tr.querySelector('.ibkr-rate-currency')?.textContent?.trim();
-        if (!ccy) return;
-        const cell = document.getElementById('ibkr-daily-' + ccy);
-        if (!cell) return;
-        const interest = interests[i];
-        if (interest === null) { cell.textContent = '—'; return; }
-        const diff = interest - (minInterest ?? 0);
-        cell.textContent = formatCurrency(interest);
-        if (diff >= 0.005) {
-            const s = document.createElement('span');
-            s.className = 'ibkr-rate-diff';
-            s.textContent = ' (+' + formatCurrency(diff) + ')';
-            cell.appendChild(s);
+        const nativeDaily = parseFloat(tr.dataset.nativeDaily || '0');
+        if (nativeDaily > 0 && ccy) {
+            const rate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
+            if (rate !== null) currentUsd += nativeDaily * rate;
         }
     });
+
+    // Cheapest: entire loan in one currency (min across rows)
+    let cheapestUsd = null, cheapestCcy = null;
+    if (loanUsd > 0) {
+        rows.forEach(tr => {
+            const ccy = tr.querySelector('.ibkr-rate-currency')?.textContent?.trim();
+            const rate = parseFloat(tr.dataset.ibkrRate);
+            const days = parseInt(tr.dataset.ibkrDays, 10);
+            const interest = loanUsd * rate / 100 / days;
+            if (cheapestUsd === null || interest < cheapestUsd) {
+                cheapestUsd = interest; cheapestCcy = ccy;
+            }
+        });
+    }
+
+    // Difference
+    const diff = (cheapestUsd !== null && currentUsd > 0) ? currentUsd - cheapestUsd : null;
+
+    // Update DOM
+    const currentEl = document.getElementById('ibkr-current-interest');
+    if (currentEl) currentEl.textContent = currentUsd > 0 ? formatDisplayCurrency(currentUsd) : '—';
+
+    const cheapestEl = document.getElementById('ibkr-cheapest-interest');
+    const cheapestCcyEl = document.getElementById('ibkr-cheapest-ccy');
+    if (cheapestEl) cheapestEl.textContent = cheapestUsd !== null ? formatDisplayCurrency(cheapestUsd) : '—';
+    if (cheapestCcyEl) cheapestCcyEl.textContent = cheapestCcy ? '(' + cheapestCcy + ')' : '';
+
+    const diffEl = document.getElementById('ibkr-interest-diff');
+    if (diffEl) {
+        diffEl.textContent = (diff !== null && diff >= 0.005) ? formatDisplayCurrency(diff) : '—';
+        diffEl.className = (diff !== null && diff >= 0.005) ? 'ibkr-rate-diff' : '';
+    }
 }
 
 function updateCashTotals() {
@@ -666,6 +683,7 @@ function refreshDisplayCurrency() {
     updateRebalTargetPlaceholder();
     updateRebalancingColumns(getRebalTotal());
     updateMarginTargetDisplay();
+    updateIbkrDailyInterest();
 }
 
 function updateTargetWeightTotal() {

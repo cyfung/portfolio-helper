@@ -492,10 +492,16 @@ private fun FlowContent.buildIbkrRatesTable(
         .sumOf { resolveEntryUsd(it) ?: 0.0 }
     val totalMarginLoanUsd = if (netMarginUsd < 0) -netMarginUsd else 0.0
 
+    // Native loan amount per currency (positive = borrowed)
+    val nativeLoanByCurrency: Map<String, Double> = cashEntries
+        .filter { it.marginFlag && it.currency.uppercase() != "P" }
+        .groupBy { it.currency.uppercase() }
+        .mapValues { (_, entries) -> entries.sumOf { e -> -(e.amount).coerceAtMost(0.0) } }
+
     data class RateRow(
         val currency: String,
         val rateDisplay: String,
-        val dailyInterestUsd: Double?,
+        val nativeDailyInterest: Double,
         val effectiveRate: Double,
         val daysInYear: Int
     )
@@ -506,20 +512,31 @@ private fun FlowContent.buildIbkrRatesTable(
         val blended = if (loanAmount > 0) currencyRates.blendedRateIfMultiTier(loanAmount) else null
         val effectiveRate = blended ?: currencyRates.baseRate
         val daysInYear = CurrencyConventions.getDaysInYear(ccy)
-        val dailyInterestUsd = if (totalMarginLoanUsd > 0)
-            totalMarginLoanUsd * effectiveRate / 100.0 / daysInYear
-        else null
+        val nativeLoan = nativeLoanByCurrency[ccy] ?: 0.0
+        val nativeRate = if (nativeLoan > 0)
+            currencyRates.blendedRateIfMultiTier(nativeLoan) ?: currencyRates.baseRate
+        else currencyRates.baseRate
+        val nativeDailyInterest = nativeLoan * nativeRate / 100.0 / daysInYear
         val rateDisplay = if (blended != null)
             "%.3f%% (%.3f%%)".format(blended, currencyRates.baseRate)
         else
             "%.3f%%".format(currencyRates.baseRate)
-        RateRow(ccy, rateDisplay, dailyInterestUsd, effectiveRate, daysInYear)
+        RateRow(ccy, rateDisplay, nativeDailyInterest, effectiveRate, daysInYear)
     }
 
     if (rows.isEmpty()) return
 
-    val minDailyInterest = rows.mapNotNull { it.dailyInterestUsd }.minOrNull()
     val lastFetchMillis = IbkrMarginRateService.getLastFetchMillis()
+
+    // Pre-compute summary values for initial server-side render
+    val currentInterestUsd = rows.sumOf { row ->
+        val fxRate = if (row.currency == "USD") 1.0 else (fxRateMap[row.currency] ?: 0.0)
+        row.nativeDailyInterest * fxRate
+    }
+    val cheapestRow = rows.minByOrNull { totalMarginLoanUsd * it.effectiveRate / 100.0 / it.daysInYear }
+    val cheapestInterestUsd = cheapestRow?.let { totalMarginLoanUsd * it.effectiveRate / 100.0 / it.daysInYear }
+    val interestDiff = if (cheapestInterestUsd != null && currentInterestUsd > 0)
+        currentInterestUsd - cheapestInterestUsd else null
 
     div(classes = "ibkr-rates-wrapper") {
     table(classes = "ibkr-rates-table") {
@@ -527,7 +544,6 @@ private fun FlowContent.buildIbkrRatesTable(
             tr {
                 th { +"CCY" }
                 th { +"IBKR Pro Rate" }
-                th { +"Daily Interest (USD)" }
             }
         }
         tbody {
@@ -535,22 +551,41 @@ private fun FlowContent.buildIbkrRatesTable(
                 tr {
                     attributes["data-ibkr-rate"] = "%.8f".format(row.effectiveRate)
                     attributes["data-ibkr-days"] = row.daysInYear.toString()
+                    attributes["data-native-daily"] = "%.8f".format(row.nativeDailyInterest)
                     td(classes = "ibkr-rate-currency") { +row.currency }
                     td(classes = "ibkr-rate-value") { +row.rateDisplay }
-                    td(classes = "ibkr-rate-daily") {
-                        id = "ibkr-daily-${row.currency}"
-                        val interest = row.dailyInterestUsd
-                        if (interest == null) {
-                            +"—"
-                        } else {
-                            +"${"$"}%,.2f".format(interest)
-                            val diff = interest - (minDailyInterest ?: 0.0)
-                            if (diff >= 0.005) {
-                                span(classes = "ibkr-rate-diff") {
-                                    +" (+${"$"}%,.2f)".format(diff)
-                                }
-                            }
-                        }
+                }
+            }
+        }
+    }
+    table(classes = "ibkr-interest-summary") {
+        tbody {
+            tr {
+                td { +"Current Daily Interest" }
+                td {
+                    id = "ibkr-current-interest"
+                    if (currentInterestUsd > 0) +"${"$"}%,.2f".format(currentInterestUsd) else +"—"
+                }
+            }
+            tr {
+                td {
+                    +"Cheapest "
+                    span { id = "ibkr-cheapest-ccy"; if (cheapestRow != null) +"(${cheapestRow.currency})" }
+                }
+                td {
+                    id = "ibkr-cheapest-interest"
+                    if (cheapestInterestUsd != null) +"${"$"}%,.2f".format(cheapestInterestUsd) else +"—"
+                }
+            }
+            tr {
+                td { +"Difference" }
+                td {
+                    id = "ibkr-interest-diff"
+                    if (interestDiff != null && interestDiff >= 0.005) {
+                        classes = setOf("ibkr-rate-diff")
+                        +"${"$"}%,.2f".format(interestDiff)
+                    } else {
+                        +"—"
                     }
                 }
             }

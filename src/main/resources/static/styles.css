@@ -1527,14 +1527,28 @@ a.loan-calc-link:hover {
     min-width: 50px;
 }
 
-.ibkr-rates-table .ibkr-rate-daily {
+.ibkr-interest-summary {
+    margin-top: 8px;
+    font-size: 0.85em;
+    font-family: var(--font-family-mono);
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.ibkr-interest-summary td {
+    padding: 2px 8px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.ibkr-interest-summary td:last-child {
     text-align: right;
     color: var(--color-text-primary);
 }
 
-.ibkr-rates-table .ibkr-rate-diff {
+.ibkr-interest-summary td.ibkr-rate-diff {
     color: var(--color-warning);
-    font-size: 0.9em;
 }
 
 .ibkr-rates-footer {
