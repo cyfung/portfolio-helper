@@ -66,6 +66,8 @@ internal suspend fun ApplicationCall.renderLoanCalculatorPage() {
                     }
                 }
 
+                div { id = "loan-history" }
+
                 div(classes = "loan-card") {
                     div(classes = "loan-inputs") {
                         div(classes = "loan-col-left") {

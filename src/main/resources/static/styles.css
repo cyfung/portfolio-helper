@@ -1392,6 +1392,58 @@ h1 {
     margin: 0;
 }
 
+/* Loan history */
+.loan-history-list {
+    max-width: 680px;
+    margin: 0 auto var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.loan-history-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+}
+
+.loan-history-label {
+    font-family: var(--font-family-mono);
+    color: var(--color-text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.loan-history-load-btn {
+    flex-shrink: 0;
+    padding: 2px var(--spacing-md);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    background: transparent;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.loan-history-load-btn:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+}
+
 /* Loan Calc link shown in portfolio header */
 a.loan-calc-link {
     display: flex;

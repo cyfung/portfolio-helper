@@ -26,6 +26,12 @@ private val cashKeyKnownFlags = setOf("M", "E")
 private fun formatQty(amount: Double) =
     if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()
 
+private val LOAN_COMPARE_FIELDS =
+    listOf("loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows")
+
+private fun loanEntryKey(obj: JsonObject): String =
+    LOAN_COMPARE_FIELDS.joinToString("|") { obj[it]?.toString() ?: "" }
+
 private fun normalizeCashKey(raw: String): String {
     val parts = raw.split(".").toMutableList()
     val flags = mutableListOf<String>()
@@ -158,6 +164,38 @@ fun Application.configureRouting() {
                     "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
                     ContentType.Application.Json,
                     HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        // Loan calculation history — stored in data/loan/history.json (newest first, max 5 entries)
+        get("/api/loan/history") {
+            val histFile = File("data/loan/history.json")
+            call.respondText(
+                if (histFile.exists()) histFile.readText() else "[]",
+                ContentType.Application.Json
+            )
+        }
+
+        post("/api/loan/save") {
+            try {
+                val body = call.receiveText()
+                val newEntry = Json.parseToJsonElement(body)
+                val histFile = File("data/loan/history.json")
+                histFile.parentFile.mkdirs()
+                val newKey = loanEntryKey(newEntry.jsonObject)
+                val existing = if (histFile.exists())
+                    Json.parseToJsonElement(histFile.readText()).jsonArray
+                        .filter { it is JsonObject && loanEntryKey(it.jsonObject) != newKey }
+                        .toMutableList()
+                else mutableListOf()
+                existing.add(0, newEntry)
+                histFile.writeText(JsonArray(existing.take(5)).toString())
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json, HttpStatusCode.InternalServerError
                 )
             }
         }

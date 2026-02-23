@@ -78,6 +78,95 @@ function findIRR(cashFlows) {
     return b;
 }
 
+const PPY_LABELS = { 365: 'Daily', 52: 'Weekly', 26: 'Bi-wkly', 12: 'Mo', 4: 'Qtr', 2: 'Semi-yr', 1: 'Yr' };
+
+function getCurrentParams() {
+    var extraCashflows = [];
+    document.querySelectorAll('.cashflow-row').forEach(function(row) {
+        var amt = row.querySelector('.cf-amount').value.trim();
+        var per = row.querySelector('.cf-period').value.trim();
+        if (amt !== '' && per !== '') {
+            extraCashflows.push({ amount: parseFloat(amt), period: parseInt(per, 10) });
+        }
+    });
+    return {
+        loanAmount:   document.getElementById('loan-amount').value.trim(),
+        numPeriods:   document.getElementById('num-periods').value.trim(),
+        periodLength: document.getElementById('period-length').value,
+        payment:      document.getElementById('payment').value.trim(),
+        rateApy:      document.getElementById('rate-apy').value.trim(),
+        rateFlat:     document.getElementById('rate-flat').value.trim(),
+        extraCashflows: extraCashflows,
+        savedAt:      Date.now()
+    };
+}
+
+function loadParams(params) {
+    document.getElementById('loan-amount').value   = params.loanAmount   || '';
+    document.getElementById('num-periods').value   = params.numPeriods   || '';
+    document.getElementById('period-length').value = params.periodLength  || '12';
+    document.getElementById('payment').value        = params.payment      || '';
+    document.getElementById('rate-apy').value       = params.rateApy     || '';
+    document.getElementById('rate-flat').value      = params.rateFlat    || '';
+    var container = document.getElementById('cashflow-rows');
+    container.innerHTML = '';
+    (params.extraCashflows || []).forEach(function(cf) {
+        addCashflowRow();
+        var rows = container.querySelectorAll('.cashflow-row');
+        var last = rows[rows.length - 1];
+        last.querySelector('.cf-amount').value = cf.amount;
+        last.querySelector('.cf-period').value = cf.period;
+    });
+}
+
+function entryLabel(p) {
+    var loan = parseFloat(p.loanAmount);
+    var loanFmt = isNaN(loan) ? p.loanAmount
+        : loan.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    var ppy = parseInt(p.periodLength, 10);
+    var ppyLabel = PPY_LABELS[ppy] || (p.periodLength + '/yr');
+    var rateInfo = p.rateApy   ? p.rateApy   + '% APY'
+                 : p.rateFlat  ? p.rateFlat  + '% flat'
+                 : p.payment   ? '$' + parseFloat(p.payment).toFixed(2) + '/period'
+                 : '';
+    return loanFmt + ' \u00b7 ' + p.numPeriods + '\u00d7' + ppyLabel
+        + (rateInfo ? ' \u00b7 ' + rateInfo : '');
+}
+
+function saveToHistory() {
+    var params = getCurrentParams();
+    fetch('/api/loan/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+    }).then(renderHistory).catch(function(e) { console.error('Failed to save loan history:', e); });
+}
+
+function renderHistory() {
+    var container = document.getElementById('loan-history');
+    if (!container) return;
+    return fetch('/api/loan/history').then(function(resp) {
+        return resp.json();
+    }).then(function(history) {
+        if (!history || history.length === 0) { container.innerHTML = ''; return; }
+        var html = '<div class="loan-history-list">';
+        history.forEach(function(p, i) {
+            html += '<div class="loan-history-entry">'
+                  + '<span class="loan-history-label">' + entryLabel(p) + '</span>'
+                  + '<button type="button" class="loan-history-load-btn" data-index="' + i + '">Load</button>'
+                  + '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        container._history = history;
+        container.querySelectorAll('.loan-history-load-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                loadParams(container._history[parseInt(btn.getAttribute('data-index'), 10)]);
+            });
+        });
+    }).catch(function(e) { console.error('Failed to load loan history:', e); });
+}
+
 function showError(msg) {
     var errEl = document.getElementById('loan-error');
     errEl.textContent = msg;
@@ -165,6 +254,8 @@ function calculate() {
     document.getElementById('result-total-interest').textContent = formatCurrency(totalInterest);
 
     document.getElementById('loan-results').style.display = 'block';
+
+    saveToHistory();
 }
 
 function addCashflowRow() {
@@ -180,6 +271,8 @@ function addCashflowRow() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    renderHistory();
+
     document.getElementById('calculate-btn').addEventListener('click', calculate);
 
     // Mutual exclusion: filling one rate/payment input clears the others
