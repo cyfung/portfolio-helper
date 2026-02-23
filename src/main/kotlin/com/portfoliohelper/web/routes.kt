@@ -162,6 +162,24 @@ fun Application.configureRouting() {
             }
         }
 
+        // Persist rebalance target (USD value) to data/rebal-target.txt alongside the portfolio CSV
+        post("/api/rebal-target/save") {
+            try {
+                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                val value = call.receiveText().trim().toDoubleOrNull()
+                val rebalFile = File(portfolioEntry.csvPath).resolveSibling("rebal-target.txt")
+                if (value == null || value <= 0) rebalFile.delete() else rebalFile.writeText(value.toString())
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
         // Server-Sent Events (SSE) endpoint for streaming price updates
         get("/api/prices/stream") {
             call.response.cacheControl(CacheControl.NoCache(null))

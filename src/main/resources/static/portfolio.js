@@ -939,6 +939,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Rebalance Target input
+    let rebalSaveTimer = null;
     const rebalTargetInput = document.getElementById('rebal-target-input');
     if (rebalTargetInput) {
         rebalTargetInput.addEventListener('input', () => {
@@ -952,7 +953,28 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             updateRebalancingColumns(getRebalTotal());
             updateMarginTargetDisplay();
+            // Debounced save to server
+            clearTimeout(rebalSaveTimer);
+            rebalSaveTimer = setTimeout(() => {
+                fetch('/api/rebal-target/save?portfolio=' + portfolioId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: rebalTargetUsd !== null ? rebalTargetUsd.toString() : '0'
+                });
+            }, 1000);
         });
+
+        // Restore saved rebalance target on page load
+        if (savedRebalTargetUsd > 0) {
+            rebalTargetUsd = savedRebalTargetUsd;
+            const rate = fxRates[currentDisplayCurrency];
+            const displayVal = (rate && rate !== 0) ? savedRebalTargetUsd / rate : savedRebalTargetUsd;
+            rebalTargetInput.value = displayVal.toLocaleString('en-US', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            });
+            updateRebalancingColumns(getRebalTotal());
+            updateMarginTargetDisplay();
+        }
     }
 
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
