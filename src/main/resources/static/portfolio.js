@@ -754,7 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Edit mode helpers ---
 
     const STOCK_ROW_HTML =
-        '<td><input type="text" class="edit-input new-symbol-input" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
+        '<td><input type="text" class="edit-input new-symbol-input" data-column="symbol" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
         '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
         '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
         '<td class="edit-column"><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
