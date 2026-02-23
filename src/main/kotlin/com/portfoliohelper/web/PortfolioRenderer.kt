@@ -918,5 +918,33 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 }
             }
         }
+        tfoot {
+            tr {
+                val totalWeight = portfolio.stocks.sumOf { it.targetWeight ?: 0.0 }
+                td { +"Total" }
+                td {}
+                td {}
+                td {}
+                td {}
+                td {}
+                td {}
+                td {}
+                td {}
+                td {}
+                td(classes = "rebal-column") {}
+                td(classes = "rebal-column") {}
+                td(classes = "rebal-column") {}
+                td(classes = "edit-column") {
+                    id = "target-weight-total"
+                    +"%.1f%%".format(totalWeight)
+                }
+                td(classes = "edit-column") {}
+                td(classes = "edit-column") {}
+            }
+        }
+    }
+    div(classes = "rebal-weight-warning") {
+        attributes["id"] = "rebal-weight-warning"
+        style = "display: none;"
     }
 }

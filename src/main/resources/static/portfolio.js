@@ -642,6 +642,38 @@ function refreshDisplayCurrency() {
     updateMarginTargetDisplay();
 }
 
+function updateTargetWeightTotal() {
+    // Edit mode total: from edit-weight inputs (drives the tfoot display)
+    let editTotal = 0;
+    document.querySelectorAll('.portfolio-table tbody tr:not([data-deleted])').forEach(tr => {
+        const input = tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]');
+        if (input) editTotal += parseFloat(input.value) || 0;
+    });
+    const totalCell = document.getElementById('target-weight-total');
+    if (totalCell) {
+        totalCell.textContent = editTotal.toFixed(1) + '%';
+        totalCell.classList.toggle('weight-total-error', Math.abs(editTotal - 100) > 0.05);
+    }
+
+    // Rebalance mode warning: from target-weight-hidden spans (what rebalancing actually uses)
+    let rebalTotal = 0;
+    document.querySelectorAll('.portfolio-table tbody tr:not([data-deleted]) .target-weight-hidden').forEach(span => {
+        rebalTotal += parseFloat(span.textContent) || 0;
+    });
+    const warningEl = document.getElementById('rebal-weight-warning');
+    if (warningEl) {
+        const isError = Math.abs(rebalTotal - 100) > 0.05;
+        const rebalVisible = document.body.classList.contains('rebalancing-visible');
+        const isEditing = document.body.classList.contains('editing-active');
+        if (rebalVisible && !isEditing && isError) {
+            warningEl.textContent = '\u26a0 Target weights sum to ' + rebalTotal.toFixed(1) + '% (must be 100%)';
+            warningEl.style.display = 'block';
+        } else {
+            warningEl.style.display = 'none';
+        }
+    }
+}
+
 // Rebalancing columns toggle
 document.addEventListener('DOMContentLoaded', () => {
     const rebalToggle = document.getElementById('rebal-toggle');
@@ -659,6 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isVisible = body.classList.toggle('rebalancing-visible');
         rebalToggle.classList.toggle('active');
         localStorage.setItem('ib-viewer-rebal-visible', isVisible);
+        updateTargetWeightTotal();
     });
 
     // Edit mode toggle
@@ -711,6 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (valInput) valInput.value = valInput.getAttribute('data-original-value') || '';
             });
         }
+        updateTargetWeightTotal();
     });
 
     // Save button
@@ -1030,6 +1064,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (row) {
             row.setAttribute('data-deleted', 'true');
             row.style.display = 'none';
+            updateTargetWeightTotal();
+        }
+    });
+
+    // Input handler for target weight column (live total update in edit mode)
+    document.addEventListener('input', e => {
+        if (e.target.classList.contains('edit-weight') || e.target.getAttribute('data-column') === 'weight') {
+            updateTargetWeightTotal();
         }
     });
 
@@ -1186,4 +1228,5 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    updateTargetWeightTotal();
 });

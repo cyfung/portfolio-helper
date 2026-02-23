@@ -642,6 +642,21 @@ h1 {
     border-top: 1px solid var(--color-border-medium);
 }
 
+/* Hide tfoot total row by default; show only in edit mode */
+.portfolio-table tfoot tr {
+    display: none;
+}
+.editing-active .portfolio-table tfoot tr {
+    display: table-row;
+}
+#target-weight-total {
+    text-align: right;
+    font-weight: 600;
+}
+#target-weight-total.weight-total-error {
+    color: var(--color-negative);
+}
+
 .portfolio-table .total-row td {
     padding: var(--spacing-sm) var(--spacing-lg);
     font-weight: var(--font-weight-semibold);
@@ -1845,4 +1860,15 @@ body.rebalancing-visible .virtual-rebal-btn {
 body.editing-active .cash-edit-value {
     width: 100px;
     text-align: right;
+}
+
+/* ============================================
+   Rebalance Weight Warning
+   ============================================ */
+.rebal-weight-warning {
+    display: none;
+    color: var(--color-negative);
+    font-size: 1rem;
+    padding: 4px 0 0;
+    font-weight: 500;
 }
