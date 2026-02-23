@@ -1045,6 +1045,93 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tr) tr.querySelector('.cash-edit-key').focus();
     });
 
+    // Restore Backup button
+    document.getElementById('restore-backup-btn')?.addEventListener('click', async () => {
+        // Backup current state before showing restore options
+        try {
+            await fetch('/api/backup/trigger?portfolio=' + portfolioId, { method: 'POST' });
+        } catch (_) { /* non-fatal */ }
+
+        let dates;
+        try {
+            const resp = await fetch('/api/backup/list?portfolio=' + portfolioId);
+            dates = await resp.json();
+        } catch (e) {
+            alert('Failed to load backup list.');
+            return;
+        }
+
+        // Build modal
+        const overlay = document.createElement('div');
+        overlay.className = 'backup-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'backup-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+
+        const title = document.createElement('p');
+        title.className = 'backup-modal-title';
+        title.textContent = 'Restore from Backup';
+        modal.appendChild(title);
+
+        if (dates.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'backup-modal-empty';
+            empty.textContent = 'No backups available.';
+            modal.appendChild(empty);
+        } else {
+            const list = document.createElement('ul');
+            list.className = 'backup-modal-list';
+            dates.forEach(date => {
+                const item = document.createElement('li');
+                item.className = 'backup-modal-item';
+                const label = document.createElement('span');
+                label.textContent = date;
+                const restoreBtn = document.createElement('button');
+                restoreBtn.textContent = 'Restore';
+                restoreBtn.addEventListener('click', async () => {
+                    restoreBtn.disabled = true;
+                    restoreBtn.textContent = '…';
+                    try {
+                        const r = await fetch('/api/backup/restore?portfolio=' + portfolioId + '&date=' + date, { method: 'POST' });
+                        const json = await r.json();
+                        if (json.status === 'ok') {
+                            document.body.removeChild(overlay);
+                            location.reload();
+                        } else {
+                            alert('Restore failed: ' + (json.message || 'Unknown error'));
+                            restoreBtn.disabled = false;
+                            restoreBtn.textContent = 'Restore';
+                        }
+                    } catch (e) {
+                        alert('Restore failed.');
+                        restoreBtn.disabled = false;
+                        restoreBtn.textContent = 'Restore';
+                    }
+                });
+                item.appendChild(label);
+                item.appendChild(restoreBtn);
+                list.appendChild(item);
+            });
+            modal.appendChild(list);
+        }
+
+        const footer = document.createElement('div');
+        footer.className = 'backup-modal-footer';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'backup-modal-close';
+        closeBtn.textContent = 'Cancel';
+        closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+        footer.appendChild(closeBtn);
+        modal.appendChild(footer);
+
+        overlay.appendChild(modal);
+        overlay.addEventListener('click', e => { if (e.target === overlay) document.body.removeChild(overlay); });
+        document.body.appendChild(overlay);
+        closeBtn.focus();
+    });
+
     // IBKR margin rates reload button
     const ibkrReloadBtn = document.getElementById('ibkr-reload-btn');
     if (ibkrReloadBtn) {

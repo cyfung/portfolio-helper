@@ -140,6 +140,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     div(classes = "header-buttons") {
                         a(href = "/loan", classes = "loan-calc-link") { +"Loan Calc" }
 
+                        button(classes = "restore-backup-btn") {
+                            attributes["id"] = "restore-backup-btn"
+                            attributes["type"] = "button"
+                            attributes["title"] = "Restore from a previous backup"
+                            span(classes = "toggle-label") { +"Restore" }
+                        }
+
                         button(classes = "edit-toggle") {
                             attributes["aria-label"] = "Toggle edit mode"
                             attributes["id"] = "edit-toggle"

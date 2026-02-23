@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.BackupService
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
@@ -282,6 +283,43 @@ fun Application.configureRouting() {
             } catch (_: Exception) {
                 // Client disconnected
                 channel.close()
+            }
+        }
+
+        // Trigger an immediate backup for a portfolio (called before opening the restore UI)
+        post("/api/backup/trigger") {
+            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+            val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            BackupService.backupNow(portfolioEntry)
+            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+        }
+
+        // List available backups for a portfolio
+        get("/api/backup/list") {
+            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+            val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val dates = BackupService.listBackups(portfolioEntry)
+            val json = "[${dates.joinToString(",") { "\"$it\"" }}]"
+            call.respondText(json, ContentType.Application.Json)
+        }
+
+        // Restore a portfolio from a dated backup ZIP
+        post("/api/backup/restore") {
+            try {
+                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                val date = call.request.queryParameters["date"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing date parameter")
+                BackupService.restoreBackup(portfolioEntry, date)
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                )
             }
         }
 
