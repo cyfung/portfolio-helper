@@ -57,6 +57,7 @@ fun main() {
     if (Files.isDirectory(dataDir)) {
         Files.list(dataDir)
             .filter { Files.isDirectory(it) }
+            .filter { !it.fileName.toString().startsWith(".") }
             .filter { Files.exists(it.resolve("stocks.csv")) }
             .sorted(compareBy { it.fileName.toString() })
             .forEach { subDir ->
@@ -101,6 +102,11 @@ fun main() {
         loadPortfolio(entry)
         loadCash(entry)
     }
+
+    // ---------------------------------------------------------------
+    // 4b. Backup portfolios (on startup + daily)
+    // ---------------------------------------------------------------
+    BackupService.start(appScope)
 
     // ---------------------------------------------------------------
     // 5. Compute union of all symbols across all portfolios
