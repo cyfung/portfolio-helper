@@ -1,5 +1,8 @@
 // Global store for Day % of all symbols (portfolio + LETF components)
 const componentDayPercents = {};
+// Global store for raw (unrounded) prices — avoids compounded rounding errors in rebalancing
+const rawMarkPrices = {};
+const rawClosePrices = {};
 let globalIsMarketClosed = false;
 let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
 // Display currency (USD by default; lastPortfolioVal/lastCashTotalUsd/etc. declared in inline script)
@@ -88,6 +91,10 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
     if (tradingPeriodEnd !== null && tradingPeriodEnd !== undefined) {
         marketCloseTimeMs = tradingPeriodEnd * 1000; // seconds → ms
     }
+
+    // Store raw prices for high-precision rebalancing calculations
+    if (markPrice !== null) rawMarkPrices[symbol] = markPrice;
+    if (lastClosePrice !== null) rawClosePrices[symbol] = lastClosePrice;
 
     // Store Day % for LETF Est Val calculations
     if (markPrice !== null && lastClosePrice !== null && lastClosePrice !== 0) {
@@ -228,8 +235,8 @@ function updateTotalValue() {
 
         if (amountCell && markCell && closeCell) {
             const amount = parseFloat(amountCell.textContent);
-            const markPrice = parsePrice(markCell.textContent);
-            const closePrice = parsePrice(closeCell.textContent);
+            const markPrice = rawMarkPrices[symbol] ?? parsePrice(markCell.textContent);
+            const closePrice = rawClosePrices[symbol] ?? parsePrice(closeCell.textContent);
 
             if (markPrice !== null) total += markPrice * amount;
             if (closePrice !== null) previousTotal += closePrice * amount;
@@ -486,12 +493,19 @@ function updateRebalancingColumns(portfolioTotal) {
     if (portfolioTotal <= 0) return;
 
     document.querySelectorAll('.value.loaded').forEach(valueCell => {
-        const value = parsePrice(valueCell.textContent);
-        if (value === null) return;
-
         const symbol = valueCell.id.replace('value-', '');
+        const amountCell = document.getElementById('amount-' + symbol);
+        const amount = amountCell ? parseFloat(amountCell.textContent) : null;
+
+        // Use raw prices for precision; fall back to DOM-parsed values if not yet received
         const markCell = document.getElementById('mark-' + symbol);
-        const markPrice = parsePrice(markCell ? markCell.textContent : null);
+        const markPrice = rawMarkPrices[symbol] ?? parsePrice(markCell ? markCell.textContent : null);
+        const effectivePrice = markPrice ?? (rawClosePrices[symbol] ?? null);
+
+        const value = (amount !== null && effectivePrice !== null)
+            ? amount * effectivePrice
+            : parsePrice(valueCell.textContent);
+        if (value === null) return;
 
         // Get target weight from hidden span
         const weightCell = document.getElementById('current-weight-' + symbol);
@@ -1129,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tr) tr.querySelector('.cash-edit-key').focus();
     });
 
-    // Virtual Rebalance button — backup current state, enter edit mode, apply rebal shares to qty
+    // Virtual Rebalance button — backup current state, enter edit mode, set qty to target weight allocation
     document.getElementById('virtual-rebal-btn')?.addEventListener('click', async () => {
         // Snapshot current state before modifying (forced, prefix = pre-rebal)
         try {
@@ -1141,17 +1155,23 @@ document.addEventListener('DOMContentLoaded', () => {
             editToggle.click();
         }
 
-        // Apply rebalancing: new qty = current qty + rebal shares (2 dp)
+        // Apply rebalancing: new qty = targetWeight% * portfolioTotal / markPrice
+        const portfolioTotal = getRebalTotal();
         document.querySelectorAll('.edit-qty').forEach(input => {
             const sym = input.getAttribute('data-symbol');
-            const rebalSharesCell = document.getElementById('rebal-shares-' + sym);
-            if (!rebalSharesCell) return;
-            const rebalText = rebalSharesCell.textContent.trim();
-            if (!rebalText || rebalText === '—') return;
-            const rebalShares = parseFloat(rebalText.replace(/[+,]/g, ''));
-            if (isNaN(rebalShares) || rebalShares === 0) return;
-            const currentQty = parseFloat(input.value) || 0;
-            input.value = parseFloat((currentQty + rebalShares).toFixed(2));
+            const weightCell = document.getElementById('current-weight-' + sym);
+            const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
+            if (!targetWeightSpan) return;
+            const targetWeight = parseFloat(targetWeightSpan.textContent);
+            if (isNaN(targetWeight)) return;
+            if (targetWeight <= 0) {
+                input.value = 0;
+                return;
+            }
+            const markCell = document.getElementById('mark-' + sym);
+            const markPrice = rawMarkPrices[sym] ?? parsePrice(markCell ? markCell.textContent : null);
+            if (!markPrice || markPrice <= 0) return;
+            input.value = parseFloat(((targetWeight / 100) * portfolioTotal / markPrice).toFixed(2));
         });
     });
 

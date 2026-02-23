@@ -81,8 +81,8 @@ data class Stock(
      * Returns null if targetWeight is not set or value is unavailable.
      */
     fun targetValue(portfolioTotal: Double): Double? {
-        return if (targetWeight != null && portfolioTotal > 0) {
-            (targetWeight!! / 100.0) * portfolioTotal
+        return if (portfolioTotal > 0) {
+            ((targetWeight ?: 0.0) / 100.0) * portfolioTotal
         } else null
     }
 

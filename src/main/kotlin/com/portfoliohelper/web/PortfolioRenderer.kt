@@ -826,24 +826,21 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         if (stockValue != null && portfolio.totalValue > 0) {
                             val currentWeight = (stockValue / portfolio.totalValue) * 100
 
-                            if (stock.targetWeight != null) {
-                                val diff = currentWeight - stock.targetWeight
-                                val sign = if (diff >= 0) "-" else "+"
-                                val diffClass = when {
-                                    abs(diff) > 2.0 -> "alert"
-                                    abs(diff) > 1.0 -> "warning"
-                                    else -> "good"
-                                }
-                                +"%.1f%% ".format(currentWeight)
-                                span(classes = "weight-diff $diffClass") {
-                                    +"($sign%.1f%%)".format(abs(diff))
-                                }
-                                span(classes = "target-weight-hidden") {
-                                    style = "display:none;"
-                                    +stock.targetWeight.toString()
-                                }
-                            } else {
-                                +"%.1f%%".format(currentWeight)
+                            val effectiveTarget = stock.targetWeight ?: 0.0
+                            val diff = currentWeight - effectiveTarget
+                            val sign = if (diff >= 0) "-" else "+"
+                            val diffClass = when {
+                                abs(diff) > 2.0 -> "alert"
+                                abs(diff) > 1.0 -> "warning"
+                                else -> "good"
+                            }
+                            +"%.1f%% ".format(currentWeight)
+                            span(classes = "weight-diff $diffClass") {
+                                +"($sign%.1f%%)".format(abs(diff))
+                            }
+                            span(classes = "target-weight-hidden") {
+                                style = "display:none;"
+                                +effectiveTarget.toString()
                             }
                         } else {
                             span(classes = "loading") { +"—" }
@@ -853,14 +850,10 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Rebalance $ (dollar amount to add/reduce)
                     td(classes = "price-change ${stock.rebalanceDirection(portfolio.totalValue)} rebal-column") {
                         id = "rebal-dollars-${stock.label}"
-                        if (stock.targetWeight != null) {
-                            val rebalDollars = stock.rebalanceDollars(portfolio.totalValue)
-                            if (rebalDollars != null) {
-                                val sign = if (rebalDollars >= 0) "+" else "-"
-                                +"$sign${'$'}%,.2f".format(abs(rebalDollars))
-                            } else {
-                                span(classes = "loading") { +"—" }
-                            }
+                        val rebalDollars = stock.rebalanceDollars(portfolio.totalValue)
+                        if (rebalDollars != null) {
+                            val sign = if (rebalDollars >= 0) "+" else "-"
+                            +"$sign${'$'}%,.2f".format(abs(rebalDollars))
                         } else {
                             span(classes = "loading") { +"—" }
                         }
@@ -869,14 +862,10 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Rebalance Shares (number of shares to buy/sell)
                     td(classes = "price-change ${stock.rebalanceDirection(portfolio.totalValue)} rebal-column") {
                         id = "rebal-shares-${stock.label}"
-                        if (stock.targetWeight != null) {
-                            val rebalShares = stock.rebalanceShares(portfolio.totalValue)
-                            if (rebalShares != null) {
-                                val sign = if (rebalShares >= 0) "+" else "-"
-                                +"$sign%.2f".format(abs(rebalShares))
-                            } else {
-                                span(classes = "loading") { +"—" }
-                            }
+                        val rebalShares = stock.rebalanceShares(portfolio.totalValue)
+                        if (rebalShares != null) {
+                            val sign = if (rebalShares >= 0) "+" else "-"
+                            +"$sign%.2f".format(abs(rebalShares))
                         } else {
                             span(classes = "loading") { +"—" }
                         }
