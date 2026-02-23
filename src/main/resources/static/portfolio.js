@@ -644,6 +644,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (displaySpan) input.value = displaySpan.textContent.trim();
             });
 
+            // Add empty row if stock table has no entries
+            const stockTbody = document.querySelector('.portfolio-table tbody');
+            if (stockTbody && stockTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
+                const tr = addStockRow();
+                if (tr) tr.querySelector('.new-symbol-input').focus();
+            }
+
+            // Add empty row if cash edit table has no entries
+            const cashTbody = document.querySelector('.cash-edit-table tbody');
+            if (cashTbody && cashTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
+                addCashRow();
+            }
+
         } else {
             // Restore deleted rows
             document.querySelectorAll('[data-deleted="true"]').forEach(el => {

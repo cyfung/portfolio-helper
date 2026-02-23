@@ -212,37 +212,33 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
                 }
 
-                if (portfolio.stocks.isEmpty()) {
-                    p(classes = "error") {
-                        +"No stocks found in the portfolio. Please add stocks to the CSV file."
-                    }
-                } else {
-                    div(classes = "portfolio-tables-wrapper") {
-                        div(classes = "summary-and-rates") {
-                            table(classes = "summary-table") {
-                                tbody {
-                                    buildSummaryRows(cashEntries, ::resolveEntryUsd, portfolio, cashTotalUsd)
-                                }
-                            }
-
-                            buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
-
-                            if (cashEntries.any { it.marginFlag }) {
-                                buildIbkrRatesTable(cashEntries, ::resolveEntryUsd, fxRateMap)
+                div(classes = "portfolio-tables-wrapper") {
+                    div(classes = "summary-and-rates") {
+                        table(classes = "summary-table") {
+                            tbody {
+                                buildSummaryRows(cashEntries, ::resolveEntryUsd, portfolio, cashTotalUsd)
                             }
                         }
 
-                        buildStockTable(portfolio)
+                        buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
 
-                        div(classes = "edit-add-buttons") {
-                            button(classes = "add-stock-btn") {
-                                attributes["type"] = "button"
-                                id = "add-stock-btn"
-                                +"+ Add Stock"
-                            }
+                        if (cashEntries.any { it.marginFlag }) {
+                            buildIbkrRatesTable(cashEntries, ::resolveEntryUsd, fxRateMap)
                         }
                     }
 
+                    buildStockTable(portfolio)
+
+                    div(classes = "edit-add-buttons") {
+                        button(classes = "add-stock-btn") {
+                            attributes["type"] = "button"
+                            id = "add-stock-btn"
+                            +"+ Add Stock"
+                        }
+                    }
+                }
+
+                if (portfolio.stocks.isNotEmpty()) {
                     p(classes = "info") {
                         +"Showing ${portfolio.stocks.size} stock(s)"
                     }
