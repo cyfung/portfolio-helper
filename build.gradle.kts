@@ -1,8 +1,6 @@
-import edu.sc.seis.launch4j.tasks.DefaultLaunch4jTask
-
 plugins {
-    kotlin("jvm") version "1.9.21"
-    kotlin("plugin.serialization") version "1.9.21"
+    kotlin("jvm") version "2.3.0"
+    kotlin("plugin.serialization") version "2.3.0"
     application
     id("com.gradleup.shadow") version "8.3.5"
     id("edu.sc.seis.launch4j") version "4.0.0"
@@ -18,34 +16,34 @@ repositories {
 
 dependencies {
     // Ktor Server
-    implementation("io.ktor:ktor-server-core:2.3.7")
-    implementation("io.ktor:ktor-server-netty:2.3.7")
-    implementation("io.ktor:ktor-server-html-builder:2.3.7")
+    implementation("io.ktor:ktor-server-core:3.4.0")
+    implementation("io.ktor:ktor-server-netty:3.4.0")
+    implementation("io.ktor:ktor-server-html-builder:3.4.0")
 
     // Ktor HTTP Client for Yahoo Finance API
-    implementation("io.ktor:ktor-client-core:2.3.7")
-    implementation("io.ktor:ktor-client-cio:2.3.7")
+    implementation("io.ktor:ktor-client-core:3.4.0")
+    implementation("io.ktor:ktor-client-cio:3.4.0")
 
     // kotlinx.html for HTML DSL
-    implementation("org.jetbrains.kotlinx:kotlinx-html-jvm:0.9.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-html-jvm:0.11.0")
 
     // Apache Commons CSV for parsing
     implementation("org.apache.commons:commons-csv:1.10.0")
 
     // Kotlinx Serialization for JSON parsing
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 
     // Jsoup for HTML parsing (NAV scraping from fund provider websites)
     implementation("org.jsoup:jsoup:1.17.2")
 
     // Kotlin Coroutines (for async/parallel fetching)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
     // Dorkbox SystemTray for cross-platform system tray with Swing menu customization
     implementation("com.dorkbox:SystemTray:4.4")
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.4.11")
+    implementation("ch.qos.logback:logback-classic:1.5.32")
 
     // Kotlin standard library
     implementation(kotlin("stdlib"))

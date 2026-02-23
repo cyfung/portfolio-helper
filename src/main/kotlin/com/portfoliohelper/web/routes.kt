@@ -13,6 +13,7 @@ import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.utils.io.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -269,12 +270,12 @@ fun Application.configureRouting() {
 
             // Stream updates to client
             try {
-                call.respondTextWriter(contentType = ContentType.Text.EventStream) {
-                    write(":keepalive\n\n")
+                call.respondBytesWriter(contentType = ContentType.Text.EventStream) {
+                    writeFully(":keepalive\n\n".toByteArray(Charsets.UTF_8))
                     flush()
 
                     for (message in channel) {
-                        write(message)
+                        writeFully(message.toByteArray(Charsets.UTF_8))
                         flush()
                     }
                 }
