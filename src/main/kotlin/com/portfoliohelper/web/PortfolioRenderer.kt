@@ -170,6 +170,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Rebalancing" }
                         }
 
+                        button(classes = "virtual-rebal-btn") {
+                            attributes["id"] = "virtual-rebal-btn"
+                            attributes["type"] = "button"
+                            attributes["title"] = "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+                            span(classes = "toggle-label") { +"Virtual Rebalance" }
+                        }
+
                         if (displayCurrencies.size > 1) {
                             if (displayCurrencies.size <= 3) {
                                 button(classes = "currency-toggle") {

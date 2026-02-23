@@ -286,12 +286,14 @@ fun Application.configureRouting() {
             }
         }
 
-        // Trigger an immediate backup for a portfolio (called before opening the restore UI)
+        // Trigger an immediate backup for a portfolio (called before opening the restore UI or virtual rebalance)
         post("/api/backup/trigger") {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
             val portfolioEntry = PortfolioRegistry.get(portfolioId)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
-            BackupService.backupNow(portfolioEntry)
+            val prefix = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
+            val force  = call.request.queryParameters["force"] == "true"
+            BackupService.backupNow(portfolioEntry, prefix, force)
             call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
         }
 

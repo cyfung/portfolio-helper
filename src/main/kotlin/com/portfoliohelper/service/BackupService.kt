@@ -30,11 +30,11 @@ object BackupService {
         PortfolioRegistry.entries.forEach { backupPortfolio(it) }
     }
 
-    fun backupNow(portfolio: ManagedPortfolio) {
-        backupPortfolio(portfolio)
+    fun backupNow(portfolio: ManagedPortfolio, prefix: String? = null, force: Boolean = false) {
+        backupPortfolio(portfolio, prefix, force)
     }
 
-    private fun backupPortfolio(portfolio: ManagedPortfolio) {
+    private fun backupPortfolio(portfolio: ManagedPortfolio, prefix: String? = null, force: Boolean = false) {
         val dataDir = Paths.get(portfolio.csvPath).parent
         val backupDir = dataDir.resolve(".backup")
         Files.createDirectories(backupDir)
@@ -44,25 +44,31 @@ object BackupService {
         val backupCsv  = backupDir.resolve("stocks.csv")
         val backupCash = backupDir.resolve("cash.txt")
 
-        val csvChanged  = contentDiffers(csvFile,  backupCsv)
-        val cashChanged = contentDiffers(cashFile, backupCash)
-
-        if (!csvChanged && !cashChanged) {
-            logger.debug("No changes for '${portfolio.id}', backup skipped")
-            return
+        if (!force) {
+            val csvChanged  = contentDiffers(csvFile, backupCsv)
+            val cashChanged = contentDiffers(cashFile, backupCash)
+            if (!csvChanged && !cashChanged) {
+                logger.debug("No changes for '${portfolio.id}', backup skipped")
+                return
+            }
         }
 
         val date = LocalDate.now().toString()  // yyyy-MM-dd
-        val zipPath = generateZipPath(backupDir, date)
+        val stem = if (prefix != null) "$prefix-$date" else date
+        val zipPath = generateZipPath(backupDir, stem)
         ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
             if (Files.exists(csvFile))  zos.addFile("stocks.csv", csvFile)
             if (Files.exists(cashFile)) zos.addFile("cash.txt",  cashFile)
         }
 
-        if (Files.exists(csvFile))  Files.copy(csvFile,  backupCsv,  REPLACE_EXISTING)
-        else                        Files.deleteIfExists(backupCsv)
-        if (Files.exists(cashFile)) Files.copy(cashFile, backupCash, REPLACE_EXISTING)
-        else                        Files.deleteIfExists(backupCash)
+        // Only update the flat-file change-detection snapshots for regular (unprefixed) backups,
+        // so forced prefix backups don't affect the next regular backup's change detection.
+        if (prefix == null) {
+            if (Files.exists(csvFile))  Files.copy(csvFile,  backupCsv,  REPLACE_EXISTING)
+            else                        Files.deleteIfExists(backupCsv)
+            if (Files.exists(cashFile)) Files.copy(cashFile, backupCash, REPLACE_EXISTING)
+            else                        Files.deleteIfExists(backupCash)
+        }
 
         logger.info("Backup created for '${portfolio.id}': ${zipPath.fileName}")
     }
@@ -97,9 +103,8 @@ object BackupService {
     fun listBackups(portfolio: ManagedPortfolio): List<String> {
         val backupDir = Paths.get(portfolio.csvPath).parent.resolve(".backup")
         if (!Files.exists(backupDir)) return emptyList()
-        val pattern = Regex("\\d{4}-\\d{2}-\\d{2}(_\\d+)?\\.zip")
         return Files.list(backupDir)
-            .filter { pattern.matches(it.fileName.toString()) }
+            .filter { it.fileName.toString().endsWith(".zip") }
             .map { it.fileName.toString().removeSuffix(".zip") }
             .sorted()
             .toList()
@@ -107,7 +112,7 @@ object BackupService {
     }
 
     fun restoreBackup(portfolio: ManagedPortfolio, date: String) {
-        require(date.matches(Regex("\\d{4}-\\d{2}-\\d{2}(_\\d+)?"))) { "Invalid backup name: $date" }
+        require(date.matches(Regex("[a-zA-Z0-9_-]+"))) { "Invalid backup name: $date" }
         val backupDir = Paths.get(portfolio.csvPath).parent.resolve(".backup")
         val zipPath = backupDir.resolve("$date.zip")
         require(Files.exists(zipPath)) { "Backup not found: $date" }

@@ -1045,6 +1045,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tr) tr.querySelector('.cash-edit-key').focus();
     });
 
+    // Virtual Rebalance button — backup current state, enter edit mode, apply rebal shares to qty
+    document.getElementById('virtual-rebal-btn')?.addEventListener('click', async () => {
+        // Snapshot current state before modifying (forced, prefix = pre-rebal)
+        try {
+            await fetch('/api/backup/trigger?portfolio=' + portfolioId + '&prefix=pre-rebal&force=true', { method: 'POST' });
+        } catch (_) { /* non-fatal */ }
+
+        // Enter edit mode if not already active
+        if (!body.classList.contains('editing-active')) {
+            editToggle.click();
+        }
+
+        // Apply rebalancing: new qty = current qty + rebal shares (2 dp)
+        document.querySelectorAll('.edit-qty').forEach(input => {
+            const sym = input.getAttribute('data-symbol');
+            const rebalSharesCell = document.getElementById('rebal-shares-' + sym);
+            if (!rebalSharesCell) return;
+            const rebalText = rebalSharesCell.textContent.trim();
+            if (!rebalText || rebalText === '—') return;
+            const rebalShares = parseFloat(rebalText.replace(/[+,]/g, ''));
+            if (isNaN(rebalShares) || rebalShares === 0) return;
+            const currentQty = parseFloat(input.value) || 0;
+            input.value = parseFloat((currentQty + rebalShares).toFixed(2));
+        });
+    });
+
     // Restore Backup button
     document.getElementById('restore-backup-btn')?.addEventListener('click', async () => {
         // Backup current state before showing restore options
