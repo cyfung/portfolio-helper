@@ -229,24 +229,28 @@ fun Application.configureRouting() {
 
             val channel = Channel<String>(Channel.BUFFERED)
 
-            // Register callback for price updates
+            // Register callback for price updates; replay cached quotes immediately so
+            // clients that connect after the first fetch don't wait for the next poll cycle
             val callback: (String, YahooQuote) -> Unit = { symbol, quote ->
-                val json = buildString {
-                    append("{")
-                    append("\"symbol\":\"$symbol\",")
-                    append("\"markPrice\":${quote.regularMarketPrice},")
-                    append("\"lastClosePrice\":${quote.previousClose},")
-                    append("\"isMarketClosed\":${quote.isMarketClosed},")
-                    append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
-                    append("\"timestamp\":${quote.lastUpdateTime}")
-                    append("}")
+                if (quote.regularMarketPrice != null) {
+                    val json = buildString {
+                        append("{")
+                        append("\"symbol\":\"$symbol\",")
+                        append("\"markPrice\":${quote.regularMarketPrice},")
+                        append("\"lastClosePrice\":${quote.previousClose},")
+                        append("\"isMarketClosed\":${quote.isMarketClosed},")
+                        append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
+                        append("\"timestamp\":${quote.lastUpdateTime}")
+                        append("}")
+                    }
+                    channel.trySend("data: $json\n\n")
                 }
-                channel.trySend("data: $json\n\n")
             }
 
-            YahooMarketDataService.onPriceUpdate(callback)
+            YahooMarketDataService.onUpdateWithReplay(callback)
 
-            // Register callback for NAV updates
+            // Register callback for NAV updates; replay cached NAV immediately so
+            // clients that connect after a slow NAV fetch don't miss it until next poll
             val navCallback: (String, NavData) -> Unit = { symbol, navData ->
                 val json = buildString {
                     append("{")
@@ -259,7 +263,7 @@ fun Application.configureRouting() {
                 channel.trySend("data: $json\n\n")
             }
 
-            NavService.onNavUpdate(navCallback)
+            NavService.onUpdateWithReplay(navCallback)
 
             // Listen for portfolio reload events
             launch {

@@ -75,6 +75,13 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
         synchronized(updateCallbacks) { updateCallbacks.add(callback) }
     }
 
+    /** Registers [callback] and immediately replays all cached entries so new clients
+     *  don't miss data that was fetched before their SSE connection was established. */
+    fun onUpdateWithReplay(callback: (String, TData) -> Unit) {
+        synchronized(updateCallbacks) { updateCallbacks.add(callback) }
+        cache.forEach { (symbol, data) -> callback(symbol, data) }
+    }
+
     fun get(symbol: String): TData? = cache[symbol]
 
     open fun shutdown() {
