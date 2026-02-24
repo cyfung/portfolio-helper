@@ -86,13 +86,20 @@ tasks {
     }
 }
 
+val copyJar = tasks.register("copyJar", Copy::class) {
+    dependsOn(tasks.shadowJar)
+    val dir = layout.buildDirectory.dir("latest-lib")
+    delete(dir)
+    from(tasks.shadowJar).into(dir)
+}
+
 // jpackage Configuration using Petr Panteleyev plugin
 // Creates an app image (portable application bundle) instead of an installer
 tasks.jpackage {
-    dependsOn(tasks.shadowJar)
+    dependsOn(tasks.shadowJar, copyJar)
 
     // Input: directory containing the shadow JAR
-    input.set(layout.buildDirectory.dir("libs"))
+    input.set(layout.buildDirectory.dir("latest-lib"))
     destination.set(layout.buildDirectory.dir("jpackage"))
 
     // Application entry point
