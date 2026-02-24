@@ -12,5 +12,5 @@
 
     <logger name="io.ktor" level="INFO"/>
     <logger name="io.netty" level="INFO"/>
-    <logger name="com.portfoliohelper" level="DEBUG"/>
+    <logger name="com.portfoliohelper" level="INFO"/>
 </configuration>

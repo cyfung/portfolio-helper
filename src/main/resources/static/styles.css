@@ -24,7 +24,7 @@
     --color-negative: #de350b;
     --color-warning: #b45309;
 
-    --color-header-bg: #0066cc;
+    --color-header-bg: #dee2e6;
     --color-header-text: #ffffff;
 
     /* Typography */
@@ -426,6 +426,10 @@ h1 {
     color: var(--color-text-tertiary);
 }
 
+.summary-table td.cash-converted-col {
+    color: var(--color-text-secondary);
+}
+
 .summary-table .summary-section-break td {
     border-top: 2px solid var(--color-border-medium);
     padding-top: var(--spacing-sm);
@@ -479,7 +483,7 @@ h1 {
 
 .portfolio-table thead {
     background-color: var(--color-header-bg);
-    color: var(--color-header-text);
+    color: var(--color-text-secondary);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -557,6 +561,11 @@ h1 {
 .portfolio-table .price.loaded {
     color: var(--color-text-primary);
     font-weight: var(--font-weight-semibold);
+}
+
+.portfolio-table .price.loaded.muted {
+    color: var(--color-text-secondary);
+    font-weight: normal;
 }
 
 /* Mkt Val column - use secondary text color */
@@ -1545,6 +1554,10 @@ a.loan-calc-link:hover {
 .ibkr-interest-summary td:last-child {
     text-align: right;
     color: var(--color-text-primary);
+}
+
+.ibkr-interest-summary td.ibkr-value-muted {
+    color: var(--color-text-secondary);
 }
 
 .ibkr-interest-summary td.ibkr-rate-diff {

@@ -337,12 +337,12 @@ private fun TBODY.buildSummaryRows(
                     +"${"%,.2f".format(entry.amount)} ${entry.currency}"
                 }
             }
-            td {
+            td(classes = "cash-converted-col") {
                 span {
                     id = "cash-usd-${entry.label}-${entry.currency}"
                     val resolvedUsd = resolveEntryUsd(entry)
                     if (resolvedUsd != null) {
-                        +"${'$'}%,.2f".format(resolvedUsd)
+                        +"$%,.2f".format(resolvedUsd)
                     } else {
                         +"---"
                     }
@@ -564,6 +564,7 @@ private fun FlowContent.buildIbkrRatesTable(
                 td { +"Current Daily Interest" }
                 td {
                     id = "ibkr-current-interest"
+                    classes = setOf("ibkr-value-muted")
                     if (currentInterestUsd > 0) +"${"$"}%,.2f".format(currentInterestUsd) else +"—"
                 }
             }
@@ -574,11 +575,12 @@ private fun FlowContent.buildIbkrRatesTable(
                 }
                 td {
                     id = "ibkr-cheapest-interest"
+                    classes = setOf("ibkr-value-muted")
                     if (cheapestInterestUsd != null) +"${"$"}%,.2f".format(cheapestInterestUsd) else +"—"
                 }
             }
             tr {
-                td { +"Difference" }
+                td { +"Saving" }
                 td {
                     id = "ibkr-interest-diff"
                     if (interestDiff != null && interestDiff >= 0.005) {
@@ -735,7 +737,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Last NAV
-                    td(classes = if (stock.lastNav != null) "price loaded" else "price") {
+                    td(classes = if (stock.lastNav != null) "price loaded muted" else "price muted") {
                         id = "nav-${stock.label}"
                         if (stock.lastNav != null) {
                             +"${'$'}%.2f".format(stock.lastNav)
