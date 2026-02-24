@@ -244,14 +244,17 @@ function calculate() {
 
     var apr = r * ppy;
     var apy = Math.pow(1 + r, ppy) - 1;
+    var flatRate = (payment * numPeriods - loanAmount) / (loanAmount * numPeriods);
     var totalPayments = payment * numPeriods - extraPositiveTotal;
     var totalInterest = totalPayments - loanAmount;
 
-    document.getElementById('result-periodic-rate').textContent = formatPct(r);
-    document.getElementById('result-apr').textContent           = formatPct(apr);
-    document.getElementById('result-apy').textContent           = formatPct(apy);
-    document.getElementById('result-total-payments').textContent = formatCurrency(totalPayments);
-    document.getElementById('result-total-interest').textContent = formatCurrency(totalInterest);
+    document.getElementById('result-periodic-rate').textContent      = formatPct(r);
+    document.getElementById('result-apr').textContent                = formatPct(apr);
+    document.getElementById('result-apy').textContent                = formatPct(apy);
+    document.getElementById('result-flat-rate').textContent          = formatPct(flatRate);
+    document.getElementById('result-payment-per-period').textContent = formatCurrency(payment);
+    document.getElementById('result-total-payments').textContent     = formatCurrency(totalPayments);
+    document.getElementById('result-total-interest').textContent     = formatCurrency(totalInterest);
 
     document.getElementById('loan-results').style.display = 'block';
 

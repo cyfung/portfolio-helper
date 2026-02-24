@@ -287,12 +287,12 @@ private fun TBODY.buildSummaryRows(
         td {
             span {
                 id = "grand-total-value"
-                +"${'$'}%,.2f".format(portfolio.totalValue + cashTotalUsd)
+                +"$%,.2f".format(portfolio.totalValue + cashTotalUsd)
             }
             div(classes = "summary-subvalue") {
                 id = "total-day-change"
                 span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                    +"$grandTotalDaySign${'$'}%,.2f".format(abs(portfolio.dailyChangeDollars))
+                    +"$grandTotalDaySign$%,.2f".format(abs(portfolio.dailyChangeDollars))
                 }
                 +" "
                 span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
@@ -362,7 +362,7 @@ private fun TBODY.buildSummaryRows(
             td {
                 span {
                     id = "cash-total-usd"
-                    +"${'$'}%,.2f".format(cashTotalUsd)
+                    +"$%,.2f".format(cashTotalUsd)
                 }
             }
         }
@@ -383,7 +383,7 @@ private fun TBODY.buildSummaryRows(
                 td {
                     span {
                         id = "margin-total-usd"
-                        +"${'$'}%,.2f".format(abs(marginUsd))
+                        +"$%,.2f".format(abs(marginUsd))
                     }
                     val marginPct =
                         if (marginDenominator != 0.0 && marginUsd < 0)
@@ -412,12 +412,12 @@ private fun TBODY.buildSummaryRows(
             td {
                 div {
                     id = "portfolio-total"
-                    +"${'$'}%,.2f".format(portfolio.totalValue)
+                    +"$%,.2f".format(portfolio.totalValue)
                 }
                 div(classes = "summary-subvalue") {
                     id = "portfolio-day-change"
                     span(classes = "change-dollars ${portfolio.dailyChangeDirection}") {
-                        +"$daySign${'$'}%,.2f".format(abs(portfolio.dailyChangeDollars))
+                        +"$daySign$%,.2f".format(abs(portfolio.dailyChangeDollars))
                     }
                     +" "
                     span(classes = "change-percent ${portfolio.dailyChangeDirection}") {
@@ -456,7 +456,7 @@ private fun TBODY.buildSummaryRows(
             td {
                 span {
                     id = "margin-target-usd"
-                    +"${'$'}%,.2f".format(abs(mUsd))
+                    +"$%,.2f".format(abs(mUsd))
                 }
                 span(classes = "margin-percent") {
                     id = "margin-target-percent"
@@ -565,7 +565,7 @@ private fun FlowContent.buildIbkrRatesTable(
                 td {
                     id = "ibkr-current-interest"
                     classes = setOf("ibkr-value-muted")
-                    if (currentInterestUsd > 0) +"${"$"}%,.2f".format(currentInterestUsd) else +"—"
+                    if (currentInterestUsd > 0) +"$%,.2f".format(currentInterestUsd) else +"—"
                 }
             }
             tr {
@@ -576,7 +576,7 @@ private fun FlowContent.buildIbkrRatesTable(
                 td {
                     id = "ibkr-cheapest-interest"
                     classes = setOf("ibkr-value-muted")
-                    if (cheapestInterestUsd != null) +"${"$"}%,.2f".format(cheapestInterestUsd) else +"—"
+                    if (cheapestInterestUsd != null) +"$%,.2f".format(cheapestInterestUsd) else +"—"
                 }
             }
             tr {
@@ -585,7 +585,7 @@ private fun FlowContent.buildIbkrRatesTable(
                     id = "ibkr-interest-diff"
                     if (interestDiff != null && interestDiff >= 0.005) {
                         classes = setOf("ibkr-rate-diff")
-                        +"${"$"}%,.2f".format(interestDiff)
+                        +"$%,.2f".format(interestDiff)
                     } else {
                         +"—"
                     }
@@ -740,7 +740,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = if (stock.lastNav != null) "price loaded muted" else "price muted") {
                         id = "nav-${stock.label}"
                         if (stock.lastNav != null) {
-                            +"${'$'}%.2f".format(stock.lastNav)
+                            +"$%.2f".format(stock.lastNav)
                         } else {
                             +"—"
                         }
@@ -770,7 +770,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                                             mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
                                         } else 0.0
                                     }
-                                    "${'$'}%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
+                                    "$%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
                                 }
                             } else null
                         } else null
@@ -784,7 +784,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = if (stock.lastClosePrice != null) "price loaded" else "price") {
                         id = "close-${stock.label}"
                         if (stock.lastClosePrice != null) {
-                            +"${'$'}%.2f".format(stock.lastClosePrice)
+                            +"$%.2f".format(stock.lastClosePrice)
                         } else {
                             span(classes = "loading") { +"—" }
                         }
@@ -794,7 +794,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = if (stock.markPrice != null) "price loaded" else "price") {
                         id = "mark-${stock.label}"
                         if (stock.markPrice != null) {
-                            +"${'$'}%.2f".format(stock.markPrice)
+                            +"$%.2f".format(stock.markPrice)
                         } else {
                             span(classes = "loading") { +"—" }
                         }
@@ -812,7 +812,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                                 +"—"
                             } else {
                                 val sign = if (stock.priceChangeDollars!! >= 0) "+" else "-"
-                                +"$sign${'$'}%.2f".format(abs(stock.priceChangeDollars!!))
+                                +"$sign$%.2f".format(abs(stock.priceChangeDollars!!))
                             }
                         } else {
                             span(classes = "loading") { +"—" }
@@ -838,7 +838,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = if (stock.value != null) "value loaded" else "value") {
                         id = "value-${stock.label}"
                         if (stock.value != null) {
-                            +"${'$'}%,.2f".format(stock.value)
+                            +"$%,.2f".format(stock.value)
                         } else {
                             span(classes = "loading") { +"—" }
                         }
@@ -852,7 +852,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                                 +"—"
                             } else {
                                 val sign = if (stock.positionChangeDollars!! >= 0) "+" else "-"
-                                +"$sign${'$'}%,.2f".format(abs(stock.positionChangeDollars!!))
+                                +"$sign$%,.2f".format(abs(stock.positionChangeDollars!!))
                             }
                         } else {
                             span(classes = "loading") { +"—" }
@@ -895,7 +895,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         val rebalDollars = stock.rebalanceDollars(portfolio.totalValue)
                         if (rebalDollars != null) {
                             val sign = if (rebalDollars >= 0) "+" else "-"
-                            +"$sign${'$'}%,.2f".format(abs(rebalDollars))
+                            +"$sign$%,.2f".format(abs(rebalDollars))
                         } else {
                             span(classes = "loading") { +"—" }
                         }

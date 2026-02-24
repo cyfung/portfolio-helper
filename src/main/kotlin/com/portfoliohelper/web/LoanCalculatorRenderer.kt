@@ -215,7 +215,15 @@ internal suspend fun ApplicationCall.renderLoanCalculatorPage() {
                             span { +"Effective APR (APY)" }
                             span { id = "result-apy" }
                         }
+                        div(classes = "result-row") {
+                            span { +"Flat Rate" }
+                            span { id = "result-flat-rate" }
+                        }
                         div(classes = "result-divider") {}
+                        div(classes = "result-row") {
+                            span { +"Payment / Period" }
+                            span { id = "result-payment-per-period" }
+                        }
                         div(classes = "result-row") {
                             span { +"Total Payments" }
                             span { id = "result-total-payments" }
