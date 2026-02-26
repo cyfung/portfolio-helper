@@ -1,19 +1,17 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.*
-import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
-import com.portfoliohelper.service.CashReader
 import com.portfoliohelper.web.configureRouting
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Paths
+import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.seconds
 
 fun String.toPortfolioSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
 fun String.toPortfolioDisplayName() = replaceFirstChar { it.uppercase() }
@@ -36,7 +34,8 @@ fun main() {
     } else if (!Files.exists(dataDir.resolve("stocks.csv"))) {
         // data/ exists but stocks.csv is missing — copy just that
         val cl = object {}::class.java.classLoader
-        cl.getResourceAsStream("data/stocks.csv")?.use { Files.copy(it, dataDir.resolve("stocks.csv")) }
+        cl.getResourceAsStream("data/stocks.csv")
+            ?.use { Files.copy(it, dataDir.resolve("stocks.csv")) }
         logger.info("Created default stocks.csv from bundled template")
     }
 
@@ -152,7 +151,8 @@ fun main() {
         try {
             logger.info("Initializing NAV service...")
             NavService.initialize()
-            val symbols = PortfolioRegistry.entries.flatMap { it.getStocks().map { s -> s.label } }.distinct()
+            val symbols =
+                PortfolioRegistry.entries.flatMap { it.getStocks().map { s -> s.label } }.distinct()
             NavService.requestNavForSymbols(symbols)
         } catch (e: Exception) {
             logger.error("Failed to initialize NAV service", e)
@@ -220,7 +220,6 @@ fun main() {
     Runtime.getRuntime().addShutdownHook(Thread {
         logger.info("Shutting down application (shutdown hook)...")
         runCatching { stopServer() }
-        SystemTrayService.shutdown()
         fileWatchers.forEach { it.stop() }
         IbkrMarginRateService.shutdown()
         NavService.shutdown()
@@ -228,22 +227,12 @@ fun main() {
         logger.info("Cleanup completed")
     })
 
+    val url = "http://localhost:$port"
+
     // ---------------------------------------------------------------
     // 11. System tray
     // ---------------------------------------------------------------
-    val traySupported = SystemTrayService.initialize(
-        serverUrl = "http://localhost:$port",
-        onExit = {
-            logger.info("Exit requested from system tray")
-            System.exit(0)
-        }
-    )
-
-    if (traySupported) {
-        logger.info("System tray initialized successfully")
-    } else {
-        logger.warn("Running without system tray (not supported on this platform)")
-    }
+    NewTrayService.createTray(url)
 
     // ---------------------------------------------------------------
     // 12. Start web server
@@ -256,18 +245,16 @@ fun main() {
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
     } catch (e: Exception) {
         logger.error("Failed to start web server: ${e.message}", e)
-        System.exit(1)
-        return
-    }
-
-    if (traySupported) {
-        SystemTrayService.showNotification(
-            "Portfolio Helper",
-            "Server started on http://localhost:$port"
-        )
+        exitProcess(1)
     }
 
     logger.info("Application ready. Access at http://localhost:$port (press Ctrl+C or use tray menu to exit)")
+
+    runBlocking {
+        delay(1.seconds)
+        BrowserService.openBrowser(url)
+    }
+
     try {
         Thread.currentThread().join()
     } catch (_: InterruptedException) {

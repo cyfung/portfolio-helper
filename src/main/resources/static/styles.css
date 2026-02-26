@@ -984,6 +984,11 @@ h1 {
     cursor: not-allowed;
 }
 
+.edit-toggle:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .editing-active .save-btn {
     display: flex;
 }

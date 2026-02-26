@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.2.4"
+version = "0.2.5"
 
 repositories {
     mavenCentral()
@@ -38,9 +38,6 @@ dependencies {
 
     // Kotlin Coroutines (for async/parallel fetching)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-
-    // Dorkbox SystemTray for cross-platform system tray with Swing menu customization
-    implementation("com.dorkbox:SystemTray:4.4")
 
     // Logging
     implementation("ch.qos.logback:logback-classic:1.5.32")

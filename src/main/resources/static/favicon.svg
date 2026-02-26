@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1000" height="1000"><g clip-path="url(#SvgjsClipPath2045)"><rect width="1000" height="1000" fill="#ffffff"></rect><g transform="matrix(12.5,0,0,12.5,100,100)"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="fill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a56ff" stop-opacity="0.2"></stop>
+      <stop offset="100%" stop-color="#1a56ff" stop-opacity="0"></stop>
+    </linearGradient>
+  <clipPath id="SvgjsClipPath2045"><rect width="1000" height="1000" x="0" y="0" rx="100" ry="100"></rect></clipPath></defs>
+
+  <!-- Area fill -->
+  <path d="M8 46 L8 36 L18 28 L26 32 L36 18 L46 22 L56 12 L56 46 Z" fill="url(#fill)"></path>
+
+  <!-- Chart line -->
+  <polyline points="8,36 18,28 26,32 36,18 46,22 56,12" fill="none" stroke="#1a56ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>
+
+  <!-- Dots -->
+  <circle cx="36" cy="18" r="3.5" fill="#ffffff" stroke="#1a56ff" stroke-width="2.5"></circle>
+  <circle cx="56" cy="12" r="3.5" fill="#1a56ff"></circle>
+
+  <!-- Bottom axis -->
+  <line x1="8" y1="50" x2="56" y2="50" stroke="#1a56ff" stroke-width="1.5" stroke-opacity="0.25"></line>
+
+  <!-- Tick marks -->
+  <line x1="18" y1="50" x2="18" y2="53" stroke="#1a56ff" stroke-width="1.5" stroke-opacity="0.4"></line>
+  <line x1="36" y1="50" x2="36" y2="53" stroke="#1a56ff" stroke-width="1.5" stroke-opacity="0.4"></line>
+  <line x1="56" y1="50" x2="56" y2="53" stroke="#1a56ff" stroke-width="1.5" stroke-opacity="0.4"></line>
+</svg></svg></g></g></svg>

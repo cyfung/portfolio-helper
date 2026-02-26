@@ -860,6 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         saveBtn.disabled = true;
+        editToggle.disabled = true;
         saveBtn.querySelector('.toggle-label').textContent = 'Saving...';
 
         const saves = [
@@ -877,13 +878,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         Promise.all(saves).then(results => {
             if (results.every(r => r.ok)) {
-                // File watcher detects changes and triggers SSE reload
-                body.classList.remove('editing-active');
-                editToggle.classList.remove('active');
+                // File watcher would detect changes and triggers SSE reload
             } else throw new Error('Save failed');
         }).catch(err => {
             alert('Failed to save: ' + err.message);
             saveBtn.disabled = false;
+            editToggle.disabled = false;
             saveBtn.querySelector('.toggle-label').textContent = 'Save';
         });
     });
