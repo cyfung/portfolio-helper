@@ -2,6 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
+import com.portfoliohelper.model.Stock
 import com.portfoliohelper.service.CurrencyConventions
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.ManagedPortfolio
@@ -38,9 +39,12 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
         return when (e.currency) {
             "USD" -> e.amount
             "P" -> {
-                val ref = com.portfoliohelper.service.PortfolioRegistry.get(e.portfolioRef ?: return null) ?: return null
+                val ref =
+                    com.portfoliohelper.service.PortfolioRegistry.get(e.portfolioRef ?: return null)
+                        ?: return null
                 e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
             }
+
             else -> fxRateMap[e.currency]?.let { e.amount * it }
         }
     }
@@ -160,7 +164,8 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         button(classes = "virtual-rebal-btn") {
                             attributes["id"] = "virtual-rebal-btn"
                             attributes["type"] = "button"
-                            attributes["title"] = "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+                            attributes["title"] =
+                                "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
                             span(classes = "toggle-label") { +"Virtual Rebalance" }
                         }
 
@@ -177,7 +182,8 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                 button(classes = "currency-toggle") {
                                     attributes["id"] = "currency-toggle"
                                     attributes["type"] = "button"
-                                    attributes["data-currencies"] = displayCurrencies.joinToString(",")
+                                    attributes["data-currencies"] =
+                                        displayCurrencies.joinToString(",")
                                     attributes["title"] = "Switch display currency"
                                     span(classes = "toggle-label") { +"USD" }
                                 }
@@ -203,7 +209,10 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     div(classes = "portfolio-tabs") {
                         for (p in allPortfolios) {
                             val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
-                            a(href = href, classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}") {
+                            a(
+                                href = href,
+                                classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}"
+                            ) {
                                 +p.name
                             }
                         }
@@ -214,7 +223,12 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     div(classes = "summary-and-rates") {
                         table(classes = "summary-table") {
                             tbody {
-                                buildSummaryRows(cashEntries, ::resolveEntryUsd, portfolio, cashTotalUsd)
+                                buildSummaryRows(
+                                    cashEntries,
+                                    ::resolveEntryUsd,
+                                    portfolio,
+                                    cashTotalUsd
+                                )
                             }
                         }
 
@@ -482,6 +496,7 @@ private fun FlowContent.buildIbkrRatesTable(
         val effectiveRate: Double,
         val daysInYear: Int
     )
+
     val rows = marginCurrencies.mapNotNull { ccy ->
         val currencyRates = IbkrMarginRateService.getRates(ccy) ?: return@mapNotNull null
         val fxRate = if (ccy == "USD") 1.0 else (fxRateMap[ccy] ?: return@mapNotNull null)
@@ -510,85 +525,90 @@ private fun FlowContent.buildIbkrRatesTable(
         val fxRate = if (row.currency == "USD") 1.0 else (fxRateMap[row.currency] ?: 0.0)
         row.nativeDailyInterest * fxRate
     }
-    val cheapestRow = rows.minByOrNull { totalMarginLoanUsd * it.effectiveRate / 100.0 / it.daysInYear }
-    val cheapestInterestUsd = cheapestRow?.let { totalMarginLoanUsd * it.effectiveRate / 100.0 / it.daysInYear }
+    val cheapestRow =
+        rows.minByOrNull { totalMarginLoanUsd * it.effectiveRate / 100.0 / it.daysInYear }
+    val cheapestInterestUsd =
+        cheapestRow?.let { totalMarginLoanUsd * it.effectiveRate / 100.0 / it.daysInYear }
     val interestDiff = if (cheapestInterestUsd != null && currentInterestUsd > 0)
         currentInterestUsd - cheapestInterestUsd else null
 
     div(classes = "ibkr-rates-wrapper") {
-    table(classes = "ibkr-rates-table") {
-        thead {
-            tr {
-                th { +"CCY" }
-                th { +"IBKR Pro Rate" }
-            }
-        }
-        tbody {
-            for (row in rows) {
+        table(classes = "ibkr-rates-table") {
+            thead {
                 tr {
-                    attributes["data-ibkr-rate"] = "%.8f".format(row.effectiveRate)
-                    attributes["data-ibkr-days"] = row.daysInYear.toString()
-                    attributes["data-native-daily"] = "%.8f".format(row.nativeDailyInterest)
-                    td(classes = "ibkr-rate-currency") { +row.currency }
-                    td(classes = "ibkr-rate-value") { +row.rateDisplay }
+                    th { +"CCY" }
+                    th { +"IBKR Pro Rate" }
                 }
             }
-        }
-    }
-    table(classes = "ibkr-interest-summary") {
-        tbody {
-            tr {
-                td { +"Current Daily Interest" }
-                td {
-                    id = "ibkr-current-interest"
-                    classes = setOf("ibkr-value-muted")
-                    if (currentInterestUsd > 0) +"$%,.2f".format(currentInterestUsd) else +"—"
-                }
-            }
-            tr {
-                td {
-                    +"Cheapest "
-                    span { id = "ibkr-cheapest-ccy"; if (cheapestRow != null) +"(${cheapestRow.currency})" }
-                }
-                td {
-                    id = "ibkr-cheapest-interest"
-                    classes = setOf("ibkr-value-muted")
-                    if (cheapestInterestUsd != null) +"$%,.2f".format(cheapestInterestUsd) else +"—"
-                }
-            }
-            tr {
-                td { +"Saving" }
-                td {
-                    id = "ibkr-interest-diff"
-                    if (interestDiff != null && interestDiff >= 0.005) {
-                        classes = setOf("ibkr-rate-diff")
-                        +"$%,.2f".format(interestDiff)
-                    } else {
-                        +"—"
+            tbody {
+                for (row in rows) {
+                    tr {
+                        attributes["data-ibkr-rate"] = "%.8f".format(row.effectiveRate)
+                        attributes["data-ibkr-days"] = row.daysInYear.toString()
+                        attributes["data-native-daily"] = "%.8f".format(row.nativeDailyInterest)
+                        td(classes = "ibkr-rate-currency") { +row.currency }
+                        td(classes = "ibkr-rate-value") { +row.rateDisplay }
                     }
                 }
             }
         }
-    }
-    div(classes = "ibkr-rates-footer") {
-        span(classes = "ibkr-last-fetch") {
-            id = "ibkr-last-fetch"
-            if (lastFetchMillis > 0L) {
-                val time = java.time.Instant.ofEpochMilli(lastFetchMillis)
-                    .atZone(java.time.ZoneId.systemDefault())
-                +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(time)
-            } else {
-                +"—"
+        table(classes = "ibkr-interest-summary") {
+            tbody {
+                tr {
+                    td { +"Current Daily Interest" }
+                    td {
+                        id = "ibkr-current-interest"
+                        classes = setOf("ibkr-value-muted")
+                        if (currentInterestUsd > 0) +"$%,.2f".format(currentInterestUsd) else +"—"
+                    }
+                }
+                tr {
+                    td {
+                        +"Cheapest "
+                        span {
+                            id =
+                                "ibkr-cheapest-ccy"; if (cheapestRow != null) +"(${cheapestRow.currency})"
+                        }
+                    }
+                    td {
+                        id = "ibkr-cheapest-interest"
+                        classes = setOf("ibkr-value-muted")
+                        if (cheapestInterestUsd != null) +"$%,.2f".format(cheapestInterestUsd) else +"—"
+                    }
+                }
+                tr {
+                    td { +"Saving" }
+                    td {
+                        id = "ibkr-interest-diff"
+                        if (interestDiff != null && interestDiff >= 0.005) {
+                            classes = setOf("ibkr-rate-diff")
+                            +"$%,.2f".format(interestDiff)
+                        } else {
+                            +"—"
+                        }
+                    }
+                }
             }
         }
-        button(classes = "ibkr-reload-btn") {
-            id = "ibkr-reload-btn"
-            attributes["type"] = "button"
-            attributes["data-last-fetch"] = lastFetchMillis.toString()
-            attributes["title"] = "Reload IBKR margin rates"
-            +"↻"
+        div(classes = "ibkr-rates-footer") {
+            span(classes = "ibkr-last-fetch") {
+                id = "ibkr-last-fetch"
+                if (lastFetchMillis > 0L) {
+                    val time = java.time.Instant.ofEpochMilli(lastFetchMillis)
+                        .atZone(java.time.ZoneId.systemDefault())
+                    +java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").format(time)
+                } else {
+                    +"—"
+                }
+            }
+            button(classes = "ibkr-reload-btn") {
+                id = "ibkr-reload-btn"
+                attributes["type"] = "button"
+                attributes["data-last-fetch"] = lastFetchMillis.toString()
+                attributes["title"] = "Reload IBKR margin rates"
+                +"↻"
+            }
         }
-    }
     } // end ibkr-rates-wrapper
 }
 
@@ -725,32 +745,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
 
                     // Est Val (Estimated Value from LETF components)
                     val estValText: String? =
-                        if (stock.letfComponents != null) {
-                            val basePrice = stock.lastNav ?: stock.lastClosePrice
-                            if (basePrice != null) {
-                                val anyCompQuote = stock.letfComponents
-                                    .mapNotNull { (_, sym) -> YahooMarketDataService.getQuote(sym) }
-                                    .firstOrNull()
-                                val nowSeconds = System.currentTimeMillis() / 1000
-                                val pastCloseTime = anyCompQuote?.tradingPeriodEnd?.takeIf { it <= nowSeconds }
-                                val stale =
-                                    anyCompQuote?.isMarketClosed == true && (
-                                        pastCloseTime == null ||
-                                        nowSeconds - pastCloseTime > 12 * 3600
-                                    )
-
-                                if (stale) null
-                                else {
-                                    val sumComponent = stock.letfComponents.sumOf { (mult, sym) ->
-                                        val quote = YahooMarketDataService.getQuote(sym)
-                                        if (quote?.regularMarketPrice != null && quote.previousClose != null && quote.previousClose != 0.0) {
-                                            mult * ((quote.regularMarketPrice - quote.previousClose) / quote.previousClose) * 100.0
-                                        } else 0.0
-                                    }
-                                    "$%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
-                                }
-                            } else null
-                        } else null
+                        estVal(stock)
 
                     td(classes = if (estValText != null) "price loaded" else "price") {
                         id = "est-val-${stock.label}"
@@ -779,7 +774,8 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
 
                     // Day Chg ($ change)
                     val isZeroChange = stock.priceChangeDollars?.let { abs(it) < 0.001 } ?: false
-                    val changeDirection = if (isZeroChange) "neutral" else stock.priceChangeDirection
+                    val changeDirection =
+                        if (isZeroChange) "neutral" else stock.priceChangeDirection
                     val afterHoursClass = if (stock.isMarketClosed) "after-hours" else ""
 
                     td(classes = "price-change $changeDirection $afterHoursClass") {
@@ -954,5 +950,42 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
     div(classes = "rebal-weight-warning") {
         attributes["id"] = "rebal-weight-warning"
         style = "display: none;"
+    }
+}
+
+private fun estVal(stock: Stock): String? {
+    if (stock.letfComponents == null) return null
+    val basePrice = stock.lastNav ?: stock.lastClosePrice ?: return null
+    val baseQuote = YahooMarketDataService.getQuote(stock.label)
+    val nowSeconds = System.currentTimeMillis() / 1000
+    val pastCloseTime =
+        baseQuote?.tradingPeriodEnd?.takeIf { it <= nowSeconds }
+    val isMarketClosed = baseQuote?.isMarketClosed ?: true
+    val stale =
+        isMarketClosed && (
+                pastCloseTime == null ||
+                        nowSeconds - pastCloseTime > 12 * 3600
+                )
+
+    return if (stale) {
+        null
+    } else {
+        val sumComponent = stock.letfComponents.sumOf { (multi, sym) ->
+            getPriceChange(sym)?.times(multi) ?: return null
+        }
+        "$%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
+    }
+}
+
+private fun getPriceChange(
+    sym: String
+): Double? {
+    val quote = YahooMarketDataService.getQuote(sym) ?: return null
+    val previousClose = quote.previousClose
+    val regularMarketPrice = quote.regularMarketPrice
+    return if (regularMarketPrice == null || previousClose == null || previousClose == 0.0) {
+        null
+    } else {
+        ((regularMarketPrice - previousClose) / previousClose) * 100.0
     }
 }

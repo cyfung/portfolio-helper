@@ -3,7 +3,7 @@ const componentDayPercents = {};
 // Global store for raw (unrounded) prices — avoids compounded rounding errors in rebalancing
 const rawMarkPrices = {};
 const rawClosePrices = {};
-let globalIsMarketClosed = false;
+let globalIsMarketClosed = true;
 let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
 // Display currency (USD by default; lastPortfolioVal/lastCashTotalUsd/etc. declared in inline script)
 let currentDisplayCurrency = 'USD';
