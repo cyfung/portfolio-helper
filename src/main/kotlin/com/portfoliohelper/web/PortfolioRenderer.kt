@@ -442,22 +442,17 @@ private fun TBODY.buildSummaryRows(
         val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"
-            if (mUsd >= 0) style = "display:none;"
             td { +"Margin Target" }
-            td {}
             td {
-                span {
-                    id = "margin-target-usd"
-                    +"$%,.2f".format(abs(mUsd))
+                span { id = "margin-target-usd" }
+            }
+            td {
+                input(type = InputType.text, classes = "margin-target-input") {
+                    attributes["id"] = "margin-target-input"
+                    attributes["placeholder"] = "%.1f".format(abs(mPct))
+                    attributes["autocomplete"] = "off"
                 }
-                span(classes = "margin-percent") {
-                    id = "margin-target-percent"
-                    if (mUsd >= 0) {
-                        style = "display:none;"
-                    } else {
-                        +" (${"%.1f%%".format(abs(mPct))})"
-                    }
-                }
+                +" %"
             }
         }
     }

@@ -327,43 +327,63 @@ function getRebalTotal() {
     return (rebalTargetUsd !== null && rebalTargetUsd > 0) ? rebalTargetUsd : lastPortfolioVal;
 }
 
+function deriveMarginPct(rebalTotal) {
+    const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
+    if (ec <= 0) return 0;
+    return Math.abs(lastMarginUsd - (rebalTotal - lastPortfolioVal)) / ec * 100;
+}
+function deriveRebalFromMarginPct(pct) {
+    const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
+    return (pct / 100) * ec + lastPortfolioVal + lastMarginUsd;
+}
+
 function updateRebalTargetPlaceholder() {
     const input = document.getElementById('rebal-target-input');
     if (!input) return;
-    const converted = toDisplayCurrency(lastPortfolioVal);
-    input.placeholder = Math.abs(converted).toLocaleString('en-US', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2
-    });
+    const marginInput = document.getElementById('margin-target-input');
+    if (marginInput && marginInput.value.trim() !== '') {
+        const converted = toDisplayCurrency(rebalTargetUsd);
+        input.placeholder = Math.abs(converted).toLocaleString('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    } else {
+        const converted = toDisplayCurrency(lastPortfolioVal);
+        input.placeholder = Math.abs(converted).toLocaleString('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+}
+
+function updateMarginInputPlaceholder() {
+    const input = document.getElementById('margin-target-input');
+    if (!input || input.value.trim() !== '') return;
+    let pct;
+    if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
+        pct = deriveMarginPct(rebalTargetUsd);
+    } else {
+        const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
+        pct = ec > 0 ? Math.abs(lastMarginUsd) / ec * 100 : 0;
+    }
+    input.placeholder = pct.toFixed(1);
 }
 
 function updateMarginTargetDisplay() {
     const marginTargetRow = document.getElementById('margin-target-row');
     if (!marginTargetRow) return;
 
-    if (rebalTargetUsd === null) {
-        marginTargetRow.style.display = 'none';
-        return;
-    }
-
-    const rebalTotal = getRebalTotal();
-    const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
-
-    if (marginTargetUsd >= 0) {
-        marginTargetRow.style.display = 'none';
-        return;
-    }
-    marginTargetRow.style.display = '';
-
     const marginTargetEl = document.getElementById('margin-target-usd');
-    if (marginTargetEl) marginTargetEl.textContent = formatDisplayCurrency(-marginTargetUsd);
 
-    const marginTargetPctEl = document.getElementById('margin-target-percent');
-    const denominator = rebalTotal + lastEquityUsd + marginTargetUsd;
-    const pct = denominator !== 0 ? Math.abs(marginTargetUsd / denominator) * 100 : 0;
-    if (marginTargetPctEl) {
-        marginTargetPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
-        marginTargetPctEl.style.display = '';
+    if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
+        const rebalTotal = getRebalTotal();
+        const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
+        if (marginTargetEl) {
+            marginTargetEl.textContent = marginTargetUsd < 0 ? formatDisplayCurrency(-marginTargetUsd) : '';
+        }
+    } else {
+        if (marginTargetEl) marginTargetEl.textContent = '';
     }
+
+    updateMarginInputPlaceholder();
 }
 
 function updateMarginDisplay(marginUsd) {
@@ -1104,6 +1124,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rate = fxRates[currentDisplayCurrency];
                 rebalTargetUsd = (rate && rate !== 0) ? inputNum * rate : inputNum;
             }
+            const marginTargetInput = document.getElementById('margin-target-input');
+            if (marginTargetInput) marginTargetInput.value = '';
+            updateRebalancingColumns(getRebalTotal());
+            updateMarginTargetDisplay();
+            updateRebalTargetPlaceholder();
+            // Debounced save to server
+            clearTimeout(rebalSaveTimer);
+            rebalSaveTimer = setTimeout(() => {
+                fetch('/api/rebal-target/save?portfolio=' + portfolioId, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: rebalTargetUsd !== null ? rebalTargetUsd.toString() : '0'
+                });
+            }, 1000);
+        });
+
+    // Margin Target % input
+    const marginTargetInput = document.getElementById('margin-target-input');
+    if (marginTargetInput) {
+        marginTargetInput.addEventListener('input', () => {
+            const raw = marginTargetInput.value.trim();
+            if (raw === '' || isNaN(parseFloat(raw))) {
+                rebalTargetUsd = null;
+            } else {
+                rebalTargetUsd = deriveRebalFromMarginPct(parseFloat(raw));
+            }
+            rebalTargetInput.value = '';
+            updateRebalTargetPlaceholder();
             updateRebalancingColumns(getRebalTotal());
             updateMarginTargetDisplay();
             // Debounced save to server
@@ -1116,6 +1164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }, 1000);
         });
+    }
 
         // Restore saved rebalance target on page load
         if (savedRebalTargetUsd > 0) {
