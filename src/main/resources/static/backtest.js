@@ -6,7 +6,8 @@
     document.documentElement.setAttribute('data-theme', theme);
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
+// Script is loaded with defer — DOM is fully parsed when this runs.
+{
     const themeToggle = document.getElementById('theme-toggle');
     if (themeToggle) {
         themeToggle.addEventListener('click', () => {
@@ -61,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
             row.className = 'backtest-ticker-row';
             row.innerHTML = `
                 <input type="text" class="ticker-input" placeholder="e.g. VT" value="${ticker}" />
-                <input type="number" class="weight-input" placeholder="Weight %" min="0" max="100" step="1" value="${weight}" />
+                <input type="text" class="weight-input" placeholder="Weight %" value="${weight}" />
                 <span class="weight-unit">%</span>
                 <button type="button" class="remove-ticker-btn" title="Remove">✕</button>
             `;
@@ -75,18 +76,30 @@ document.addEventListener('DOMContentLoaded', () => {
             updateWeightHint();
         }
 
-        function addMarginRow(ratio = 50, spread = 1.5, deviation = 5) {
+        function addMarginRow(ratio = 50, spread = 1.5, devUpper = 5, devLower = 5) {
             const row = document.createElement('div');
             row.className = 'margin-config-row';
             row.innerHTML = `
-                <input type="number" class="mc-ratio" min="0" max="500" step="5" value="${ratio}" title="Margin % of Equity" placeholder="%" />
-                <input type="number" class="mc-spread" min="0" step="0.1" value="${spread}" title="Spread % (annualised)" placeholder="%" />
-                <input type="number" class="mc-deviation" min="0" step="1" value="${deviation}" title="Rebal Threshold %" placeholder="%" />
+                <input type="text" class="mc-ratio" value="${ratio}" title="Margin % of Equity" placeholder="%" />
+                <input type="text" class="mc-spread" value="${spread}" title="Spread % (annualised)" placeholder="%" />
+                <input type="text" class="mc-dev-upper" value="${devUpper}" title="Upper Deviation %" placeholder="%" />
+                <input type="text" class="mc-dev-lower" value="${devLower}" title="Lower Deviation %" placeholder="%" />
                 <button type="button" class="remove-margin-btn" title="Remove">✕</button>
             `;
             row.querySelector('.remove-margin-btn').addEventListener('click', () => row.remove());
             marginRowsEl.appendChild(row);
         }
+
+        // Wire up listeners for any rows that were server-rendered into the HTML
+        tickerRowsEl.querySelectorAll('.backtest-ticker-row').forEach(row => {
+            row.querySelector('.remove-ticker-btn').addEventListener('click', () => {
+                row.remove();
+                updateWeightHint();
+            });
+            row.querySelector('.weight-input').addEventListener('input', updateWeightHint);
+            row.querySelector('.ticker-input').addEventListener('input', updateWeightHint);
+        });
+        updateWeightHint();
 
         addTickerBtn.addEventListener('click', () => addTickerRow());
         addMarginBtn.addEventListener('click', () => addMarginRow());
@@ -94,12 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return { addTickerRow, addMarginRow };
     }
 
-    // Initialise all 3 blocks
+    // Initialise all 3 blocks; block 0's rows are already in the HTML (server-rendered)
     const blocks = [0, 1, 2].map(i => initBlock(i));
-
-    // Seed block 0 with default tickers
-    blocks[0].addTickerRow('VT', 60);
-    blocks[0].addTickerRow('KMLM', 40);
 
     // ── Form collection ───────────────────────────────────────────────────────
 
@@ -116,9 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
             })).filter(t => t.ticker && t.weight > 0);
             const rebalanceStrategy = block.querySelector('.rebalance-select').value;
             const marginStrategies = [...block.querySelectorAll('.margin-config-row')].map(row => ({
-                marginRatio: parseFloat(row.querySelector('.mc-ratio').value) || 0,
-                marginSpread: parseFloat(row.querySelector('.mc-spread').value) || 1.5,
-                marginDeviationThreshold: parseFloat(row.querySelector('.mc-deviation').value) || 5
+                marginRatio: (parseFloat(row.querySelector('.mc-ratio').value) || 0) / 100,
+                marginSpread: (parseFloat(row.querySelector('.mc-spread').value) || 1.5) / 100,
+                marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5) / 100,
+                marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5) / 100
             }));
             return { label, tickers, rebalanceStrategy, marginStrategies };
         }).filter(p => p.tickers.length > 0);
@@ -306,4 +316,4 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '</tbody></table>';
         statsContainer.innerHTML = html;
     }
-});
+}

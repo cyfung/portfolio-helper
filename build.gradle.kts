@@ -125,7 +125,7 @@ tasks.jpackage {
     )
 
     // Platform-specific icons
-    icon.set(file("${projectDir}/src/main/resources/static/favicon-96x96.png"))
+    icon.set(file("${projectDir}/src/main/resources/static/favicon.icon"))
 }
 
 // Copy config files into jpackage output (data/ is generated at runtime on first run)
@@ -148,7 +148,7 @@ launch4j {
     fileDescription.set("Stock Portfolio Viewer")
     copyright.set("Copyright © 2026")
     companyName.set("Portfolio Helper")
-    icon.set("${projectDir}/src/main/resources/static/images/favicon-96x96.png")
+    icon.set("${projectDir}/src/main/resources/static/images/favicon.icon")
     setJarTask(tasks.shadowJar.get())
 }
 

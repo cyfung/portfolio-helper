@@ -30,6 +30,7 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
 
             script {
                 src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
+                async = true
             }
             script {
                 src = "/static/backtest.js"
@@ -93,15 +94,15 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                     classes = setOf("backtest-error")
                 }
 
+                div {
+                    id = "stats-container"
+                    style = "display:none;"
+                }
+
                 div(classes = "backtest-chart-container") {
                     id = "chart-container"
                     style = "display:none;"
                     canvas { id = "backtest-chart" }
-                }
-
-                div {
-                    id = "stats-container"
-                    style = "display:none;"
                 }
             }
         }
@@ -131,7 +132,31 @@ private fun DIV.portfolioBlock(idx: Int) {
                 }
             }
             div(classes = "backtest-weight-hint") {}
-            div(classes = "ticker-rows") {}
+            div(classes = "ticker-rows") {
+                // Seed default tickers for block 0 server-side so they appear instantly
+                if (idx == 0) {
+                    for ((ticker, weight) in listOf("VT" to "60", "KMLM" to "40")) {
+                        div(classes = "backtest-ticker-row") {
+                            input(type = InputType.text) {
+                                classes = setOf("ticker-input")
+                                placeholder = "e.g. VT"
+                                value = ticker
+                            }
+                            input(type = InputType.text) {
+                                classes = setOf("weight-input")
+                                placeholder = "Weight %"
+                                value = weight
+                            }
+                            span(classes = "weight-unit") { +"%" }
+                            button(classes = "remove-ticker-btn") {
+                                attributes["type"] = "button"
+                                attributes["title"] = "Remove"
+                                +"✕"
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Rebalance strategy
@@ -157,7 +182,8 @@ private fun DIV.portfolioBlock(idx: Int) {
             div(classes = "margin-col-headers") {
                 span { +"Ratio%" }
                 span { +"Spread%" }
-                span { +"Dev%" }
+                span { +"Dev%↑" }
+                span { +"Dev%↓" }
                 span {}
             }
             div(classes = "margin-config-rows") {}

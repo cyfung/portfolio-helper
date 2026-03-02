@@ -13,9 +13,10 @@ enum class RebalanceStrategy { NONE, MONTHLY, QUARTERLY, YEARLY }
 data class TickerWeight(val ticker: String, val weight: Double)
 
 data class MarginConfig(
-    val marginRatio: Double,              // e.g. 0.5 = 50% borrow-to-equity
-    val marginSpread: Double,             // annualised fraction e.g. 0.015
-    val marginDeviationThreshold: Double  // e.g. 0.05
+    val marginRatio: Double,        // e.g. 0.5 = 50% borrow-to-equity
+    val marginSpread: Double,       // annualised fraction e.g. 0.015
+    val marginDeviationUpper: Double, // upper breach threshold e.g. 0.05
+    val marginDeviationLower: Double  // lower breach threshold e.g. 0.05
 )
 
 data class PortfolioConfig(
@@ -79,7 +80,7 @@ object BacktestService {
         }
 
         // Single global date intersection across every ticker in every portfolio
-        val globalDates = intersectDates(allSeriesMaps.flatMap { it.values }, effrxSeries, fromDate, toDate)
+        val globalDates = intersectDates(allSeriesMaps.flatMap { it.values }, fromDate, toDate)
         if (globalDates.size < 2) {
             throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
         }
@@ -257,14 +258,11 @@ object BacktestService {
 
     private fun intersectDates(
         series: List<Map<LocalDate, Double>>,
-        effrx: Map<LocalDate, Double>,
         from: LocalDate?,
         to: LocalDate
     ): List<LocalDate> {
         var common: Set<LocalDate> = series.first().keys.toSet()
         for (s in series.drop(1)) common = common intersect s.keys.toSet()
-        // EFFRX optional: if available, intersect; otherwise use common
-        if (effrx.isNotEmpty()) common = common intersect effrx.keys.toSet()
         return common
             .filter { d -> (from == null || d >= from) && d <= to }
             .sorted()
@@ -294,6 +292,15 @@ object BacktestService {
             val prevDate = dates[i - 1]
             val curDate = dates[i]
 
+            // Rebalance at the close of the last trading day of each period,
+            // BEFORE applying the new period's first daily return.
+            if (shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)) {
+                val total = holdings.values.sum()
+                for (ticker in tickers) {
+                    holdings[ticker] = total * (targetWeights[ticker] ?: 0.0)
+                }
+            }
+
             // Apply daily returns
             for (ticker in tickers) {
                 val s = seriesMap[ticker] ?: continue
@@ -303,16 +310,7 @@ object BacktestService {
                 holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
             }
 
-            val totalVal = holdings.values.sum()
-
-            // Rebalance if needed
-            if (shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)) {
-                for (ticker in tickers) {
-                    holdings[ticker] = totalVal * (targetWeights[ticker] ?: 0.0)
-                }
-            }
-
-            values.add(totalVal)
+            values.add(holdings.values.sum())
         }
         return values
     }
@@ -345,7 +343,8 @@ object BacktestService {
     ): MarginApplyResult {
         val marginTarget = marginConfig.marginRatio
         val spread = marginConfig.marginSpread
-        val deviation = marginConfig.marginDeviationThreshold
+        val deviationUpper = marginConfig.marginDeviationUpper
+        val deviationLower = marginConfig.marginDeviationLower
 
         var equity = noMargin[0]
         var borrowed = equity * marginTarget
@@ -378,10 +377,12 @@ object BacktestService {
             // Margin ratio check
             val currentMarginRatio = if (equity != 0.0) borrowed / equity else marginTarget
             val rebalanceDay = shouldRebalance(rebalanceStrategy, prevDate, curDate)
-            val deviationBreach = abs(currentMarginRatio - marginTarget) > deviation
+            val upperBreach = currentMarginRatio > marginTarget + deviationUpper
+            val lowerBreach = currentMarginRatio < marginTarget - deviationLower
+            val deviationBreach = upperBreach || lowerBreach
 
             if (deviationBreach && !rebalanceDay) {
-                if (currentMarginRatio > marginTarget) upperTriggers++ else lowerTriggers++
+                if (upperBreach) upperTriggers++ else lowerTriggers++
             }
 
             if (rebalanceDay || deviationBreach) {

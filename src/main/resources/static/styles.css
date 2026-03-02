@@ -2141,7 +2141,16 @@ body.editing-active .cash-edit-value {
 
 /* Stats table */
 .backtest-stats-table {
-    margin-top: 0.5rem;
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.backtest-stats-table th:not(:first-child) {
+    text-align: center;
+}
+
+.backtest-stats-table td:not(:first-child) {
+    text-align: right;
 }
 
 /* 3-column portfolio block grid */
@@ -2179,7 +2188,7 @@ body.editing-active .cash-edit-value {
 /* Column headers for margin input grid */
 .margin-col-headers {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto;
     gap: 0.35rem;
     padding: 0 0 0.1rem;
 }
@@ -2194,10 +2203,10 @@ body.editing-active .cash-edit-value {
     min-width: 1.5rem; /* align with remove button */
 }
 
-/* Single margin config row: ratio | spread | threshold | ✕ */
+/* Single margin config row: ratio | spread | dev↑ | dev↓ | ✕ */
 .margin-config-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto;
     gap: 0.35rem;
     align-items: center;
 }

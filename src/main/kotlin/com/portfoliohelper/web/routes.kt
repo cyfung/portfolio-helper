@@ -103,9 +103,10 @@ fun Application.configureRouting() {
                         marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
                             val mObj = mel.jsonObject
                             MarginConfig(
-                                marginRatio = (mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0) / 100.0,
-                                marginSpread = (mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 1.5) / 100.0,
-                                marginDeviationThreshold = (mObj["marginDeviationThreshold"]?.jsonPrimitive?.doubleOrNull ?: 5.0) / 100.0
+                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05
                             )
                         } ?: emptyList()
                     )
