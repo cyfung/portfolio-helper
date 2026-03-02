@@ -10,6 +10,7 @@ import com.portfoliohelper.service.BackupService
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
+import com.portfoliohelper.service.MarginRebalanceMode
 import com.portfoliohelper.service.RebalanceStrategy
 import com.portfoliohelper.service.TickerWeight
 import com.portfoliohelper.service.nav.NavData
@@ -106,7 +107,12 @@ fun Application.configureRouting() {
                                 marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
                                 marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
                                 marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05
+                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                                rebalanceMode = runCatching {
+                                    MarginRebalanceMode.valueOf(
+                                        mObj["rebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "LEVERAGE_ONLY"
+                                    )
+                                }.getOrDefault(MarginRebalanceMode.LEVERAGE_ONLY)
                             )
                         } ?: emptyList()
                     )

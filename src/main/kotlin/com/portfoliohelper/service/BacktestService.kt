@@ -10,13 +10,16 @@ import kotlin.math.*
 
 enum class RebalanceStrategy { NONE, MONTHLY, QUARTERLY, YEARLY }
 
+enum class MarginRebalanceMode { LEVERAGE_ONLY, PROPORTIONAL, FULL_REBALANCE }
+
 data class TickerWeight(val ticker: String, val weight: Double)
 
 data class MarginConfig(
     val marginRatio: Double,        // e.g. 0.5 = 50% borrow-to-equity
     val marginSpread: Double,       // annualised fraction e.g. 0.015
     val marginDeviationUpper: Double, // upper breach threshold e.g. 0.05
-    val marginDeviationLower: Double  // lower breach threshold e.g. 0.05
+    val marginDeviationLower: Double, // lower breach threshold e.g. 0.05
+    val rebalanceMode: MarginRebalanceMode = MarginRebalanceMode.LEVERAGE_ONLY
 )
 
 data class PortfolioConfig(
@@ -95,13 +98,23 @@ object BacktestService {
             val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
 
             pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
-                val marginResult = applyMargin(noMarginValues, globalDates, effrxSeries, mc, pConfig.rebalanceStrategy)
+                val marginResult = when (mc.rebalanceMode) {
+                    MarginRebalanceMode.PROPORTIONAL, MarginRebalanceMode.FULL_REBALANCE ->
+                        applyMarginProportional(pConfig, seriesMap, globalDates, effrxSeries, mc)
+                    else ->
+                        applyMargin(noMarginValues, globalDates, effrxSeries, mc, pConfig.rebalanceStrategy)
+                }
                 val marginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), marginResult.values[i]) }
                 val marginStats = computeStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers
                 )
-                curves.add(CurveResult("Margin ${mIdx + 1}", marginPoints, marginStats))
+                val label = when (mc.rebalanceMode) {
+                    MarginRebalanceMode.PROPORTIONAL -> "Margin ${mIdx + 1} (Prop)"
+                    MarginRebalanceMode.FULL_REBALANCE -> "Margin ${mIdx + 1} (Full)"
+                    else -> "Margin ${mIdx + 1}"
+                }
+                curves.add(CurveResult(label, marginPoints, marginStats))
             }
 
             PortfolioResult(pConfig.label, curves)
@@ -391,6 +404,101 @@ object BacktestService {
             }
 
             result.add(equity)
+        }
+        return MarginApplyResult(result, upperTriggers, lowerTriggers)
+    }
+
+    /**
+     * Proportional margin rebalance mode: when a margin deviation triggers, only the
+     * delta change in total exposure is distributed across tickers by target weight.
+     * Individual ticker holdings are tracked; the full rebalance strategy also applies.
+     */
+    private fun applyMarginProportional(
+        pConfig: PortfolioConfig,
+        seriesMap: Map<String, Map<LocalDate, Double>>,
+        dates: List<LocalDate>,
+        effrx: Map<LocalDate, Double>,
+        mc: MarginConfig
+    ): MarginApplyResult {
+        val tickers = pConfig.tickers.map { it.ticker }
+        val totalWeight = pConfig.tickers.sumOf { it.weight }
+        val targetWeights = pConfig.tickers.associate { it.ticker to it.weight / totalWeight }
+
+        val startEquity = 10_000.0
+        var borrowed = startEquity * mc.marginRatio
+        val holdings = tickers.associateWith { ticker ->
+            (startEquity + borrowed) * (targetWeights[ticker] ?: 0.0)
+        }.toMutableMap()
+
+        val result = mutableListOf(startEquity)
+        var upperTriggers = 0
+        var lowerTriggers = 0
+
+        for (i in 1 until dates.size) {
+            val prevDate = dates[i - 1]
+            val curDate = dates[i]
+
+            // Scheduled full asset rebalance (before today's return)
+            if (shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)) {
+                val currentEquity = holdings.values.sum() - borrowed
+                borrowed = currentEquity * mc.marginRatio
+                val newTotalExposure = currentEquity + borrowed
+                for (ticker in tickers) {
+                    holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
+                }
+            }
+
+            // Apply each ticker's daily return
+            for (ticker in tickers) {
+                val s = seriesMap[ticker] ?: continue
+                val prev = s[prevDate] ?: continue
+                val cur = s[curDate] ?: continue
+                if (prev == 0.0) continue
+                holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
+            }
+
+            // Daily loan cost from EFFRX
+            val effrxPrev = effrx[prevDate]
+            val effrxCur = effrx[curDate]
+            val dailyLoanRate = if (effrxPrev != null && effrxCur != null && effrxPrev != 0.0) {
+                (effrxCur / effrxPrev - 1) + mc.marginSpread / 252.0
+            } else {
+                mc.marginSpread / 252.0
+            }
+            borrowed *= (1.0 + dailyLoanRate)
+
+            val equity = holdings.values.sum() - borrowed
+
+            // Margin ratio deviation check
+            val currentMarginRatio = if (equity != 0.0) borrowed / equity else mc.marginRatio
+            val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
+            val upperBreach = currentMarginRatio > mc.marginRatio + mc.marginDeviationUpper
+            val lowerBreach = currentMarginRatio < mc.marginRatio - mc.marginDeviationLower
+            val deviationBreach = upperBreach || lowerBreach
+
+            if (deviationBreach && !rebalanceDay) {
+                if (upperBreach) upperTriggers++ else lowerTriggers++
+            }
+
+            if (deviationBreach) {
+                val newBorrowed = equity * mc.marginRatio
+                if (mc.rebalanceMode == MarginRebalanceMode.FULL_REBALANCE) {
+                    // Full rebalance: reset all holdings to target weights at new total exposure
+                    val newTotalExposure = equity + newBorrowed
+                    for (ticker in tickers) {
+                        holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
+                    }
+                } else {
+                    // Proportional: distribute only the leverage delta by target weight
+                    val delta = newBorrowed - borrowed
+                    for (ticker in tickers) {
+                        holdings[ticker] = (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
+                    }
+                }
+                borrowed = newBorrowed
+            }
+
+            result.add(holdings.values.sum() - borrowed)
         }
         return MarginApplyResult(result, upperTriggers, lowerTriggers)
     }

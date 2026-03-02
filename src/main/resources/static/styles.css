@@ -2232,7 +2232,7 @@ body.editing-active .cash-edit-value {
 /* Column headers for margin input grid */
 .margin-col-headers {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto auto;
     gap: 0.35rem;
     padding: 0 0 0.1rem;
 }
@@ -2247,10 +2247,10 @@ body.editing-active .cash-edit-value {
     min-width: 1.5rem; /* align with remove button */
 }
 
-/* Single margin config row: ratio | spread | dev↑ | dev↓ | ✕ */
+/* Single margin config row: ratio | spread | dev↑ | dev↓ | mode | ✕ */
 .margin-config-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr auto auto;
     gap: 0.35rem;
     align-items: center;
 }
@@ -2269,6 +2269,22 @@ body.editing-active .cash-edit-value {
 }
 
 .margin-config-row input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+.margin-config-row select.mc-mode {
+    padding: 0.25rem 0.25rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    width: auto;
+    box-sizing: border-box;
+}
+
+.margin-config-row select.mc-mode:focus {
     outline: none;
     border-color: var(--color-accent-primary);
 }

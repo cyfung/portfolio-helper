@@ -76,7 +76,7 @@
             updateWeightHint();
         }
 
-        function addMarginRow(ratio = 50, spread = 1.5, devUpper = 5, devLower = 5) {
+        function addMarginRow(ratio = 50, spread = 1.5, devUpper = 5, devLower = 5, mode = 'LEVERAGE_ONLY') {
             const row = document.createElement('div');
             row.className = 'margin-config-row';
             row.innerHTML = `
@@ -84,8 +84,14 @@
                 <input type="text" class="mc-spread" value="${spread}" title="Spread % (annualised)" placeholder="%" />
                 <input type="text" class="mc-dev-upper" value="${devUpper}" title="Upper Deviation %" placeholder="%" />
                 <input type="text" class="mc-dev-lower" value="${devLower}" title="Lower Deviation %" placeholder="%" />
+                <select class="mc-mode" title="Margin rebalance mode">
+                  <option value="LEVERAGE_ONLY">Lev Only</option>
+                  <option value="PROPORTIONAL">Proportional</option>
+                  <option value="FULL_REBALANCE">Full Rebal</option>
+                </select>
                 <button type="button" class="remove-margin-btn" title="Remove">✕</button>
             `;
+            row.querySelector('.mc-mode').value = mode;
             row.querySelector('.remove-margin-btn').addEventListener('click', () => row.remove());
             marginRowsEl.appendChild(row);
         }
@@ -128,7 +134,8 @@
                 marginRatio: (parseFloat(row.querySelector('.mc-ratio').value) || 0) / 100,
                 marginSpread: (parseFloat(row.querySelector('.mc-spread').value) || 1.5) / 100,
                 marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5) / 100,
-                marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5) / 100
+                marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5) / 100,
+                rebalanceMode: row.querySelector('.mc-mode').value
             }));
             return { label, tickers, rebalanceStrategy, marginStrategies };
         }).filter(p => p.tickers.length > 0);
