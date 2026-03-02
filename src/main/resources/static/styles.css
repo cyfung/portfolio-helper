@@ -183,7 +183,8 @@ h1 {
 /* ============================================
    Rebalancing Toggle Button
    ============================================ */
-.rebal-toggle {
+.rebal-toggle,
+.margin-rebal-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -200,23 +201,27 @@ h1 {
     letter-spacing: 0.05em;
 }
 
-.rebal-toggle:hover {
+.rebal-toggle:hover,
+.margin-rebal-toggle:hover {
     background-color: var(--color-bg-hover);
     border-color: var(--color-accent-primary);
 }
 
-.rebal-toggle.active {
+.rebal-toggle.active,
+.margin-rebal-toggle.active {
     background-color: var(--color-accent-primary);
     color: var(--color-text-inverse);
     border-color: var(--color-accent-primary);
 }
 
-.rebal-toggle:focus {
+.rebal-toggle:focus,
+.margin-rebal-toggle:focus {
     outline: none;
     box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
 }
 
-[data-theme="dark"] .rebal-toggle:focus {
+[data-theme="dark"] .rebal-toggle:focus,
+[data-theme="dark"] .margin-rebal-toggle:focus {
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
 }
 
@@ -640,6 +645,16 @@ h1 {
 
 /* Show rebalancing columns when active */
 .rebalancing-visible .portfolio-table .rebal-column {
+    display: table-cell;
+}
+
+/* Hide margin rebalancing columns by default */
+.portfolio-table .margin-rebal-column {
+    display: none;
+}
+
+/* Show margin rebalancing columns when active */
+.margin-rebalancing-visible .portfolio-table .margin-rebal-column {
     display: table-cell;
 }
 

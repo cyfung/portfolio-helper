@@ -271,6 +271,7 @@ function updateTotalValue() {
 
     updateCurrentWeights(total);
     updateRebalancingColumns(getRebalTotal());
+    updateMarginRebalColumns(getRebalTotal());
     updateMarginTargetDisplay();
 
     // Update grand total (portfolio + cash)
@@ -571,17 +572,52 @@ function updateRebalancingColumns(portfolioTotal) {
             if (markPrice !== null && markPrice > 0) {
                 const rebalShares = rebalDollars / markPrice;
 
-                const rebalSharesCell = document.getElementById('rebal-shares-' + symbol);
-                if (rebalSharesCell) {
+                const rebalQtyCell = document.getElementById('rebal-qty-' + symbol);
+                if (rebalQtyCell) {
                     const sign = rebalShares >= 0 ? '+' : '-';
-                    rebalSharesCell.textContent = sign + Math.abs(rebalShares).toFixed(2);
+                    rebalQtyCell.textContent = sign + Math.abs(rebalShares).toFixed(2);
 
                     // Update color class (same direction as dollars)
                     const direction = Math.abs(rebalDollars) > 0.50 ?
                         (rebalDollars > 0 ? 'positive' : 'negative') : 'neutral';
-                    rebalSharesCell.className = 'price-change loaded rebal-column ' + direction;
+                    rebalQtyCell.className = 'price-change loaded rebal-column ' + direction;
                 }
             }
+        }
+    });
+}
+
+function updateMarginRebalColumns(rebalTotal) {
+    const extra = rebalTotal - lastPortfolioVal;
+    document.querySelectorAll('.value.loaded').forEach(valueCell => {
+        const symbol = valueCell.id.replace('value-', '');
+        const markPrice = rawMarkPrices[symbol] ??
+            parsePrice(document.getElementById('mark-' + symbol)?.textContent);
+        const weightCell = document.getElementById('current-weight-' + symbol);
+        const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
+        const targetWeight = targetWeightSpan ? parseFloat(targetWeightSpan.textContent) : null;
+
+        const mRebalDollarsCell = document.getElementById('margin-rebal-dollars-' + symbol);
+        const mRebalQtyCell = document.getElementById('margin-rebal-qty-' + symbol);
+
+        if (targetWeight === null || extra <= 0) {
+            if (mRebalDollarsCell) mRebalDollarsCell.textContent = '';
+            if (mRebalQtyCell) mRebalQtyCell.textContent = '';
+            return;
+        }
+
+        const mRebalDollars = (targetWeight / 100) * extra;
+        const direction = mRebalDollars > 0.50 ? 'positive' : mRebalDollars < -0.50 ? 'negative' : 'neutral';
+
+        if (mRebalDollarsCell) {
+            mRebalDollarsCell.textContent = formatSignedCurrency(mRebalDollars);
+            mRebalDollarsCell.className = 'price-change loaded margin-rebal-column ' + direction;
+        }
+        if (mRebalQtyCell && markPrice && markPrice > 0) {
+            const mRebalQty = mRebalDollars / markPrice;
+            const sign = mRebalQty >= 0 ? '+' : '-';
+            mRebalQtyCell.textContent = sign + Math.abs(mRebalQty).toFixed(2);
+            mRebalQtyCell.className = 'price-change loaded margin-rebal-column ' + direction;
         }
     });
 }
@@ -702,6 +738,7 @@ function refreshDisplayCurrency() {
 
     updateRebalTargetPlaceholder();
     updateRebalancingColumns(getRebalTotal());
+    updateMarginRebalColumns(getRebalTotal());
     updateMarginTargetDisplay();
     updateIbkrDailyInterest();
 }
@@ -756,6 +793,19 @@ document.addEventListener('DOMContentLoaded', () => {
         rebalToggle.classList.toggle('active');
         localStorage.setItem('ib-viewer-rebal-visible', isVisible);
         updateTargetWeightTotal();
+    });
+
+    // Margin Rebal toggle
+    const marginRebalToggle = document.getElementById('margin-rebal-toggle');
+    const marginRebalVisible = localStorage.getItem('ib-viewer-margin-rebal-visible') === 'true';
+    if (marginRebalVisible) {
+        body.classList.add('margin-rebalancing-visible');
+        marginRebalToggle.classList.add('active');
+    }
+    marginRebalToggle?.addEventListener('click', () => {
+        const isVisible = body.classList.toggle('margin-rebalancing-visible');
+        marginRebalToggle.classList.toggle('active');
+        localStorage.setItem('ib-viewer-margin-rebal-visible', isVisible);
     });
 
     // Edit mode toggle
@@ -1127,6 +1177,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const marginTargetInput = document.getElementById('margin-target-input');
             if (marginTargetInput) marginTargetInput.value = '';
             updateRebalancingColumns(getRebalTotal());
+            updateMarginRebalColumns(getRebalTotal());
             updateMarginTargetDisplay();
             updateRebalTargetPlaceholder();
             // Debounced save to server
@@ -1153,6 +1204,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rebalTargetInput.value = '';
             updateRebalTargetPlaceholder();
             updateRebalancingColumns(getRebalTotal());
+            updateMarginRebalColumns(getRebalTotal());
             updateMarginTargetDisplay();
             // Debounced save to server
             clearTimeout(rebalSaveTimer);
@@ -1175,6 +1227,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 minimumFractionDigits: 2, maximumFractionDigits: 2
             });
             updateRebalancingColumns(getRebalTotal());
+            updateMarginRebalColumns(getRebalTotal());
             updateMarginTargetDisplay();
         }
     }

@@ -175,7 +175,15 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             attributes["id"] = "rebal-toggle"
                             attributes["type"] = "button"
                             attributes["title"] = "Show/Hide Weight and Rebalancing columns"
-                            span(classes = "toggle-label") { +"Rebalancing" }
+                            span(classes = "toggle-label") { +"Rebal" }
+                        }
+
+                        button(classes = "margin-rebal-toggle") {
+                            attributes["aria-label"] = "Toggle margin rebalancing columns"
+                            attributes["id"] = "margin-rebal-toggle"
+                            attributes["type"] = "button"
+                            attributes["title"] = "Show/Hide Margin Rebalancing columns"
+                            span(classes = "toggle-label") { +"Margin Rebal" }
                         }
 
                         if (displayCurrencies.size > 1) {
@@ -684,7 +692,9 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th { +"Mkt Val Chg" }
                 th(classes = "rebal-column") { +"Weight" }
                 th(classes = "rebal-column") { +"Rebal $" }
-                th(classes = "rebal-column") { +"Rebal Shares" }
+                th(classes = "rebal-column") { +"Rebal Qty" }
+                th(classes = "margin-rebal-column") { +"M.Rebal \$" }
+                th(classes = "margin-rebal-column") { +"M.Rebal Qty" }
                 th(classes = "edit-column") {
                     +"Target %"
                     button(classes = "copy-col-btn") {
@@ -870,9 +880,9 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         }
                     }
 
-                    // Rebalance Shares (number of shares to buy/sell)
+                    // Rebalance Qty (number of shares to buy/sell)
                     td(classes = "price-change ${stock.rebalanceDirection(portfolio.totalValue)} rebal-column") {
-                        id = "rebal-shares-${stock.label}"
+                        id = "rebal-qty-${stock.label}"
                         val rebalShares = stock.rebalanceShares(portfolio.totalValue)
                         if (rebalShares != null) {
                             val sign = if (rebalShares >= 0) "+" else "-"
@@ -880,6 +890,15 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         } else {
                             span(classes = "loading") { +"—" }
                         }
+                    }
+
+                    // Margin Rebal $ (extra capital portion per stock)
+                    td(classes = "price-change neutral margin-rebal-column") {
+                        id = "margin-rebal-dollars-${stock.label}"
+                    }
+                    // Margin Rebal Qty
+                    td(classes = "price-change neutral margin-rebal-column") {
+                        id = "margin-rebal-qty-${stock.label}"
                     }
 
                     // Target % (edit-only column)
@@ -934,6 +953,8 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 td(classes = "rebal-column") {}
                 td(classes = "rebal-column") {}
                 td(classes = "rebal-column") {}
+                td(classes = "margin-rebal-column") {}
+                td(classes = "margin-rebal-column") {}
                 td(classes = "edit-column") {
                     id = "target-weight-total"
                     +"%.1f%%".format(totalWeight)
