@@ -116,6 +116,43 @@
     // Initialise all 3 blocks; block 0's rows are already in the HTML (server-rendered)
     const blocks = [0, 1, 2].map(i => initBlock(i));
 
+    // ── Restore saved settings ────────────────────────────────────────────────
+
+    (async function restoreSettings() {
+        try {
+            const res = await fetch('/api/backtest/settings');
+            if (!res.ok) return;
+            const req = await res.json();
+            if (!req.portfolios) return;
+
+            if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
+            if (req.toDate) document.getElementById('to-date').value = req.toDate;
+
+            req.portfolios.forEach((p, i) => {
+                if (i >= blocks.length) return;
+                const block = document.querySelector(`[data-portfolio-index="${i}"]`);
+                const { addTickerRow, addMarginRow } = blocks[i];
+
+                block.querySelector('.portfolio-label').value = p.label || '';
+
+                block.querySelector('.ticker-rows').innerHTML = '';
+                (p.tickers || []).forEach(t => addTickerRow(t.ticker, t.weight));
+
+                block.querySelector('.rebalance-select').value = p.rebalanceStrategy || 'YEARLY';
+
+                block.querySelector('.margin-config-rows').innerHTML = '';
+                const r = v => Math.round(v * 10000) / 100; // fraction → display %
+                (p.marginStrategies || []).forEach(m => addMarginRow(
+                    r(m.marginRatio),
+                    r(m.marginSpread),
+                    r(m.marginDeviationUpper),
+                    r(m.marginDeviationLower),
+                    m.rebalanceMode || 'LEVERAGE_ONLY'
+                ));
+            });
+        } catch (_) { /* silently ignore */ }
+    })();
+
     // ── Form collection ───────────────────────────────────────────────────────
 
     function collectRequest() {

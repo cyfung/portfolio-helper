@@ -79,10 +79,19 @@ fun Application.configureRouting() {
             call.renderBacktestPage()
         }
 
+        get("/api/backtest/settings") {
+            val f = File("data/.backtest/settings.json")
+            call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
+        }
+
         post("/api/backtest/run") {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
+                runCatching {
+                    val dir = File("data/.backtest"); dir.mkdirs()
+                    File(dir, "settings.json").writeText(body)
+                }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }

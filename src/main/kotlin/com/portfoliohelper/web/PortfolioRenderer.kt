@@ -178,14 +178,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Rebal" }
                         }
 
-                        button(classes = "margin-rebal-toggle") {
-                            attributes["aria-label"] = "Toggle margin rebalancing columns"
-                            attributes["id"] = "margin-rebal-toggle"
-                            attributes["type"] = "button"
-                            attributes["title"] = "Show/Hide Margin Rebalancing columns"
-                            span(classes = "toggle-label") { +"Margin Rebal" }
-                        }
-
                         if (displayCurrencies.size > 1) {
                             if (displayCurrencies.size <= 3) {
                                 button(classes = "currency-toggle") {

@@ -795,19 +795,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTargetWeightTotal();
     });
 
-    // Margin Rebal toggle
-    const marginRebalToggle = document.getElementById('margin-rebal-toggle');
-    const marginRebalVisible = localStorage.getItem('ib-viewer-margin-rebal-visible') === 'true';
-    if (marginRebalVisible) {
-        body.classList.add('margin-rebalancing-visible');
-        marginRebalToggle.classList.add('active');
-    }
-    marginRebalToggle?.addEventListener('click', () => {
-        const isVisible = body.classList.toggle('margin-rebalancing-visible');
-        marginRebalToggle.classList.toggle('active');
-        localStorage.setItem('ib-viewer-margin-rebal-visible', isVisible);
-    });
-
     // Edit mode toggle
     const editToggle = document.getElementById('edit-toggle');
     const saveBtn = document.getElementById('save-btn');

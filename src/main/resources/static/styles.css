@@ -2232,7 +2232,7 @@ body.editing-active .cash-edit-value {
 /* Column headers for margin input grid */
 .margin-col-headers {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr auto auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr 5.5rem auto;
     gap: 0.35rem;
     padding: 0 0 0.1rem;
 }
@@ -2250,7 +2250,7 @@ body.editing-active .cash-edit-value {
 /* Single margin config row: ratio | spread | dev↑ | dev↓ | mode | ✕ */
 .margin-config-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr auto auto;
+    grid-template-columns: 1fr 1fr 1fr 1fr 5.5rem auto;
     gap: 0.35rem;
     align-items: center;
 }
