@@ -137,6 +137,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
 
                     div(classes = "header-buttons") {
+                        a(href = "/backtest", classes = "loan-calc-link") { +"Backtester" }
                         a(href = "/loan", classes = "loan-calc-link") { +"Loan Calc" }
 
                         button(classes = "restore-backup-btn") {

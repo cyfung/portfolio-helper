@@ -1938,3 +1938,314 @@ body.editing-active .cash-edit-value {
     padding: 4px 0 0;
     font-weight: 500;
 }
+
+/* ============================================
+   Backtest Page
+   ============================================ */
+
+.backtest-form-card {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.backtest-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.backtest-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.backtest-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.backtest-grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+    .backtest-grid-2,
+    .backtest-grid-3 {
+        grid-template-columns: 1fr;
+    }
+}
+
+.backtest-section label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.backtest-section input,
+.backtest-section select {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family-mono);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.backtest-section input:focus,
+.backtest-section select:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+/* Ticker row */
+.backtest-ticker-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 20px auto;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.backtest-ticker-row .ticker-input {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-sm);
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+}
+
+.backtest-ticker-row .weight-input {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-sm);
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    text-align: right;
+}
+
+.backtest-ticker-row .weight-unit {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+}
+
+.backtest-ticker-row .remove-ticker-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: 0.25rem 0.375rem;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.backtest-ticker-row .remove-ticker-btn:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-negative);
+}
+
+.add-ticker-btn {
+    background: none;
+    border: 1px solid var(--color-border-medium);
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+}
+
+.add-ticker-btn:hover {
+    background: var(--color-bg-hover);
+}
+
+.backtest-weight-hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    min-height: 1.2em;
+    font-family: var(--font-family-mono);
+}
+
+.backtest-weight-hint.hint-ok {
+    color: var(--color-positive);
+}
+
+.backtest-weight-hint.hint-warn {
+    color: var(--color-warning);
+}
+
+/* Run button */
+.run-backtest-btn {
+    padding: 0.5rem 1.5rem;
+    background: var(--color-accent-primary);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    cursor: pointer;
+    align-self: flex-start;
+}
+
+.run-backtest-btn:hover {
+    background: var(--color-accent-hover);
+}
+
+.run-backtest-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* Chart container */
+.backtest-chart-container {
+    height: 400px;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-elevated);
+    padding: 1rem;
+    box-sizing: border-box;
+}
+
+/* Error message */
+.backtest-error {
+    color: var(--color-negative);
+    font-size: var(--font-size-sm);
+    padding: 0.5rem;
+    border: 1px solid var(--color-negative);
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    background: color-mix(in srgb, var(--color-negative) 8%, transparent);
+}
+
+/* Stats table */
+.backtest-stats-table {
+    margin-top: 0.5rem;
+}
+
+/* 3-column portfolio block grid */
+.portfolio-blocks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+@media (max-width: 900px) {
+    .portfolio-blocks {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual portfolio block */
+.portfolio-block {
+    border: 1px solid var(--color-border-medium);
+    border-radius: 6px;
+    padding: 0.875rem;
+    background: var(--color-bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* Margin config rows container */
+.margin-config-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+/* Column headers for margin input grid */
+.margin-col-headers {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 0.35rem;
+    padding: 0 0 0.1rem;
+}
+
+.margin-col-headers span {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    text-align: right;
+}
+
+.margin-col-headers span:last-child {
+    min-width: 1.5rem; /* align with remove button */
+}
+
+/* Single margin config row: ratio | spread | threshold | ✕ */
+.margin-config-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.margin-config-row input {
+    padding: 0.25rem 0.375rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-family: var(--font-family-mono);
+    text-align: right;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.margin-config-row input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+.remove-margin-btn {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    padding: 0.25rem 0.375rem;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.remove-margin-btn:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-negative);
+}
+
+.add-margin-btn {
+    background: none;
+    border: 1px solid var(--color-border-medium);
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.add-margin-btn:hover {
+    background: var(--color-bg-hover);
+}

@@ -1,9 +1,17 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.BacktestService
+import com.portfoliohelper.service.BacktestStats
+import com.portfoliohelper.service.DataPoint
+import com.portfoliohelper.service.MarginConfig
+import com.portfoliohelper.service.MultiBacktestRequest
+import com.portfoliohelper.service.PortfolioConfig
 import com.portfoliohelper.service.BackupService
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
+import com.portfoliohelper.service.RebalanceStrategy
+import com.portfoliohelper.service.TickerWeight
 import com.portfoliohelper.service.nav.NavData
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
@@ -64,6 +72,83 @@ fun Application.configureRouting() {
 
         get("/loan") {
             call.renderLoanCalculatorPage()
+        }
+
+        get("/backtest") {
+            call.renderBacktestPage()
+        }
+
+        post("/api/backtest/run") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+
+                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+
+                val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
+                    val pObj = pel.jsonObject
+                    PortfolioConfig(
+                        label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
+                        tickers = pObj["tickers"]?.jsonArray?.map { el ->
+                            val obj = el.jsonObject
+                            TickerWeight(
+                                ticker = obj["ticker"]!!.jsonPrimitive.content,
+                                weight = obj["weight"]!!.jsonPrimitive.double
+                            )
+                        } ?: emptyList(),
+                        rebalanceStrategy = runCatching {
+                            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
+                        }.getOrDefault(RebalanceStrategy.YEARLY),
+                        marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
+                            val mObj = mel.jsonObject
+                            MarginConfig(
+                                marginRatio = (mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0) / 100.0,
+                                marginSpread = (mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 1.5) / 100.0,
+                                marginDeviationThreshold = (mObj["marginDeviationThreshold"]?.jsonPrimitive?.doubleOrNull ?: 5.0) / 100.0
+                            )
+                        } ?: emptyList()
+                    )
+                } ?: emptyList()
+
+                val result = BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
+
+                // Serialise result to JSON manually
+                fun serializeStats(s: BacktestStats) = buildString {
+                    append("{\"cagr\":${s.cagr},\"maxDrawdown\":${s.maxDrawdown},\"sharpe\":${s.sharpe}")
+                    append(",\"endingValue\":${s.endingValue}")
+                    append(",\"marginUpperTriggers\":${s.marginUpperTriggers ?: "null"}")
+                    append(",\"marginLowerTriggers\":${s.marginLowerTriggers ?: "null"}")
+                    append("}")
+                }
+                fun serializePoints(pts: List<DataPoint>) =
+                    "[${pts.joinToString(",") { "{\"date\":\"${it.date}\",\"value\":${it.value}}" }}]"
+
+                val resultJson = buildString {
+                    append("{\"portfolios\":[")
+                    result.portfolios.forEachIndexed { pi, pr ->
+                        if (pi > 0) append(",")
+                        val escapedLabel = pr.label.replace("\\", "\\\\").replace("\"", "\\\"")
+                        append("{\"label\":\"$escapedLabel\",\"curves\":[")
+                        pr.curves.forEachIndexed { ci, cr ->
+                            if (ci > 0) append(",")
+                            val escapedCurveLabel = cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
+                            append("{\"label\":\"$escapedCurveLabel\",")
+                            append("\"points\":${serializePoints(cr.points)},")
+                            append("\"stats\":${serializeStats(cr.stats)}}")
+                        }
+                        append("]}")
+                    }
+                    append("]}")
+                }
+                call.respondText(resultJson, ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
         }
 
         // Update portfolio CSV — client sends full state: [{symbol, amount, targetWeight, letf}]

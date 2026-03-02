@@ -18,14 +18,80 @@
  * Or just use Gradle (see README at bottom of this file).
  */
 
+package com.portfoliohelper.service.yahoo
+
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
+
+// ── Reusable historical fetcher ───────────────────────────────────────────────
+
+object YahooHistoricalFetcher {
+    private val logger = LoggerFactory.getLogger(YahooHistoricalFetcher::class.java)
+
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val req = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Accept", "application/json")
+                .build()
+            chain.proceed(req)
+        }
+        .build()
+
+    /** Fetches adjusted-close prices for [ticker] in the given date range. Returns date → price. */
+    fun fetchAdjustedClose(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Map<LocalDate, Double> {
+        val p1 = startDate.minusDays(5).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+                "?period1=$p1&period2=$p2&interval=1d" +
+                "&events=adjclose&includeAdjustedClose=true"
+
+        logger.info("Fetching historical $ticker from $startDate to $endDate")
+
+        val request = Request.Builder().url(url).build()
+        val body = http.newCall(request).execute().use { resp ->
+            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker" }
+            resp.body!!.string()
+        }
+
+        val root = JSONObject(body)
+        val result = root.getJSONObject("chart").getJSONArray("result").getJSONObject(0)
+        val timestamps = result.getJSONArray("timestamp")
+        val adjClose = result
+            .getJSONObject("indicators")
+            .getJSONArray("adjclose")
+            .getJSONObject(0)
+            .getJSONArray("adjclose")
+
+        val prices = mutableMapOf<LocalDate, Double>()
+        for (i in 0 until timestamps.length()) {
+            if (adjClose.isNull(i)) continue
+            val date = Instant.ofEpochSecond(timestamps.getLong(i))
+                .atZone(ZoneOffset.UTC).toLocalDate()
+            val price = adjClose.getDouble(i)
+            if (date >= startDate && date <= endDate) {
+                prices[date] = price
+            }
+        }
+
+        logger.info("Fetched ${prices.size} trading days for $ticker")
+        return prices
+    }
+}
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +100,7 @@ val START_DATE = LocalDate.of(2007, 1, 1)   // CTA inception date
 val END_DATE   = LocalDate.now()
 val OUTPUT_CSV = "portfolio_prices.csv"
 
-// ── HTTP client ───────────────────────────────────────────────────────────────
+// ── HTTP client (standalone use) ──────────────────────────────────────────────
 
 val http = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
@@ -59,41 +125,7 @@ data class PriceSeries(
 // ── Yahoo Finance fetch ───────────────────────────────────────────────────────
 
 fun fetchYahoo(ticker: String): PriceSeries {
-    val p1 = START_DATE.minusDays(5).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-    val p2 = END_DATE.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-
-    val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
-            "?period1=$p1&period2=$p2&interval=1d" +
-            "&events=adjclose&includeAdjustedClose=true"
-
-    println("  Fetching $ticker …")
-
-    val request = Request.Builder().url(url).build()
-    val body    = http.newCall(request).execute().use { resp ->
-        check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker" }
-        resp.body!!.string()
-    }
-
-    val root      = JSONObject(body)
-    val result    = root.getJSONObject("chart").getJSONArray("result").getJSONObject(0)
-    val timestamps = result.getJSONArray("timestamp")
-    val adjClose  = result
-        .getJSONObject("indicators")
-        .getJSONArray("adjclose")
-        .getJSONObject(0)
-        .getJSONArray("adjclose")
-
-    val prices = mutableMapOf<LocalDate, Double>()
-    for (i in 0 until timestamps.length()) {
-        if (adjClose.isNull(i)) continue
-        val date  = Instant.ofEpochSecond(timestamps.getLong(i))
-            .atZone(ZoneOffset.UTC).toLocalDate()
-        val price = adjClose.getDouble(i)
-        if (date >= START_DATE && date <= END_DATE) {
-            prices[date] = price
-        }
-    }
-
+    val prices = YahooHistoricalFetcher.fetchAdjustedClose(ticker, START_DATE, END_DATE)
     println("    → ${prices.size} trading days for $ticker")
     return PriceSeries(ticker, prices)
 }

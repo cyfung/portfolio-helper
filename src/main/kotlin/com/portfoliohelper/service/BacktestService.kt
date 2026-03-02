@@ -1,0 +1,449 @@
+package com.portfoliohelper.service
+
+import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
+import org.slf4j.LoggerFactory
+import java.io.File
+import java.time.LocalDate
+import kotlin.math.*
+
+// ── Domain types ──────────────────────────────────────────────────────────────
+
+enum class RebalanceStrategy { NONE, MONTHLY, QUARTERLY, YEARLY }
+
+data class TickerWeight(val ticker: String, val weight: Double)
+
+data class MarginConfig(
+    val marginRatio: Double,              // e.g. 0.5 = 50% borrow-to-equity
+    val marginSpread: Double,             // annualised fraction e.g. 0.015
+    val marginDeviationThreshold: Double  // e.g. 0.05
+)
+
+data class PortfolioConfig(
+    val label: String,
+    val tickers: List<TickerWeight>,
+    val rebalanceStrategy: RebalanceStrategy,
+    val marginStrategies: List<MarginConfig>  // empty = base curve only
+)
+
+data class MultiBacktestRequest(
+    val fromDate: String?,
+    val toDate: String?,
+    val portfolios: List<PortfolioConfig>  // 1–3
+)
+
+data class DataPoint(val date: String, val value: Double)
+
+data class BacktestStats(
+    val cagr: Double,
+    val maxDrawdown: Double,
+    val sharpe: Double,
+    val endingValue: Double,
+    val marginUpperTriggers: Int? = null,   // deviation breach above target (market fell, leverage too high)
+    val marginLowerTriggers: Int? = null    // deviation breach below target (market rose, leverage too low)
+)
+
+data class CurveResult(
+    val label: String,
+    val points: List<DataPoint>,
+    val stats: BacktestStats
+)
+
+data class PortfolioResult(
+    val label: String,
+    val curves: List<CurveResult>  // index 0 = no-margin; rest = margin variants
+)
+
+data class MultiBacktestResult(
+    val portfolios: List<PortfolioResult>
+)
+
+// ── Service ───────────────────────────────────────────────────────────────────
+
+object BacktestService {
+    private val logger = LoggerFactory.getLogger(BacktestService::class.java)
+    private val tickerDir = File("data/.ticker")
+
+    fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
+        val fromDate = request.fromDate?.let { LocalDate.parse(it) }
+        val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        val effrxSeries = loadEffrxSeries()
+
+        // Load all series for all portfolios upfront
+        val allSeriesMaps = request.portfolios.map { pConfig ->
+            val seriesMap = mutableMapOf<String, Map<LocalDate, Double>>()
+            for (tw in pConfig.tickers) {
+                val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
+                seriesMap[tw.ticker] = loadNormalizedSeries(tw.ticker, neededFrom)
+            }
+            seriesMap
+        }
+
+        // Single global date intersection across every ticker in every portfolio
+        val globalDates = intersectDates(allSeriesMaps.flatMap { it.values }, effrxSeries, fromDate, toDate)
+        if (globalDates.size < 2) {
+            throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
+        }
+
+        val portfolioResults = request.portfolios.mapIndexed { idx, pConfig ->
+            val seriesMap = allSeriesMaps[idx]
+
+            val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
+            val noMarginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
+            val noMarginStats = computeStats(noMarginValues, globalDates, effrxSeries)
+
+            val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
+
+            pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
+                val marginResult = applyMargin(noMarginValues, globalDates, effrxSeries, mc, pConfig.rebalanceStrategy)
+                val marginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), marginResult.values[i]) }
+                val marginStats = computeStats(
+                    marginResult.values, globalDates, effrxSeries,
+                    marginResult.upperTriggers, marginResult.lowerTriggers
+                )
+                curves.add(CurveResult("Margin ${mIdx + 1}", marginPoints, marginStats))
+            }
+
+            PortfolioResult(pConfig.label, curves)
+        }
+
+        return MultiBacktestResult(portfolioResults)
+    }
+
+    // ── Ticker data loading ───────────────────────────────────────────────────
+
+    /**
+     * Loads (or fetches) a normalised series for a ticker.
+     * Normalised means the series values are chain-linked returns starting at 10 000.
+     */
+    private fun loadNormalizedSeries(ticker: String, neededFromDate: LocalDate): Map<LocalDate, Double> {
+        tickerDir.mkdirs()
+        val upperTicker = ticker.uppercase()
+        val simPattern = Regex("${upperTicker}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
+
+        // Find latest SIM file
+        val existingFiles = tickerDir.listFiles()
+            ?.filter { simPattern.matches(it.name) }
+            ?.sortedByDescending { it.name }
+            ?: emptyList()
+
+        if (existingFiles.isNotEmpty()) {
+            val latestFile = existingFiles.first()
+            val latestDateStr = simPattern.find(latestFile.name)!!.groupValues[1]
+            val latestDate = LocalDate.parse(latestDateStr)
+
+            logger.info("Loading SIM file for $upperTicker: ${latestFile.name}")
+            val existing = readSimCsv(latestFile)
+
+            val today = LocalDate.now()
+            if (latestDate >= today) {
+                return existing
+            }
+
+            // Extend with Yahoo data
+            logger.info("Extending $upperTicker SIM from $latestDate to $today via Yahoo")
+            return try {
+                val extension = YahooHistoricalFetcher.fetchAdjustedClose(ticker, latestDate, today)
+                val extended = chainExtend(existing, extension, latestDate)
+                val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
+                writeSimCsv(newFile, extended)
+                extended
+            } catch (e: Exception) {
+                logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}. Using existing SIM.")
+                existing
+            }
+
+        } else {
+            // No SIM file — fetch from Yahoo and create one
+            logger.info("No SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
+            val today = LocalDate.now()
+            val raw = YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, today)
+            if (raw.isEmpty()) throw IllegalStateException("No Yahoo data for $ticker from $neededFromDate")
+            val normalized = normalizeFromFirst(raw, 10_000.0)
+            val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
+            writeSimCsv(newFile, normalized)
+            return normalized
+        }
+    }
+
+    /** Loads EFFRX from the latest SIM file (no Yahoo extension). Returns empty map if not found. */
+    private fun loadEffrxSeries(): Map<LocalDate, Double> {
+        tickerDir.mkdirs()
+        val simPattern = Regex("EFFRX-(\\d{4}-\\d{2}-\\d{2})\\.csv")
+        val latest = tickerDir.listFiles()
+            ?.filter { simPattern.matches(it.name) }
+            ?.sortedByDescending { it.name }
+            ?.firstOrNull()
+            ?: return emptyMap()
+        logger.info("Loading EFFRX from ${latest.name}")
+        return readSimCsv(latest)
+    }
+
+    // ── CSV helpers ───────────────────────────────────────────────────────────
+
+    private fun readSimCsv(file: File): Map<LocalDate, Double> {
+        val result = mutableMapOf<LocalDate, Double>()
+        file.bufferedReader().use { br ->
+            br.readLine() // skip header
+            br.forEachLine { line ->
+                val cols = line.split(",")
+                if (cols.size >= 2) {
+                    val date = runCatching { LocalDate.parse(cols[0].trim()) }.getOrNull() ?: return@forEachLine
+                    val value = cols[1].trim().toDoubleOrNull() ?: return@forEachLine
+                    result[date] = value
+                }
+            }
+        }
+        return result
+    }
+
+    private fun writeSimCsv(file: File, series: Map<LocalDate, Double>) {
+        file.bufferedWriter().use { out ->
+            out.write("date,value")
+            out.newLine()
+            series.keys.sorted().forEach { date ->
+                out.write("$date,${series[date]}")
+                out.newLine()
+            }
+        }
+        logger.info("Saved SIM file: ${file.name} (${series.size} rows)")
+    }
+
+    // ── Chain-link extension ──────────────────────────────────────────────────
+
+    /**
+     * Extends [existing] (date → normalised value) by chaining returns from [yahoo] (date → raw adj-close).
+     * The last date in [existing] is used as the pivot.
+     */
+    private fun chainExtend(
+        existing: Map<LocalDate, Double>,
+        yahoo: Map<LocalDate, Double>,
+        lastSimDate: LocalDate
+    ): Map<LocalDate, Double> {
+        val result = existing.toMutableMap()
+        val sortedYahooDates = yahoo.keys.filter { it > lastSimDate }.sorted()
+        if (sortedYahooDates.isEmpty()) return result
+
+        // Find the pivot yahoo price (last date in sim range that has a yahoo price)
+        val pivotDate = yahoo.keys.filter { it <= lastSimDate }.maxOrNull() ?: return result
+        val pivotYahooPrice = yahoo[pivotDate] ?: return result
+
+        // Find the last sim value
+        val lastSimValue = existing[lastSimDate] ?: existing.keys.filter { it <= lastSimDate }.maxOrNull()
+            ?.let { existing[it] } ?: return result
+
+        var prevYahoo = pivotYahooPrice
+        var prevValue = lastSimValue
+
+        for (date in sortedYahooDates) {
+            val currentYahoo = yahoo[date] ?: continue
+            if (prevYahoo == 0.0) { prevYahoo = currentYahoo; continue }
+            val ret = currentYahoo / prevYahoo
+            val newValue = prevValue * ret
+            result[date] = newValue
+            prevYahoo = currentYahoo
+            prevValue = newValue
+        }
+        return result
+    }
+
+    /** Normalises a raw price series so the first value equals [startValue]. */
+    private fun normalizeFromFirst(raw: Map<LocalDate, Double>, startValue: Double): Map<LocalDate, Double> {
+        val sorted = raw.keys.sorted()
+        val firstPrice = raw[sorted.first()] ?: return emptyMap()
+        return sorted.associateWith { date -> raw[date]!! / firstPrice * startValue }
+    }
+
+    // ── Date intersection ─────────────────────────────────────────────────────
+
+    private fun intersectDates(
+        series: List<Map<LocalDate, Double>>,
+        effrx: Map<LocalDate, Double>,
+        from: LocalDate?,
+        to: LocalDate
+    ): List<LocalDate> {
+        var common: Set<LocalDate> = series.first().keys.toSet()
+        for (s in series.drop(1)) common = common intersect s.keys.toSet()
+        // EFFRX optional: if available, intersect; otherwise use common
+        if (effrx.isNotEmpty()) common = common intersect effrx.keys.toSet()
+        return common
+            .filter { d -> (from == null || d >= from) && d <= to }
+            .sorted()
+    }
+
+    // ── Portfolio computation ─────────────────────────────────────────────────
+
+    private fun computeNoMargin(
+        pConfig: PortfolioConfig,
+        seriesMap: Map<String, Map<LocalDate, Double>>,
+        dates: List<LocalDate>
+    ): List<Double> {
+        val tickers = pConfig.tickers.map { it.ticker }
+        val totalWeight = pConfig.tickers.sumOf { it.weight }
+        val targetWeights = pConfig.tickers.associate { it.ticker to it.weight / totalWeight }
+
+        // Initial allocation: weights × start value
+        val startValue = 10_000.0
+        val holdings = tickers.associateWith { ticker ->
+            startValue * (targetWeights[ticker] ?: 0.0)
+        }.toMutableMap()
+
+        val values = mutableListOf<Double>()
+        values.add(startValue)
+
+        for (i in 1 until dates.size) {
+            val prevDate = dates[i - 1]
+            val curDate = dates[i]
+
+            // Apply daily returns
+            for (ticker in tickers) {
+                val s = seriesMap[ticker] ?: continue
+                val prev = s[prevDate] ?: continue
+                val cur = s[curDate] ?: continue
+                if (prev == 0.0) continue
+                holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
+            }
+
+            val totalVal = holdings.values.sum()
+
+            // Rebalance if needed
+            if (shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)) {
+                for (ticker in tickers) {
+                    holdings[ticker] = totalVal * (targetWeights[ticker] ?: 0.0)
+                }
+            }
+
+            values.add(totalVal)
+        }
+        return values
+    }
+
+    private fun shouldRebalance(
+        strategy: RebalanceStrategy,
+        prevDate: LocalDate,
+        curDate: LocalDate
+    ): Boolean = when (strategy) {
+        RebalanceStrategy.NONE -> false
+        RebalanceStrategy.MONTHLY -> curDate.month != prevDate.month
+        RebalanceStrategy.QUARTERLY -> ((curDate.monthValue - 1) / 3) != ((prevDate.monthValue - 1) / 3)
+        RebalanceStrategy.YEARLY -> curDate.year != prevDate.year
+    }
+
+    // ── Margin computation ────────────────────────────────────────────────────
+
+    private data class MarginApplyResult(
+        val values: List<Double>,
+        val upperTriggers: Int,   // ratio > target + deviation (market fell, forced to de-lever)
+        val lowerTriggers: Int    // ratio < target - deviation (market rose, forced to re-lever)
+    )
+
+    private fun applyMargin(
+        noMargin: List<Double>,
+        dates: List<LocalDate>,
+        effrx: Map<LocalDate, Double>,
+        marginConfig: MarginConfig,
+        rebalanceStrategy: RebalanceStrategy
+    ): MarginApplyResult {
+        val marginTarget = marginConfig.marginRatio
+        val spread = marginConfig.marginSpread
+        val deviation = marginConfig.marginDeviationThreshold
+
+        var equity = noMargin[0]
+        var borrowed = equity * marginTarget
+        var totalExposure = equity + borrowed
+
+        val result = mutableListOf(equity)
+        var upperTriggers = 0
+        var lowerTriggers = 0
+
+        for (i in 1 until noMargin.size) {
+            val prevDate = dates[i - 1]
+            val curDate = dates[i]
+
+            // Portfolio return
+            val portfolioReturn = if (noMargin[i - 1] != 0.0) noMargin[i] / noMargin[i - 1] else 1.0
+            totalExposure *= portfolioReturn
+
+            // Daily loan cost from EFFRX
+            val effrxPrev = effrx[prevDate]
+            val effrxCur = effrx[curDate]
+            val dailyLoanRate = if (effrxPrev != null && effrxCur != null && effrxPrev != 0.0) {
+                (effrxCur / effrxPrev - 1) + spread / 252.0
+            } else {
+                spread / 252.0
+            }
+
+            borrowed *= (1.0 + dailyLoanRate)
+            equity = totalExposure - borrowed
+
+            // Margin ratio check
+            val currentMarginRatio = if (equity != 0.0) borrowed / equity else marginTarget
+            val rebalanceDay = shouldRebalance(rebalanceStrategy, prevDate, curDate)
+            val deviationBreach = abs(currentMarginRatio - marginTarget) > deviation
+
+            if (deviationBreach && !rebalanceDay) {
+                if (currentMarginRatio > marginTarget) upperTriggers++ else lowerTriggers++
+            }
+
+            if (rebalanceDay || deviationBreach) {
+                borrowed = equity * marginTarget
+                totalExposure = equity + borrowed
+            }
+
+            result.add(equity)
+        }
+        return MarginApplyResult(result, upperTriggers, lowerTriggers)
+    }
+
+    // ── Statistics ────────────────────────────────────────────────────────────
+
+    private fun computeStats(
+        values: List<Double>,
+        dates: List<LocalDate>,
+        effrx: Map<LocalDate, Double>,
+        marginUpperTriggers: Int? = null,
+        marginLowerTriggers: Int? = null
+    ): BacktestStats {
+        if (values.size < 2) return BacktestStats(0.0, 0.0, 0.0, values.lastOrNull() ?: 0.0)
+
+        val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
+        val cagr = if (years > 0) (values.last() / values.first()).pow(1.0 / years) - 1.0 else 0.0
+
+        // Max drawdown
+        var peak = values[0]
+        var maxDD = 0.0
+        for (v in values) {
+            if (v > peak) peak = v
+            if (peak > 0) maxDD = max(maxDD, 1.0 - v / peak)
+        }
+
+        // Sharpe ratio (using daily log returns)
+        val logReturns = (1 until values.size).map { i ->
+            if (values[i - 1] > 0) ln(values[i] / values[i - 1]) else 0.0
+        }
+
+        // Risk-free daily from EFFRX
+        val rfDaily = if (effrx.size >= 2) {
+            val effrxSorted = effrx.keys.sorted()
+            val rfLogReturns = (1 until effrxSorted.size).mapNotNull { i ->
+                val prev = effrx[effrxSorted[i - 1]] ?: return@mapNotNull null
+                val cur = effrx[effrxSorted[i]] ?: return@mapNotNull null
+                if (prev > 0) ln(cur / prev) else null
+            }
+            if (rfLogReturns.isNotEmpty()) rfLogReturns.average() else 0.0
+        } else 0.0
+
+        val meanReturn = logReturns.average()
+        val variance = logReturns.map { (it - meanReturn).pow(2) }.average()
+        val stdDev = sqrt(variance)
+        val sharpe = if (stdDev > 0) (meanReturn - rfDaily) / stdDev * sqrt(252.0) else 0.0
+
+        return BacktestStats(
+            cagr = cagr,
+            maxDrawdown = maxDD,
+            sharpe = sharpe,
+            endingValue = values.last(),
+            marginUpperTriggers = marginUpperTriggers,
+            marginLowerTriggers = marginLowerTriggers
+        )
+    }
+}
