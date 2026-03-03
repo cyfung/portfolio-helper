@@ -397,7 +397,9 @@ function getAllocRebalTotal() {
 function deriveMarginPct(rebalTotal) {
     const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
     if (ec <= 0) return 0;
-    return Math.abs(lastMarginUsd - (rebalTotal - lastPortfolioVal)) / ec * 100;
+    const marginPct = (lastMarginUsd - (rebalTotal - lastPortfolioVal)) / ec * 100;
+    if (marginPct >=0) return 0;
+    return -marginPct;
 }
 function deriveRebalFromMarginPct(pct) {
     const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
@@ -424,13 +426,7 @@ function updateRebalTargetPlaceholder() {
 function updateMarginInputPlaceholder() {
     const input = document.getElementById('margin-target-input');
     if (!input || input.value.trim() !== '') return;
-    let pct;
-    if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
-        pct = deriveMarginPct(rebalTargetUsd);
-    } else {
-        const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
-        pct = ec > 0 ? Math.abs(Math.min(lastMarginUsd, 0)) / ec * 100 : 0;
-    }
+    let pct = deriveMarginPct(getRebalTotal());
     input.placeholder = pct.toFixed(1);
 }
 
@@ -440,14 +436,10 @@ function updateMarginTargetDisplay() {
 
     const marginTargetEl = document.getElementById('margin-target-usd');
 
-    if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
-        const rebalTotal = getRebalTotal();
-        const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
-        if (marginTargetEl) {
-            marginTargetEl.textContent = marginTargetUsd < 0 ? formatDisplayCurrency(-marginTargetUsd) : '';
-        }
-    } else {
-        if (marginTargetEl) marginTargetEl.textContent = '';
+    const rebalTotal = getRebalTotal();
+    const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
+    if (marginTargetEl) {
+        marginTargetEl.textContent = marginTargetUsd < 0 ? formatDisplayCurrency(-marginTargetUsd) : '';
     }
 
     updateMarginInputPlaceholder();
