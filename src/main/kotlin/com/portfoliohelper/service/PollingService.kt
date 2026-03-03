@@ -63,7 +63,18 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
                             updateCallbacks.forEach { it(symbol, data) }
                         }
                     } catch (e: Exception) {
-                        logger.warn("Failed to fetch $symbol: ${e.message}")
+                        logger.warn("Failed to fetch $symbol: ${e.message}, retrying once...")
+                        delay(3_000)
+                        try {
+                            val data = fetchItem(symbol) ?: return@async
+                            cache[symbol] = data
+                            synchronized(updateCallbacks) {
+                                updateCallbacks.forEach { it(symbol, data) }
+                            }
+                            logger.info("Retry succeeded for $symbol")
+                        } catch (e2: Exception) {
+                            logger.warn("Retry also failed for $symbol: ${e2.message}")
+                        }
                     }
                 }
             }.awaitAll()
