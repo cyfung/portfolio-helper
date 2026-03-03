@@ -162,6 +162,7 @@ function renderHistory() {
         container.querySelectorAll('.loan-history-load-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 loadParams(container._history[parseInt(btn.getAttribute('data-index'), 10)]);
+                calculate();
             });
         });
     }).catch(function(e) { console.error('Failed to load loan history:', e); });
@@ -175,6 +176,11 @@ function showError(msg) {
 }
 
 function hideError() {
+    document.getElementById('loan-error').style.display = 'none';
+}
+
+function hideResults() {
+    document.getElementById('loan-results').style.display = 'none';
     document.getElementById('loan-error').style.display = 'none';
 }
 
@@ -278,11 +284,18 @@ document.addEventListener('DOMContentLoaded', function() {
         var container = document.getElementById('loan-history');
         if (container && container._history && container._history.length > 0) {
             loadParams(container._history[0]);
-            calculate();
         }
+        calculate();
     });
 
     document.getElementById('calculate-btn').addEventListener('click', calculate);
+
+    // Hide results when any field is edited
+    ['loan-amount', 'num-periods', 'payment', 'rate-apy', 'rate-flat'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', hideResults);
+    });
+    document.getElementById('period-length').addEventListener('change', hideResults);
+    document.getElementById('cashflow-rows').addEventListener('input', hideResults);
 
     // Mutual exclusion: filling one rate/payment input clears the others
     var paymentEl      = document.getElementById('payment');
