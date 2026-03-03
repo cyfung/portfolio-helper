@@ -49,11 +49,20 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
         }
     }
 
-    // Load persisted rebalance target (stored alongside the portfolio's CSV)
-    val savedRebalTargetUsd = runCatching {
-        val f = java.io.File(entry.csvPath).resolveSibling("rebal-target.txt")
-        if (f.exists()) f.readText().trim().toDouble() else 0.0
-    }.getOrDefault(0.0)
+    // Load per-portfolio config (portfolio.conf); fall back to legacy rebal-target.txt
+    val portfolioConf: Map<String, String> = runCatching {
+        val f = java.io.File(entry.csvPath).resolveSibling("portfolio.conf")
+        if (f.exists()) f.readLines()
+            .filter { '=' in it && !it.startsWith('#') }
+            .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+        else emptyMap()
+    }.getOrDefault(emptyMap())
+    val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull()
+        ?: runCatching {
+            val legacy = java.io.File(entry.csvPath).resolveSibling("rebal-target.txt")
+            if (legacy.exists()) legacy.readText().trim().toDoubleOrNull() else null
+        }.getOrNull() ?: 0.0
+    val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
 
     // Compute totals and display currencies at function level so they can be used in both head and body
     val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
@@ -114,6 +123,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         let lastPortfolioDayChangeUsd = ${"%.2f".format(portfolio.dailyChangeDollars)};
                         let lastCashTotalUsd = ${"%.2f".format(cashTotalUsd)};
                         let savedRebalTargetUsd = ${"%.2f".format(savedRebalTargetUsd)};
+                        let savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
                         """.trimIndent()
                     )
                 }

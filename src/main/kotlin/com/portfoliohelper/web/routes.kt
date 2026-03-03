@@ -309,15 +309,37 @@ fun Application.configureRouting() {
             }
         }
 
-        // Persist rebalance target (USD value) to data/rebal-target.txt alongside the portfolio CSV
-        post("/api/rebal-target/save") {
+        // Generic per-portfolio config store: POST /api/portfolio-config/save?portfolio=X&key=<key>
+        // Persists to portfolio.conf (key=value lines) alongside the portfolio CSV.
+        // rebalTarget (USD) and marginTarget (%) are mutually exclusive — setting one clears the other.
+        post("/api/portfolio-config/save") {
             try {
                 val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val key = call.request.queryParameters["key"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
                 val portfolioEntry = PortfolioRegistry.get(portfolioId)
                     ?: return@post call.respond(HttpStatusCode.NotFound)
-                val value = call.receiveText().trim().toDoubleOrNull()
-                val rebalFile = File(portfolioEntry.csvPath).resolveSibling("rebal-target.txt")
-                if (value == null || value <= 0) rebalFile.delete() else rebalFile.writeText(value.toString())
+                val value = call.receiveText().trim()
+                val confFile = File(portfolioEntry.csvPath).resolveSibling("portfolio.conf")
+                // Parse existing conf
+                val props = if (confFile.exists())
+                    confFile.readLines()
+                        .filter { '=' in it && !it.startsWith('#') }
+                        .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+                        .toMutableMap()
+                else mutableMapOf()
+                // Set or clear the key
+                if (value.isEmpty()) props.remove(key)
+                else {
+                    props[key] = value
+                    if (key == "rebalTarget") props.remove("marginTarget")
+                    else if (key == "marginTarget") props.remove("rebalTarget")
+                }
+                // Migrate old rebal-target.txt if present
+                File(portfolioEntry.csvPath).resolveSibling("rebal-target.txt").delete()
+                // Write back
+                if (props.isEmpty()) confFile.delete()
+                else confFile.writeText(props.entries.joinToString("\n") { "${it.key}=${it.value}" })
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(

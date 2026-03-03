@@ -8,6 +8,7 @@ let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
 // Display currency (USD by default; lastPortfolioVal/lastCashTotalUsd/etc. declared in inline script)
 let currentDisplayCurrency = 'USD';
 let rebalTargetUsd = null; // null = use lastPortfolioVal
+let marginTargetPct = null; // non-null = margin mode (rebalTargetUsd derived from this)
 let allocAddMode = localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
 let allocReduceMode = localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
 let lastAllocRebalTotal = 0;
@@ -384,11 +385,13 @@ function formatSignedDisplayCurrency(usdVal) {
 }
 
 function getRebalTotal() {
+    if (marginTargetPct !== null) return deriveRebalFromMarginPct(marginTargetPct);
     if (rebalTargetUsd !== null && rebalTargetUsd > 0) return rebalTargetUsd;
     return lastPortfolioVal + Math.max(lastMarginUsd, 0);
 }
 
 function getAllocRebalTotal() {
+    if (marginTargetPct !== null) return deriveRebalFromMarginPct(marginTargetPct);
     if (rebalTargetUsd !== null && rebalTargetUsd > 0) return rebalTargetUsd;
     // Add positive M-cash (deployable), ignore margin debt
     return lastPortfolioVal + Math.max(lastMarginUsd, 0);
@@ -411,7 +414,7 @@ function updateRebalTargetPlaceholder() {
     if (!input) return;
     const marginInput = document.getElementById('margin-target-input');
     if (marginInput && marginInput.value.trim() !== '') {
-        const converted = toDisplayCurrency(rebalTargetUsd);
+        const converted = toDisplayCurrency(getRebalTotal());
         input.placeholder = Math.abs(converted).toLocaleString('en-US', {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         });
@@ -858,9 +861,12 @@ function updateAllEstVals() {
 
 function refreshDisplayCurrency() {
     // Convert rebalance target input to new display currency (USD value stays intact)
+    // Skip when in margin mode — margin % doesn't change with currency, rebal input stays empty
     const rebalInput = document.getElementById('rebal-target-input');
     if (rebalInput) {
-        if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
+        if (marginTargetPct !== null) {
+            rebalInput.value = '';
+        } else if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
             const displayVal = toDisplayCurrency(rebalTargetUsd);
             rebalInput.value = displayVal.toLocaleString('en-US', {
                 minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -1352,6 +1358,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Rebalance Target input
     let rebalSaveTimer = null;
     const rebalTargetInput = document.getElementById('rebal-target-input');
+    const marginTargetInput = document.getElementById('margin-target-input');
     if (rebalTargetInput) {
         rebalTargetInput.addEventListener('input', () => {
             const raw = rebalTargetInput.value.trim().replace(/,/g, '');
@@ -1362,7 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rate = fxRates[currentDisplayCurrency];
                 rebalTargetUsd = (rate && rate !== 0) ? inputNum * rate : inputNum;
             }
-            const marginTargetInput = document.getElementById('margin-target-input');
+            marginTargetPct = null;
             if (marginTargetInput) marginTargetInput.value = '';
             updateRebalancingColumns(getRebalTotal());
             updateAllocColumns(getAllocRebalTotal());
@@ -1371,57 +1378,67 @@ document.addEventListener('DOMContentLoaded', () => {
             // Debounced save to server
             clearTimeout(rebalSaveTimer);
             rebalSaveTimer = setTimeout(() => {
-                fetch('/api/rebal-target/save?portfolio=' + portfolioId, {
+                fetch('/api/portfolio-config/save?portfolio=' + portfolioId + '&key=rebalTarget', {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: rebalTargetUsd !== null ? rebalTargetUsd.toString() : '0'
+                    body: rebalTargetUsd !== null && rebalTargetUsd > 0 ? rebalTargetUsd.toString() : ''
                 });
             }, 1000);
         });
+    }
 
     // Margin Target % input
-    const marginTargetInput = document.getElementById('margin-target-input');
     if (marginTargetInput) {
         marginTargetInput.addEventListener('input', () => {
             const raw = marginTargetInput.value.trim();
             if (raw === '' || isNaN(parseFloat(raw))) {
+                marginTargetPct = null;
                 rebalTargetUsd = null;
             } else {
-                rebalTargetUsd = deriveRebalFromMarginPct(parseFloat(raw));
+                marginTargetPct = parseFloat(raw);
+                rebalTargetUsd = null;
             }
             rebalTargetInput.value = '';
             updateRebalTargetPlaceholder();
             updateRebalancingColumns(getRebalTotal());
             updateAllocColumns(getAllocRebalTotal());
             updateMarginTargetDisplay();
-            // Debounced save to server
+            // Debounced save to server (saves margin % as-is, server clears rebalTarget)
             clearTimeout(rebalSaveTimer);
             rebalSaveTimer = setTimeout(() => {
-                fetch('/api/rebal-target/save?portfolio=' + portfolioId, {
+                fetch('/api/portfolio-config/save?portfolio=' + portfolioId + '&key=marginTarget', {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: rebalTargetUsd !== null ? rebalTargetUsd.toString() : '0'
+                    body: marginTargetPct !== null ? marginTargetPct.toString() : ''
                 });
             }, 1000);
         });
     }
 
-        // Restore saved rebalance target on page load
-        if (savedRebalTargetUsd > 0) {
-            rebalTargetUsd = savedRebalTargetUsd;
-            const rate = fxRates[currentDisplayCurrency];
-            const displayVal = (rate && rate !== 0) ? savedRebalTargetUsd / rate : savedRebalTargetUsd;
-            rebalTargetInput.value = displayVal.toLocaleString('en-US', {
-                minimumFractionDigits: 2, maximumFractionDigits: 2
-            });
-            updateRebalancingColumns(getRebalTotal());
-            updateAllocColumns(getAllocRebalTotal());
-            updateMarginTargetDisplay();
-        }
-    }
-
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
+    // Must run before restoring targets so lastMarginUsd/lastEquityUsd are correct
     updateCashTotals();
+
+    // Restore saved target on page load — margin % takes priority over rebal USD
+    if (savedMarginTargetPct > 0 && marginTargetInput) {
+        marginTargetPct = savedMarginTargetPct;
+        marginTargetInput.value = savedMarginTargetPct.toLocaleString('en-US', {
+            minimumFractionDigits: 1, maximumFractionDigits: 4
+        });
+        updateRebalancingColumns(getRebalTotal());
+        updateAllocColumns(getAllocRebalTotal());
+        updateMarginTargetDisplay();
+    } else if (savedRebalTargetUsd > 0 && rebalTargetInput) {
+        rebalTargetUsd = savedRebalTargetUsd;
+        const rate = fxRates[currentDisplayCurrency];
+        const displayVal = (rate && rate !== 0) ? savedRebalTargetUsd / rate : savedRebalTargetUsd;
+        rebalTargetInput.value = displayVal.toLocaleString('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+        updateRebalancingColumns(getRebalTotal());
+        updateAllocColumns(getAllocRebalTotal());
+        updateMarginTargetDisplay();
+    }
 
     // Refresh display currency for any server-rendered values (portfolio total, day change)
     if (currentDisplayCurrency !== 'USD') {
