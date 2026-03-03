@@ -27,69 +27,68 @@
         ['#1a8a5c', '#55b388', '#99d4bb'],  // greens  (Portfolio 3)
     ];
 
-    // ── Block initialisation ──────────────────────────────────────────────────
+    // ── Block helpers (module-level so restoreSettings can call them directly) ─
 
-    function initBlock(blockIdx) {
-        const block = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
-        const tickerRowsEl = block.querySelector('.ticker-rows');
-        const addTickerBtn = block.querySelector('.add-ticker-btn');
-        const weightHint = block.querySelector('.backtest-weight-hint');
-        const addMarginBtn = block.querySelector('.add-margin-btn');
-        const marginRowsEl = block.querySelector('.margin-config-rows');
-
-        function updateWeightHint() {
-            const rows = tickerRowsEl.querySelectorAll('.backtest-ticker-row');
-            let total = 0;
-            rows.forEach(r => {
-                const v = parseFloat(r.querySelector('.weight-input').value) || 0;
-                total += v;
-            });
-            const diff = Math.round((total - 100) * 100) / 100;
-            if (rows.length === 0) {
-                weightHint.textContent = '';
-                weightHint.className = 'backtest-weight-hint';
-            } else if (Math.abs(diff) < 0.001) {
-                weightHint.textContent = 'Total: 100% ✓';
-                weightHint.className = 'backtest-weight-hint hint-ok';
-            } else {
-                weightHint.textContent = `Total: ${total.toFixed(2)}% (${diff > 0 ? '+' : ''}${diff.toFixed(2)}%)`;
-                weightHint.className = 'backtest-weight-hint hint-warn';
-            }
+    function updateWeightHint(blockIdx) {
+        const blockEl = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
+        const tickerRowsEl = blockEl.querySelector('.ticker-rows');
+        const weightHint = blockEl.querySelector('.backtest-weight-hint');
+        const rows = tickerRowsEl.querySelectorAll('.backtest-ticker-row');
+        let total = 0;
+        rows.forEach(r => {
+            const v = parseFloat(r.querySelector('.weight-input').value) || 0;
+            total += v;
+        });
+        const diff = Math.round((total - 100) * 100) / 100;
+        if (rows.length === 0) {
+            weightHint.textContent = '';
+            weightHint.className = 'backtest-weight-hint';
+        } else if (Math.abs(diff) < 0.001) {
+            weightHint.textContent = 'Total: 100% ✓';
+            weightHint.className = 'backtest-weight-hint hint-ok';
+        } else {
+            weightHint.textContent = `Total: ${total.toFixed(2)}% (${diff > 0 ? '+' : ''}${diff.toFixed(2)}%)`;
+            weightHint.className = 'backtest-weight-hint hint-warn';
         }
+    }
 
-        function addTickerRow(ticker = '', weight = '') {
-            const row = document.createElement('div');
-            row.className = 'backtest-ticker-row';
-            row.innerHTML = `
+    function modeSelectHtml(cls, titleStr) {
+        return `<select class="mc-mode ${cls}" title="${titleStr}">
+              <option value="PROPORTIONAL">Target Weight</option>
+              <option value="CURRENT_WEIGHT">Current Weight</option>
+              <option value="FULL_REBALANCE">Full Rebal</option>
+              <option value="UNDERVALUED_PRIORITY">Underval First</option>
+              <option value="DAILY">Daily</option>
+            </select>`;
+    }
+
+    function addTickerRow(blockIdx, ticker = '', weight = '') {
+        const blockEl = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
+        const tickerRowsEl = blockEl.querySelector('.ticker-rows');
+        const row = document.createElement('div');
+        row.className = 'backtest-ticker-row';
+        row.innerHTML = `
                 <input type="text" class="ticker-input" placeholder='e.g. VT or: 1 KMLM 1 VT S=1.5' value="${ticker}" />
                 <input type="text" class="weight-input" placeholder="Weight %" value="${weight}" />
                 <span class="weight-unit">%</span>
                 <button type="button" class="remove-ticker-btn" title="Remove">✕</button>
             `;
-            row.querySelector('.remove-ticker-btn').addEventListener('click', () => {
-                row.remove();
-                updateWeightHint();
-            });
-            row.querySelector('.weight-input').addEventListener('input', updateWeightHint);
-            row.querySelector('.ticker-input').addEventListener('input', updateWeightHint);
-            tickerRowsEl.appendChild(row);
-            updateWeightHint();
-        }
+        row.querySelector('.remove-ticker-btn').addEventListener('click', () => {
+            row.remove();
+            updateWeightHint(blockIdx);
+        });
+        row.querySelector('.weight-input').addEventListener('input', () => updateWeightHint(blockIdx));
+        row.querySelector('.ticker-input').addEventListener('input', () => updateWeightHint(blockIdx));
+        tickerRowsEl.appendChild(row);
+        updateWeightHint(blockIdx);
+    }
 
-        function modeSelectHtml(cls, titleStr) {
-            return `<select class="mc-mode ${cls}" title="${titleStr}">
-                  <option value="PROPORTIONAL">Target Weight</option>
-                  <option value="CURRENT_WEIGHT">Current Weight</option>
-                  <option value="FULL_REBALANCE">Full Rebal</option>
-                  <option value="UNDERVALUED_PRIORITY">Underval First</option>
-                  <option value="DAILY">Daily</option>
-                </select>`;
-        }
-
-        function addMarginRow(ratio = 50, spread = 1.5, devUpper = 5, devLower = 5, upperMode = 'PROPORTIONAL', lowerMode = 'PROPORTIONAL') {
-            const row = document.createElement('div');
-            row.className = 'margin-config-row';
-            row.innerHTML = `
+    function addMarginRow(blockIdx, ratio = 50, spread = 1.5, devUpper = 5, devLower = 5, upperMode = 'PROPORTIONAL', lowerMode = 'PROPORTIONAL') {
+        const blockEl = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
+        const marginRowsEl = blockEl.querySelector('.margin-config-rows');
+        const row = document.createElement('div');
+        row.className = 'margin-config-row';
+        row.innerHTML = `
                 <input type="text" class="mc-ratio" value="${ratio}" title="Margin % of Equity" placeholder="%" />
                 <input type="text" class="mc-spread" value="${spread}" title="Spread % (annualised)" placeholder="%" />
                 <input type="text" class="mc-dev-upper" value="${devUpper}" title="Upper Deviation %" placeholder="%" />
@@ -98,31 +97,37 @@
                 ${modeSelectHtml('mc-mode-lower', 'Lower breach rebalance mode')}
                 <button type="button" class="remove-margin-btn" title="Remove">✕</button>
             `;
-            row.querySelector('.mc-mode-upper').value = upperMode;
-            row.querySelector('.mc-mode-lower').value = lowerMode;
-            row.querySelector('.remove-margin-btn').addEventListener('click', () => row.remove());
-            marginRowsEl.appendChild(row);
-        }
+        row.querySelector('.mc-mode-upper').value = upperMode;
+        row.querySelector('.mc-mode-lower').value = lowerMode;
+        row.querySelector('.remove-margin-btn').addEventListener('click', () => row.remove());
+        marginRowsEl.appendChild(row);
+    }
+
+    // ── Block initialisation ──────────────────────────────────────────────────
+
+    function initBlock(blockIdx) {
+        const block = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
+        const tickerRowsEl = block.querySelector('.ticker-rows');
+        const addTickerBtn = block.querySelector('.add-ticker-btn');
+        const addMarginBtn = block.querySelector('.add-margin-btn');
 
         // Wire up listeners for any rows that were server-rendered into the HTML
         tickerRowsEl.querySelectorAll('.backtest-ticker-row').forEach(row => {
             row.querySelector('.remove-ticker-btn').addEventListener('click', () => {
                 row.remove();
-                updateWeightHint();
+                updateWeightHint(blockIdx);
             });
-            row.querySelector('.weight-input').addEventListener('input', updateWeightHint);
-            row.querySelector('.ticker-input').addEventListener('input', updateWeightHint);
+            row.querySelector('.weight-input').addEventListener('input', () => updateWeightHint(blockIdx));
+            row.querySelector('.ticker-input').addEventListener('input', () => updateWeightHint(blockIdx));
         });
-        updateWeightHint();
+        updateWeightHint(blockIdx);
 
-        addTickerBtn.addEventListener('click', () => addTickerRow());
-        addMarginBtn.addEventListener('click', () => addMarginRow());
-
-        return { addTickerRow, addMarginRow };
+        addTickerBtn.addEventListener('click', () => addTickerRow(blockIdx));
+        addMarginBtn.addEventListener('click', () => addMarginRow(blockIdx));
     }
 
     // Initialise all 3 blocks; block 0's rows are already in the HTML (server-rendered)
-    const blocks = [0, 1, 2].map(i => initBlock(i));
+    [0, 1, 2].forEach(i => initBlock(i));
 
     // ── Restore saved settings ────────────────────────────────────────────────
 
@@ -137,20 +142,20 @@
             if (req.toDate) document.getElementById('to-date').value = req.toDate;
 
             req.portfolios.forEach((p, i) => {
-                if (i >= blocks.length) return;
+                if (i >= 3) return;
                 const block = document.querySelector(`[data-portfolio-index="${i}"]`);
-                const { addTickerRow, addMarginRow } = blocks[i];
 
                 block.querySelector('.portfolio-label').value = p.label || '';
 
                 block.querySelector('.ticker-rows').innerHTML = '';
-                (p.tickers || []).forEach(t => addTickerRow(t.ticker, t.weight));
+                (p.tickers || []).forEach(t => addTickerRow(i, t.ticker, t.weight));
 
                 block.querySelector('.rebalance-select').value = p.rebalanceStrategy || 'YEARLY';
 
                 block.querySelector('.margin-config-rows').innerHTML = '';
                 const r = v => Math.round(v * 10000) / 100; // fraction → display %
                 (p.marginStrategies || []).forEach(m => addMarginRow(
+                    i,
                     r(m.marginRatio),
                     r(m.marginSpread),
                     r(m.marginDeviationUpper),

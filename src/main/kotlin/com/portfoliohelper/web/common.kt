@@ -7,6 +7,9 @@ import kotlinx.html.link
 import kotlinx.html.span
 import kotlinx.html.unsafe
 
+internal fun formatQty(amount: Double) =
+    if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()
+
 fun HEAD.renderCommonHeadElements() {
     link(rel = "stylesheet", href = "/static/styles.css")
     link(rel = "icon", type = "image/png", href = "/static/favicon-96x96.png") {

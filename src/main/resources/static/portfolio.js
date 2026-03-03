@@ -18,86 +18,6 @@ let portfolioValueKnown = true;  // false if any stock has neither mark nor clos
 let cashTotalKnown = true;       // false if any non-USD cash entry is missing its FX rate
 let marginKnown = false;          // false if any margin-flagged entry is missing its FX rate
 
-// Connect to SSE for live price updates
-let sseLastActivity = Date.now();
-
-function setSseStatus(ok) {
-    const dot = document.getElementById('sse-status-dot');
-    if (dot) {
-        dot.className = 'sse-dot ' + (ok ? 'sse-dot--ok' : 'sse-dot--err');
-        dot.title = ok ? 'Live' : 'Disconnected';
-    }
-}
-
-// Inject SSE status dot next to the timestamp
-window.addEventListener('DOMContentLoaded', () => {
-    const timeEl = document.getElementById('last-update-time');
-    if (timeEl) {
-        const dot = document.createElement('span');
-        dot.id = 'sse-status-dot';
-        dot.className = 'sse-dot';
-        dot.title = 'Connecting…';
-        timeEl.after(dot);
-    }
-});
-
-const eventSource = new EventSource('/api/prices/stream');
-
-eventSource.onopen = () => {
-    sseLastActivity = Date.now();
-    setSseStatus(true);
-};
-
-eventSource.onmessage = (event) => {
-    sseLastActivity = Date.now();
-    try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'reload') {
-            // Portfolio structure changed, reload page
-            console.log('Portfolio reloaded, refreshing page...');
-            location.reload();
-        } else if (data.type === 'nav') {
-            // NAV update
-            updateNavInUI(data.symbol, data.nav);
-        } else if (data.type === 'portfolio-value') {
-            // Cross-portfolio cash reference update
-            updatePortfolioRefValues(data.portfolioId, data.value);
-        } else {
-            // FX rate update for cash currency conversion
-            if (data.symbol && data.symbol.endsWith('USD=X')) {
-                const ccy = data.symbol.replace('USD=X', '');
-                if (data.markPrice !== null && data.markPrice !== undefined) {
-                    fxRates[ccy] = data.markPrice;
-                    updateCashTotals();
-                    updateIbkrDailyInterest();
-                }
-                return;
-            }
-
-            // Update global timestamp
-            updateGlobalTimestamp(data.timestamp);
-
-            // Update price in UI
-            updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
-        }
-    } catch (e) {
-        console.error('Failed to parse SSE data:', e);
-    }
-};
-
-eventSource.onerror = (error) => {
-    console.error('SSE connection error:', error);
-    setSseStatus(false);
-};
-
-// Safety net: if SSE has been broken for 5 minutes, reload the page to restore it
-setInterval(() => {
-    if (eventSource.readyState !== EventSource.OPEN && Date.now() - sseLastActivity > 5 * 60_000) {
-        console.warn('SSE disconnected for 5 minutes, reloading page to recover...');
-        location.reload();
-    }
-}, 60_000);
 
 function parsePrice(priceText) {
     if (!priceText || priceText === '—') return null;
@@ -1009,8 +929,147 @@ function updateTargetWeightTotal() {
     }
 }
 
-// Rebalancing columns toggle
-document.addEventListener('DOMContentLoaded', () => {
+// ── HTML templates and helpers for dynamically added rows ─────────────────────
+
+const STOCK_ROW_HTML =
+    '<td><input type="text" class="edit-input new-symbol-input" data-column="symbol" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
+    '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
+    '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
+    '<td class="edit-column"><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
+    '<td class="edit-column"><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:120px" /></td>' +
+    '<td class="edit-column"><button type="button" class="delete-row-btn">\u00d7</button></td>';
+
+const CASH_ROW_HTML =
+    '<td><input type="text" class="edit-input cash-edit-key" placeholder="Cash.USD.M" /></td>' +
+    '<td><input type="text" class="edit-input cash-edit-value" placeholder="0" /></td>' +
+    '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>';
+
+function addStockRow() {
+    const tbody = document.querySelector('.portfolio-table tbody');
+    if (!tbody) return null;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-new-stock', 'true');
+    tr.innerHTML = STOCK_ROW_HTML;
+    tbody.appendChild(tr);
+    return tr;
+}
+
+function addCashRow() {
+    const tbody = document.querySelector('.cash-edit-table tbody');
+    if (!tbody) return null;
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-cash-edit-row', 'true');
+    tr.setAttribute('data-new-cash', 'true');
+    tr.innerHTML = CASH_ROW_HTML;
+    tbody.appendChild(tr);
+    return tr;
+}
+
+// Returns [symInput, qtyInput, weightInput, letfInput] for any stock row (existing or new)
+function getStockRowInputs(tr) {
+    return [
+        tr.querySelector('.edit-symbol') || tr.querySelector('.new-symbol-input'),
+        tr.querySelector('.edit-qty')    || tr.querySelector('input[data-column="qty"]'),
+        tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]'),
+        tr.querySelector('.edit-letf')   || tr.querySelector('input[data-column="letf"]'),
+    ].filter(Boolean);
+}
+
+// Returns 0=sym, 1=qty, 2=weight, 3=letf — or -1 if not a stock input
+function getStockColIndex(el) {
+    if (el.classList.contains('edit-symbol') || el.classList.contains('new-symbol-input')) return 0;
+    const col = el.getAttribute('data-column');
+    if (el.classList.contains('edit-qty')    || col === 'qty')    return 1;
+    if (el.classList.contains('edit-weight') || col === 'weight') return 2;
+    if (el.classList.contains('edit-letf')   || col === 'letf')   return 3;
+    return -1;
+}
+
+// ── SSE connection ─────────────────────────────────────────────────────────────
+
+function initSseConnection() {
+    // Inject SSE status dot next to the timestamp
+    const timeEl = document.getElementById('last-update-time');
+    if (timeEl) {
+        const dot = document.createElement('span');
+        dot.id = 'sse-status-dot';
+        dot.className = 'sse-dot';
+        dot.title = 'Connecting…';
+        timeEl.after(dot);
+    }
+
+    let sseLastActivity = Date.now();
+
+    function setSseStatus(ok) {
+        const dot = document.getElementById('sse-status-dot');
+        if (dot) {
+            dot.className = 'sse-dot ' + (ok ? 'sse-dot--ok' : 'sse-dot--err');
+            dot.title = ok ? 'Live' : 'Disconnected';
+        }
+    }
+
+    const eventSource = new EventSource('/api/prices/stream');
+
+    eventSource.onopen = () => {
+        sseLastActivity = Date.now();
+        setSseStatus(true);
+    };
+
+    eventSource.onmessage = (event) => {
+        sseLastActivity = Date.now();
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'reload') {
+                // Portfolio structure changed, reload page
+                console.log('Portfolio reloaded, refreshing page...');
+                location.reload();
+            } else if (data.type === 'nav') {
+                // NAV update
+                updateNavInUI(data.symbol, data.nav);
+            } else if (data.type === 'portfolio-value') {
+                // Cross-portfolio cash reference update
+                updatePortfolioRefValues(data.portfolioId, data.value);
+            } else {
+                // FX rate update for cash currency conversion
+                if (data.symbol && data.symbol.endsWith('USD=X')) {
+                    const ccy = data.symbol.replace('USD=X', '');
+                    if (data.markPrice !== null && data.markPrice !== undefined) {
+                        fxRates[ccy] = data.markPrice;
+                        updateCashTotals();
+                        updateIbkrDailyInterest();
+                    }
+                    return;
+                }
+
+                // Update global timestamp
+                updateGlobalTimestamp(data.timestamp);
+
+                // Update price in UI
+                updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
+            }
+        } catch (e) {
+            console.error('Failed to parse SSE data:', e);
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        console.error('SSE connection error:', error);
+        setSseStatus(false);
+    };
+
+    // Safety net: if SSE has been broken for 5 minutes, reload the page to restore it
+    setInterval(() => {
+        if (eventSource.readyState !== EventSource.OPEN && Date.now() - sseLastActivity > 5 * 60_000) {
+            console.warn('SSE disconnected for 5 minutes, reloading page to recover...');
+            location.reload();
+        }
+    }, 60_000);
+}
+
+// ── Column visibility controls ─────────────────────────────────────────────────
+
+function initColumnVisibility() {
     const rebalToggle = document.getElementById('rebal-toggle');
     const body = document.body;
 
@@ -1021,7 +1080,6 @@ document.addEventListener('DOMContentLoaded', () => {
         rebalToggle.classList.add('active');
     }
 
-    // Toggle on click
     rebalToggle.addEventListener('click', () => {
         const isVisible = body.classList.toggle('rebalancing-visible');
         rebalToggle.classList.toggle('active');
@@ -1029,9 +1087,33 @@ document.addEventListener('DOMContentLoaded', () => {
         updateTargetWeightTotal();
     });
 
-    // Edit mode toggle
+    // Copy column button handler
+    document.querySelectorAll('.copy-col-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const col = btn.getAttribute('data-column');
+            const inputs = Array.from(
+                document.querySelectorAll('.edit-input[data-column="' + col + '"]')
+            );
+            const text = inputs.map(i => i.value).join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = orig;
+                    btn.classList.remove('copied');
+                }, 1500);
+            });
+        });
+    });
+}
+
+// ── Edit mode ─────────────────────────────────────────────────────────────────
+
+function initEditMode() {
     const editToggle = document.getElementById('edit-toggle');
     const saveBtn = document.getElementById('save-btn');
+    const body = document.body;
 
     editToggle.addEventListener('click', () => {
         const isEditing = body.classList.toggle('editing-active');
@@ -1193,63 +1275,76 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Paste handler for Google Sheets column paste
-    // --- Edit mode helpers ---
+    // Delete button handler (event delegation for both static and dynamic rows)
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.delete-row-btn, .delete-cash-btn');
+        if (!btn || !body.classList.contains('editing-active')) return;
+        const row = btn.closest('tr');
+        if (row) {
+            row.setAttribute('data-deleted', 'true');
+            row.style.display = 'none';
+            updateTargetWeightTotal();
+        }
+    });
 
-    const STOCK_ROW_HTML =
-        '<td><input type="text" class="edit-input new-symbol-input" data-column="symbol" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
-        '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
-        '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
-        '<td class="edit-column"><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
-        '<td class="edit-column"><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:120px" /></td>' +
-        '<td class="edit-column"><button type="button" class="delete-row-btn">\u00d7</button></td>';
+    // Input handler for target weight column: strip % and update live total
+    document.addEventListener('input', e => {
+        if (e.target.classList.contains('edit-weight') || e.target.getAttribute('data-column') === 'weight') {
+            if (e.target.value.includes('%')) e.target.value = e.target.value.replace(/%/g, '');
+            updateTargetWeightTotal();
+        }
+    });
 
-    const CASH_ROW_HTML =
-        '<td><input type="text" class="edit-input cash-edit-key" placeholder="Cash.USD.M" /></td>' +
-        '<td><input type="text" class="edit-input cash-edit-value" placeholder="0" /></td>' +
-        '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>';
+    // Add Stock button handler
+    document.getElementById('add-stock-btn')?.addEventListener('click', () => {
+        const tr = addStockRow();
+        if (tr) tr.querySelector('.new-symbol-input').focus();
+    });
 
-    const addStockRow = () => {
-        const tbody = document.querySelector('.portfolio-table tbody');
-        if (!tbody) return null;
-        const tr = document.createElement('tr');
-        tr.setAttribute('data-new-stock', 'true');
-        tr.innerHTML = STOCK_ROW_HTML;
-        tbody.appendChild(tr);
-        return tr;
-    };
+    // Add Cash Entry button handler
+    document.getElementById('add-cash-btn')?.addEventListener('click', () => {
+        const tr = addCashRow();
+        if (tr) tr.querySelector('.cash-edit-key').focus();
+    });
 
-    const addCashRow = () => {
-        const tbody = document.querySelector('.cash-edit-table tbody');
-        if (!tbody) return null;
-        const tr = document.createElement('tr');
-        tr.setAttribute('data-cash-edit-row', 'true');
-        tr.setAttribute('data-new-cash', 'true');
-        tr.innerHTML = CASH_ROW_HTML;
-        tbody.appendChild(tr);
-        return tr;
-    };
+    // Virtual Rebalance button — backup current state, enter edit mode, set qty to target weight allocation
+    document.getElementById('virtual-rebal-btn')?.addEventListener('click', async () => {
+        // Snapshot current state before modifying (separate rebalance backup folder)
+        try {
+            await fetch('/api/backup/trigger?portfolio=' + portfolioId + '&subfolder=rebalance', { method: 'POST' });
+        } catch (_) { /* non-fatal */ }
 
-    // Returns [symInput, qtyInput, weightInput, letfInput] for any stock row (existing or new)
-    const getStockRowInputs = (tr) => [
-        tr.querySelector('.edit-symbol') || tr.querySelector('.new-symbol-input'),
-        tr.querySelector('.edit-qty')    || tr.querySelector('input[data-column="qty"]'),
-        tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]'),
-        tr.querySelector('.edit-letf')   || tr.querySelector('input[data-column="letf"]'),
-    ].filter(Boolean);
+        // Enter edit mode if not already active
+        if (!body.classList.contains('editing-active')) {
+            editToggle.click();
+        }
 
-    // Returns 0=sym, 1=qty, 2=weight, 3=letf — or -1 if not a stock input
-    const getStockColIndex = (el) => {
-        if (el.classList.contains('edit-symbol') || el.classList.contains('new-symbol-input')) return 0;
-        const col = el.getAttribute('data-column');
-        if (el.classList.contains('edit-qty')    || col === 'qty')    return 1;
-        if (el.classList.contains('edit-weight') || col === 'weight') return 2;
-        if (el.classList.contains('edit-letf')   || col === 'letf')   return 3;
-        return -1;
-    };
+        // Apply rebalancing: new qty = targetWeight% * portfolioTotal / markPrice
+        const portfolioTotal = getRebalTotal();
+        document.querySelectorAll('.edit-qty').forEach(input => {
+            const sym = input.getAttribute('data-symbol');
+            const weightCell = document.getElementById('current-weight-' + sym);
+            const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
+            if (!targetWeightSpan) return;
+            const targetWeight = parseFloat(targetWeightSpan.textContent);
+            if (isNaN(targetWeight)) return;
+            if (targetWeight <= 0) {
+                input.value = 0;
+                return;
+            }
+            const markCell = document.getElementById('mark-' + sym);
+            const markPrice = rawMarkPrices[sym] ?? parsePrice(markCell ? markCell.textContent : null);
+            if (!markPrice || markPrice <= 0) return;
+            input.value = parseFloat(((targetWeight / 100) * portfolioTotal / markPrice).toFixed(2));
+        });
+    });
+}
 
+// ── Paste handler ─────────────────────────────────────────────────────────────
+
+function initPasteHandler() {
     document.addEventListener('paste', (e) => {
-        if (!body.classList.contains('editing-active')) return;
+        if (!document.body.classList.contains('editing-active')) return;
 
         const activeEl = document.activeElement;
         if (!activeEl || !activeEl.classList.contains('edit-input')) return;
@@ -1345,27 +1440,11 @@ document.addEventListener('DOMContentLoaded', () => {
             updateTargetWeightTotal();
         }
     });
+}
 
-    // Copy column button handler
-    document.querySelectorAll('.copy-col-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const col = btn.getAttribute('data-column');
-            const inputs = Array.from(
-                document.querySelectorAll('.edit-input[data-column="' + col + '"]')
-            );
-            const text = inputs.map(i => i.value).join('\n');
-            navigator.clipboard.writeText(text).then(() => {
-                const orig = btn.innerHTML;
-                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.innerHTML = orig;
-                    btn.classList.remove('copied');
-                }, 1500);
-            });
-        });
-    });
+// ── Currency controls ─────────────────────────────────────────────────────────
 
+function initCurrencyControls() {
     // Currency toggle button (≤3 currencies)
     const currencyToggle = document.getElementById('currency-toggle');
     if (currencyToggle) {
@@ -1395,11 +1474,15 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshDisplayCurrency();
         });
     }
+}
 
-    // Rebalance Target input
+// ── Rebalance controls ────────────────────────────────────────────────────────
+
+function initRebalanceControls() {
     let rebalSaveTimer = null;
     const rebalTargetInput = document.getElementById('rebal-target-input');
     const marginTargetInput = document.getElementById('margin-target-input');
+
     if (rebalTargetInput) {
         rebalTargetInput.addEventListener('input', () => {
             const raw = rebalTargetInput.value.trim().replace(/,/g, '');
@@ -1456,103 +1539,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initialize cash totals on page load (USD entries are pre-filled server-side)
-    // Must run before restoring targets so lastMarginUsd is correct
-    updateCashTotals();
-
-    // Restore saved target on page load — margin % takes priority over rebal USD
-    if (savedMarginTargetPct > 0 && marginTargetInput) {
-        marginTargetPct = savedMarginTargetPct;
-        marginTargetInput.value = savedMarginTargetPct.toLocaleString('en-US', {
-            minimumFractionDigits: 1, maximumFractionDigits: 4
+    // Alloc mode dropdowns
+    const allocAddSelect = document.getElementById('alloc-add-mode');
+    const allocReduceSelect = document.getElementById('alloc-reduce-mode');
+    if (allocAddSelect) {
+        allocAddSelect.value = allocAddMode;
+        allocAddSelect.addEventListener('change', () => {
+            allocAddMode = allocAddSelect.value;
+            fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocAddMode`, { method: 'POST', body: allocAddMode });
+            updateAllocColumns(getAllocRebalTotal());
         });
-        updateRebalancingColumns(getRebalTotal());
-        updateAllocColumns(getAllocRebalTotal());
-        updateMarginTargetDisplay();
-    } else if (savedRebalTargetUsd > 0 && rebalTargetInput) {
-        rebalTargetUsd = savedRebalTargetUsd;
-        const rate = fxRates[currentDisplayCurrency];
-        const displayVal = (rate && rate !== 0) ? savedRebalTargetUsd / rate : savedRebalTargetUsd;
-        rebalTargetInput.value = displayVal.toLocaleString('en-US', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2
-        });
-        updateRebalancingColumns(getRebalTotal());
-        updateAllocColumns(getAllocRebalTotal());
-        updateMarginTargetDisplay();
     }
-
-    // Refresh display currency for any server-rendered values (portfolio total, day change)
-    if (currentDisplayCurrency !== 'USD') {
-        refreshDisplayCurrency();
-    }
-
-    updateRebalTargetPlaceholder();
-    updateMarginTargetDisplay();
-
-    // Delete button handler (event delegation for both static and dynamic rows)
-    document.addEventListener('click', e => {
-        const btn = e.target.closest('.delete-row-btn, .delete-cash-btn');
-        if (!btn || !body.classList.contains('editing-active')) return;
-        const row = btn.closest('tr');
-        if (row) {
-            row.setAttribute('data-deleted', 'true');
-            row.style.display = 'none';
-            updateTargetWeightTotal();
-        }
-    });
-
-    // Input handler for target weight column: strip % and update live total
-    document.addEventListener('input', e => {
-        if (e.target.classList.contains('edit-weight') || e.target.getAttribute('data-column') === 'weight') {
-            if (e.target.value.includes('%')) e.target.value = e.target.value.replace(/%/g, '');
-            updateTargetWeightTotal();
-        }
-    });
-
-    // Add Stock button handler
-    document.getElementById('add-stock-btn')?.addEventListener('click', () => {
-        const tr = addStockRow();
-        if (tr) tr.querySelector('.new-symbol-input').focus();
-    });
-
-    // Add Cash Entry button handler
-    document.getElementById('add-cash-btn')?.addEventListener('click', () => {
-        const tr = addCashRow();
-        if (tr) tr.querySelector('.cash-edit-key').focus();
-    });
-
-    // Virtual Rebalance button — backup current state, enter edit mode, set qty to target weight allocation
-    document.getElementById('virtual-rebal-btn')?.addEventListener('click', async () => {
-        // Snapshot current state before modifying (separate rebalance backup folder)
-        try {
-            await fetch('/api/backup/trigger?portfolio=' + portfolioId + '&subfolder=rebalance', { method: 'POST' });
-        } catch (_) { /* non-fatal */ }
-
-        // Enter edit mode if not already active
-        if (!body.classList.contains('editing-active')) {
-            editToggle.click();
-        }
-
-        // Apply rebalancing: new qty = targetWeight% * portfolioTotal / markPrice
-        const portfolioTotal = getRebalTotal();
-        document.querySelectorAll('.edit-qty').forEach(input => {
-            const sym = input.getAttribute('data-symbol');
-            const weightCell = document.getElementById('current-weight-' + sym);
-            const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
-            if (!targetWeightSpan) return;
-            const targetWeight = parseFloat(targetWeightSpan.textContent);
-            if (isNaN(targetWeight)) return;
-            if (targetWeight <= 0) {
-                input.value = 0;
-                return;
-            }
-            const markCell = document.getElementById('mark-' + sym);
-            const markPrice = rawMarkPrices[sym] ?? parsePrice(markCell ? markCell.textContent : null);
-            if (!markPrice || markPrice <= 0) return;
-            input.value = parseFloat(((targetWeight / 100) * portfolioTotal / markPrice).toFixed(2));
+    if (allocReduceSelect) {
+        allocReduceSelect.value = allocReduceMode;
+        allocReduceSelect.addEventListener('change', () => {
+            allocReduceMode = allocReduceSelect.value;
+            fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocReduceMode`, { method: 'POST', body: allocReduceMode });
+            updateAllocColumns(getAllocRebalTotal());
         });
-    });
+    }
+}
 
+// ── Backup panel ─────────────────────────────────────────────────────────────
+
+function initBackupPanel() {
     // Restore Backup button
     document.getElementById('restore-backup-btn')?.addEventListener('click', async () => {
         // Backup current state before showing restore options
@@ -1713,25 +1723,52 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    updateTargetWeightTotal();
+}
 
-    // Alloc mode dropdowns
-    const allocAddSelect = document.getElementById('alloc-add-mode');
-    const allocReduceSelect = document.getElementById('alloc-reduce-mode');
-    if (allocAddSelect) {
-        allocAddSelect.value = allocAddMode;
-        allocAddSelect.addEventListener('change', () => {
-            allocAddMode = allocAddSelect.value;
-            fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocAddMode`, { method: 'POST', body: allocAddMode });
-            updateAllocColumns(getAllocRebalTotal());
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+    initSseConnection();
+    initColumnVisibility();
+    initEditMode();
+    initPasteHandler();
+    initCurrencyControls();
+    initRebalanceControls();
+    initBackupPanel();
+
+    // Initialize cash totals on page load (USD entries are pre-filled server-side)
+    // Must run before restoring targets so lastMarginUsd is correct
+    updateCashTotals();
+
+    // Restore saved target on page load — margin % takes priority over rebal USD
+    const marginTargetInput = document.getElementById('margin-target-input');
+    const rebalTargetInput = document.getElementById('rebal-target-input');
+    if (savedMarginTargetPct > 0 && marginTargetInput) {
+        marginTargetPct = savedMarginTargetPct;
+        marginTargetInput.value = savedMarginTargetPct.toLocaleString('en-US', {
+            minimumFractionDigits: 1, maximumFractionDigits: 4
         });
-    }
-    if (allocReduceSelect) {
-        allocReduceSelect.value = allocReduceMode;
-        allocReduceSelect.addEventListener('change', () => {
-            allocReduceMode = allocReduceSelect.value;
-            fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocReduceMode`, { method: 'POST', body: allocReduceMode });
-            updateAllocColumns(getAllocRebalTotal());
+        updateRebalancingColumns(getRebalTotal());
+        updateAllocColumns(getAllocRebalTotal());
+        updateMarginTargetDisplay();
+    } else if (savedRebalTargetUsd > 0 && rebalTargetInput) {
+        rebalTargetUsd = savedRebalTargetUsd;
+        const rate = fxRates[currentDisplayCurrency];
+        const displayVal = (rate && rate !== 0) ? savedRebalTargetUsd / rate : savedRebalTargetUsd;
+        rebalTargetInput.value = displayVal.toLocaleString('en-US', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
         });
+        updateRebalancingColumns(getRebalTotal());
+        updateAllocColumns(getAllocRebalTotal());
+        updateMarginTargetDisplay();
     }
+
+    // Refresh display currency for any server-rendered values (portfolio total, day change)
+    if (currentDisplayCurrency !== 'USD') {
+        refreshDisplayCurrency();
+    }
+
+    updateRebalTargetPlaceholder();
+    updateMarginTargetDisplay();
+    updateTargetWeightTotal();
 });

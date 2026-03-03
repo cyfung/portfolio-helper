@@ -10,33 +10,22 @@ import com.portfoliohelper.service.PortfolioConfig
 import com.portfoliohelper.service.BackupService
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioRegistry
-import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.MarginRebalanceMode
 import com.portfoliohelper.service.RebalanceStrategy
 import com.portfoliohelper.service.TickerWeight
-import com.portfoliohelper.service.nav.NavData
-import com.portfoliohelper.service.nav.NavService
-import com.portfoliohelper.service.yahoo.YahooMarketDataService
-import com.portfoliohelper.service.yahoo.YahooQuote
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVPrinter
 import java.io.File
 import java.io.FileWriter
 
-private val cashKeyKnownFlags = setOf("M", "E")
-
-private fun formatQty(amount: Double) =
-    if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()
+private val cashKeyKnownFlags = setOf("M")
 
 private val LOAN_COMPARE_FIELDS =
     listOf("loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows")
@@ -351,93 +340,7 @@ fun Application.configureRouting() {
         }
 
         // Server-Sent Events (SSE) endpoint for streaming price updates
-        get("/api/prices/stream") {
-            call.response.cacheControl(CacheControl.NoCache(null))
-            call.response.headers.append(HttpHeaders.ContentType, "text/event-stream")
-            call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
-            call.response.headers.append(HttpHeaders.Connection, "keep-alive")
-
-            val channel = Channel<String>(Channel.BUFFERED)
-
-            // Register callback for price updates; replay cached quotes immediately so
-            // clients that connect after the first fetch don't wait for the next poll cycle
-            val callback: (String, YahooQuote) -> Unit = { symbol, quote ->
-                if (quote.regularMarketPrice != null) {
-                    val json = buildString {
-                        append("{")
-                        append("\"symbol\":\"$symbol\",")
-                        append("\"markPrice\":${quote.regularMarketPrice},")
-                        append("\"lastClosePrice\":${quote.previousClose},")
-                        append("\"isMarketClosed\":${quote.isMarketClosed},")
-                        append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
-                        append("\"timestamp\":${quote.lastUpdateTime}")
-                        append("}")
-                    }
-                    channel.trySend("data: $json\n\n")
-                }
-            }
-
-            val unregisterPrice = YahooMarketDataService.onUpdateWithReplay(callback)
-
-            // Register callback for NAV updates; replay cached NAV immediately so
-            // clients that connect after a slow NAV fetch don't miss it until next poll
-            val navCallback: (String, NavData) -> Unit = { symbol, navData ->
-                val json = buildString {
-                    append("{")
-                    append("\"type\":\"nav\",")
-                    append("\"symbol\":\"$symbol\",")
-                    append("\"nav\":${navData.nav},")
-                    append("\"timestamp\":${navData.lastFetchTime}")
-                    append("}")
-                }
-                channel.trySend("data: $json\n\n")
-            }
-
-            val unregisterNav = NavService.onUpdateWithReplay(navCallback)
-
-            // Register callback to emit each portfolio's total value after every price poll batch
-            val portfolioValueCallback: () -> Unit = {
-                for (p in PortfolioRegistry.entries) {
-                    val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).totalValue
-                    val pvJson = buildString {
-                        append("{\"type\":\"portfolio-value\",")
-                        append("\"portfolioId\":\"${p.id}\",")
-                        append("\"value\":${"%.2f".format(pTotal)}")
-                        append("}")
-                    }
-                    channel.trySend("data: $pvJson\n\n")
-                }
-            }
-            val unregisterPortfolioValue = YahooMarketDataService.onBatchComplete(portfolioValueCallback)
-            portfolioValueCallback()  // replay initial values on connect
-
-            // Listen for portfolio reload events
-            val collectJob = launch {
-                PortfolioUpdateBroadcaster.reloadEvents.collect {
-                    val json = "{\"type\":\"reload\",\"timestamp\":${it.timestamp}}"
-                    channel.send("data: $json\n\n")
-                }
-            }
-
-            // Stream updates to client
-            try {
-                call.respondBytesWriter(contentType = ContentType.Text.EventStream) {
-                    writeFully(":keepalive\n\n".toByteArray(Charsets.UTF_8))
-                    flush()
-
-                    for (message in channel) {
-                        writeFully(message.toByteArray(Charsets.UTF_8))
-                        flush()
-                    }
-                }
-            } finally {
-                collectJob.cancel()
-                unregisterPrice()
-                unregisterNav()
-                unregisterPortfolioValue()
-                channel.close()
-            }
-        }
+        get("/api/prices/stream") { call.handleSseStream() }
 
         // Trigger an immediate backup for a portfolio (called before opening the restore UI or virtual rebalance)
         post("/api/backup/trigger") {
