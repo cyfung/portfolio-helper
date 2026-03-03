@@ -4,7 +4,6 @@ import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.net.URI
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
@@ -371,8 +370,8 @@ object BacktestService {
     /**
      * Computes a synthetic equity series for a LETF definition.
      * Simulated as a periodically-rebalanced portfolio of its components
-     * with DAILY margin and borrow spread equal to [def.spread].
-     * [rebalanceStrategy] is the effective strategy: [def.rebalanceStrategy] if specified via R=,
+     * with DAILY margin and borrow spread equal to [LETFDefinition.spread].
+     * [rebalanceStrategy] is the effective strategy: [LETFDefinition.rebalanceStrategy] if specified via R=,
      * otherwise the outer portfolio's strategy.
      * Returns a Map<LocalDate, Double> parallel to [dates], starting at 10,000.
      */
@@ -507,9 +506,12 @@ object BacktestService {
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>
     ): List<Double> {
-        val tickers = pConfig.tickers.map { it.ticker }
         val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val targetWeights = pConfig.tickers.associate { it.ticker to it.weight / totalWeight }
+        val mergedWeights = mutableMapOf<String, Double>()
+        for (tw in pConfig.tickers) mergedWeights[tw.ticker] =
+            (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
+        val tickers = mergedWeights.keys.toList()
+        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
 
         // Initial allocation: weights × start value
         val startValue = 10_000.0
@@ -645,9 +647,12 @@ object BacktestService {
         effrx: Map<LocalDate, Double>,
         mc: MarginConfig
     ): MarginApplyResult {
-        val tickers = pConfig.tickers.map { it.ticker }
         val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val targetWeights = pConfig.tickers.associate { it.ticker to it.weight / totalWeight }
+        val mergedWeights = mutableMapOf<String, Double>()
+        for (tw in pConfig.tickers) mergedWeights[tw.ticker] =
+            (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
+        val tickers = mergedWeights.keys.toList()
+        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
 
         val startEquity = 10_000.0
         var borrowed = startEquity * mc.marginRatio
