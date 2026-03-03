@@ -5,11 +5,12 @@ import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.LocalDate
+import java.time.temporal.IsoFields
 import kotlin.math.*
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
-enum class RebalanceStrategy { NONE, MONTHLY, QUARTERLY, YEARLY }
+enum class RebalanceStrategy { NONE, DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY }
 
 enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY, DAILY }
 
@@ -19,7 +20,8 @@ data class LETFComponent(val ticker: String, val multiplier: Double)
 
 data class LETFDefinition(
     val components: List<LETFComponent>,
-    val spread: Double                    // annual fraction, e.g. 0.015
+    val spread: Double,                                                       // annual fraction, default 0.015
+    val rebalanceStrategy: RebalanceStrategy = RebalanceStrategy.QUARTERLY   // default Q
 ) {
     val totalMultiplier: Double get() = components.sumOf { it.multiplier }
     val borrowedRatio:   Double get() = totalMultiplier - 1.0
@@ -110,23 +112,18 @@ object BacktestService {
             intersectDates(componentSeriesForDates, fromDate, toDate)
         else emptyList()
 
-        // Step 4: Compute virtual LETF series per (letfString, rebalanceStrategy) combo.
-        // Different portfolios may use the same LETF string but different rebalance strategies,
-        // so the cache is keyed by "$letfString::$rebalanceStrategy" to produce correct results.
+        // Step 4: Compute virtual LETF series. Each LETF string is self-contained (R= default Q,
+        // S= default 1.5%), so the string itself is the cache key — no outer portfolio dependency.
         if (letfDates.size >= 2) {
-            for (pConfig in request.portfolios) {
-                for (tw in pConfig.tickers) {
-                    val def = letfDefs[tw.ticker] ?: continue
-                    val cacheKey = "${tw.ticker}::${pConfig.rebalanceStrategy}"
-                    if (cacheKey !in seriesCache) {
-                        val componentSeriesMap = def.components.associate { comp ->
-                            comp.ticker to (seriesCache[comp.ticker]
-                                ?: error("Component ticker ${comp.ticker} was not loaded"))
-                        }
-                        seriesCache[cacheKey] = computeLetfSeries(
-                            def, componentSeriesMap, letfDates, effrxSeries, pConfig.rebalanceStrategy
-                        )
+            for ((letfString, def) in letfDefs) {
+                if (letfString !in seriesCache) {
+                    val componentSeriesMap = def.components.associate { comp ->
+                        comp.ticker to (seriesCache[comp.ticker]
+                            ?: error("Component ticker ${comp.ticker} was not loaded"))
                     }
+                    seriesCache[letfString] = computeLetfSeries(
+                        def, componentSeriesMap, letfDates, effrxSeries, def.rebalanceStrategy
+                    )
                 }
             }
         }
@@ -140,13 +137,9 @@ object BacktestService {
         for (ticker in realTickers) cachedLoad(ticker)
 
         // Step 6: Build allSeriesMaps and compute global date intersection.
-        // LETF tickers are resolved via their per-strategy cache key.
         val allSeriesMaps = request.portfolios.map { pConfig ->
             pConfig.tickers.associate { tw ->
-                val cacheKey = if (parseLETFDefinition(tw.ticker) != null)
-                    "${tw.ticker}::${pConfig.rebalanceStrategy}"
-                else tw.ticker
-                tw.ticker to (seriesCache[cacheKey]
+                tw.ticker to (seriesCache[tw.ticker]
                     ?: error("Series for '${tw.ticker}' not found in cache"))
             }
         }
@@ -270,26 +263,39 @@ object BacktestService {
     // ── LETF helpers ──────────────────────────────────────────────────────────
 
     /**
-     * Parses a LETF definition string like "1 KMLM 1 VT S=1.5".
+     * Parses a LETF definition string like "1 KMLM 1 VT S=1.5 R=Q".
      * Returns null for plain tickers (no spaces).
-     * Tokens: alternating <multiplier> <TICKER> pairs, plus optional S=<pct>.
+     * Tokens: alternating <multiplier> <TICKER> pairs, plus optional S=<pct> and R=<strategy>.
+     * R values: D=Daily, W=Weekly, M=Monthly, Q=Quarterly, Y=Yearly (default: null = inherit from outer portfolio).
      */
     private fun parseLETFDefinition(ticker: String): LETFDefinition? {
         if (!ticker.contains(' ')) return null
         val tokens = ticker.trim().split(Regex("\\s+"))
         val components = mutableListOf<LETFComponent>()
-        var spread = 0.0
+        var spread = 0.015
+        var rebalanceStrategy = RebalanceStrategy.QUARTERLY
         var i = 0
         while (i < tokens.size) {
             val token = tokens[i]
             if (token.startsWith("S=", ignoreCase = true)) {
                 spread = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
                 i++
+            } else if (token.startsWith("R=", ignoreCase = true)) {
+                rebalanceStrategy = when (token.substring(2).uppercase()) {
+                    "D" -> RebalanceStrategy.DAILY
+                    "W" -> RebalanceStrategy.WEEKLY
+                    "M" -> RebalanceStrategy.MONTHLY
+                    "Q" -> RebalanceStrategy.QUARTERLY
+                    "Y" -> RebalanceStrategy.YEARLY
+                    else -> rebalanceStrategy
+                }
+                i++
             } else {
                 val multiplier = token.toDoubleOrNull()
                 if (multiplier != null && i + 1 < tokens.size) {
                     val tickerName = tokens[i + 1]
-                    if (!tickerName.startsWith("S=", ignoreCase = true)) {
+                    if (!tickerName.startsWith("S=", ignoreCase = true) &&
+                        !tickerName.startsWith("R=", ignoreCase = true)) {
                         components.add(LETFComponent(tickerName.uppercase(), multiplier))
                         i += 2
                     } else {
@@ -301,13 +307,15 @@ object BacktestService {
             }
         }
         if (components.isEmpty()) throw IllegalArgumentException("No components found in LETF definition: $ticker")
-        return LETFDefinition(components, spread)
+        return LETFDefinition(components, spread, rebalanceStrategy)
     }
 
     /**
      * Computes a synthetic equity series for a LETF definition.
-     * Simulated as a QUARTERLY-rebalanced portfolio of its components
+     * Simulated as a periodically-rebalanced portfolio of its components
      * with DAILY margin and borrow spread equal to [def.spread].
+     * [rebalanceStrategy] is the effective strategy: [def.rebalanceStrategy] if specified via R=,
+     * otherwise the outer portfolio's strategy.
      * Returns a Map<LocalDate, Double> parallel to [dates], starting at 10,000.
      */
     private fun computeLetfSeries(
@@ -479,10 +487,13 @@ object BacktestService {
         prevDate: LocalDate,
         curDate: LocalDate
     ): Boolean = when (strategy) {
-        RebalanceStrategy.NONE -> false
-        RebalanceStrategy.MONTHLY -> curDate.month != prevDate.month
+        RebalanceStrategy.NONE      -> false
+        RebalanceStrategy.DAILY     -> true
+        RebalanceStrategy.WEEKLY    -> curDate.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR) != prevDate.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)
+                                       || curDate.year != prevDate.year
+        RebalanceStrategy.MONTHLY   -> curDate.month != prevDate.month
         RebalanceStrategy.QUARTERLY -> ((curDate.monthValue - 1) / 3) != ((prevDate.monthValue - 1) / 3)
-        RebalanceStrategy.YEARLY -> curDate.year != prevDate.year
+        RebalanceStrategy.YEARLY    -> curDate.year != prevDate.year
     }
 
     // ── Margin computation ────────────────────────────────────────────────────
