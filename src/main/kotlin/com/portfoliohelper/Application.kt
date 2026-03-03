@@ -22,8 +22,9 @@ fun main() {
     // ---------------------------------------------------------------
     // 1. Ensure data directory exists; seed all bundled files if new
     // ---------------------------------------------------------------
-    val mainCsvPath = "data/stocks.csv"
-    val dataDir = Paths.get("data")
+    val dataDir = AppDirs.dataDir
+    val mainCsvPath = dataDir.resolve("stocks.csv").toString()
+    logger.info("Data directory: ${dataDir.toAbsolutePath()}")
     if (!Files.exists(dataDir)) {
         Files.createDirectories(dataDir)
         val cl = object {}::class.java.classLoader
@@ -46,7 +47,7 @@ fun main() {
         name = "Main",
         id = "main",
         csvPath = mainCsvPath,
-        cashPath = "data/cash.txt"
+        cashPath = dataDir.resolve("cash.txt").toString()
     )
     PortfolioRegistry.register(mainPortfolio)
 
@@ -64,8 +65,8 @@ fun main() {
                 val portfolio = ManagedPortfolio(
                     name = folderName.toPortfolioDisplayName(),
                     id = folderName.toPortfolioSlug(),
-                    csvPath = "data/$folderName/stocks.csv",
-                    cashPath = "data/$folderName/cash.txt"
+                    csvPath = dataDir.resolve("$folderName/stocks.csv").toString(),
+                    cashPath = dataDir.resolve("$folderName/cash.txt").toString()
                 )
                 PortfolioRegistry.register(portfolio)
                 logger.info("Discovered portfolio: '${portfolio.name}' (id=${portfolio.id}) at ${portfolio.csvPath}")

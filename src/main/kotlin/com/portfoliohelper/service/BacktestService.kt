@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -66,7 +67,7 @@ data class MultiBacktestResult(
 
 object BacktestService {
     private val logger = LoggerFactory.getLogger(BacktestService::class.java)
-    private val tickerDir = File("data/.ticker")
+    private val tickerDir get() = AppDirs.dataDir.resolve(".ticker").toFile()
 
     fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }

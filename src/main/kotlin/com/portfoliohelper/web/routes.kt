@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.BacktestService
 import com.portfoliohelper.service.BacktestStats
 import com.portfoliohelper.service.DataPoint
@@ -80,7 +81,7 @@ fun Application.configureRouting() {
         }
 
         get("/api/backtest/settings") {
-            val f = File("data/.backtest/settings.json")
+            val f = AppDirs.dataDir.resolve(".backtest/settings.json").toFile()
             call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
         }
 
@@ -89,7 +90,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 runCatching {
-                    val dir = File("data/.backtest"); dir.mkdirs()
+                    val dir = AppDirs.dataDir.resolve(".backtest").toFile(); dir.mkdirs()
                     File(dir, "settings.json").writeText(body)
                 }
 
@@ -276,9 +277,9 @@ fun Application.configureRouting() {
             }
         }
 
-        // Loan calculation history — stored in data/.loan/history.json (newest first, max 5 entries)
+        // Loan calculation history — stored in .loan/history.json under dataDir (newest first, max 5 entries)
         get("/api/loan/history") {
-            val histFile = File("data/.loan/history.json")
+            val histFile = AppDirs.dataDir.resolve(".loan/history.json").toFile()
             call.respondText(
                 if (histFile.exists()) histFile.readText() else "[]",
                 ContentType.Application.Json
@@ -289,7 +290,7 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val newEntry = Json.parseToJsonElement(body)
-                val histFile = File("data/.loan/history.json")
+                val histFile = AppDirs.dataDir.resolve(".loan/history.json").toFile()
                 histFile.parentFile.mkdirs()
                 val newKey = loanEntryKey(newEntry.jsonObject)
                 val existing = if (histFile.exists())

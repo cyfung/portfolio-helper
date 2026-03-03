@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.AppDirs
 import org.slf4j.LoggerFactory
 import java.awt.*
 import java.awt.event.MouseAdapter
@@ -73,8 +74,10 @@ object NewTrayService {
         val image = ImageIcon(extractTrayIcon()).image
         val popup = PopupMenu()
         val openItem = MenuItem("Open")
+        val openDirItem = MenuItem("Open Data Directory")
         val exitItem = MenuItem("Exit")
         popup.add(openItem)
+        popup.add(openDirItem)
         popup.addSeparator()
         popup.add(exitItem)
 
@@ -90,6 +93,15 @@ object NewTrayService {
         })
         openItem.addActionListener {
             BrowserService.openBrowser(url)
+        }
+
+        openDirItem.addActionListener {
+            try {
+                val dir = AppDirs.dataDir.toFile().also { it.mkdirs() }
+                Desktop.getDesktop().open(dir)
+            } catch (e: Exception) {
+                logger.warn("Failed to open data directory: ${e.message}")
+            }
         }
 
         exitItem.addActionListener {
