@@ -9,8 +9,10 @@ let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
 let currentDisplayCurrency = 'USD';
 let rebalTargetUsd = null; // null = use lastPortfolioVal
 let marginTargetPct = null; // non-null = margin mode (rebalTargetUsd derived from this)
-let allocAddMode = localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
-let allocReduceMode = localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
+let allocAddMode = (typeof savedAllocAddMode !== 'undefined' ? savedAllocAddMode : null)
+    || localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
+let allocReduceMode = (typeof savedAllocReduceMode !== 'undefined' ? savedAllocReduceMode : null)
+    || localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
 let lastAllocRebalTotal = 0;
 let portfolioValueKnown = true;  // false if any stock has neither mark nor close price
 let cashTotalKnown = true;       // false if any non-USD cash entry is missing its FX rate
@@ -1723,7 +1725,7 @@ document.addEventListener('DOMContentLoaded', () => {
         allocAddSelect.value = allocAddMode;
         allocAddSelect.addEventListener('change', () => {
             allocAddMode = allocAddSelect.value;
-            localStorage.setItem('ib-viewer-alloc-add-mode', allocAddMode);
+            fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocAddMode`, { method: 'POST', body: allocAddMode });
             updateAllocColumns(getAllocRebalTotal());
         });
     }
@@ -1731,7 +1733,7 @@ document.addEventListener('DOMContentLoaded', () => {
         allocReduceSelect.value = allocReduceMode;
         allocReduceSelect.addEventListener('change', () => {
             allocReduceMode = allocReduceSelect.value;
-            localStorage.setItem('ib-viewer-alloc-reduce-mode', allocReduceMode);
+            fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocReduceMode`, { method: 'POST', body: allocReduceMode });
             updateAllocColumns(getAllocRebalTotal());
         });
     }

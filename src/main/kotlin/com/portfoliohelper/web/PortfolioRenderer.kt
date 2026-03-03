@@ -63,6 +63,8 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             if (legacy.exists()) legacy.readText().trim().toDoubleOrNull() else null
         }.getOrNull() ?: 0.0
     val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
+    val savedAllocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL"
+    val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
 
     // Compute totals and display currencies at function level so they can be used in both head and body
     val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
@@ -124,6 +126,8 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         let lastCashTotalUsd = ${"%.2f".format(cashTotalUsd)};
                         let savedRebalTargetUsd = ${"%.2f".format(savedRebalTargetUsd)};
                         let savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
+                        let savedAllocAddMode = "${savedAllocAddMode}";
+                        let savedAllocReduceMode = "${savedAllocReduceMode}";
                         """.trimIndent()
                     )
                 }
