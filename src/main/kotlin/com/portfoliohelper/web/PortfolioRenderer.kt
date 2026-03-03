@@ -510,10 +510,10 @@ private fun FlowContent.buildIbkrRatesTable(
     // Always show USD; add non-USD, non-P margin currencies sorted alphabetically
     val marginCurrencies: List<String> = buildList {
         add("USD")
-        cashEntries.filter { it.marginFlag }
+        cashEntries.asSequence().filter { it.marginFlag }
             .map { it.currency.uppercase() }
             .filter { it != "USD" && it != "P" }
-            .distinct().sorted()
+            .distinct().sorted().toList()
             .forEach { add(it) }
     }
 
@@ -534,7 +534,8 @@ private fun FlowContent.buildIbkrRatesTable(
         val rateDisplay: String,
         val nativeDailyInterest: Double,
         val effectiveRate: Double,
-        val daysInYear: Int
+        val daysInYear: Int,
+        val tiersJson: String
     )
 
     val rows = marginCurrencies.mapNotNull { ccy ->
@@ -555,7 +556,11 @@ private fun FlowContent.buildIbkrRatesTable(
             "%.3f%% (%.3f%%)".format(blended, currencyRates.baseRate)
         else
             "%.3f%%".format(currencyRates.baseRate)
-        RateRow(ccy, rateDisplay, nativeDailyInterest, effectiveRate, daysInYear)
+        val tiersJson = currencyRates.tiers.joinToString(",", "[", "]") { t ->
+            if (t.upTo != null) "{\"upTo\":${t.upTo},\"rate\":${t.rate}}"
+            else "{\"upTo\":null,\"rate\":${t.rate}}"
+        }
+        RateRow(ccy, rateDisplay, nativeDailyInterest, effectiveRate, daysInYear, tiersJson)
     }
 
     if (rows.isEmpty()) return
@@ -588,6 +593,7 @@ private fun FlowContent.buildIbkrRatesTable(
                         attributes["data-ibkr-rate"] = "%.8f".format(row.effectiveRate)
                         attributes["data-ibkr-days"] = row.daysInYear.toString()
                         attributes["data-native-daily"] = "%.8f".format(row.nativeDailyInterest)
+                        attributes["data-ibkr-tiers"] = row.tiersJson
                         td(classes = "ibkr-rate-currency") { +row.currency }
                         td(classes = "ibkr-rate-value") { +row.rateDisplay }
                     }

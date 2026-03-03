@@ -477,11 +477,53 @@ function updateMarginDisplay(marginUsd) {
     }
 }
 
+/**
+ * Compute blended IBKR rate (%) for a given native loan amount using tier data.
+ * Returns null if amount is within the base tier (no blending needed).
+ * tiers: [{upTo: number|null, rate: number}, ...]
+ */
+function blendedIbkrRate(tiers, amount) {
+    if (amount <= 0 || !tiers.length) return null;
+    const baseCap = tiers[0].upTo;
+    if (baseCap === null || amount <= baseCap) return null;
+    let remaining = amount, totalInterest = 0, prevUpTo = 0;
+    for (const tier of tiers) {
+        const capacity = tier.upTo !== null ? tier.upTo - prevUpTo : Infinity;
+        const inTier = Math.min(remaining, capacity);
+        totalInterest += inTier * tier.rate / 100;
+        remaining -= inTier;
+        if (remaining <= 0) break;
+        prevUpTo = tier.upTo ?? 0;
+    }
+    return (totalInterest / amount) * 100;
+}
+
 function updateIbkrDailyInterest() {
     const rows = document.querySelectorAll('.ibkr-rates-table tbody tr[data-ibkr-rate]');
     if (!rows.length) return;
 
     const loanUsd = lastMarginUsd < 0 ? -lastMarginUsd : 0;
+
+    // Recompute effective rate and update display text for each row
+    rows.forEach(tr => {
+        const ccy = tr.querySelector('.ibkr-rate-currency')?.textContent?.trim();
+        if (!ccy || !tr.dataset.ibkrTiers) return;
+        let tiers;
+        try { tiers = JSON.parse(tr.dataset.ibkrTiers); } catch (e) { return; }
+        const baseRate = tiers[0]?.rate;
+        if (baseRate === undefined) return;
+        const fxRate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
+        const loanNative = (fxRate !== null && fxRate > 0) ? loanUsd / fxRate : 0;
+        const blended = blendedIbkrRate(tiers, loanNative);
+        const effectiveRate = blended !== null ? blended : baseRate;
+        tr.dataset.ibkrRate = effectiveRate.toFixed(8);
+        const valueCell = tr.querySelector('.ibkr-rate-value');
+        if (valueCell) {
+            valueCell.textContent = blended !== null
+                ? blended.toFixed(3) + '% (' + baseRate.toFixed(3) + '%)'
+                : baseRate.toFixed(3) + '%';
+        }
+    });
 
     // Current: sum of per-currency native daily interest converted to USD
     let currentUsd = 0;
