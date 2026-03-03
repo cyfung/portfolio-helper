@@ -240,7 +240,37 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         }
                     }
 
-                    buildStockTable(portfolio)
+                    div(classes = "stock-section") {
+                        div(classes = "alloc-controls") {
+                            span(classes = "alloc-controls-label") { +"Alloc" }
+                            div(classes = "alloc-mode-group") {
+                                label(classes = "alloc-mode-label") {
+                                    attributes["for"] = "alloc-add-mode"
+                                    +"Add"
+                                }
+                                select {
+                                    id = "alloc-add-mode"
+                                    option { value = "PROPORTIONAL"; +"Target Wt" }
+                                    option { value = "CURRENT_WEIGHT"; +"Current Wt" }
+                                    option { value = "UNDERVALUED_PRIORITY"; +"Underval First" }
+                                }
+                            }
+                            div(classes = "alloc-mode-group") {
+                                label(classes = "alloc-mode-label") {
+                                    attributes["for"] = "alloc-reduce-mode"
+                                    +"Reduce"
+                                }
+                                select {
+                                    id = "alloc-reduce-mode"
+                                    option { value = "PROPORTIONAL"; +"Target Wt" }
+                                    option { value = "CURRENT_WEIGHT"; +"Current Wt" }
+                                    option { value = "UNDERVALUED_PRIORITY"; +"Underval First" }
+                                }
+                            }
+                        }
+
+                        buildStockTable(portfolio)
+                    }
 
                     div(classes = "edit-add-buttons") {
                         button(classes = "add-stock-btn") {
@@ -685,8 +715,8 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th(classes = "rebal-column") { +"Weight" }
                 th(classes = "rebal-column") { +"Rebal $" }
                 th(classes = "rebal-column") { +"Rebal Qty" }
-                th(classes = "margin-rebal-column") { +"M.Rebal \$" }
-                th(classes = "margin-rebal-column") { +"M.Rebal Qty" }
+                th(classes = "alloc-column") { +"Alloc \$" }
+                th(classes = "alloc-column") { +"Alloc Qty" }
                 th(classes = "edit-column") {
                     +"Target %"
                     button(classes = "copy-col-btn") {
@@ -884,13 +914,13 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         }
                     }
 
-                    // Margin Rebal $ (extra capital portion per stock)
-                    td(classes = "price-change neutral margin-rebal-column") {
-                        id = "margin-rebal-dollars-${stock.label}"
+                    // Alloc $ (allocation adjustment per stock)
+                    td(classes = "price-change neutral alloc-column") {
+                        id = "alloc-dollars-${stock.label}"
                     }
-                    // Margin Rebal Qty
-                    td(classes = "price-change neutral margin-rebal-column") {
-                        id = "margin-rebal-qty-${stock.label}"
+                    // Alloc Qty
+                    td(classes = "price-change neutral alloc-column") {
+                        id = "alloc-qty-${stock.label}"
                     }
 
                     // Target % (edit-only column)
@@ -945,8 +975,8 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 td(classes = "rebal-column") {}
                 td(classes = "rebal-column") {}
                 td(classes = "rebal-column") {}
-                td(classes = "margin-rebal-column") {}
-                td(classes = "margin-rebal-column") {}
+                td(classes = "alloc-column") {}
+                td(classes = "alloc-column") {}
                 td(classes = "edit-column") {
                     id = "target-weight-total"
                     +"%.1f%%".format(totalWeight)

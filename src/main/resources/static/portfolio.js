@@ -8,6 +8,9 @@ let marketCloseTimeMs = null; // Unix ms of tradingPeriodEnd
 // Display currency (USD by default; lastPortfolioVal/lastCashTotalUsd/etc. declared in inline script)
 let currentDisplayCurrency = 'USD';
 let rebalTargetUsd = null; // null = use lastPortfolioVal
+let allocAddMode = localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
+let allocReduceMode = localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
+let lastAllocRebalTotal = 0;
 
 // Connect to SSE for live price updates
 const eventSource = new EventSource('/api/prices/stream');
@@ -271,7 +274,7 @@ function updateTotalValue() {
 
     updateCurrentWeights(total);
     updateRebalancingColumns(getRebalTotal());
-    updateMarginRebalColumns(getRebalTotal());
+    updateAllocColumns(getAllocRebalTotal());
     updateMarginTargetDisplay();
 
     // Update grand total (portfolio + cash)
@@ -325,7 +328,14 @@ function formatSignedDisplayCurrency(usdVal) {
 }
 
 function getRebalTotal() {
-    return (rebalTargetUsd !== null && rebalTargetUsd > 0) ? rebalTargetUsd : lastPortfolioVal;
+    if (rebalTargetUsd !== null && rebalTargetUsd > 0) return rebalTargetUsd;
+    return lastPortfolioVal + Math.max(lastMarginUsd, 0);
+}
+
+function getAllocRebalTotal() {
+    if (rebalTargetUsd !== null && rebalTargetUsd > 0) return rebalTargetUsd;
+    // Add positive M-cash (deployable), ignore margin debt
+    return lastPortfolioVal + Math.max(lastMarginUsd, 0);
 }
 
 function deriveMarginPct(rebalTotal) {
@@ -348,7 +358,7 @@ function updateRebalTargetPlaceholder() {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         });
     } else {
-        const converted = toDisplayCurrency(lastPortfolioVal);
+        const converted = toDisplayCurrency(lastPortfolioVal + Math.max(lastMarginUsd, 0));
         input.placeholder = Math.abs(converted).toLocaleString('en-US', {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         });
@@ -363,7 +373,7 @@ function updateMarginInputPlaceholder() {
         pct = deriveMarginPct(rebalTargetUsd);
     } else {
         const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
-        pct = ec > 0 ? Math.abs(lastMarginUsd) / ec * 100 : 0;
+        pct = ec > 0 ? Math.abs(Math.min(lastMarginUsd, 0)) / ec * 100 : 0;
     }
     input.placeholder = pct.toFixed(1);
 }
@@ -587,39 +597,100 @@ function updateRebalancingColumns(portfolioTotal) {
     });
 }
 
-function updateMarginRebalColumns(rebalTotal) {
-    const extra = rebalTotal - lastPortfolioVal;
+function updateAllocColumns(rebalTotal) {
+    lastAllocRebalTotal = rebalTotal;
+    const delta = rebalTotal - lastPortfolioVal;
+
+    // Collect per-stock data
+    const stocks = [];
+    let totalStockValue = 0;
     document.querySelectorAll('.value.loaded').forEach(valueCell => {
         const symbol = valueCell.id.replace('value-', '');
         const markPrice = rawMarkPrices[symbol] ??
             parsePrice(document.getElementById('mark-' + symbol)?.textContent);
         const weightCell = document.getElementById('current-weight-' + symbol);
-        const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
+        const targetWeightSpan = weightCell?.querySelector('.target-weight-hidden');
         const targetWeight = targetWeightSpan ? parseFloat(targetWeightSpan.textContent) : null;
-
-        const mRebalDollarsCell = document.getElementById('margin-rebal-dollars-' + symbol);
-        const mRebalQtyCell = document.getElementById('margin-rebal-qty-' + symbol);
-
-        if (targetWeight === null || extra <= 0) {
-            if (mRebalDollarsCell) mRebalDollarsCell.textContent = '';
-            if (mRebalQtyCell) mRebalQtyCell.textContent = '';
-            return;
-        }
-
-        const mRebalDollars = (targetWeight / 100) * extra;
-        const direction = mRebalDollars > 0.50 ? 'positive' : mRebalDollars < -0.50 ? 'negative' : 'neutral';
-
-        if (mRebalDollarsCell) {
-            mRebalDollarsCell.textContent = formatSignedCurrency(mRebalDollars);
-            mRebalDollarsCell.className = 'price-change loaded margin-rebal-column ' + direction;
-        }
-        if (mRebalQtyCell && markPrice && markPrice > 0) {
-            const mRebalQty = mRebalDollars / markPrice;
-            const sign = mRebalQty >= 0 ? '+' : '-';
-            mRebalQtyCell.textContent = sign + Math.abs(mRebalQty).toFixed(2);
-            mRebalQtyCell.className = 'price-change loaded margin-rebal-column ' + direction;
-        }
+        const currentValue = parsePrice(valueCell.textContent) ?? 0;
+        stocks.push({ symbol, markPrice, targetWeight, currentValue });
+        totalStockValue += currentValue;
     });
+
+    const mode = delta >= 0 ? allocAddMode : allocReduceMode;
+    const allocations = computeAllocations(delta, stocks, totalStockValue, mode);
+
+    for (const s of stocks) {
+        const dollarsCell = document.getElementById('alloc-dollars-' + s.symbol);
+        const qtyCell = document.getElementById('alloc-qty-' + s.symbol);
+        const amt = allocations[s.symbol];
+        if (amt == null) {
+            if (dollarsCell) dollarsCell.textContent = '';
+            if (qtyCell) qtyCell.textContent = '';
+            continue;
+        }
+        const dir = amt > 0.50 ? 'positive' : amt < -0.50 ? 'negative' : 'neutral';
+        if (dollarsCell) {
+            dollarsCell.textContent = formatSignedCurrency(amt);
+            dollarsCell.className = 'price-change loaded alloc-column ' + dir;
+        }
+        if (qtyCell && s.markPrice > 0) {
+            const qty = amt / s.markPrice;
+            qtyCell.textContent = (qty >= 0 ? '+' : '-') + Math.abs(qty).toFixed(2);
+            qtyCell.className = 'price-change loaded alloc-column ' + dir;
+        }
+    }
+}
+
+function computeAllocations(delta, stocks, totalStockValue, mode) {
+    const result = {};
+    if (mode === 'PROPORTIONAL') {
+        for (const s of stocks)
+            result[s.symbol] = s.targetWeight !== null ? (s.targetWeight / 100) * delta : null;
+
+    } else if (mode === 'CURRENT_WEIGHT') {
+        for (const s of stocks) {
+            const w = totalStockValue > 0 ? s.currentValue / totalStockValue : 0;
+            result[s.symbol] = w * delta;
+        }
+
+    } else if (mode === 'UNDERVALUED_PRIORITY') {
+        const eligible = stocks.filter(s => s.targetWeight !== null);
+        const alloc = {};
+        if (delta >= 0) {
+            const sorted = [...eligible].sort((a, b) =>
+                (a.currentValue / totalStockValue - a.targetWeight / 100) -
+                (b.currentValue / totalStockValue - b.targetWeight / 100)
+            );
+            let remaining = delta;
+            for (const s of sorted) {
+                const target = totalStockValue * (s.targetWeight / 100);
+                const add = Math.min(remaining, Math.max(0, target - s.currentValue));
+                alloc[s.symbol] = add;
+                remaining -= add;
+            }
+            if (remaining > 0)
+                for (const s of eligible)
+                    alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining;
+        } else {
+            const sorted = [...eligible].sort((a, b) =>
+                (b.currentValue / totalStockValue - b.targetWeight / 100) -
+                (a.currentValue / totalStockValue - a.targetWeight / 100)
+            );
+            let remaining = delta;
+            for (const s of sorted) {
+                if (remaining >= 0) break;
+                const target = totalStockValue * (s.targetWeight / 100);
+                const trim = Math.max(remaining, Math.min(0, target - s.currentValue));
+                alloc[s.symbol] = trim;
+                remaining -= trim;
+            }
+            if (remaining < 0)
+                for (const s of eligible)
+                    alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining;
+        }
+        for (const s of eligible) result[s.symbol] = alloc[s.symbol] ?? 0;
+    }
+    return result;
 }
 
 function updateAllEstVals() {
@@ -738,7 +809,7 @@ function refreshDisplayCurrency() {
 
     updateRebalTargetPlaceholder();
     updateRebalancingColumns(getRebalTotal());
-    updateMarginRebalColumns(getRebalTotal());
+    updateAllocColumns(getAllocRebalTotal());
     updateMarginTargetDisplay();
     updateIbkrDailyInterest();
 }
@@ -1164,7 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const marginTargetInput = document.getElementById('margin-target-input');
             if (marginTargetInput) marginTargetInput.value = '';
             updateRebalancingColumns(getRebalTotal());
-            updateMarginRebalColumns(getRebalTotal());
+            updateAllocColumns(getAllocRebalTotal());
             updateMarginTargetDisplay();
             updateRebalTargetPlaceholder();
             // Debounced save to server
@@ -1191,7 +1262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             rebalTargetInput.value = '';
             updateRebalTargetPlaceholder();
             updateRebalancingColumns(getRebalTotal());
-            updateMarginRebalColumns(getRebalTotal());
+            updateAllocColumns(getAllocRebalTotal());
             updateMarginTargetDisplay();
             // Debounced save to server
             clearTimeout(rebalSaveTimer);
@@ -1214,7 +1285,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 minimumFractionDigits: 2, maximumFractionDigits: 2
             });
             updateRebalancingColumns(getRebalTotal());
-            updateMarginRebalColumns(getRebalTotal());
+            updateAllocColumns(getAllocRebalTotal());
             updateMarginTargetDisplay();
         }
     }
@@ -1455,4 +1526,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     updateTargetWeightTotal();
+
+    // Alloc mode dropdowns
+    const allocAddSelect = document.getElementById('alloc-add-mode');
+    const allocReduceSelect = document.getElementById('alloc-reduce-mode');
+    if (allocAddSelect) {
+        allocAddSelect.value = allocAddMode;
+        allocAddSelect.addEventListener('change', () => {
+            allocAddMode = allocAddSelect.value;
+            localStorage.setItem('ib-viewer-alloc-add-mode', allocAddMode);
+            updateAllocColumns(getAllocRebalTotal());
+        });
+    }
+    if (allocReduceSelect) {
+        allocReduceSelect.value = allocReduceMode;
+        allocReduceSelect.addEventListener('change', () => {
+            allocReduceMode = allocReduceSelect.value;
+            localStorage.setItem('ib-viewer-alloc-reduce-mode', allocReduceMode);
+            updateAllocColumns(getAllocRebalTotal());
+        });
+    }
 });
