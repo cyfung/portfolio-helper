@@ -353,7 +353,7 @@ fun Application.configureRouting() {
                 }
             }
 
-            YahooMarketDataService.onUpdateWithReplay(callback)
+            val unregisterPrice = YahooMarketDataService.onUpdateWithReplay(callback)
 
             // Register callback for NAV updates; replay cached NAV immediately so
             // clients that connect after a slow NAV fetch don't miss it until next poll
@@ -369,10 +369,10 @@ fun Application.configureRouting() {
                 channel.trySend("data: $json\n\n")
             }
 
-            NavService.onUpdateWithReplay(navCallback)
+            val unregisterNav = NavService.onUpdateWithReplay(navCallback)
 
             // Listen for portfolio reload events
-            launch {
+            val collectJob = launch {
                 PortfolioUpdateBroadcaster.reloadEvents.collect {
                     val json = "{\"type\":\"reload\",\"timestamp\":${it.timestamp}}"
                     channel.send("data: $json\n\n")
@@ -390,8 +390,10 @@ fun Application.configureRouting() {
                         flush()
                     }
                 }
-            } catch (_: Exception) {
-                // Client disconnected
+            } finally {
+                collectJob.cancel()
+                unregisterPrice()
+                unregisterNav()
                 channel.close()
             }
         }

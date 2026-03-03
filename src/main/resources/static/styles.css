@@ -171,6 +171,19 @@ h1 {
     font-weight: var(--font-weight-semibold);
 }
 
+.sse-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-text-tertiary);
+    vertical-align: middle;
+    margin-left: 4px;
+    transition: background 0.4s;
+}
+.sse-dot--ok  { background: var(--color-positive); }
+.sse-dot--err { background: var(--color-negative); }
+
 /* ============================================
    Header Button Group
    ============================================ */

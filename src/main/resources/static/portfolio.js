@@ -13,9 +13,37 @@ let allocReduceMode = localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PR
 let lastAllocRebalTotal = 0;
 
 // Connect to SSE for live price updates
+let sseLastActivity = Date.now();
+
+function setSseStatus(ok) {
+    const dot = document.getElementById('sse-status-dot');
+    if (dot) {
+        dot.className = 'sse-dot ' + (ok ? 'sse-dot--ok' : 'sse-dot--err');
+        dot.title = ok ? 'Live' : 'Disconnected';
+    }
+}
+
+// Inject SSE status dot next to the timestamp
+window.addEventListener('DOMContentLoaded', () => {
+    const timeEl = document.getElementById('last-update-time');
+    if (timeEl) {
+        const dot = document.createElement('span');
+        dot.id = 'sse-status-dot';
+        dot.className = 'sse-dot';
+        dot.title = 'Connecting…';
+        timeEl.after(dot);
+    }
+});
+
 const eventSource = new EventSource('/api/prices/stream');
 
+eventSource.onopen = () => {
+    sseLastActivity = Date.now();
+    setSseStatus(true);
+};
+
 eventSource.onmessage = (event) => {
+    sseLastActivity = Date.now();
     try {
         const data = JSON.parse(event.data);
 
@@ -50,7 +78,16 @@ eventSource.onmessage = (event) => {
 
 eventSource.onerror = (error) => {
     console.error('SSE connection error:', error);
+    setSseStatus(false);
 };
+
+// Safety net: if SSE has been broken for 5 minutes, reload the page to restore it
+setInterval(() => {
+    if (eventSource.readyState !== EventSource.OPEN && Date.now() - sseLastActivity > 5 * 60_000) {
+        console.warn('SSE disconnected for 5 minutes, reloading page to recover...');
+        location.reload();
+    }
+}, 60_000);
 
 function parsePrice(priceText) {
     if (!priceText || priceText === '—') return null;

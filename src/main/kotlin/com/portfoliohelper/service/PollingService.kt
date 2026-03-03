@@ -71,15 +71,18 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
         logger.info("Completed fetching for ${symbols.size} symbols")
     }
 
-    fun onUpdate(callback: (String, TData) -> Unit) {
+    fun onUpdate(callback: (String, TData) -> Unit): () -> Unit {
         synchronized(updateCallbacks) { updateCallbacks.add(callback) }
+        return { synchronized(updateCallbacks) { updateCallbacks.remove(callback) } }
     }
 
     /** Registers [callback] and immediately replays all cached entries so new clients
-     *  don't miss data that was fetched before their SSE connection was established. */
-    fun onUpdateWithReplay(callback: (String, TData) -> Unit) {
+     *  don't miss data that was fetched before their SSE connection was established.
+     *  Returns an unregister function — call it when the SSE connection closes. */
+    fun onUpdateWithReplay(callback: (String, TData) -> Unit): () -> Unit {
         synchronized(updateCallbacks) { updateCallbacks.add(callback) }
         cache.forEach { (symbol, data) -> callback(symbol, data) }
+        return { synchronized(updateCallbacks) { updateCallbacks.remove(callback) } }
     }
 
     fun get(symbol: String): TData? = cache[symbol]

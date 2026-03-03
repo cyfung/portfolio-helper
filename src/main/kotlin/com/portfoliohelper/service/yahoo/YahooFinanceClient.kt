@@ -2,6 +2,7 @@ package com.portfoliohelper.service.yahoo
 
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import kotlinx.serialization.json.*
@@ -11,8 +12,10 @@ object YahooFinanceClient {
     private val logger = LoggerFactory.getLogger(YahooFinanceClient::class.java)
 
     private val httpClient = HttpClient(CIO) {
-        engine {
-            requestTimeout = 10_000
+        install(HttpTimeout) {
+            connectTimeoutMillis = 5_000
+            requestTimeoutMillis = 10_000
+            socketTimeoutMillis = 10_000
         }
     }
 
