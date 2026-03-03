@@ -2,6 +2,8 @@ package com.portfoliohelper.service
 
 import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.FileSystems
@@ -9,6 +11,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import java.time.temporal.IsoFields
+import java.util.concurrent.TimeUnit
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.pow
@@ -305,15 +308,87 @@ object BacktestService {
         ?.sortedByDescending { it.name }
         ?: emptyList())
 
-    /** Loads EFFRX from the latest SIM file (no Yahoo extension). Returns empty map if not found. */
+    /** Loads EFFRX, extending via FRED EFFR if the file is outdated. Returns empty map if not found. */
     private fun loadEffrxSeries(): Map<LocalDate, Double> {
         tickerDir.mkdirs()
         val simPattern = Regex("EFFRX-(\\d{4}-\\d{2}-\\d{2})\\.csv")
-        val latest = findOrCopyFromResources(simPattern)
-            .firstOrNull()
-            ?: return emptyMap()
+        val latest = findOrCopyFromResources(simPattern).firstOrNull() ?: return emptyMap()
         logger.info("Loading EFFRX from ${latest.name}")
-        return readSimCsv(latest)
+        val existing = readSimCsv(latest)
+
+        val lastDate = existing.keys.maxOrNull() ?: return existing
+        val today = LocalDate.now()
+        if (lastDate >= today.minusDays(1)) return existing
+
+        return try {
+            val extended = extendEffrxWithFred(existing, lastDate, today)
+            if (extended.size > existing.size) {
+                val newFile = File(tickerDir, "EFFRX-${today}.csv")
+                writeSimCsv(newFile, extended)
+            }
+            extended
+        } catch (e: Exception) {
+            logger.warn("Failed to extend EFFRX via FRED: ${e.message}. Using existing file.")
+            existing
+        }
+    }
+
+    /**
+     * Extends an EFFRX accumulated series using the FRED EFFR series.
+     * FRED EFFR only has entries for actual Fed business days (no weekends, holidays are blank).
+     * Convention matches the existing CSV: rate/252 per entry, one entry per Fed business day.
+     */
+    private fun extendEffrxWithFred(
+        existing: Map<LocalDate, Double>,
+        lastDate: LocalDate,
+        today: LocalDate
+    ): Map<LocalDate, Double> {
+        val fredRates = fetchFredEffr()
+        val newDates = fredRates.keys.filter { it > lastDate && it <= today }.sorted()
+        if (newDates.isEmpty()) {
+            logger.info("EFFRX already up to date (no new FRED EFFR dates after $lastDate)")
+            return existing
+        }
+
+        val result = existing.toMutableMap()
+        var prevValue = existing[lastDate]
+            ?: existing.keys.filter { it <= lastDate }.maxOrNull()?.let { existing[it] }
+            ?: return existing
+
+        for (date in newDates) {
+            val rate = fredRates[date] ?: continue
+            prevValue *= (1.0 + rate / 100.0 / 252.0)
+            result[date] = prevValue
+        }
+
+        logger.info("Extended EFFRX by ${newDates.size} days (${newDates.first()} to ${newDates.last()})")
+        return result
+    }
+
+    /** Fetches the FRED EFFR daily CSV. Returns date -> annualised rate (%). Skips blank holiday rows. */
+    private fun fetchFredEffr(): Map<LocalDate, Double> {
+        val http = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+        val request = Request.Builder()
+            .url("https://fred.stlouisfed.org/graph/fredgraph.csv?id=EFFR")
+            .header("User-Agent", "Mozilla/5.0")
+            .build()
+        val body = http.newCall(request).execute().use { resp ->
+            check(resp.isSuccessful) { "FRED HTTP ${resp.code}" }
+            resp.body!!.string()
+        }
+        val result = mutableMapOf<LocalDate, Double>()
+        body.lineSequence().drop(1).forEach { line ->
+            val cols = line.split(",")
+            if (cols.size < 2) return@forEach
+            val date = runCatching { LocalDate.parse(cols[0].trim()) }.getOrNull() ?: return@forEach
+            val rate = cols[1].trim().toDoubleOrNull() ?: return@forEach  // blank on holidays
+            result[date] = rate
+        }
+        logger.info("Fetched ${result.size} FRED EFFR entries (latest: ${result.keys.maxOrNull()})")
+        return result
     }
 
     // ── LETF helpers ──────────────────────────────────────────────────────────
