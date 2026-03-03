@@ -529,8 +529,10 @@ private fun FlowContent.buildIbkrRatesTable(
 
     val rows = marginCurrencies.mapNotNull { ccy ->
         val currencyRates = IbkrMarginRateService.getRates(ccy) ?: return@mapNotNull null
-        val fxRate = if (ccy == "USD") 1.0 else (fxRateMap[ccy] ?: return@mapNotNull null)
-        val loanAmount = totalMarginLoanUsd / fxRate
+        val fxRate: Double? = if (ccy == "USD") 1.0 else fxRateMap[ccy]
+        // If FX rate not yet available, use 0 so blended falls back to base rate;
+        // JS will recalculate the summary once the FX rate arrives via SSE.
+        val loanAmount = if (fxRate != null && fxRate > 0) totalMarginLoanUsd / fxRate else 0.0
         val blended = if (loanAmount > 0) currencyRates.blendedRateIfMultiTier(loanAmount) else null
         val effectiveRate = blended ?: currencyRates.baseRate
         val daysInYear = CurrencyConventions.getDaysInYear(ccy)
