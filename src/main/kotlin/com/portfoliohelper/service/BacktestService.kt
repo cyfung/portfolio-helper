@@ -11,9 +11,19 @@ import kotlin.math.*
 
 enum class RebalanceStrategy { NONE, MONTHLY, QUARTERLY, YEARLY }
 
-enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY }
+enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY, DAILY }
 
 data class TickerWeight(val ticker: String, val weight: Double)
+
+data class LETFComponent(val ticker: String, val multiplier: Double)
+
+data class LETFDefinition(
+    val components: List<LETFComponent>,
+    val spread: Double                    // annual fraction, e.g. 0.015
+) {
+    val totalMultiplier: Double get() = components.sumOf { it.multiplier }
+    val borrowedRatio:   Double get() = totalMultiplier - 1.0
+}
 
 data class MarginConfig(
     val marginRatio: Double,        // e.g. 0.5 = 50% borrow-to-equity
@@ -71,32 +81,87 @@ object BacktestService {
 
     fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
-        val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        val toDate   = request.toDate?.let   { LocalDate.parse(it) } ?: LocalDate.now()
         val effrxSeries = loadEffrxSeries()
+        val neededFrom  = fromDate ?: LocalDate.of(1990, 1, 1)
 
-        // Load all series for all portfolios upfront
-        val allSeriesMaps = request.portfolios.map { pConfig ->
-            val seriesMap = mutableMapOf<String, Map<LocalDate, Double>>()
+        // Step 1: Collect all unique LETF definitions from all portfolio tickers
+        val letfDefs = mutableMapOf<String, LETFDefinition>()
+        for (pConfig in request.portfolios) {
             for (tw in pConfig.tickers) {
-                val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
-                seriesMap[tw.ticker] = loadNormalizedSeries(tw.ticker, neededFrom)
+                val def = parseLETFDefinition(tw.ticker) ?: continue
+                letfDefs.putIfAbsent(tw.ticker, def)
             }
-            seriesMap
         }
 
-        // Single global date intersection across every ticker in every portfolio
+        // Step 2: Load component ticker series for all LETF definitions
+        val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
+        fun cachedLoad(ticker: String) =
+            seriesCache.getOrPut(ticker) { loadNormalizedSeries(ticker, neededFrom) }
+
+        val letfComponentTickers = letfDefs.values
+            .flatMap { def -> def.components.map { it.ticker } }
+            .toSet()
+        for (ticker in letfComponentTickers) cachedLoad(ticker)
+
+        // Step 3: Compute preliminary dates from component series (needed to run LETF simulation)
+        val componentSeriesForDates = letfComponentTickers.mapNotNull { seriesCache[it] }
+        val letfDates = if (componentSeriesForDates.isNotEmpty())
+            intersectDates(componentSeriesForDates, fromDate, toDate)
+        else emptyList()
+
+        // Step 4: Compute virtual LETF series per (letfString, rebalanceStrategy) combo.
+        // Different portfolios may use the same LETF string but different rebalance strategies,
+        // so the cache is keyed by "$letfString::$rebalanceStrategy" to produce correct results.
+        if (letfDates.size >= 2) {
+            for (pConfig in request.portfolios) {
+                for (tw in pConfig.tickers) {
+                    val def = letfDefs[tw.ticker] ?: continue
+                    val cacheKey = "${tw.ticker}::${pConfig.rebalanceStrategy}"
+                    if (cacheKey !in seriesCache) {
+                        val componentSeriesMap = def.components.associate { comp ->
+                            comp.ticker to (seriesCache[comp.ticker]
+                                ?: error("Component ticker ${comp.ticker} was not loaded"))
+                        }
+                        seriesCache[cacheKey] = computeLetfSeries(
+                            def, componentSeriesMap, letfDates, effrxSeries, pConfig.rebalanceStrategy
+                        )
+                    }
+                }
+            }
+        }
+
+        // Step 5: Load real (non-LETF) ticker series
+        val realTickers = request.portfolios
+            .flatMap { it.tickers }
+            .map { it.ticker }
+            .filter { parseLETFDefinition(it) == null }
+            .toSet()
+        for (ticker in realTickers) cachedLoad(ticker)
+
+        // Step 6: Build allSeriesMaps and compute global date intersection.
+        // LETF tickers are resolved via their per-strategy cache key.
+        val allSeriesMaps = request.portfolios.map { pConfig ->
+            pConfig.tickers.associate { tw ->
+                val cacheKey = if (parseLETFDefinition(tw.ticker) != null)
+                    "${tw.ticker}::${pConfig.rebalanceStrategy}"
+                else tw.ticker
+                tw.ticker to (seriesCache[cacheKey]
+                    ?: error("Series for '${tw.ticker}' not found in cache"))
+            }
+        }
         val globalDates = intersectDates(allSeriesMaps.flatMap { it.values }, fromDate, toDate)
         if (globalDates.size < 2) {
             throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
         }
 
+        // Step 7: Compute portfolio results
         val portfolioResults = request.portfolios.mapIndexed { idx, pConfig ->
             val seriesMap = allSeriesMaps[idx]
 
             val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
             val noMarginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
-            val noMarginStats = computeStats(noMarginValues, globalDates, effrxSeries)
-
+            val noMarginStats  = computeStats(noMarginValues, globalDates, effrxSeries)
             val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
 
             pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
@@ -107,25 +172,23 @@ object BacktestService {
                     else
                         applyMargin(noMarginValues, globalDates, effrxSeries, mc, pConfig.rebalanceStrategy)
                 val marginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), marginResult.values[i]) }
-                val marginStats = computeStats(
+                val marginStats  = computeStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers
                 )
                 fun modeAbbr(m: MarginRebalanceMode) = when (m) {
-                    MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
-                    MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
-                    MarginRebalanceMode.FULL_REBALANCE -> "Full"
+                    MarginRebalanceMode.CURRENT_WEIGHT       -> "Cur Wt"
+                    MarginRebalanceMode.PROPORTIONAL         -> "Tgt Wt"
+                    MarginRebalanceMode.FULL_REBALANCE       -> "Full"
                     MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
+                    MarginRebalanceMode.DAILY                -> "Daily"
                 }
                 val uAbbr = modeAbbr(mc.upperRebalanceMode)
                 val lAbbr = modeAbbr(mc.lowerRebalanceMode)
-                val label = if (uAbbr == lAbbr)
-                    "Margin ${mIdx + 1} ($uAbbr)"
-                else
-                    "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
+                val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
+                            else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
                 curves.add(CurveResult(label, marginPoints, marginStats))
             }
-
             PortfolioResult(pConfig.label, curves)
         }
 
@@ -139,6 +202,9 @@ object BacktestService {
      * Normalised means the series values are chain-linked returns starting at 10 000.
      */
     private fun loadNormalizedSeries(ticker: String, neededFromDate: LocalDate): Map<LocalDate, Double> {
+        require(!ticker.contains(' ')) {
+            "loadNormalizedSeries called with LETF string '$ticker' — LETF series must be pre-computed via computeLetfSeries"
+        }
         tickerDir.mkdirs()
         val upperTicker = ticker.uppercase()
         val simPattern = Regex("${upperTicker}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
@@ -199,6 +265,77 @@ object BacktestService {
             ?: return emptyMap()
         logger.info("Loading EFFRX from ${latest.name}")
         return readSimCsv(latest)
+    }
+
+    // ── LETF helpers ──────────────────────────────────────────────────────────
+
+    /**
+     * Parses a LETF definition string like "1 KMLM 1 VT S=1.5".
+     * Returns null for plain tickers (no spaces).
+     * Tokens: alternating <multiplier> <TICKER> pairs, plus optional S=<pct>.
+     */
+    private fun parseLETFDefinition(ticker: String): LETFDefinition? {
+        if (!ticker.contains(' ')) return null
+        val tokens = ticker.trim().split(Regex("\\s+"))
+        val components = mutableListOf<LETFComponent>()
+        var spread = 0.0
+        var i = 0
+        while (i < tokens.size) {
+            val token = tokens[i]
+            if (token.startsWith("S=", ignoreCase = true)) {
+                spread = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
+                i++
+            } else {
+                val multiplier = token.toDoubleOrNull()
+                if (multiplier != null && i + 1 < tokens.size) {
+                    val tickerName = tokens[i + 1]
+                    if (!tickerName.startsWith("S=", ignoreCase = true)) {
+                        components.add(LETFComponent(tickerName.uppercase(), multiplier))
+                        i += 2
+                    } else {
+                        i++
+                    }
+                } else {
+                    i++
+                }
+            }
+        }
+        if (components.isEmpty()) throw IllegalArgumentException("No components found in LETF definition: $ticker")
+        return LETFDefinition(components, spread)
+    }
+
+    /**
+     * Computes a synthetic equity series for a LETF definition.
+     * Simulated as a QUARTERLY-rebalanced portfolio of its components
+     * with DAILY margin and borrow spread equal to [def.spread].
+     * Returns a Map<LocalDate, Double> parallel to [dates], starting at 10,000.
+     */
+    private fun computeLetfSeries(
+        def: LETFDefinition,
+        componentSeriesMap: Map<String, Map<LocalDate, Double>>,
+        dates: List<LocalDate>,
+        effrx: Map<LocalDate, Double>,
+        rebalanceStrategy: RebalanceStrategy
+    ): Map<LocalDate, Double> {
+        val letfTickers = def.components.map { comp ->
+            TickerWeight(comp.ticker, comp.multiplier / def.totalMultiplier * 100.0)
+        }
+        val letfConfig = PortfolioConfig(
+            label = "_letf_virtual",
+            tickers = letfTickers,
+            rebalanceStrategy = rebalanceStrategy,
+            marginStrategies = emptyList()
+        )
+        val mc = MarginConfig(
+            marginRatio = def.borrowedRatio,
+            marginSpread = def.spread,
+            marginDeviationUpper = 0.0,
+            marginDeviationLower = 0.0,
+            upperRebalanceMode = MarginRebalanceMode.DAILY,
+            lowerRebalanceMode = MarginRebalanceMode.DAILY
+        )
+        val result = applyMarginProportional(letfConfig, componentSeriesMap, dates, effrx, mc)
+        return dates.zip(result.values).associate { (date, value) -> date to value }
     }
 
     // ── CSV helpers ───────────────────────────────────────────────────────────
@@ -478,84 +615,98 @@ object BacktestService {
 
             val equity = holdings.values.sum() - borrowed
 
-            // Margin ratio deviation check
-            val currentMarginRatio = if (equity != 0.0) borrowed / equity else mc.marginRatio
-            val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
-            val upperBreach = currentMarginRatio > mc.marginRatio + mc.marginDeviationUpper
-            val lowerBreach = currentMarginRatio < mc.marginRatio - mc.marginDeviationLower
-            val deviationBreach = upperBreach || lowerBreach
+            val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
 
-            if (deviationBreach && !rebalanceDay) {
-                if (upperBreach) upperTriggers++ else lowerTriggers++
-            }
-
-            if (deviationBreach) {
+            if (isDailyMode) {
+                // Reset margin ratio daily using current weights (no deviation tracking)
                 val newBorrowed = equity * mc.marginRatio
-                val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
-                when (mode) {
-                    MarginRebalanceMode.FULL_REBALANCE -> {
-                        // Full rebalance: reset all holdings to target weights at new total exposure
-                        val newTotalExposure = equity + newBorrowed
-                        for (ticker in tickers) {
-                            holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
-                        }
-                    }
-                    MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
-                        val delta = newBorrowed - borrowed
-                        val totalHoldings = holdings.values.sum()
-                        if (delta >= 0) {
-                            // Buying: allocate to most undervalued assets first
-                            val sortedTickers = tickers.sortedBy {
-                                (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
-                            }
-                            var remaining = delta
-                            for (ticker in sortedTickers) {
-                                if (remaining <= 0.0) break
-                                val cur = holdings[ticker] ?: 0.0
-                                val target = totalHoldings * (targetWeights[ticker] ?: 0.0)
-                                val add = minOf(remaining, maxOf(0.0, target - cur))
-                                holdings[ticker] = cur + add
-                                remaining -= add
-                            }
-                            if (remaining > 0.0) {
-                                for (ticker in tickers)
-                                    holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
-                            }
-                        } else {
-                            // Selling: trim most overvalued assets first
-                            val sortedTickers = tickers.sortedByDescending {
-                                (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
-                            }
-                            var remaining = -delta
-                            for (ticker in sortedTickers) {
-                                if (remaining <= 0.0) break
-                                val cur = holdings[ticker] ?: 0.0
-                                val target = totalHoldings * (targetWeights[ticker] ?: 0.0)
-                                val remove = minOf(remaining, maxOf(0.0, cur - target))
-                                holdings[ticker] = cur - remove
-                                remaining -= remove
-                            }
-                            if (remaining > 0.0) {
-                                for (ticker in tickers)
-                                    holdings[ticker] = (holdings[ticker] ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
-                            }
-                        }
-                    }
-                    MarginRebalanceMode.PROPORTIONAL -> {
-                        val delta = newBorrowed - borrowed
-                        for (ticker in tickers)
-                            holdings[ticker] = (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
-                    }
-                    MarginRebalanceMode.CURRENT_WEIGHT -> {
-                        // Treat portfolio as a black box: buy/sell proportionally by current value
-                        val delta = newBorrowed - borrowed
-                        val totalHoldings = holdings.values.sum()
-                        if (totalHoldings != 0.0)
-                            for (ticker in tickers)
-                                holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
-                    }
-                }
+                val delta = newBorrowed - borrowed
+                val totalHoldings = holdings.values.sum()
+                if (totalHoldings != 0.0)
+                    for (ticker in tickers)
+                        holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
                 borrowed = newBorrowed
+            } else {
+                // Margin ratio deviation check
+                val currentMarginRatio = if (equity != 0.0) borrowed / equity else mc.marginRatio
+                val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
+                val upperBreach = currentMarginRatio > mc.marginRatio + mc.marginDeviationUpper
+                val lowerBreach = currentMarginRatio < mc.marginRatio - mc.marginDeviationLower
+                val deviationBreach = upperBreach || lowerBreach
+
+                if (deviationBreach && !rebalanceDay) {
+                    if (upperBreach) upperTriggers++ else lowerTriggers++
+                }
+
+                if (deviationBreach) {
+                    val newBorrowed = equity * mc.marginRatio
+                    val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
+                    when (mode) {
+                        MarginRebalanceMode.FULL_REBALANCE -> {
+                            // Full rebalance: reset all holdings to target weights at new total exposure
+                            val newTotalExposure = equity + newBorrowed
+                            for (ticker in tickers) {
+                                holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
+                            }
+                        }
+                        MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
+                            val delta = newBorrowed - borrowed
+                            val totalHoldings = holdings.values.sum()
+                            if (delta >= 0) {
+                                // Buying: allocate to most undervalued assets first
+                                val sortedTickers = tickers.sortedBy {
+                                    (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
+                                }
+                                var remaining = delta
+                                for (ticker in sortedTickers) {
+                                    if (remaining <= 0.0) break
+                                    val cur = holdings[ticker] ?: 0.0
+                                    val target = totalHoldings * (targetWeights[ticker] ?: 0.0)
+                                    val add = minOf(remaining, maxOf(0.0, target - cur))
+                                    holdings[ticker] = cur + add
+                                    remaining -= add
+                                }
+                                if (remaining > 0.0) {
+                                    for (ticker in tickers)
+                                        holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
+                                }
+                            } else {
+                                // Selling: trim most overvalued assets first
+                                val sortedTickers = tickers.sortedByDescending {
+                                    (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
+                                }
+                                var remaining = -delta
+                                for (ticker in sortedTickers) {
+                                    if (remaining <= 0.0) break
+                                    val cur = holdings[ticker] ?: 0.0
+                                    val target = totalHoldings * (targetWeights[ticker] ?: 0.0)
+                                    val remove = minOf(remaining, maxOf(0.0, cur - target))
+                                    holdings[ticker] = cur - remove
+                                    remaining -= remove
+                                }
+                                if (remaining > 0.0) {
+                                    for (ticker in tickers)
+                                        holdings[ticker] = (holdings[ticker] ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
+                                }
+                            }
+                        }
+                        MarginRebalanceMode.PROPORTIONAL -> {
+                            val delta = newBorrowed - borrowed
+                            for (ticker in tickers)
+                                holdings[ticker] = (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
+                        }
+                        MarginRebalanceMode.CURRENT_WEIGHT -> {
+                            // Treat portfolio as a black box: buy/sell proportionally by current value
+                            val delta = newBorrowed - borrowed
+                            val totalHoldings = holdings.values.sum()
+                            if (totalHoldings != 0.0)
+                                for (ticker in tickers)
+                                    holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
+                        }
+                        MarginRebalanceMode.DAILY -> { /* handled above */ }
+                    }
+                    borrowed = newBorrowed
+                }
             }
 
             result.add(holdings.values.sum() - borrowed)

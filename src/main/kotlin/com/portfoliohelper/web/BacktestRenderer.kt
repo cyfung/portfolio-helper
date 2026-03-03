@@ -139,7 +139,7 @@ private fun DIV.portfolioBlock(idx: Int) {
                         div(classes = "backtest-ticker-row") {
                             input(type = InputType.text) {
                                 classes = setOf("ticker-input")
-                                placeholder = "e.g. VT"
+                                placeholder = "e.g. VT or: 1 KMLM 1 VT S=1.5"
                                 value = ticker
                             }
                             input(type = InputType.text) {

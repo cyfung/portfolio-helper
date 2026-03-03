@@ -13,7 +13,7 @@ let allocReduceMode = localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PR
 let lastAllocRebalTotal = 0;
 let portfolioValueKnown = true;  // false if any stock has neither mark nor close price
 let cashTotalKnown = true;       // false if any non-USD cash entry is missing its FX rate
-let marginKnown = true;          // false if any margin-flagged entry is missing its FX rate
+let marginKnown = false;          // false if any margin-flagged entry is missing its FX rate
 
 // Connect to SSE for live price updates
 let sseLastActivity = Date.now();

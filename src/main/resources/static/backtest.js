@@ -61,7 +61,7 @@
             const row = document.createElement('div');
             row.className = 'backtest-ticker-row';
             row.innerHTML = `
-                <input type="text" class="ticker-input" placeholder="e.g. VT" value="${ticker}" />
+                <input type="text" class="ticker-input" placeholder='e.g. VT or: 1 KMLM 1 VT S=1.5' value="${ticker}" />
                 <input type="text" class="weight-input" placeholder="Weight %" value="${weight}" />
                 <span class="weight-unit">%</span>
                 <button type="button" class="remove-ticker-btn" title="Remove">✕</button>
@@ -82,6 +82,7 @@
                   <option value="CURRENT_WEIGHT">Current Weight</option>
                   <option value="FULL_REBALANCE">Full Rebal</option>
                   <option value="UNDERVALUED_PRIORITY">Underval First</option>
+                  <option value="DAILY">Daily</option>
                 </select>`;
         }
 
