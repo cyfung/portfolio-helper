@@ -349,6 +349,10 @@ private fun TBODY.buildSummaryRows(
             attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
             attributes["data-margin-flag"] = entry.marginFlag.toString()
             attributes["data-equity-flag"] = entry.equityFlag.toString()
+            if (entry.portfolioRef != null) {
+                attributes["data-portfolio-ref"] = entry.portfolioRef
+                attributes["data-portfolio-multiplier"] = entry.amount.toString()
+            }
 
             td { +displayLabel }
             td(classes = "cash-raw-col") {

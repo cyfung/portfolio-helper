@@ -274,7 +274,13 @@ function addCashflowRow() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    renderHistory();
+    renderHistory().then(function() {
+        var container = document.getElementById('loan-history');
+        if (container && container._history && container._history.length > 0) {
+            loadParams(container._history[0]);
+            calculate();
+        }
+    });
 
     document.getElementById('calculate-btn').addEventListener('click', calculate);
 

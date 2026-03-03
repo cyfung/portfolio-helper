@@ -8,6 +8,7 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
     protected val logger = LoggerFactory.getLogger(this::class.java)
     protected val cache = ConcurrentHashMap<String, TData>()
     private val updateCallbacks = mutableListOf<(String, TData) -> Unit>()
+    private val postBatchCallbacks = mutableListOf<() -> Unit>()
     private var updateJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -79,12 +80,18 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
                 }
             }.awaitAll()
         }
+        synchronized(postBatchCallbacks) { postBatchCallbacks.toList() }.forEach { it() }
         logger.info("Completed fetching for ${symbols.size} symbols")
     }
 
     fun onUpdate(callback: (String, TData) -> Unit): () -> Unit {
         synchronized(updateCallbacks) { updateCallbacks.add(callback) }
         return { synchronized(updateCallbacks) { updateCallbacks.remove(callback) } }
+    }
+
+    fun onBatchComplete(callback: () -> Unit): () -> Unit {
+        synchronized(postBatchCallbacks) { postBatchCallbacks.add(callback) }
+        return { synchronized(postBatchCallbacks) { postBatchCallbacks.remove(callback) } }
     }
 
     /** Registers [callback] and immediately replays all cached entries so new clients

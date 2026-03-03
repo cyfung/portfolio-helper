@@ -372,6 +372,22 @@ fun Application.configureRouting() {
 
             val unregisterNav = NavService.onUpdateWithReplay(navCallback)
 
+            // Register callback to emit each portfolio's total value after every price poll batch
+            val portfolioValueCallback: () -> Unit = {
+                for (p in PortfolioRegistry.entries) {
+                    val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).totalValue
+                    val pvJson = buildString {
+                        append("{\"type\":\"portfolio-value\",")
+                        append("\"portfolioId\":\"${p.id}\",")
+                        append("\"value\":${"%.2f".format(pTotal)}")
+                        append("}")
+                    }
+                    channel.trySend("data: $pvJson\n\n")
+                }
+            }
+            val unregisterPortfolioValue = YahooMarketDataService.onBatchComplete(portfolioValueCallback)
+            portfolioValueCallback()  // replay initial values on connect
+
             // Listen for portfolio reload events
             val collectJob = launch {
                 PortfolioUpdateBroadcaster.reloadEvents.collect {
@@ -395,6 +411,7 @@ fun Application.configureRouting() {
                 collectJob.cancel()
                 unregisterPrice()
                 unregisterNav()
+                unregisterPortfolioValue()
                 channel.close()
             }
         }

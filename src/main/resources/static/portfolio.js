@@ -11,6 +11,9 @@ let rebalTargetUsd = null; // null = use lastPortfolioVal
 let allocAddMode = localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
 let allocReduceMode = localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
 let lastAllocRebalTotal = 0;
+let portfolioValueKnown = true;  // false if any stock has neither mark nor close price
+let cashTotalKnown = true;       // false if any non-USD cash entry is missing its FX rate
+let marginKnown = true;          // false if any margin-flagged entry is missing its FX rate
 
 // Connect to SSE for live price updates
 let sseLastActivity = Date.now();
@@ -54,6 +57,9 @@ eventSource.onmessage = (event) => {
         } else if (data.type === 'nav') {
             // NAV update
             updateNavInUI(data.symbol, data.nav);
+        } else if (data.type === 'portfolio-value') {
+            // Cross-portfolio cash reference update
+            updatePortfolioRefValues(data.portfolioId, data.value);
         } else {
             // FX rate update for cash currency conversion
             if (data.symbol && data.symbol.endsWith('USD=X')) {
@@ -268,6 +274,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
 function updateTotalValue() {
     let total = 0;
     let previousTotal = 0;
+    portfolioValueKnown = true;  // reset each recalculation
 
     // Calculate current total and previous day's total
     document.querySelectorAll('tbody tr').forEach(row => {
@@ -282,6 +289,7 @@ function updateTotalValue() {
             const markPrice = rawMarkPrices[symbol] ?? parsePrice(markCell.textContent);
             const closePrice = rawClosePrices[symbol] ?? parsePrice(closeCell.textContent);
 
+            if (markPrice === null && closePrice === null) portfolioValueKnown = false;
             if (markPrice !== null) total += markPrice * amount;
             if (closePrice !== null) previousTotal += closePrice * amount;
         }
@@ -293,7 +301,8 @@ function updateTotalValue() {
 
     // Update portfolio total
     const totalCell = document.getElementById('portfolio-total');
-    if (totalCell) totalCell.textContent = formatDisplayCurrency(total);
+    if (totalCell) totalCell.textContent = portfolioValueKnown
+        ? formatDisplayCurrency(total) : 'N/A';
 
     // Update portfolio daily change
     const changeDollars = total - previousTotal;
@@ -304,10 +313,14 @@ function updateTotalValue() {
     // Portfolio day change (% relative to previous portfolio value)
     const portfolioChangeCell = document.getElementById('portfolio-day-change');
     if (portfolioChangeCell) {
-        const sign = changeDollars >= 0 ? '+' : '-';
-        portfolioChangeCell.innerHTML =
-            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
-            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
+        if (!portfolioValueKnown) {
+            portfolioChangeCell.innerHTML = 'N/A';
+        } else {
+            const sign = changeDollars >= 0 ? '+' : '-';
+            portfolioChangeCell.innerHTML =
+                '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
+                '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
+        }
     }
 
     updateCurrentWeights(total);
@@ -317,17 +330,22 @@ function updateTotalValue() {
 
     // Update grand total (portfolio + cash)
     const grandEl = document.getElementById('grand-total-value');
-    if (grandEl) grandEl.textContent = formatDisplayCurrency(total + lastCashTotalUsd);
+    if (grandEl) grandEl.textContent = (portfolioValueKnown && cashTotalKnown)
+        ? formatDisplayCurrency(total + lastCashTotalUsd) : 'N/A';
 
     // Total Value day change: same $ amount, but % relative to previous grand total
     const totalChangeCell = document.getElementById('total-day-change');
     if (totalChangeCell) {
-        const prevGrandTotal = previousTotal + lastCashTotalUsd;
-        const totalChangePercent = prevGrandTotal !== 0 ? (changeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
-        const sign = changeDollars >= 0 ? '+' : '-';
-        totalChangeCell.innerHTML =
-            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
-            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePercent).toFixed(2) + '%)</span>';
+        if (!portfolioValueKnown) {
+            totalChangeCell.innerHTML = 'N/A';
+        } else {
+            const prevGrandTotal = previousTotal + lastCashTotalUsd;
+            const totalChangePercent = prevGrandTotal !== 0 ? (changeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
+            const sign = changeDollars >= 0 ? '+' : '-';
+            totalChangeCell.innerHTML =
+                '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
+                '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePercent).toFixed(2) + '%)</span>';
+        }
     }
 
     // Update margin % when portfolio value changes
@@ -446,12 +464,19 @@ function updateMarginDisplay(marginUsd) {
     }
     if (marginRow) marginRow.style.display = '';
 
+    if (!marginKnown) {
+        if (marginEl) marginEl.textContent = 'N/A';
+        const marginPctEl = document.getElementById('margin-percent');
+        if (marginPctEl) { marginPctEl.textContent = ''; marginPctEl.style.display = 'none'; }
+        return;
+    }
+
     marginEl.textContent = formatDisplayCurrency(-marginUsd);
 
     const marginPctEl = document.getElementById('margin-percent');
     const denominator = lastPortfolioVal + lastEquityUsd + lastMarginUsd;
     const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
-    if (marginPctEl) {
+    if (marginPctEl) {reba
         marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
         marginPctEl.style.display = '';
     }
@@ -512,6 +537,8 @@ function updateCashTotals() {
     let totalUsd = 0;
     let marginUsd = 0;
     let equityUsd = 0;
+    let hasUnknownFx = false;
+    let hasUnknownMarginFx = false;
     document.querySelectorAll('[data-cash-entry]').forEach(row => {
         const ccy = row.dataset.currency;
         const amount = parseFloat(row.dataset.amount);
@@ -523,26 +550,57 @@ function updateCashTotals() {
             usd = amount * rate;
             if (span) span.textContent = formatDisplayCurrency(usd);
         } else {
-            usd = (ccy === 'USD' ? amount : 0);
+            // Non-USD entry with no FX rate yet
+            hasUnknownFx = true;
+            if (row.dataset.marginFlag === 'true') hasUnknownMarginFx = true;
+            if (span) span.textContent = 'N/A';
+            return; // continue forEach
         }
         totalUsd += usd;
         if (row.dataset.marginFlag === 'true') marginUsd += usd;
         if (row.dataset.equityFlag === 'true') equityUsd += usd;
     });
+    cashTotalKnown = !hasUnknownFx;
+    marginKnown = !hasUnknownMarginFx;
     lastEquityUsd = equityUsd;
     lastCashTotalUsd = totalUsd;
     const cashTotalEl = document.getElementById('cash-total-usd');
-    if (cashTotalEl) cashTotalEl.textContent = formatDisplayCurrency(totalUsd);
+    if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(totalUsd) : 'N/A';
     lastMarginUsd = marginUsd;
     updateMarginDisplay(marginUsd);
     updateIbkrDailyInterest();
 
     // Update grand total
     const grandEl = document.getElementById('grand-total-value');
-    if (grandEl) grandEl.textContent = formatDisplayCurrency(lastPortfolioVal + totalUsd);
+    if (grandEl) grandEl.textContent = (portfolioValueKnown && cashTotalKnown)
+        ? formatDisplayCurrency(lastPortfolioVal + totalUsd) : 'N/A';
+}
+
+function updatePortfolioRefValues(portfolioId, newPortfolioValue) {
+    let updated = false;
+    document.querySelectorAll(`[data-portfolio-ref="${portfolioId}"]`).forEach(row => {
+        const mult = parseFloat(row.dataset.portfolioMultiplier || '1');
+        const newAmount = mult * newPortfolioValue;
+        row.dataset.amount = newAmount.toString();
+        // Update raw-col display (shows "50,000.00 USD" style text)
+        const rawCol = row.querySelector('.cash-raw-col');
+        if (rawCol) rawCol.textContent = formatCurrency(Math.abs(newAmount)) + ' USD';
+        updated = true;
+    });
+    if (updated) updateCashTotals();
 }
 
 function updateCurrentWeights(portfolioTotal) {
+    if (!portfolioValueKnown) {
+        document.querySelectorAll('.weight-display').forEach(cell => {
+            const hiddenSpan = cell.querySelector('.target-weight-hidden');
+            const tw = hiddenSpan ? hiddenSpan.textContent.trim() : '';
+            cell.innerHTML = 'N/A' + (tw !== ''
+                ? `<span class="target-weight-hidden" style="display:none;">${tw}</span>` : '');
+            cell.classList.remove('loaded');
+        });
+        return;
+    }
     if (portfolioTotal <= 0) return;
 
     document.querySelectorAll('.value.loaded').forEach(valueCell => {
@@ -579,6 +637,15 @@ function updateCurrentWeights(portfolioTotal) {
 }
 
 function updateRebalancingColumns(portfolioTotal) {
+    if (!portfolioValueKnown) {
+        document.querySelectorAll('[id^="rebal-dollars-"]').forEach(c => {
+            c.textContent = 'N/A'; c.className = 'price-change rebal-column';
+        });
+        document.querySelectorAll('[id^="rebal-qty-"]').forEach(c => {
+            c.textContent = 'N/A'; c.className = 'price-change rebal-column';
+        });
+        return;
+    }
     if (portfolioTotal <= 0) return;
 
     document.querySelectorAll('.value.loaded').forEach(valueCell => {
@@ -636,6 +703,15 @@ function updateRebalancingColumns(portfolioTotal) {
 }
 
 function updateAllocColumns(rebalTotal) {
+    if (!portfolioValueKnown) {
+        document.querySelectorAll('[id^="alloc-dollars-"]').forEach(c => {
+            c.textContent = 'N/A'; c.className = 'price-change alloc-column';
+        });
+        document.querySelectorAll('[id^="alloc-qty-"]').forEach(c => {
+            c.textContent = 'N/A'; c.className = 'price-change alloc-column';
+        });
+        return;
+    }
     lastAllocRebalTotal = rebalTotal;
     const delta = rebalTotal - lastPortfolioVal;
 
@@ -804,7 +880,8 @@ function refreshDisplayCurrency() {
 
     // Portfolio total
     const totalCell = document.getElementById('portfolio-total');
-    if (totalCell) totalCell.textContent = formatDisplayCurrency(lastPortfolioVal);
+    if (totalCell) totalCell.textContent = portfolioValueKnown
+        ? formatDisplayCurrency(lastPortfolioVal) : 'N/A';
 
     // Portfolio day change
     const changeDollars = lastPortfolioDayChangeUsd;
@@ -812,10 +889,14 @@ function refreshDisplayCurrency() {
     const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
     const portfolioChangeCell = document.getElementById('portfolio-day-change');
     if (portfolioChangeCell) {
-        const sign = changeDollars >= 0 ? '+' : '-';
-        portfolioChangeCell.innerHTML =
-            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
-            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
+        if (!portfolioValueKnown) {
+            portfolioChangeCell.innerHTML = 'N/A';
+        } else {
+            const sign = changeDollars >= 0 ? '+' : '-';
+            portfolioChangeCell.innerHTML =
+                '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
+                '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(changePercent).toFixed(2) + '%)</span>';
+        }
     }
 
     // Cash entry USD spans
@@ -824,25 +905,30 @@ function refreshDisplayCurrency() {
         const amount = parseFloat(row.dataset.amount);
         const rate = fxRates[ccy];
         const span = document.getElementById('cash-usd-' + row.dataset.entryId);
-        if (span && rate !== undefined) span.textContent = formatDisplayCurrency(amount * rate);
+        if (span) span.textContent = rate !== undefined ? formatDisplayCurrency(amount * rate) : 'N/A';
     });
 
     // Cash total, margin, grand total
     const cashTotalEl = document.getElementById('cash-total-usd');
-    if (cashTotalEl) cashTotalEl.textContent = formatDisplayCurrency(lastCashTotalUsd);
+    if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(lastCashTotalUsd) : 'N/A';
     updateMarginDisplay(lastMarginUsd);
     const grandEl = document.getElementById('grand-total-value');
-    if (grandEl) grandEl.textContent = formatDisplayCurrency(lastPortfolioVal + lastCashTotalUsd);
+    if (grandEl) grandEl.textContent = (portfolioValueKnown && cashTotalKnown)
+        ? formatDisplayCurrency(lastPortfolioVal + lastCashTotalUsd) : 'N/A';
 
     // Total day change
     const totalChangeCell = document.getElementById('total-day-change');
     if (totalChangeCell) {
-        const prevGrand = lastPrevPortfolioVal + lastCashTotalUsd;
-        const totalChangePct = prevGrand !== 0 ? (changeDollars / Math.abs(prevGrand)) * 100 : 0;
-        const sign = changeDollars >= 0 ? '+' : '-';
-        totalChangeCell.innerHTML =
-            '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
-            '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePct).toFixed(2) + '%)</span>';
+        if (!portfolioValueKnown) {
+            totalChangeCell.innerHTML = 'N/A';
+        } else {
+            const prevGrand = lastPrevPortfolioVal + lastCashTotalUsd;
+            const totalChangePct = prevGrand !== 0 ? (changeDollars / Math.abs(prevGrand)) * 100 : 0;
+            const sign = changeDollars >= 0 ? '+' : '-';
+            totalChangeCell.innerHTML =
+                '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars) + '</span> ' +
+                '<span class="change-percent ' + changeClass + '">(' + sign + Math.abs(totalChangePct).toFixed(2) + '%)</span>';
+        }
     }
 
     updateRebalTargetPlaceholder();
