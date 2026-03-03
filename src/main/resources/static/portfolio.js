@@ -476,7 +476,7 @@ function updateMarginDisplay(marginUsd) {
     const marginPctEl = document.getElementById('margin-percent');
     const denominator = lastPortfolioVal + lastEquityUsd + lastMarginUsd;
     const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
-    if (marginPctEl) {reba
+    if (marginPctEl) {
         marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
         marginPctEl.style.display = '';
     }
