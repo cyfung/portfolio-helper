@@ -64,6 +64,8 @@ data class BacktestStats(
     val cagr: Double,
     val maxDrawdown: Double,
     val sharpe: Double,
+    val ulcerIndex: Double,
+    val upi: Double,
     val endingValue: Double,
     val marginUpperTriggers: Int? = null,   // deviation breach above target (market fell, leverage too high)
     val marginLowerTriggers: Int? = null    // deviation breach below target (market rose, leverage too low)
@@ -894,7 +896,7 @@ object BacktestService {
         marginUpperTriggers: Int? = null,
         marginLowerTriggers: Int? = null
     ): BacktestStats {
-        if (values.size < 2) return BacktestStats(0.0, 0.0, 0.0, values.lastOrNull() ?: 0.0)
+        if (values.size < 2) return BacktestStats(0.0, 0.0, 0.0, 0.0, 0.0, values.lastOrNull() ?: 0.0)
 
         val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
         val cagr = if (years > 0) (values.last() / values.first()).pow(1.0 / years) - 1.0 else 0.0
@@ -928,10 +930,25 @@ object BacktestService {
         val stdDev = sqrt(variance)
         val sharpe = if (stdDev > 0) (meanReturn - rfDaily) / stdDev * sqrt(252.0) else 0.0
 
+        // Ulcer Index: sqrt(mean of squared drawdowns from running peak)
+        var peakUI = values[0]
+        val squaredDrawdowns = values.map { v ->
+            if (v > peakUI) peakUI = v
+            val dd = if (peakUI > 0) max(0.0, 1.0 - v / peakUI) else 0.0
+            dd * dd
+        }
+        val ulcerIndex = sqrt(squaredDrawdowns.average())
+
+        // UPI (Martin Ratio): annualised excess return / Ulcer Index
+        val rfAnnualized = (1.0 + rfDaily).pow(252.0) - 1.0
+        val upi = if (ulcerIndex > 0) (cagr - rfAnnualized) / ulcerIndex else 0.0
+
         return BacktestStats(
             cagr = cagr,
             maxDrawdown = maxDD,
             sharpe = sharpe,
+            ulcerIndex = ulcerIndex,
+            upi = upi,
             endingValue = values.last(),
             marginUpperTriggers = marginUpperTriggers,
             marginLowerTriggers = marginLowerTriggers

@@ -347,6 +347,8 @@
 
         let html = '<table class="summary-table backtest-stats-table"><thead><tr>' +
             '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th>' +
+            '<th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>' +
+            '<th title="Ulcer Performance Index (Martin Ratio): excess return / Ulcer Index">UPI</th>' +
             '<th title="Deviation triggers: ratio exceeded upper bound (market fell)">Upper \u2191</th>' +
             '<th title="Deviation triggers: ratio fell below lower bound (market rose)">Lower \u2193</th>' +
             '</tr></thead><tbody>';
@@ -361,6 +363,8 @@
                     `<td>${pct(s.cagr)}</td>` +
                     `<td>${pct(s.maxDrawdown)}</td>` +
                     `<td>${fmt2(s.sharpe)}</td>` +
+                    `<td>${pct(s.ulcerIndex)}</td>` +
+                    `<td>${fmt2(s.upi)}</td>` +
                     `<td>${trig(s.marginUpperTriggers)}</td>` +
                     `<td>${trig(s.marginLowerTriggers)}</td>` +
                     `</tr>`;

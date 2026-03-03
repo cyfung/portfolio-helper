@@ -138,6 +138,7 @@ fun Application.configureRouting() {
                 // Serialise result to JSON manually
                 fun serializeStats(s: BacktestStats) = buildString {
                     append("{\"cagr\":${s.cagr},\"maxDrawdown\":${s.maxDrawdown},\"sharpe\":${s.sharpe}")
+                    append(",\"ulcerIndex\":${s.ulcerIndex},\"upi\":${s.upi}")
                     append(",\"endingValue\":${s.endingValue}")
                     append(",\"marginUpperTriggers\":${s.marginUpperTriggers ?: "null"}")
                     append(",\"marginLowerTriggers\":${s.marginLowerTriggers ?: "null"}")
