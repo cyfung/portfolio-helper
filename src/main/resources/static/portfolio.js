@@ -400,14 +400,14 @@ function getAllocRebalTotal() {
 }
 
 function deriveMarginPct(rebalTotal) {
-    const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
+    const ec = lastPortfolioVal + lastMarginUsd;
     if (ec <= 0) return 0;
     const marginPct = (lastMarginUsd - (rebalTotal - lastPortfolioVal)) / ec * 100;
     if (marginPct >=0) return 0;
     return -marginPct;
 }
 function deriveRebalFromMarginPct(pct) {
-    const ec = lastPortfolioVal + lastMarginUsd + lastEquityUsd;
+    const ec = lastPortfolioVal + lastMarginUsd;
     return (pct / 100) * ec + lastPortfolioVal + lastMarginUsd;
 }
 
@@ -471,7 +471,7 @@ function updateMarginDisplay(marginUsd) {
     marginEl.textContent = formatDisplayCurrency(-marginUsd);
 
     const marginPctEl = document.getElementById('margin-percent');
-    const denominator = lastPortfolioVal + lastEquityUsd + lastMarginUsd;
+    const denominator = lastPortfolioVal + lastMarginUsd;
     const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
     if (marginPctEl) {
         marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
@@ -575,7 +575,6 @@ function updateCashTotals() {
     if (document.querySelectorAll('[data-cash-entry]').length === 0) return;
     let totalUsd = 0;
     let marginUsd = 0;
-    let equityUsd = 0;
     let hasUnknownFx = false;
     let hasUnknownMarginFx = false;
     document.querySelectorAll('[data-cash-entry]').forEach(row => {
@@ -597,11 +596,9 @@ function updateCashTotals() {
         }
         totalUsd += usd;
         if (row.dataset.marginFlag === 'true') marginUsd += usd;
-        if (row.dataset.equityFlag === 'true') equityUsd += usd;
     });
     cashTotalKnown = !hasUnknownFx;
     marginKnown = !hasUnknownMarginFx;
-    lastEquityUsd = equityUsd;
     lastCashTotalUsd = totalUsd;
     const cashTotalEl = document.getElementById('cash-total-usd');
     if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(totalUsd) : 'N/A';
@@ -1460,7 +1457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
-    // Must run before restoring targets so lastMarginUsd/lastEquityUsd are correct
+    // Must run before restoring targets so lastMarginUsd is correct
     updateCashTotals();
 
     // Restore saved target on page load — margin % takes priority over rebal USD

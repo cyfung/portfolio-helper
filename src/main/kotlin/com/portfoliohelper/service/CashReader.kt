@@ -14,7 +14,7 @@ object CashReader {
             return emptyList()
         }
 
-        val knownFlags = setOf("M", "E")
+        val knownFlags = setOf("M")
         val entries = mutableListOf<CashEntry>()
         file.useLines { lines ->
             for (line in lines) {
@@ -45,7 +45,6 @@ object CashReader {
                 val currency = mutableParts.last().uppercase()
                 val label = mutableParts.dropLast(1).joinToString(".")
                 val marginFlag = "M" in flags
-                val equityFlag = "E" in flags
 
                 if (currency == "P") {
                     val trimmedVal = valueStr.trim()
@@ -55,14 +54,14 @@ object CashReader {
                         logger.warn("Skipping P entry with empty portfolio reference: $key")
                         continue
                     }
-                    entries.add(CashEntry(label, "P", marginFlag, equityFlag, amount = sign, portfolioRef = portfolioId))
+                    entries.add(CashEntry(label, "P", marginFlag, amount = sign, portfolioRef = portfolioId))
                 } else {
                     val amount = valueStr.toDoubleOrNull()
                     if (amount == null) {
                         logger.warn("Skipping cash entry with non-numeric amount: $valueStr")
                         continue
                     }
-                    entries.add(CashEntry(label, currency, marginFlag, equityFlag, amount))
+                    entries.add(CashEntry(label, currency, marginFlag, amount))
                 }
             }
         }

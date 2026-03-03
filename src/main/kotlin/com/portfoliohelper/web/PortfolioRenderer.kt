@@ -119,8 +119,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         };
                         let lastMarginUsd = 0;
-                        let lastEquityUsd = 0;
-                        let lastPortfolioVal = ${"%.2f".format(portfolio.totalValue)};
+                        let lastPortfolioVal =${"%.2f".format(portfolio.totalValue)};
                         let lastPrevPortfolioVal = ${"%.2f".format(portfolio.previousTotalValue)};
                         let lastPortfolioDayChangeUsd = ${"%.2f".format(portfolio.dailyChangeDollars)};
                         let lastCashTotalUsd = ${"%.2f".format(cashTotalUsd)};
@@ -362,7 +361,6 @@ private fun TBODY.buildSummaryRows(
             }
             attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
             attributes["data-margin-flag"] = entry.marginFlag.toString()
-            attributes["data-equity-flag"] = entry.equityFlag.toString()
             if (entry.portfolioRef != null) {
                 attributes["data-portfolio-ref"] = entry.portfolioRef
                 attributes["data-portfolio-multiplier"] = entry.amount.toString()
@@ -412,9 +410,7 @@ private fun TBODY.buildSummaryRows(
         if (hasMarginEntries) {
             val marginUsd = cashEntries.filter { it.marginFlag }
                 .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-            val equityEntriesUsd = cashEntries.filter { it.equityFlag }
-                .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-            val marginDenominator = portfolio.totalValue + equityEntriesUsd + marginUsd
+            val marginDenominator = portfolio.totalValue + marginUsd
             tr(classes = "margin-row") {
                 attributes["data-margin-row"] = "true"
                 if (marginUsd >= 0) style = "display:none;"
@@ -485,8 +481,7 @@ private fun TBODY.buildSummaryRows(
     val hasMarginForTarget = cashEntries.any { it.marginFlag }
     if (hasMarginForTarget) {
         val mUsd = cashEntries.filter { it.marginFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-        val eUsd = cashEntries.filter { it.equityFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-        val mDenom = portfolio.totalValue + eUsd + mUsd
+        val mDenom = portfolio.totalValue + mUsd
         val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"
