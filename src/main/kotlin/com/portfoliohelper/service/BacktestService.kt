@@ -30,7 +30,8 @@ data class LETFComponent(val ticker: String, val multiplier: Double)
 data class LETFDefinition(
     val components: List<LETFComponent>,
     val spread: Double,                                                       // annual fraction, default 0.015
-    val rebalanceStrategy: RebalanceStrategy = RebalanceStrategy.QUARTERLY   // default Q
+    val rebalanceStrategy: RebalanceStrategy = RebalanceStrategy.QUARTERLY,  // default Q
+    val expenseRatio: Double = 0.0                                           // annual fraction, e.g. 0.02 = 2%
 ) {
     val totalMultiplier: Double get() = components.sumOf { it.multiplier }
     val borrowedRatio: Double get() = totalMultiplier - 1.0
@@ -407,6 +408,7 @@ object BacktestService {
         val components = mutableListOf<LETFComponent>()
         var spread = 0.015
         var rebalanceStrategy = RebalanceStrategy.QUARTERLY
+        var expenseRatio = 0.0
         var i = 0
         while (i < tokens.size) {
             val token = tokens[i]
@@ -423,25 +425,33 @@ object BacktestService {
                     else -> rebalanceStrategy
                 }
                 i++
+            } else if (token.startsWith("E=", ignoreCase = true)) {
+                expenseRatio = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
+                i++
             } else {
                 val multiplier = token.toDoubleOrNull()
                 if (multiplier != null && i + 1 < tokens.size) {
                     val tickerName = tokens[i + 1]
                     if (!tickerName.startsWith("S=", ignoreCase = true) &&
-                        !tickerName.startsWith("R=", ignoreCase = true)
+                        !tickerName.startsWith("R=", ignoreCase = true) &&
+                        !tickerName.startsWith("E=", ignoreCase = true)
                     ) {
                         components.add(LETFComponent(tickerName.uppercase(), multiplier))
                         i += 2
                     } else {
                         i++
                     }
+                } else if (multiplier == null) {
+                    // Bare ticker name with no leading multiplier → treat as 1x (e.g. "CTA E=2.0")
+                    components.add(LETFComponent(token.uppercase(), 1.0))
+                    i++
                 } else {
                     i++
                 }
             }
         }
         if (components.isEmpty()) throw IllegalArgumentException("No components found in LETF definition: $ticker")
-        return LETFDefinition(components, spread, rebalanceStrategy)
+        return LETFDefinition(components, spread, rebalanceStrategy, expenseRatio)
     }
 
     /**
@@ -477,7 +487,21 @@ object BacktestService {
             lowerRebalanceMode = MarginRebalanceMode.DAILY
         )
         val result = applyMarginProportional(letfConfig, componentSeriesMap, dates, effrx, mc)
-        return dates.zip(result.values).associate { (date, value) -> date to value }
+        val rawSeries = dates.zip(result.values).associate { (date, value) -> date to value }
+        if (def.expenseRatio <= 0.0) return rawSeries
+
+        // Apply expense ratio as a daily drag on NAV: each day's return is multiplied by (1 - er/252)
+        val adjusted = mutableMapOf<LocalDate, Double>()
+        var prevRaw = rawSeries[dates[0]]!!
+        var prevAdj = prevRaw
+        adjusted[dates[0]] = prevAdj
+        for (i in 1 until dates.size) {
+            val curRaw = rawSeries[dates[i]]!!
+            prevAdj *= (curRaw / prevRaw) * (1.0 - def.expenseRatio / 252.0)
+            adjusted[dates[i]] = prevAdj
+            prevRaw = curRaw
+        }
+        return adjusted
     }
 
     // ── CSV helpers ───────────────────────────────────────────────────────────
