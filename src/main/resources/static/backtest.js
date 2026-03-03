@@ -76,7 +76,16 @@
             updateWeightHint();
         }
 
-        function addMarginRow(ratio = 50, spread = 1.5, devUpper = 5, devLower = 5, mode = 'LEVERAGE_ONLY') {
+        function modeSelectHtml(cls, titleStr) {
+            return `<select class="mc-mode ${cls}" title="${titleStr}">
+                  <option value="PROPORTIONAL">Target Weight</option>
+                  <option value="CURRENT_WEIGHT">Current Weight</option>
+                  <option value="FULL_REBALANCE">Full Rebal</option>
+                  <option value="UNDERVALUED_PRIORITY">Underval First</option>
+                </select>`;
+        }
+
+        function addMarginRow(ratio = 50, spread = 1.5, devUpper = 5, devLower = 5, upperMode = 'PROPORTIONAL', lowerMode = 'PROPORTIONAL') {
             const row = document.createElement('div');
             row.className = 'margin-config-row';
             row.innerHTML = `
@@ -84,14 +93,12 @@
                 <input type="text" class="mc-spread" value="${spread}" title="Spread % (annualised)" placeholder="%" />
                 <input type="text" class="mc-dev-upper" value="${devUpper}" title="Upper Deviation %" placeholder="%" />
                 <input type="text" class="mc-dev-lower" value="${devLower}" title="Lower Deviation %" placeholder="%" />
-                <select class="mc-mode" title="Margin rebalance mode">
-                  <option value="LEVERAGE_ONLY">Lev Only</option>
-                  <option value="PROPORTIONAL">Proportional</option>
-                  <option value="FULL_REBALANCE">Full Rebal</option>
-                </select>
+                ${modeSelectHtml('mc-mode-upper', 'Upper breach rebalance mode')}
+                ${modeSelectHtml('mc-mode-lower', 'Lower breach rebalance mode')}
                 <button type="button" class="remove-margin-btn" title="Remove">✕</button>
             `;
-            row.querySelector('.mc-mode').value = mode;
+            row.querySelector('.mc-mode-upper').value = upperMode;
+            row.querySelector('.mc-mode-lower').value = lowerMode;
             row.querySelector('.remove-margin-btn').addEventListener('click', () => row.remove());
             marginRowsEl.appendChild(row);
         }
@@ -147,7 +154,8 @@
                     r(m.marginSpread),
                     r(m.marginDeviationUpper),
                     r(m.marginDeviationLower),
-                    m.rebalanceMode || 'LEVERAGE_ONLY'
+                    m.upperRebalanceMode || 'PROPORTIONAL',
+                    m.lowerRebalanceMode || 'PROPORTIONAL'
                 ));
             });
         } catch (_) { /* silently ignore */ }
@@ -172,7 +180,8 @@
                 marginSpread: (parseFloat(row.querySelector('.mc-spread').value) || 1.5) / 100,
                 marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5) / 100,
                 marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5) / 100,
-                rebalanceMode: row.querySelector('.mc-mode').value
+                upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
+                lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
             }));
             return { label, tickers, rebalanceStrategy, marginStrategies };
         }).filter(p => p.tickers.length > 0);

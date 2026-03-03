@@ -184,7 +184,8 @@ private fun DIV.portfolioBlock(idx: Int) {
                 span { +"Spread%" }
                 span { +"Dev%↑" }
                 span { +"Dev%↓" }
-                span { +"Mode" }
+                span { +"Mode↑" }
+                span { +"Mode↓" }
                 span {}
             }
             div(classes = "margin-config-rows") {}

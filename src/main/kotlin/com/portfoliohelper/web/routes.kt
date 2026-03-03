@@ -117,11 +117,16 @@ fun Application.configureRouting() {
                                 marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
                                 marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
                                 marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                                rebalanceMode = runCatching {
+                                upperRebalanceMode = runCatching {
                                     MarginRebalanceMode.valueOf(
-                                        mObj["rebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "LEVERAGE_ONLY"
+                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
                                     )
-                                }.getOrDefault(MarginRebalanceMode.LEVERAGE_ONLY)
+                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
+                                lowerRebalanceMode = runCatching {
+                                    MarginRebalanceMode.valueOf(
+                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                                    )
+                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
                             )
                         } ?: emptyList()
                     )

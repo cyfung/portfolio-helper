@@ -10,7 +10,7 @@ import kotlin.math.*
 
 enum class RebalanceStrategy { NONE, MONTHLY, QUARTERLY, YEARLY }
 
-enum class MarginRebalanceMode { LEVERAGE_ONLY, PROPORTIONAL, FULL_REBALANCE }
+enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY }
 
 data class TickerWeight(val ticker: String, val weight: Double)
 
@@ -19,7 +19,8 @@ data class MarginConfig(
     val marginSpread: Double,       // annualised fraction e.g. 0.015
     val marginDeviationUpper: Double, // upper breach threshold e.g. 0.05
     val marginDeviationLower: Double, // lower breach threshold e.g. 0.05
-    val rebalanceMode: MarginRebalanceMode = MarginRebalanceMode.LEVERAGE_ONLY
+    val upperRebalanceMode: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val lowerRebalanceMode: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL
 )
 
 data class PortfolioConfig(
@@ -98,22 +99,29 @@ object BacktestService {
             val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
 
             pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
-                val marginResult = when (mc.rebalanceMode) {
-                    MarginRebalanceMode.PROPORTIONAL, MarginRebalanceMode.FULL_REBALANCE ->
+                val marginResult =
+                    if (mc.upperRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT ||
+                        mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT)
                         applyMarginProportional(pConfig, seriesMap, globalDates, effrxSeries, mc)
-                    else ->
+                    else
                         applyMargin(noMarginValues, globalDates, effrxSeries, mc, pConfig.rebalanceStrategy)
-                }
                 val marginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), marginResult.values[i]) }
                 val marginStats = computeStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers
                 )
-                val label = when (mc.rebalanceMode) {
-                    MarginRebalanceMode.PROPORTIONAL -> "Margin ${mIdx + 1} (Prop)"
-                    MarginRebalanceMode.FULL_REBALANCE -> "Margin ${mIdx + 1} (Full)"
-                    else -> "Margin ${mIdx + 1}"
+                fun modeAbbr(m: MarginRebalanceMode) = when (m) {
+                    MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
+                    MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
+                    MarginRebalanceMode.FULL_REBALANCE -> "Full"
+                    MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
                 }
+                val uAbbr = modeAbbr(mc.upperRebalanceMode)
+                val lAbbr = modeAbbr(mc.lowerRebalanceMode)
+                val label = if (uAbbr == lAbbr)
+                    "Margin ${mIdx + 1} ($uAbbr)"
+                else
+                    "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
                 curves.add(CurveResult(label, marginPoints, marginStats))
             }
 
@@ -482,17 +490,68 @@ object BacktestService {
 
             if (deviationBreach) {
                 val newBorrowed = equity * mc.marginRatio
-                if (mc.rebalanceMode == MarginRebalanceMode.FULL_REBALANCE) {
-                    // Full rebalance: reset all holdings to target weights at new total exposure
-                    val newTotalExposure = equity + newBorrowed
-                    for (ticker in tickers) {
-                        holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
+                val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
+                when (mode) {
+                    MarginRebalanceMode.FULL_REBALANCE -> {
+                        // Full rebalance: reset all holdings to target weights at new total exposure
+                        val newTotalExposure = equity + newBorrowed
+                        for (ticker in tickers) {
+                            holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
+                        }
                     }
-                } else {
-                    // Proportional: distribute only the leverage delta by target weight
-                    val delta = newBorrowed - borrowed
-                    for (ticker in tickers) {
-                        holdings[ticker] = (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
+                    MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
+                        val delta = newBorrowed - borrowed
+                        val totalHoldings = holdings.values.sum()
+                        if (delta >= 0) {
+                            // Buying: allocate to most undervalued assets first
+                            val sortedTickers = tickers.sortedBy {
+                                (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
+                            }
+                            var remaining = delta
+                            for (ticker in sortedTickers) {
+                                if (remaining <= 0.0) break
+                                val cur = holdings[ticker] ?: 0.0
+                                val target = totalHoldings * (targetWeights[ticker] ?: 0.0)
+                                val add = minOf(remaining, maxOf(0.0, target - cur))
+                                holdings[ticker] = cur + add
+                                remaining -= add
+                            }
+                            if (remaining > 0.0) {
+                                for (ticker in tickers)
+                                    holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
+                            }
+                        } else {
+                            // Selling: trim most overvalued assets first
+                            val sortedTickers = tickers.sortedByDescending {
+                                (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
+                            }
+                            var remaining = -delta
+                            for (ticker in sortedTickers) {
+                                if (remaining <= 0.0) break
+                                val cur = holdings[ticker] ?: 0.0
+                                val target = totalHoldings * (targetWeights[ticker] ?: 0.0)
+                                val remove = minOf(remaining, maxOf(0.0, cur - target))
+                                holdings[ticker] = cur - remove
+                                remaining -= remove
+                            }
+                            if (remaining > 0.0) {
+                                for (ticker in tickers)
+                                    holdings[ticker] = (holdings[ticker] ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
+                            }
+                        }
+                    }
+                    MarginRebalanceMode.PROPORTIONAL -> {
+                        val delta = newBorrowed - borrowed
+                        for (ticker in tickers)
+                            holdings[ticker] = (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
+                    }
+                    MarginRebalanceMode.CURRENT_WEIGHT -> {
+                        // Treat portfolio as a black box: buy/sell proportionally by current value
+                        val delta = newBorrowed - borrowed
+                        val totalHoldings = holdings.values.sum()
+                        if (totalHoldings != 0.0)
+                            for (ticker in tickers)
+                                holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
                     }
                 }
                 borrowed = newBorrowed
