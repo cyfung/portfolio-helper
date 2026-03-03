@@ -61,6 +61,7 @@ eventSource.onmessage = (event) => {
                 if (data.markPrice !== null && data.markPrice !== undefined) {
                     fxRates[ccy] = data.markPrice;
                     updateCashTotals();
+                    updateIbkrDailyInterest();
                 }
                 return;
             }
