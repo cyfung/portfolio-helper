@@ -1146,7 +1146,11 @@ h1 {
 .editing-active .portfolio-table th:nth-child(12),
 .editing-active .portfolio-table td:nth-child(12),
 .editing-active .portfolio-table th:nth-child(13),
-.editing-active .portfolio-table td:nth-child(13) {
+.editing-active .portfolio-table td:nth-child(13),
+.editing-active .portfolio-table th:nth-child(14),
+.editing-active .portfolio-table td:nth-child(14),
+.editing-active .portfolio-table th:nth-child(15),
+.editing-active .portfolio-table td:nth-child(15) {
     display: none;
 }
 
