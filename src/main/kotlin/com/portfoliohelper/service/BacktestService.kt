@@ -4,9 +4,16 @@ import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.net.URI
+import java.nio.file.FileSystems
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.LocalDate
 import java.time.temporal.IsoFields
-import kotlin.math.*
+import kotlin.math.ln
+import kotlin.math.max
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -24,7 +31,7 @@ data class LETFDefinition(
     val rebalanceStrategy: RebalanceStrategy = RebalanceStrategy.QUARTERLY   // default Q
 ) {
     val totalMultiplier: Double get() = components.sumOf { it.multiplier }
-    val borrowedRatio:   Double get() = totalMultiplier - 1.0
+    val borrowedRatio: Double get() = totalMultiplier - 1.0
 }
 
 data class MarginConfig(
@@ -83,9 +90,9 @@ object BacktestService {
 
     fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
-        val toDate   = request.toDate?.let   { LocalDate.parse(it) } ?: LocalDate.now()
+        val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         val effrxSeries = loadEffrxSeries()
-        val neededFrom  = fromDate ?: LocalDate.of(1990, 1, 1)
+        val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
         // Step 1: Collect all unique LETF definitions from all portfolio tickers
         val letfDefs = mutableMapOf<String, LETFDefinition>()
@@ -153,33 +160,48 @@ object BacktestService {
             val seriesMap = allSeriesMaps[idx]
 
             val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
-            val noMarginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
-            val noMarginStats  = computeStats(noMarginValues, globalDates, effrxSeries)
+            val noMarginPoints =
+                globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
+            val noMarginStats = computeStats(noMarginValues, globalDates, effrxSeries)
             val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
 
             pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
                 val marginResult =
                     if (mc.upperRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT ||
-                        mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT)
+                        mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT
+                    )
                         applyMarginProportional(pConfig, seriesMap, globalDates, effrxSeries, mc)
                     else
-                        applyMargin(noMarginValues, globalDates, effrxSeries, mc, pConfig.rebalanceStrategy)
-                val marginPoints = globalDates.mapIndexed { i, d -> DataPoint(d.toString(), marginResult.values[i]) }
-                val marginStats  = computeStats(
+                        applyMargin(
+                            noMarginValues,
+                            globalDates,
+                            effrxSeries,
+                            mc,
+                            pConfig.rebalanceStrategy
+                        )
+                val marginPoints = globalDates.mapIndexed { i, d ->
+                    DataPoint(
+                        d.toString(),
+                        marginResult.values[i]
+                    )
+                }
+                val marginStats = computeStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers
                 )
+
                 fun modeAbbr(m: MarginRebalanceMode) = when (m) {
-                    MarginRebalanceMode.CURRENT_WEIGHT       -> "Cur Wt"
-                    MarginRebalanceMode.PROPORTIONAL         -> "Tgt Wt"
-                    MarginRebalanceMode.FULL_REBALANCE       -> "Full"
+                    MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
+                    MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
+                    MarginRebalanceMode.FULL_REBALANCE -> "Full"
                     MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
-                    MarginRebalanceMode.DAILY                -> "Daily"
+                    MarginRebalanceMode.DAILY -> "Daily"
                 }
+
                 val uAbbr = modeAbbr(mc.upperRebalanceMode)
                 val lAbbr = modeAbbr(mc.lowerRebalanceMode)
                 val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
-                            else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
+                else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
                 curves.add(CurveResult(label, marginPoints, marginStats))
             }
             PortfolioResult(pConfig.label, curves)
@@ -190,11 +212,33 @@ object BacktestService {
 
     // ── Ticker data loading ───────────────────────────────────────────────────
 
+
+    private fun getResourceFiles(path: String): List<String> {
+        val url = object {}.javaClass.classLoader.getResource(path) ?: return emptyList()
+        val uri = url.toURI()
+        val dirPath: Path = if (uri.scheme == "jar") {
+            val fs = try {
+                FileSystems.newFileSystem(uri, emptyMap<String, Any>())
+            } catch (_: java.nio.file.FileSystemAlreadyExistsException) {
+                FileSystems.getFileSystem(uri)
+            }
+            fs.getPath("/$path")
+        } else {
+            java.nio.file.Paths.get(uri)
+        }
+        return Files.list(dirPath).use { stream ->
+            stream.map { it.fileName.toString() }.toList()
+        }
+    }
+
     /**
      * Loads (or fetches) a normalised series for a ticker.
      * Normalised means the series values are chain-linked returns starting at 10 000.
      */
-    private fun loadNormalizedSeries(ticker: String, neededFromDate: LocalDate): Map<LocalDate, Double> {
+    private fun loadNormalizedSeries(
+        ticker: String,
+        neededFromDate: LocalDate
+    ): Map<LocalDate, Double> {
         require(!ticker.contains(' ')) {
             "loadNormalizedSeries called with LETF string '$ticker' — LETF series must be pre-computed via computeLetfSeries"
         }
@@ -203,10 +247,7 @@ object BacktestService {
         val simPattern = Regex("${upperTicker}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
 
         // Find latest SIM file
-        val existingFiles = tickerDir.listFiles()
-            ?.filter { simPattern.matches(it.name) }
-            ?.sortedByDescending { it.name }
-            ?: emptyList()
+        val existingFiles = findOrCopyFromResources(simPattern)
 
         if (existingFiles.isNotEmpty()) {
             val latestFile = existingFiles.first()
@@ -247,14 +288,30 @@ object BacktestService {
         }
     }
 
+    private fun findOrCopyFromResources(simPattern: Regex): List<File> =
+        findFiles(simPattern).ifEmpty {
+            // find and copy from resource folder if missing
+            val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
+                simPattern.matches(it)
+            } ?: return@ifEmpty emptyList()
+            logger.info("ticker {} found in resource", resourcesFile)
+            val cl = object {}::class.java.classLoader
+            cl.getResourceAsStream("data/.ticker/$resourcesFile")
+                ?.use { Files.copy(it, tickerDir.toPath().resolve(resourcesFile)) }
+            findFiles(simPattern)
+        }
+
+    private fun findFiles(simPattern: Regex): List<File> = (tickerDir.listFiles()
+        ?.filter { simPattern.matches(it.name) }
+        ?.sortedByDescending { it.name }
+        ?: emptyList())
+
     /** Loads EFFRX from the latest SIM file (no Yahoo extension). Returns empty map if not found. */
     private fun loadEffrxSeries(): Map<LocalDate, Double> {
         tickerDir.mkdirs()
         val simPattern = Regex("EFFRX-(\\d{4}-\\d{2}-\\d{2})\\.csv")
-        val latest = tickerDir.listFiles()
-            ?.filter { simPattern.matches(it.name) }
-            ?.sortedByDescending { it.name }
-            ?.firstOrNull()
+        val latest = findOrCopyFromResources(simPattern)
+            .firstOrNull()
             ?: return emptyMap()
         logger.info("Loading EFFRX from ${latest.name}")
         return readSimCsv(latest)
@@ -295,7 +352,8 @@ object BacktestService {
                 if (multiplier != null && i + 1 < tokens.size) {
                     val tickerName = tokens[i + 1]
                     if (!tickerName.startsWith("S=", ignoreCase = true) &&
-                        !tickerName.startsWith("R=", ignoreCase = true)) {
+                        !tickerName.startsWith("R=", ignoreCase = true)
+                    ) {
                         components.add(LETFComponent(tickerName.uppercase(), multiplier))
                         i += 2
                     } else {
@@ -355,7 +413,8 @@ object BacktestService {
             br.forEachLine { line ->
                 val cols = line.split(",")
                 if (cols.size >= 2) {
-                    val date = runCatching { LocalDate.parse(cols[0].trim()) }.getOrNull() ?: return@forEachLine
+                    val date = runCatching { LocalDate.parse(cols[0].trim()) }.getOrNull()
+                        ?: return@forEachLine
                     val value = cols[1].trim().toDoubleOrNull() ?: return@forEachLine
                     result[date] = value
                 }
@@ -396,15 +455,18 @@ object BacktestService {
         val pivotYahooPrice = yahoo[pivotDate] ?: return result
 
         // Find the last sim value
-        val lastSimValue = existing[lastSimDate] ?: existing.keys.filter { it <= lastSimDate }.maxOrNull()
-            ?.let { existing[it] } ?: return result
+        val lastSimValue =
+            existing[lastSimDate] ?: existing.keys.filter { it <= lastSimDate }.maxOrNull()
+                ?.let { existing[it] } ?: return result
 
         var prevYahoo = pivotYahooPrice
         var prevValue = lastSimValue
 
         for (date in sortedYahooDates) {
             val currentYahoo = yahoo[date] ?: continue
-            if (prevYahoo == 0.0) { prevYahoo = currentYahoo; continue }
+            if (prevYahoo == 0.0) {
+                prevYahoo = currentYahoo; continue
+            }
             val ret = currentYahoo / prevYahoo
             val newValue = prevValue * ret
             result[date] = newValue
@@ -415,7 +477,10 @@ object BacktestService {
     }
 
     /** Normalises a raw price series so the first value equals [startValue]. */
-    private fun normalizeFromFirst(raw: Map<LocalDate, Double>, startValue: Double): Map<LocalDate, Double> {
+    private fun normalizeFromFirst(
+        raw: Map<LocalDate, Double>,
+        startValue: Double
+    ): Map<LocalDate, Double> {
         val sorted = raw.keys.sorted()
         val firstPrice = raw[sorted.first()] ?: return emptyMap()
         return sorted.associateWith { date -> raw[date]!! / firstPrice * startValue }
@@ -487,13 +552,16 @@ object BacktestService {
         prevDate: LocalDate,
         curDate: LocalDate
     ): Boolean = when (strategy) {
-        RebalanceStrategy.NONE      -> false
-        RebalanceStrategy.DAILY     -> true
-        RebalanceStrategy.WEEKLY    -> curDate.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR) != prevDate.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR)
-                                       || curDate.year != prevDate.year
-        RebalanceStrategy.MONTHLY   -> curDate.month != prevDate.month
+        RebalanceStrategy.NONE -> false
+        RebalanceStrategy.DAILY -> true
+        RebalanceStrategy.WEEKLY -> curDate.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR) != prevDate.get(
+            IsoFields.WEEK_OF_WEEK_BASED_YEAR
+        )
+                || curDate.year != prevDate.year
+
+        RebalanceStrategy.MONTHLY -> curDate.month != prevDate.month
         RebalanceStrategy.QUARTERLY -> ((curDate.monthValue - 1) / 3) != ((prevDate.monthValue - 1) / 3)
-        RebalanceStrategy.YEARLY    -> curDate.year != prevDate.year
+        RebalanceStrategy.YEARLY -> curDate.year != prevDate.year
     }
 
     // ── Margin computation ────────────────────────────────────────────────────
@@ -660,13 +728,15 @@ object BacktestService {
                                 holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
                             }
                         }
+
                         MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
                             val delta = newBorrowed - borrowed
                             val totalHoldings = holdings.values.sum()
                             if (delta >= 0) {
                                 // Buying: allocate to most undervalued assets first
                                 val sortedTickers = tickers.sortedBy {
-                                    (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
+                                    (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it]
+                                        ?: 0.0)
                                 }
                                 var remaining = delta
                                 for (ticker in sortedTickers) {
@@ -679,12 +749,14 @@ object BacktestService {
                                 }
                                 if (remaining > 0.0) {
                                     for (ticker in tickers)
-                                        holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
+                                        holdings[ticker] = (holdings[ticker]
+                                            ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
                                 }
                             } else {
                                 // Selling: trim most overvalued assets first
                                 val sortedTickers = tickers.sortedByDescending {
-                                    (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it] ?: 0.0)
+                                    (holdings[it] ?: 0.0) / totalHoldings - (targetWeights[it]
+                                        ?: 0.0)
                                 }
                                 var remaining = -delta
                                 for (ticker in sortedTickers) {
@@ -697,24 +769,32 @@ object BacktestService {
                                 }
                                 if (remaining > 0.0) {
                                     for (ticker in tickers)
-                                        holdings[ticker] = (holdings[ticker] ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
+                                        holdings[ticker] = (holdings[ticker]
+                                            ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
                                 }
                             }
                         }
+
                         MarginRebalanceMode.PROPORTIONAL -> {
                             val delta = newBorrowed - borrowed
                             for (ticker in tickers)
-                                holdings[ticker] = (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
+                                holdings[ticker] =
+                                    (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker]
+                                        ?: 0.0)
                         }
+
                         MarginRebalanceMode.CURRENT_WEIGHT -> {
                             // Treat portfolio as a black box: buy/sell proportionally by current value
                             val delta = newBorrowed - borrowed
                             val totalHoldings = holdings.values.sum()
                             if (totalHoldings != 0.0)
                                 for (ticker in tickers)
-                                    holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
+                                    holdings[ticker] =
+                                        (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
                         }
-                        MarginRebalanceMode.DAILY -> { /* handled above */ }
+
+                        MarginRebalanceMode.DAILY -> { /* handled above */
+                        }
                     }
                     borrowed = newBorrowed
                 }
