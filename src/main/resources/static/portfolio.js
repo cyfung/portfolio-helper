@@ -991,6 +991,14 @@ document.addEventListener('DOMContentLoaded', () => {
         editToggle.classList.toggle('active');
 
         if (isEditing) {
+            // Reset cash edit table inputs to original values
+            document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
+                const keyInput = tr.querySelector('.cash-edit-key');
+                const valInput = tr.querySelector('.cash-edit-value');
+                if (keyInput) keyInput.value = keyInput.getAttribute('data-original-key') || '';
+                if (valInput) valInput.value = valInput.getAttribute('data-original-value') || '';
+            });
+
             // Populate symbol inputs
             document.querySelectorAll('.edit-symbol').forEach(input => {
                 const sym = input.getAttribute('data-original-symbol');
