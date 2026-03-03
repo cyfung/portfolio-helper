@@ -999,6 +999,12 @@ document.addEventListener('DOMContentLoaded', () => {
         editToggle.classList.toggle('active');
 
         if (isEditing) {
+            // Populate symbol inputs
+            document.querySelectorAll('.edit-symbol').forEach(input => {
+                const sym = input.getAttribute('data-original-symbol');
+                input.value = sym;
+            });
+
             // Populate stock qty inputs from current display values
             document.querySelectorAll('.edit-qty').forEach(input => {
                 const sym = input.getAttribute('data-symbol');
