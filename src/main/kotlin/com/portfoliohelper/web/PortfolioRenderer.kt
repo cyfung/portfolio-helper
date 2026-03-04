@@ -512,7 +512,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         unsafe { raw(COPY_ICON_SVG) }
                     }
                 }
-                th {
+                th(classes = "col-num") {
                     +"Qty"
                     button(classes = "copy-col-btn") {
                         attributes["data-column"] = "qty"
@@ -521,14 +521,14 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         unsafe { raw(COPY_ICON_SVG) }
                     }
                 }
-                th { +"Last NAV" }
-                th { +"Est Val" }
-                th { +"Last" }
-                th { +"Mark" }
-                th { +"Day Chg" }
-                th { +"Day %" }
-                th { +"Mkt Val" }
-                th { +"Mkt Val Chg" }
+                th(classes = "col-num col-market-data") { +"Last NAV" }
+                th(classes = "col-num col-market-data") { +"Est Val" }
+                th(classes = "col-num col-market-data") { +"Last" }
+                th(classes = "col-num col-market-data") { +"Mark" }
+                th(classes = "col-num col-market-data") { +"Day Chg" }
+                th(classes = "col-num col-market-data") { +"Day %" }
+                th(classes = "col-num col-market-data") { +"Mkt Val" }
+                th(classes = "col-num col-market-data") { +"Mkt Val Chg" }
                 th(classes = "rebal-column") { +"Weight" }
                 th(classes = "rebal-column") { +"Rebal $" }
                 th(classes = "rebal-column") { +"Rebal Qty" }
@@ -587,7 +587,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Last NAV
-                    td(classes = if (stock.lastNav != null) "price loaded muted" else "price muted") {
+                    td(classes = if (stock.lastNav != null) "col-market-data price loaded muted" else "col-market-data price muted") {
                         id = "nav-${stock.label}"
                         if (stock.lastNav != null) {
                             +"$%.2f".format(stock.lastNav)
@@ -600,13 +600,13 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     val estValText: String? =
                         estVal(stock)
 
-                    td(classes = if (estValText != null) "price loaded" else "price") {
+                    td(classes = if (estValText != null) "col-market-data price loaded" else "col-market-data price") {
                         id = "est-val-${stock.label}"
                         +(estValText ?: "—")
                     }
 
                     // Last Close Price
-                    td(classes = if (stock.lastClosePrice != null) "price loaded" else "price") {
+                    td(classes = if (stock.lastClosePrice != null) "col-market-data price loaded" else "col-market-data price") {
                         id = "close-${stock.label}"
                         if (stock.lastClosePrice != null) {
                             +"$%.2f".format(stock.lastClosePrice)
@@ -616,7 +616,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Mark Price
-                    td(classes = if (stock.markPrice != null) "price loaded" else "price") {
+                    td(classes = if (stock.markPrice != null) "col-market-data price loaded" else "col-market-data price") {
                         id = "mark-${stock.label}"
                         if (stock.markPrice != null) {
                             +"$%.2f".format(stock.markPrice)
@@ -631,7 +631,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         if (isZeroChange) "neutral" else stock.priceChangeDirection
                     val afterHoursClass = if (stock.isMarketClosed) "after-hours" else ""
 
-                    td(classes = "price-change $changeDirection $afterHoursClass") {
+                    td(classes = "col-market-data price-change $changeDirection $afterHoursClass") {
                         id = "day-change-${stock.label}"
                         if (stock.priceChangeDollars != null) {
                             if (isZeroChange) {
@@ -646,7 +646,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Day % (% change)
-                    td(classes = "price-change $changeDirection $afterHoursClass") {
+                    td(classes = "col-market-data price-change $changeDirection $afterHoursClass") {
                         id = "day-percent-${stock.label}"
                         if (stock.priceChangePercent != null) {
                             if (isZeroChange) {
@@ -661,7 +661,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Mkt Val (Total Value)
-                    td(classes = if (stock.value != null) "value loaded" else "value") {
+                    td(classes = if (stock.value != null) "col-market-data value loaded" else "col-market-data value") {
                         id = "value-${stock.label}"
                         if (stock.value != null) {
                             +"$%,.2f".format(stock.value)
@@ -671,7 +671,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Mkt Val Chg (Position value change)
-                    td(classes = "price-change $changeDirection $afterHoursClass") {
+                    td(classes = "col-market-data price-change $changeDirection $afterHoursClass") {
                         id = "position-change-${stock.label}"
                         if (stock.positionChangeDollars != null) {
                             if (isZeroChange) {
@@ -787,16 +787,17 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
         tfoot {
             tr {
                 val totalWeight = portfolio.stocks.sumOf { it.targetWeight ?: 0.0 }
+                td(classes = "edit-column") {}
                 td { +"Total" }
                 td {}
-                td {}
-                td {}
-                td {}
-                td {}
-                td {}
-                td {}
-                td {}
-                td {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
+                td(classes = "col-market-data") {}
                 td(classes = "rebal-column") {}
                 td(classes = "rebal-column") {}
                 td(classes = "rebal-column") {}

@@ -115,13 +115,14 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
         if (changeCell) {
             if (isZeroChange) {
                 changeCell.textContent = '—';
-                changeCell.className = 'price-change loaded neutral' + afterHoursClass;
             } else {
                 const sign = changeDollars >= 0 ? '+' : '-';
                 changeCell.textContent = sign + '$' + Math.abs(changeDollars).toFixed(2);
-                const direction = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
-                changeCell.className = 'price-change loaded ' + direction + afterHoursClass;
             }
+            const dir = isZeroChange ? 'neutral' : (changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral');
+            changeCell.classList.remove('positive', 'negative', 'neutral', 'after-hours');
+            changeCell.classList.add('loaded', dir);
+            if (isMarketClosed) changeCell.classList.add('after-hours');
         }
 
         // Update day change % cell
@@ -129,13 +130,14 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
         if (changePercentCell) {
             if (isZeroChange) {
                 changePercentCell.textContent = '—';
-                changePercentCell.className = 'price-change loaded neutral' + afterHoursClass;
             } else {
                 const sign = changePercent >= 0 ? '+' : '-';
                 changePercentCell.textContent = sign + Math.abs(changePercent).toFixed(2) + '%';
-                const direction = changePercent > 0 ? 'positive' : changePercent < 0 ? 'negative' : 'neutral';
-                changePercentCell.className = 'price-change loaded ' + direction + afterHoursClass;
             }
+            const dir = isZeroChange ? 'neutral' : (changePercent > 0 ? 'positive' : changePercent < 0 ? 'negative' : 'neutral');
+            changePercentCell.classList.remove('positive', 'negative', 'neutral', 'after-hours');
+            changePercentCell.classList.add('loaded', dir);
+            if (isMarketClosed) changePercentCell.classList.add('after-hours');
         }
 
         // Update position value change (Mkt Val Chg)
@@ -148,12 +150,13 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
             if (positionChangeCell) {
                 if (isZeroChange) {
                     positionChangeCell.textContent = '—';
-                    positionChangeCell.className = 'price-change loaded neutral' + afterHoursClass;
                 } else {
                     positionChangeCell.textContent = formatSignedCurrency(positionChange);
-                    const direction = positionChange > 0 ? 'positive' : positionChange < 0 ? 'negative' : 'neutral';
-                    positionChangeCell.className = 'price-change loaded ' + direction + afterHoursClass;
                 }
+                const dir = isZeroChange ? 'neutral' : (positionChange > 0 ? 'positive' : positionChange < 0 ? 'negative' : 'neutral');
+                positionChangeCell.classList.remove('positive', 'negative', 'neutral', 'after-hours');
+                positionChangeCell.classList.add('loaded', dir);
+                if (isMarketClosed) positionChangeCell.classList.add('after-hours');
             }
         }
     }
@@ -202,12 +205,13 @@ function updateTotalValue() {
     // Calculate current total and previous day's total
     document.querySelectorAll('tbody tr').forEach(row => {
         if (row.dataset.deleted) return;
-        const symbol = row.querySelector('td:first-child').textContent.trim();
-        const amountCell = document.getElementById('amount-' + symbol);
+        const amountCell = row.querySelector('td.amount[id]');
+        if (!amountCell) return;
+        const symbol = amountCell.id.replace('amount-', '');
         const markCell = document.getElementById('mark-' + symbol);
         const closeCell = document.getElementById('close-' + symbol);
 
-        if (amountCell && markCell && closeCell) {
+        if (markCell && closeCell) {
             const amount = parseFloat(amountCell.textContent);
             const markPrice = rawMarkPrices[symbol] ?? parsePrice(markCell.textContent);
             const closePrice = rawClosePrices[symbol] ?? parsePrice(closeCell.textContent);

@@ -518,20 +518,10 @@ h1 {
     white-space: nowrap;
 }
 
-/* Right-align numeric columns (Qty through Alloc Qty) */
-.portfolio-table th:nth-child(3),
-.portfolio-table th:nth-child(4),
-.portfolio-table th:nth-child(5),
-.portfolio-table th:nth-child(6),
-.portfolio-table th:nth-child(7),
-.portfolio-table th:nth-child(8),
-.portfolio-table th:nth-child(9),
-.portfolio-table th:nth-child(10),
-.portfolio-table th:nth-child(11),
-.portfolio-table th:nth-child(12),
-.portfolio-table th:nth-child(13),
-.portfolio-table th:nth-child(14),
-.portfolio-table th:nth-child(15) {
+/* Right-align numeric columns */
+.portfolio-table th.col-num,
+.portfolio-table th.rebal-column,
+.portfolio-table th.alloc-column {
     text-align: right;
 }
 
@@ -1143,34 +1133,10 @@ h1 {
 .portfolio-table tbody tr.drag-over-top td { border-top: 2px solid var(--color-accent-primary); }
 .portfolio-table tbody tr.drag-over-bottom td { border-bottom: 2px solid var(--color-accent-primary); }
 
-/* In edit mode, hide non-essential columns (Last NAV, Est Val, Last, Mark, Day Chg, Day %, Mkt Val, Mkt Val Chg, Weight, Rebal $, Rebal Shares) */
-/* Columns: 1=drag-handle, 2=Symbol, 3=Qty, 4=Last NAV, 5=Est Val, 6=Last, 7=Mark, 8=Day Chg, 9=Day %, 10=Mkt Val, 11=Mkt Val Chg, 12=Weight, 13=Rebal $, 14=Rebal Shares, 15=Alloc $, 16=Alloc Qty */
-.editing-active .portfolio-table th:nth-child(4),
-.editing-active .portfolio-table td:nth-child(4),
-.editing-active .portfolio-table th:nth-child(5),
-.editing-active .portfolio-table td:nth-child(5),
-.editing-active .portfolio-table th:nth-child(6),
-.editing-active .portfolio-table td:nth-child(6),
-.editing-active .portfolio-table th:nth-child(7),
-.editing-active .portfolio-table td:nth-child(7),
-.editing-active .portfolio-table th:nth-child(8),
-.editing-active .portfolio-table td:nth-child(8),
-.editing-active .portfolio-table th:nth-child(9),
-.editing-active .portfolio-table td:nth-child(9),
-.editing-active .portfolio-table th:nth-child(10),
-.editing-active .portfolio-table td:nth-child(10),
-.editing-active .portfolio-table th:nth-child(11),
-.editing-active .portfolio-table td:nth-child(11),
-.editing-active .portfolio-table th:nth-child(12),
-.editing-active .portfolio-table td:nth-child(12),
-.editing-active .portfolio-table th:nth-child(13),
-.editing-active .portfolio-table td:nth-child(13),
-.editing-active .portfolio-table th:nth-child(14),
-.editing-active .portfolio-table td:nth-child(14),
-.editing-active .portfolio-table th:nth-child(15),
-.editing-active .portfolio-table td:nth-child(15),
-.editing-active .portfolio-table th:nth-child(16),
-.editing-active .portfolio-table td:nth-child(16) {
+/* In edit mode, hide non-essential columns (Last NAV, Est Val, Last, Mark, Day Chg, Day %, Mkt Val, Mkt Val Chg, Weight, Rebal $, Rebal Shares, Alloc $, Alloc Qty) */
+.editing-active .portfolio-table .col-market-data,
+.editing-active .portfolio-table .rebal-column,
+.editing-active .portfolio-table .alloc-column {
     display: none;
 }
 
