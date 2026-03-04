@@ -12,3 +12,4 @@ build/libs/*-all.jar
 build/launch4j/
 *.exe
 /.kotlin/
+/tws-client/build/

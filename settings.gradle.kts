@@ -3,3 +3,5 @@ plugins {
 }
 
 rootProject.name = "portfolio-helper"
+
+include("tws-client")
