@@ -1749,7 +1749,12 @@ function initDragAndDrop() {
         const row = e.target.closest('tr');
         tbody.querySelectorAll('.drag-over-top, .drag-over-bottom')
              .forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
-        if (!row || row === dragRow || row.dataset.deleted) return;
+        if (!row || row === dragRow || row.dataset.deleted) {
+            // Cursor is over tbody gap or a deleted row — highlight last non-deleted row's bottom
+            const rows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])')).filter(r => r !== dragRow);
+            if (rows.length) rows[rows.length - 1].classList.add('drag-over-bottom');
+            return;
+        }
         const rect = row.getBoundingClientRect();
         row.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bottom');
     });
@@ -1761,6 +1766,8 @@ function initDragAndDrop() {
         if (row && row !== dragRow && !row.dataset.deleted) {
             const rect = row.getBoundingClientRect();
             tbody.insertBefore(dragRow, e.clientY < rect.top + rect.height / 2 ? row : row.nextSibling);
+        } else if (!row || row.dataset.deleted) {
+            tbody.appendChild(dragRow);
         }
         cleanup();
     });
