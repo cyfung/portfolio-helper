@@ -502,6 +502,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
     table(classes = "portfolio-table") {
         thead {
             tr {
+                th(classes = "edit-column drag-handle-col") { }
                 th {
                     +"Symbol"
                     button(classes = "copy-col-btn") {
@@ -552,6 +553,14 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     if (stock.letfComponents != null) {
                         attributes["data-letf"] =
                             stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
+                    }
+
+                    // Drag handle (edit mode only)
+                    td(classes = "edit-column drag-handle-cell") {
+                        span(classes = "drag-handle") {
+                            attributes["draggable"] = "true"
+                            +"⠿"
+                        }
                     }
 
                     // Symbol (editable in edit mode)

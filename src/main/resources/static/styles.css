@@ -518,8 +518,7 @@ h1 {
     white-space: nowrap;
 }
 
-/* Right-align numeric columns (Qty through Rebal Shares) */
-.portfolio-table th:nth-child(2),
+/* Right-align numeric columns (Qty through Alloc Qty) */
 .portfolio-table th:nth-child(3),
 .portfolio-table th:nth-child(4),
 .portfolio-table th:nth-child(5),
@@ -531,7 +530,8 @@ h1 {
 .portfolio-table th:nth-child(11),
 .portfolio-table th:nth-child(12),
 .portfolio-table th:nth-child(13),
-.portfolio-table th:nth-child(14) {
+.portfolio-table th:nth-child(14),
+.portfolio-table th:nth-child(15) {
     text-align: right;
 }
 
@@ -1123,10 +1123,28 @@ h1 {
     -moz-appearance: textfield;
 }
 
+/* Drag handle column */
+.drag-handle-col,
+.drag-handle-cell {
+    width: 20px;
+    padding: 0 4px;
+    text-align: center;
+}
+
+.drag-handle {
+    color: var(--color-text-tertiary);
+    cursor: grab;
+    user-select: none;
+    opacity: 0.5;
+}
+
+.drag-handle:hover { opacity: 1; }
+.editing-active .portfolio-table tbody tr.dragging { opacity: 0.4; }
+.portfolio-table tbody tr.drag-over-top td { border-top: 2px solid var(--color-accent-primary); }
+.portfolio-table tbody tr.drag-over-bottom td { border-bottom: 2px solid var(--color-accent-primary); }
+
 /* In edit mode, hide non-essential columns (Last NAV, Est Val, Last, Mark, Day Chg, Day %, Mkt Val, Mkt Val Chg, Weight, Rebal $, Rebal Shares) */
-/* Columns: 1=Symbol, 2=Qty, 3=Last NAV, 4=Est Val, 5=Last, 6=Mark, 7=Day Chg, 8=Day %, 9=Mkt Val, 10=Mkt Val Chg, 11=Weight, 12=Rebal $, 13=Rebal Shares, 14=Target % */
-.editing-active .portfolio-table th:nth-child(3),
-.editing-active .portfolio-table td:nth-child(3),
+/* Columns: 1=drag-handle, 2=Symbol, 3=Qty, 4=Last NAV, 5=Est Val, 6=Last, 7=Mark, 8=Day Chg, 9=Day %, 10=Mkt Val, 11=Mkt Val Chg, 12=Weight, 13=Rebal $, 14=Rebal Shares, 15=Alloc $, 16=Alloc Qty */
 .editing-active .portfolio-table th:nth-child(4),
 .editing-active .portfolio-table td:nth-child(4),
 .editing-active .portfolio-table th:nth-child(5),
@@ -1150,7 +1168,9 @@ h1 {
 .editing-active .portfolio-table th:nth-child(14),
 .editing-active .portfolio-table td:nth-child(14),
 .editing-active .portfolio-table th:nth-child(15),
-.editing-active .portfolio-table td:nth-child(15) {
+.editing-active .portfolio-table td:nth-child(15),
+.editing-active .portfolio-table th:nth-child(16),
+.editing-active .portfolio-table td:nth-child(16) {
     display: none;
 }
 

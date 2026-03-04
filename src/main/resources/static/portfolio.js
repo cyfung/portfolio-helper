@@ -932,6 +932,7 @@ function updateTargetWeightTotal() {
 // ── HTML templates and helpers for dynamically added rows ─────────────────────
 
 const STOCK_ROW_HTML =
+    '<td class="edit-column drag-handle-cell"><span class="drag-handle" draggable="true">⠿</span></td>' +
     '<td><input type="text" class="edit-input new-symbol-input" data-column="symbol" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
     '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
     '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
@@ -1725,6 +1726,54 @@ function initBackupPanel() {
     }
 }
 
+// ── Drag-and-drop row reordering ──────────────────────────────────────────────
+
+function initDragAndDrop() {
+    const tbody = document.querySelector('.portfolio-table tbody');
+    if (!tbody) return;
+    let dragRow = null;
+
+    tbody.addEventListener('dragstart', e => {
+        if (!document.body.classList.contains('editing-active')) return;
+        const handle = e.target.closest('.drag-handle');
+        if (!handle) { e.preventDefault(); return; }
+        dragRow = handle.closest('tr');
+        dragRow.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', '');
+    });
+
+    tbody.addEventListener('dragover', e => {
+        if (!dragRow) return;
+        e.preventDefault();
+        const row = e.target.closest('tr');
+        tbody.querySelectorAll('.drag-over-top, .drag-over-bottom')
+             .forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom'));
+        if (!row || row === dragRow || row.dataset.deleted) return;
+        const rect = row.getBoundingClientRect();
+        row.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bottom');
+    });
+
+    tbody.addEventListener('drop', e => {
+        if (!dragRow) return;
+        e.preventDefault();
+        const row = e.target.closest('tr');
+        if (row && row !== dragRow && !row.dataset.deleted) {
+            const rect = row.getBoundingClientRect();
+            tbody.insertBefore(dragRow, e.clientY < rect.top + rect.height / 2 ? row : row.nextSibling);
+        }
+        cleanup();
+    });
+
+    tbody.addEventListener('dragend', cleanup);
+
+    function cleanup() {
+        tbody.querySelectorAll('tr').forEach(r =>
+            r.classList.remove('drag-over-top', 'drag-over-bottom', 'dragging'));
+        dragRow = null;
+    }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1735,6 +1784,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCurrencyControls();
     initRebalanceControls();
     initBackupPanel();
+    initDragAndDrop();
 
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
     // Must run before restoring targets so lastMarginUsd is correct
