@@ -74,6 +74,11 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                         }
                     }
 
+                    div {
+                        id = "saved-portfolios-bar"
+                        style = "display:none;"
+                    }
+
                     // 3-column portfolio blocks
                     div(classes = "portfolio-blocks") {
                         for (idx in 0..2) {
@@ -115,7 +120,14 @@ private fun DIV.portfolioBlock(idx: Int) {
 
         // Label
         div(classes = "backtest-section") {
-            label { +"Label" }
+            div(classes = "backtest-section-header") {
+                label { +"Label" }
+                button(classes = "save-portfolio-btn") {
+                    attributes["type"] = "button"
+                    attributes["disabled"] = "disabled"
+                    +"Save"
+                }
+            }
             input(type = InputType.text) {
                 classes = setOf("portfolio-label")
                 placeholder = "Portfolio ${idx + 1}"

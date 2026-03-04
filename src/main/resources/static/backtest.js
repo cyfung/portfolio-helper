@@ -103,6 +103,48 @@
         marginRowsEl.appendChild(row);
     }
 
+    // ── Block config helpers ──────────────────────────────────────────────────
+
+    function collectBlockConfig(blockIdx) {
+        const block = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
+        const tickers = [...block.querySelectorAll('.backtest-ticker-row')].map(row => ({
+            ticker: row.querySelector('.ticker-input').value.trim().toUpperCase(),
+            weight: parseFloat(row.querySelector('.weight-input').value) || 0
+        })).filter(t => t.ticker);
+        const rebalanceStrategy = block.querySelector('.rebalance-select').value;
+        const marginStrategies = [...block.querySelectorAll('.margin-config-row')].map(row => ({
+            marginRatio: (parseFloat(row.querySelector('.mc-ratio').value) || 0) / 100,
+            marginSpread: (parseFloat(row.querySelector('.mc-spread').value) || 1.5) / 100,
+            marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5) / 100,
+            marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5) / 100,
+            upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
+            lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
+        }));
+        return { tickers, rebalanceStrategy, marginStrategies };
+    }
+
+    function loadPortfolioIntoBlock(blockIdx, config, name) {
+        const block = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
+        const labelInput = block.querySelector('.portfolio-label');
+        if (name != null) labelInput.value = name;
+        block.querySelector('.ticker-rows').innerHTML = '';
+        (config.tickers || []).forEach(t => addTickerRow(blockIdx, t.ticker, t.weight));
+        block.querySelector('.rebalance-select').value = config.rebalanceStrategy || 'YEARLY';
+        block.querySelector('.margin-config-rows').innerHTML = '';
+        const r = v => Math.round(v * 10000) / 100;
+        (config.marginStrategies || []).forEach(m =>
+            addMarginRow(blockIdx, r(m.marginRatio), r(m.marginSpread),
+                r(m.marginDeviationUpper), r(m.marginDeviationLower),
+                m.upperRebalanceMode || 'PROPORTIONAL', m.lowerRebalanceMode || 'PROPORTIONAL'));
+        updateSaveBtn(block);
+    }
+
+    function updateSaveBtn(block) {
+        const btn = block.querySelector('.save-portfolio-btn');
+        const val = block.querySelector('.portfolio-label').value.trim();
+        btn.disabled = !val;
+    }
+
     // ── Block initialisation ──────────────────────────────────────────────────
 
     function initBlock(blockIdx) {
@@ -110,6 +152,8 @@
         const tickerRowsEl = block.querySelector('.ticker-rows');
         const addTickerBtn = block.querySelector('.add-ticker-btn');
         const addMarginBtn = block.querySelector('.add-margin-btn');
+        const labelInput = block.querySelector('.portfolio-label');
+        const saveBtn = block.querySelector('.save-portfolio-btn');
 
         // Wire up listeners for any rows that were server-rendered into the HTML
         tickerRowsEl.querySelectorAll('.backtest-ticker-row').forEach(row => {
@@ -124,10 +168,91 @@
 
         addTickerBtn.addEventListener('click', () => addTickerRow(blockIdx));
         addMarginBtn.addEventListener('click', () => addMarginRow(blockIdx));
+
+        labelInput.addEventListener('input', () => updateSaveBtn(block));
+
+        saveBtn.addEventListener('click', async () => {
+            const name = labelInput.value.trim();
+            if (!name) return;
+            const config = collectBlockConfig(blockIdx);
+            const res = await fetch('/api/backtest/savedPortfolios', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, config })
+            });
+            if (res.ok) refreshSavedPortfolios();
+        });
+
+        // Drag-and-drop: accept chips dropped onto this block
+        block.addEventListener('dragover', e => {
+            if (document.querySelector('.saved-portfolio-chip[draggable="true"]')) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                block.classList.add('drag-over');
+            }
+        });
+        block.addEventListener('dragleave', () => block.classList.remove('drag-over'));
+        block.addEventListener('drop', e => {
+            e.preventDefault();
+            block.classList.remove('drag-over');
+            const name = e.dataTransfer.getData('text/plain');
+            const chip = document.querySelector(`.saved-portfolio-chip[data-name="${CSS.escape(name)}"]`);
+            if (!chip) return;
+            const config = JSON.parse(chip.dataset.config);
+            loadPortfolioIntoBlock(blockIdx, config, name);
+        });
     }
 
     // Initialise all 3 blocks; block 0's rows are already in the HTML (server-rendered)
     [0, 1, 2].forEach(i => initBlock(i));
+
+    // ── Saved portfolios bar ──────────────────────────────────────────────────
+
+    async function refreshSavedPortfolios() {
+        try {
+            const res = await fetch('/api/backtest/savedPortfolios');
+            if (!res.ok) return;
+            const list = await res.json();
+            renderSavedBar(list);
+        } catch (_) { /* silently ignore */ }
+    }
+
+    function renderSavedBar(list) {
+        const bar = document.getElementById('saved-portfolios-bar');
+        bar.innerHTML = '';
+        bar.style.display = list.length ? '' : 'none';
+        list.forEach(p => {
+            const chip = document.createElement('div');
+            chip.className = 'saved-portfolio-chip';
+            chip.draggable = true;
+            chip.dataset.config = JSON.stringify(p.config);
+            chip.dataset.name = p.name;
+
+            const label = document.createElement('span');
+            label.textContent = p.name;
+
+            const del = document.createElement('button');
+            del.className = 'saved-portfolio-chip-del';
+            del.type = 'button';
+            del.title = 'Delete';
+            del.textContent = '✕';
+            del.addEventListener('click', async e => {
+                e.stopPropagation();
+                await fetch(`/api/backtest/savedPortfolios?name=${encodeURIComponent(p.name)}`, { method: 'DELETE' });
+                refreshSavedPortfolios();
+            });
+
+            chip.appendChild(label);
+            chip.appendChild(del);
+            chip.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', p.name);
+                e.dataTransfer.effectAllowed = 'copy';
+            });
+            bar.appendChild(chip);
+        });
+    }
+
+    refreshSavedPortfolios();
 
     // ── Restore saved settings ────────────────────────────────────────────────
 
@@ -143,26 +268,7 @@
 
             req.portfolios.forEach((p, i) => {
                 if (i >= 3) return;
-                const block = document.querySelector(`[data-portfolio-index="${i}"]`);
-
-                block.querySelector('.portfolio-label').value = p.label || '';
-
-                block.querySelector('.ticker-rows').innerHTML = '';
-                (p.tickers || []).forEach(t => addTickerRow(i, t.ticker, t.weight));
-
-                block.querySelector('.rebalance-select').value = p.rebalanceStrategy || 'YEARLY';
-
-                block.querySelector('.margin-config-rows').innerHTML = '';
-                const r = v => Math.round(v * 10000) / 100; // fraction → display %
-                (p.marginStrategies || []).forEach(m => addMarginRow(
-                    i,
-                    r(m.marginRatio),
-                    r(m.marginSpread),
-                    r(m.marginDeviationUpper),
-                    r(m.marginDeviationLower),
-                    m.upperRebalanceMode || 'PROPORTIONAL',
-                    m.lowerRebalanceMode || 'PROPORTIONAL'
-                ));
+                loadPortfolioIntoBlock(i, p, p.label || '');
             });
         } catch (_) { /* silently ignore */ }
     })();

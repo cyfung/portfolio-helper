@@ -2370,3 +2370,81 @@ body.editing-active .cash-edit-value {
 .add-margin-btn:hover {
     background: var(--color-bg-hover);
 }
+
+/* ── Saved portfolios bar ──────────────────────────────────────────────────── */
+
+#saved-portfolios-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.saved-portfolio-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(0, 102, 204, 0.08);
+    border: 1px solid var(--color-accent-primary);
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem 0.2rem 0.65rem;
+    font-size: 0.85rem;
+    cursor: grab;
+    user-select: none;
+    white-space: nowrap;
+    color: var(--color-accent-primary);
+    transition: background 0.15s, color 0.15s;
+}
+
+.saved-portfolio-chip:hover {
+    background: rgba(0, 102, 204, 0.15);
+}
+
+.saved-portfolio-chip:active {
+    cursor: grabbing;
+}
+
+.saved-portfolio-chip-del {
+    background: none;
+    border: none;
+    padding: 0;
+    line-height: 1;
+    font-size: 0.7rem;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.5;
+}
+
+.saved-portfolio-chip-del:hover {
+    opacity: 1;
+}
+
+/* Drop target highlight */
+.portfolio-block.drag-over {
+    outline: 2px dashed var(--color-accent-primary);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+
+/* Save button */
+.save-portfolio-btn {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-accent-primary);
+    background: transparent;
+    color: var(--color-accent-primary);
+    cursor: pointer;
+}
+
+.save-portfolio-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.save-portfolio-btn:not(:disabled):hover {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}

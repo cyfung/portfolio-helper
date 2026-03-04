@@ -74,6 +74,46 @@ fun Application.configureRouting() {
             call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
         }
 
+        get("/api/backtest/savedPortfolios") {
+            val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
+            call.respondText(if (f.exists()) f.readText() else "[]", ContentType.Application.Json)
+        }
+
+        delete("/api/backtest/savedPortfolios") {
+            val name = call.request.queryParameters["name"]
+                ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
+            if (f.exists()) {
+                val remaining = Json.parseToJsonElement(f.readText()).jsonArray
+                    .filter { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull != name }
+                f.writeText(JsonArray(remaining).toString())
+            }
+            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+        }
+
+        post("/api/backtest/savedPortfolios") {
+            val body = call.receiveText()
+            val entry = Json.parseToJsonElement(body).jsonObject
+            val name = entry["name"]?.jsonPrimitive?.contentOrNull
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
+            f.parentFile.mkdirs()
+            val existing = if (f.exists()) Json.parseToJsonElement(f.readText()).jsonArray.toMutableList()
+                           else mutableListOf()
+
+            val takenNames = existing.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }.toSet()
+            var finalName = name
+            var counter = 2
+            while (finalName in takenNames) { finalName = "$name ($counter)"; counter++ }
+
+            val saved = buildJsonObject { put("name", finalName); put("config", config) }
+            existing.add(saved)
+            f.writeText(JsonArray(existing).toString())
+            call.respondText(saved.toString(), ContentType.Application.Json)
+        }
+
         post("/api/backtest/run") {
             try {
                 val body = call.receiveText()
