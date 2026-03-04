@@ -100,6 +100,26 @@
         row.querySelector('.mc-mode-upper').value = upperMode;
         row.querySelector('.mc-mode-lower').value = lowerMode;
         row.querySelector('.remove-margin-btn').addEventListener('click', () => row.remove());
+
+        const handle = document.createElement('span');
+        handle.className = 'margin-drag-handle';
+        handle.textContent = '⠿';
+        row.prepend(handle);
+
+        row.draggable = true;
+        row.addEventListener('dragstart', e => {
+            const cfg = {
+                ratio:     row.querySelector('.mc-ratio').value,
+                spread:    row.querySelector('.mc-spread').value,
+                devUpper:  row.querySelector('.mc-dev-upper').value,
+                devLower:  row.querySelector('.mc-dev-lower').value,
+                modeUpper: row.querySelector('.mc-mode-upper').value,
+                modeLower: row.querySelector('.mc-mode-lower').value,
+            };
+            e.dataTransfer.setData('application/x-margin-config', JSON.stringify(cfg));
+            e.dataTransfer.effectAllowed = 'copy';
+        });
+
         marginRowsEl.appendChild(row);
     }
 
@@ -183,18 +203,32 @@
             if (res.ok) refreshSavedPortfolios();
         });
 
-        // Drag-and-drop: accept chips dropped onto this block
+        // Drag-and-drop: accept chips or margin rows dropped onto this block
         block.addEventListener('dragover', e => {
-            if (document.querySelector('.saved-portfolio-chip[draggable="true"]')) {
+            const isChip   = e.dataTransfer.types.includes('text/plain')
+                             && document.querySelector('.saved-portfolio-chip[draggable="true"]');
+            const isMargin = e.dataTransfer.types.includes('application/x-margin-config');
+            if (isChip || isMargin) {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'copy';
-                block.classList.add('drag-over');
+                if (isMargin) block.classList.add('drag-over-margin');
+                else          block.classList.add('drag-over');
             }
         });
-        block.addEventListener('dragleave', () => block.classList.remove('drag-over'));
+        block.addEventListener('dragleave', () => block.classList.remove('drag-over', 'drag-over-margin'));
         block.addEventListener('drop', e => {
             e.preventDefault();
-            block.classList.remove('drag-over');
+            block.classList.remove('drag-over', 'drag-over-margin');
+
+            if (e.dataTransfer.types.includes('application/x-margin-config')) {
+                const cfg = JSON.parse(e.dataTransfer.getData('application/x-margin-config'));
+                addMarginRow(blockIdx,
+                    parseFloat(cfg.ratio),    parseFloat(cfg.spread),
+                    parseFloat(cfg.devUpper), parseFloat(cfg.devLower),
+                    cfg.modeUpper, cfg.modeLower);
+                return;
+            }
+
             const name = e.dataTransfer.getData('text/plain');
             const chip = document.querySelector(`.saved-portfolio-chip[data-name="${CSS.escape(name)}"]`);
             if (!chip) return;

@@ -192,13 +192,14 @@ private fun DIV.portfolioBlock(idx: Int) {
                 }
             }
             div(classes = "margin-col-headers") {
+                span {}          // aligns with drag-handle column
                 span { +"Ratio%" }
                 span { +"Spread%" }
                 span { +"Dev%↑" }
                 span { +"Dev%↓" }
                 span { +"Mode↑" }
                 span { +"Mode↓" }
-                span {}
+                span {}          // remove-btn spacer
             }
             div(classes = "margin-config-rows") {}
         }

@@ -2284,7 +2284,7 @@ body.editing-active .cash-edit-value {
 /* Column headers for margin input grid */
 .margin-col-headers {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr 5.5rem 5.5rem auto;
+    grid-template-columns: 1rem 1fr 1fr 1fr 1fr 5.5rem 5.5rem auto;
     gap: 0.35rem;
     padding: 0 0 0.1rem;
 }
@@ -2299,10 +2299,10 @@ body.editing-active .cash-edit-value {
     min-width: 1.5rem; /* align with remove button */
 }
 
-/* Single margin config row: ratio | spread | dev↑ | dev↓ | mode | ✕ */
+/* Single margin config row: ⠿ | ratio | spread | dev↑ | dev↓ | mode | ✕ */
 .margin-config-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr 5.5rem 5.5rem auto;
+    grid-template-columns: 1rem 1fr 1fr 1fr 1fr 5.5rem 5.5rem auto;
     gap: 0.35rem;
     align-items: center;
 }
@@ -2426,6 +2426,29 @@ body.editing-active .cash-edit-value {
     outline: 2px dashed var(--color-accent-primary);
     outline-offset: 3px;
     border-radius: 6px;
+}
+
+/* Margin row drag handle */
+.margin-drag-handle {
+    cursor: grab;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.45;
+}
+.margin-drag-handle:hover { opacity: 1; }
+.margin-config-row:active .margin-drag-handle { cursor: grabbing; }
+
+/* Margin drop-zone highlight */
+.portfolio-block.drag-over-margin .margin-config-rows {
+    outline: 2px dashed var(--color-accent-primary);
+    outline-offset: 3px;
+    border-radius: 4px;
+    min-height: 2rem;
 }
 
 /* Save button */
