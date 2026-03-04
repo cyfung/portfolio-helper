@@ -58,6 +58,7 @@
               <option value="CURRENT_WEIGHT">Current Weight</option>
               <option value="FULL_REBALANCE">Full Rebal</option>
               <option value="UNDERVALUED_PRIORITY">Underval First</option>
+              <option value="WATERFALL">Waterfall</option>
               <option value="DAILY">Daily</option>
             </select>`;
     }

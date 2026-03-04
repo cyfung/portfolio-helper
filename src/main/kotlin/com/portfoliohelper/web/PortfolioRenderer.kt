@@ -265,24 +265,14 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                     attributes["for"] = "alloc-add-mode"
                                     +"Add"
                                 }
-                                select {
-                                    id = "alloc-add-mode"
-                                    option { value = "PROPORTIONAL"; +"Target Wt" }
-                                    option { value = "CURRENT_WEIGHT"; +"Current Wt" }
-                                    option { value = "UNDERVALUED_PRIORITY"; +"Underval First" }
-                                }
+                                allocMode("alloc-add-mode")
                             }
                             div(classes = "alloc-mode-group") {
                                 label(classes = "alloc-mode-label") {
                                     attributes["for"] = "alloc-reduce-mode"
                                     +"Reduce"
                                 }
-                                select {
-                                    id = "alloc-reduce-mode"
-                                    option { value = "PROPORTIONAL"; +"Target Wt" }
-                                    option { value = "CURRENT_WEIGHT"; +"Current Wt" }
-                                    option { value = "UNDERVALUED_PRIORITY"; +"Underval First" }
-                                }
+                                allocMode("alloc-reduce-mode")
                             }
                         }
 
@@ -305,6 +295,16 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 }
             }
         }
+    }
+}
+
+private fun DIV.allocMode(id: String) {
+    select {
+        this.id = id
+        option { value = "PROPORTIONAL"; +"Target Wt" }
+        option { value = "CURRENT_WEIGHT"; +"Current Wt" }
+        option { value = "UNDERVALUED_PRIORITY"; +"Underval First" }
+        option { value = "WATERFALL"; +"Waterfall" }
     }
 }
 

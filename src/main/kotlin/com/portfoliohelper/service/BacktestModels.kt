@@ -4,7 +4,7 @@ package com.portfoliohelper.service
 
 enum class RebalanceStrategy { NONE, DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY }
 
-enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY, DAILY }
+enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY, WATERFALL, DAILY }
 
 data class TickerWeight(val ticker: String, val weight: Double)
 
