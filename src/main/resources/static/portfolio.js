@@ -483,6 +483,18 @@ function updateIbkrDailyInterest() {
     // Difference
     const diff = (cheapestUsd !== null && currentUsd > 0) ? currentUsd - cheapestUsd : null;
 
+    const savingLabelEl = document.getElementById('ibkr-saving-label');
+    let label = 'Saving';
+    if (cheapestCcy != null && rows.length === 2) {
+        if (cheapestCcy === "USD") {
+            const ccy = rows.find(r => r.currency !== "USD").currency;
+            label = 'Saving (Sell USD.' + ccy +')';
+        } else {
+            label = 'Saving (Buy USD.' + cheapestCcy +')';
+        }
+    }
+    savingLabelEl.textContent = label;
+
     // Update DOM
     const currentEl = document.getElementById('ibkr-current-interest');
     if (currentEl) currentEl.textContent = currentUsd > 0 ? formatDisplayCurrency(currentUsd) : '—';

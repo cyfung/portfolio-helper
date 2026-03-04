@@ -128,13 +128,34 @@ internal fun FlowContent.buildIbkrRatesTable(
                     }
                 }
                 tr {
-                    td { +"Saving" }
-                    td {
-                        id = "ibkr-interest-diff"
-                        if (interestDiff != null && interestDiff >= 0.005) {
+                    if (interestDiff != null && interestDiff >= 0.005) {
+                        val action = if (cheapestRow!=null && rows.size == 2) {
+                            if (cheapestRow.currency == "USD") {
+                                val ccy =
+                                    rows.first { it.currency != "USD" }.currency
+                                " (Sell USD.$ccy)"
+                            } else {
+                                " (Buy USD.${cheapestRow.currency})"
+                            }
+                        } else {
+                            ""
+                        }
+                        td {
+                            id= "ibkr-saving-label"
+                            +"Saving$action"
+                        }
+                        td {
+                            id = "ibkr-interest-diff"
                             classes = setOf("ibkr-rate-diff")
                             +"$%,.2f".format(interestDiff)
-                        } else {
+                        }
+                    } else {
+                        td {
+                            id= "ibkr-saving-label"
+                            +"Saving"
+                        }
+                        td {
+                            id = "ibkr-interest-diff"
                             +"—"
                         }
                     }
