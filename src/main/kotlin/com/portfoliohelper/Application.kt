@@ -240,7 +240,7 @@ fun main() {
     // ---------------------------------------------------------------
     logger.info("Starting web server on port $port...")
     try {
-        val server = embeddedServer(Netty, port = port) {
+        val server = embeddedServer(Netty, port = port, host = "localhost") {
             configureRouting()
         }.start(wait = false)
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
