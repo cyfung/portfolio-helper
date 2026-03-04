@@ -107,8 +107,8 @@
         handle.textContent = '⠿';
         row.prepend(handle);
 
-        row.draggable = true;
-        row.addEventListener('dragstart', e => {
+        handle.draggable = true;
+        handle.addEventListener('dragstart', e => {
             const cfg = {
                 ratio:     row.querySelector('.mc-ratio').value,
                 spread:    row.querySelector('.mc-spread').value,
