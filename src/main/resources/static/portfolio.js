@@ -1,3 +1,7 @@
+// Shared SVG icons
+const COPY_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECKMARK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
 // Global store for Day % of all symbols (portfolio + LETF components)
 const componentDayPercents = {};
 // Global store for raw (unrounded) prices — avoids compounded rounding errors in rebalancing
@@ -553,10 +557,7 @@ function updatePortfolioRefValues(portfolioId, newPortfolioValue) {
 function updateCurrentWeights(portfolioTotal) {
     if (!portfolioValueKnown) {
         document.querySelectorAll('.weight-display').forEach(cell => {
-            const hiddenSpan = cell.querySelector('.target-weight-hidden');
-            const tw = hiddenSpan ? hiddenSpan.textContent.trim() : '';
-            cell.innerHTML = 'N/A' + (tw !== ''
-                ? `<span class="target-weight-hidden" style="display:none;">${tw}</span>` : '');
+            cell.innerHTML = 'N/A';
             cell.classList.remove('loaded');
         });
         return;
@@ -573,11 +574,11 @@ function updateCurrentWeights(portfolioTotal) {
         if (weightCell) {
             const currentWeight = (value / portfolioTotal) * 100;
 
-            // Find target weight (hidden span)
-            const targetWeightSpan = weightCell.querySelector('.target-weight-hidden');
-            const targetWeight = targetWeightSpan ? parseFloat(targetWeightSpan.textContent) : null;
+            // Find target weight from view table row's data-weight attribute
+            const viewRow = weightCell.closest('tr');
+            const targetWeight = viewRow ? parseFloat(viewRow.dataset.weight) : null;
 
-            if (targetWeight !== null) {
+            if (targetWeight !== null && !isNaN(targetWeight)) {
                 const diff = currentWeight - targetWeight;
                 const sign = diff >= 0 ? '-' : '+';
                 const diffClass = Math.abs(diff) > 2.0 ? 'alert' :
@@ -585,8 +586,7 @@ function updateCurrentWeights(portfolioTotal) {
 
                 weightCell.innerHTML =
                     currentWeight.toFixed(1) + '% ' +
-                    '<span class="weight-diff ' + diffClass + '">(' + sign + Math.abs(diff).toFixed(1) + '%)</span>' +
-                    '<span class="target-weight-hidden" style="display:none;">' + targetWeight + '</span>';
+                    '<span class="weight-diff ' + diffClass + '">(' + sign + Math.abs(diff).toFixed(1) + '%)</span>';
             } else {
                 weightCell.textContent = currentWeight.toFixed(1) + '%';
             }
@@ -623,10 +623,10 @@ function updateRebalancingColumns(portfolioTotal) {
             : parsePrice(valueCell.textContent);
         if (value === null) return;
 
-        // Get target weight from hidden span
+        // Get target weight from view table row's data-weight attribute
         const weightCell = document.getElementById('current-weight-' + symbol);
-        const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
-        const targetWeight = targetWeightSpan ? parseFloat(targetWeightSpan.textContent) : null;
+        const viewRow = weightCell ? weightCell.closest('tr') : null;
+        const targetWeight = viewRow ? parseFloat(viewRow.dataset.weight) : null;
 
         if (targetWeight !== null) {
             // Calculate rebalancing dollar amount
@@ -683,8 +683,8 @@ function updateAllocColumns(rebalTotal) {
         const markPrice = rawMarkPrices[symbol] ??
             parsePrice(document.getElementById('mark-' + symbol)?.textContent);
         const weightCell = document.getElementById('current-weight-' + symbol);
-        const targetWeightSpan = weightCell?.querySelector('.target-weight-hidden');
-        const targetWeight = targetWeightSpan ? parseFloat(targetWeightSpan.textContent) : null;
+        const viewRow = weightCell?.closest('tr');
+        const targetWeight = viewRow ? parseFloat(viewRow.dataset.weight) : null;
         const currentValue = parsePrice(valueCell.textContent) ?? 0;
         stocks.push({ symbol, markPrice, targetWeight, currentValue });
         totalStockValue += currentValue;
@@ -902,9 +902,9 @@ function refreshDisplayCurrency() {
 }
 
 function updateTargetWeightTotal() {
-    // Edit mode total: from edit-weight inputs (drives the tfoot display)
+    // Edit mode total: from edit-weight inputs in the edit table (drives the tfoot display)
     let editTotal = 0;
-    document.querySelectorAll('.portfolio-table tbody tr:not([data-deleted])').forEach(tr => {
+    (document.querySelectorAll('#stock-edit-table tbody tr:not([data-deleted])') || []).forEach(tr => {
         const input = tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]');
         if (input) editTotal += parseFloat(input.value) || 0;
     });
@@ -914,10 +914,10 @@ function updateTargetWeightTotal() {
         totalCell.classList.toggle('weight-total-error', Math.abs(editTotal - 100) > 0.05);
     }
 
-    // Rebalance mode warning: from target-weight-hidden spans (what rebalancing actually uses)
+    // Rebalance mode warning: from view table rows' data-weight (what rebalancing actually uses)
     let rebalTotal = 0;
-    document.querySelectorAll('.portfolio-table tbody tr:not([data-deleted]) .target-weight-hidden').forEach(span => {
-        rebalTotal += parseFloat(span.textContent) || 0;
+    document.querySelectorAll('#stock-view-table tbody tr').forEach(tr => {
+        rebalTotal += parseFloat(tr.dataset.weight) || 0;
     });
     const warningEl = document.getElementById('rebal-weight-warning');
     if (warningEl) {
@@ -936,13 +936,12 @@ function updateTargetWeightTotal() {
 // ── HTML templates and helpers for dynamically added rows ─────────────────────
 
 const STOCK_ROW_HTML =
-    '<td class="edit-column drag-handle-cell"><span class="drag-handle" draggable="true">⠿</span></td>' +
+    '<td class="drag-handle-cell"><span class="drag-handle" draggable="true">⠿</span></td>' +
     '<td><input type="text" class="edit-input new-symbol-input" data-column="symbol" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
     '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
-    '<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>' +
-    '<td class="edit-column"><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
-    '<td class="edit-column"><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:120px" /></td>' +
-    '<td class="edit-column"><button type="button" class="delete-row-btn">\u00d7</button></td>';
+    '<td><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
+    '<td><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:120px" /></td>' +
+    '<td><button type="button" class="delete-row-btn">\u00d7</button></td>';
 
 const CASH_ROW_HTML =
     '<td><input type="text" class="edit-input cash-edit-key" placeholder="Cash.USD.M" /></td>' +
@@ -950,7 +949,7 @@ const CASH_ROW_HTML =
     '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>';
 
 function addStockRow() {
-    const tbody = document.querySelector('.portfolio-table tbody');
+    const tbody = document.querySelector('#stock-edit-table tbody');
     if (!tbody) return null;
     const tr = document.createElement('tr');
     tr.setAttribute('data-new-stock', 'true');
@@ -973,7 +972,7 @@ function addCashRow() {
 // Returns [symInput, qtyInput, weightInput, letfInput] for any stock row (existing or new)
 function getStockRowInputs(tr) {
     return [
-        tr.querySelector('.edit-symbol') || tr.querySelector('.new-symbol-input'),
+        tr.querySelector('.edit-symbol') || tr.querySelector('.new-symbol-input') || tr.querySelector('input[data-column="symbol"]'),
         tr.querySelector('.edit-qty')    || tr.querySelector('input[data-column="qty"]'),
         tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]'),
         tr.querySelector('.edit-letf')   || tr.querySelector('input[data-column="letf"]'),
@@ -1092,46 +1091,191 @@ function initColumnVisibility() {
         updateTargetWeightTotal();
     });
 
-    // Copy table button handler (copies all rows as TSV for Google Sheets)
-    const copyTableBtn = document.querySelector('.copy-table-btn');
-    if (copyTableBtn) {
-        copyTableBtn.addEventListener('click', () => {
-            const rows = Array.from(document.querySelectorAll('.portfolio-table tbody tr'))
+    // Copy button handlers for the edit table are added via delegation in showEditTable()
+}
+
+// ── Dynamic edit table ────────────────────────────────────────────────────────
+
+function buildStockEditTable() {
+    const table = document.createElement('table');
+    table.id = 'stock-edit-table';
+    table.className = 'portfolio-table';
+
+    // thead
+    const thead = table.createTHead();
+    const headerRow = thead.insertRow();
+    const mkTh = (html, cls) => {
+        const th = document.createElement('th');
+        if (cls) th.className = cls;
+        th.innerHTML = html;
+        headerRow.appendChild(th);
+    };
+    mkTh('<button type="button" class="copy-table-btn copy-col-btn" title="Copy table to clipboard (Google Sheets)">' + COPY_ICON_SVG + '</button>', 'drag-handle-col');
+    mkTh('Symbol <button type="button" class="copy-col-btn" data-column="symbol" title="Copy Symbol column">' + COPY_ICON_SVG + '</button>');
+    mkTh('Qty <button type="button" class="copy-col-btn col-num" data-column="qty" title="Copy Qty column">' + COPY_ICON_SVG + '</button>', 'col-num');
+    mkTh('Target % <button type="button" class="copy-col-btn" data-column="weight" title="Copy Target % column">' + COPY_ICON_SVG + '</button>');
+    mkTh('Letf');
+    mkTh('');
+
+    // tbody — one row per view-table stock row
+    const tbody = document.createElement('tbody');
+    document.querySelectorAll('#stock-view-table tbody tr').forEach(viewRow => {
+        const sym = viewRow.dataset.symbol || '';
+        const qty = viewRow.dataset.qty || '0';
+        const weight = viewRow.dataset.weight || '0';
+        const letfAttr = viewRow.dataset.letf || '';
+        let letfStr = '';
+        if (letfAttr) {
+            const tokens = letfAttr.split(',');
+            const parts = [];
+            for (let i = 0; i + 1 < tokens.length; i += 2) parts.push(tokens[i] + ' ' + tokens[i + 1]);
+            letfStr = parts.join(' ');
+        }
+
+        const tr = document.createElement('tr');
+
+        // Drag handle
+        const tdDrag = document.createElement('td');
+        tdDrag.className = 'drag-handle-cell';
+        tdDrag.innerHTML = '<span class="drag-handle" draggable="true">⠿</span>';
+        tr.appendChild(tdDrag);
+
+        // Symbol input
+        const tdSym = document.createElement('td');
+        const symInput = document.createElement('input');
+        symInput.type = 'text';
+        symInput.className = 'edit-input edit-symbol';
+        symInput.setAttribute('data-original-symbol', sym);
+        symInput.setAttribute('data-column', 'symbol');
+        symInput.value = sym;
+        tdSym.appendChild(symInput);
+        tr.appendChild(tdSym);
+
+        // Qty input
+        const tdQty = document.createElement('td');
+        tdQty.className = 'amount';
+        const qtyInput = document.createElement('input');
+        qtyInput.type = 'number';
+        qtyInput.className = 'edit-input edit-qty';
+        qtyInput.setAttribute('data-symbol', sym);
+        qtyInput.setAttribute('data-column', 'qty');
+        qtyInput.value = qty;
+        qtyInput.min = '0';
+        qtyInput.step = 'any';
+        tdQty.appendChild(qtyInput);
+        tr.appendChild(tdQty);
+
+        // Weight input
+        const tdWeight = document.createElement('td');
+        const weightInput = document.createElement('input');
+        weightInput.type = 'number';
+        weightInput.className = 'edit-input edit-weight';
+        weightInput.setAttribute('data-symbol', sym);
+        weightInput.setAttribute('data-column', 'weight');
+        weightInput.value = weight;
+        weightInput.min = '0';
+        weightInput.max = '100';
+        weightInput.step = '0.1';
+        tdWeight.appendChild(weightInput);
+        tr.appendChild(tdWeight);
+
+        // Letf input
+        const tdLetf = document.createElement('td');
+        const letfInput = document.createElement('input');
+        letfInput.type = 'text';
+        letfInput.className = 'edit-input edit-letf';
+        letfInput.setAttribute('data-symbol', sym);
+        letfInput.setAttribute('data-column', 'letf');
+        letfInput.value = letfStr;
+        letfInput.style.textAlign = 'left';
+        letfInput.style.width = '120px';
+        tdLetf.appendChild(letfInput);
+        tr.appendChild(tdLetf);
+
+        // Delete button
+        const tdDel = document.createElement('td');
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'delete-row-btn';
+        delBtn.textContent = '×';
+        tdDel.appendChild(delBtn);
+        tr.appendChild(tdDel);
+
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    // tfoot with weight total
+    const tfoot = document.createElement('tfoot');
+    const tfRow = tfoot.insertRow();
+    const mkTd = (id, text) => {
+        const td = document.createElement('td');
+        if (id) td.id = id;
+        if (text) td.textContent = text;
+        tfRow.appendChild(td);
+    };
+    mkTd('', '');       // drag handle col
+    mkTd('', 'Total');  // symbol col
+    mkTd('', '');       // qty col
+    mkTd('target-weight-total', ''); // weight col
+    mkTd('', '');       // letf col
+    mkTd('', '');       // delete col
+    table.appendChild(tfoot);
+
+    return table;
+}
+
+function showEditTable() {
+    const editTable = buildStockEditTable();
+    const viewTable = document.getElementById('stock-view-table');
+    viewTable.parentNode.insertBefore(editTable, viewTable);
+    viewTable.style.display = 'none';
+
+    initDragAndDrop(editTable.querySelector('tbody'));
+
+    // Event delegation on edit table for copy buttons
+    editTable.addEventListener('click', e => {
+        const copyTableBtn = e.target.closest('.copy-table-btn');
+        if (copyTableBtn) {
+            const rows = Array.from(editTable.querySelectorAll('tbody tr'))
                 .filter(row => !row.dataset.deleted)
                 .map(row => {
-                    const get = col => row.querySelector('.edit-input[data-column="' + col + '"]')?.value ?? '';
+                    const get = col => row.querySelector('input[data-column="' + col + '"]')?.value ?? '';
                     return [get('symbol'), get('qty'), get('weight'), get('letf')].join('\t');
                 });
-            const text = rows.join('\n');
-            navigator.clipboard.writeText(text).then(() => {
+            navigator.clipboard.writeText(rows.join('\n')).then(() => {
                 const orig = copyTableBtn.innerHTML;
-                copyTableBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                copyTableBtn.innerHTML = CHECKMARK_SVG;
                 copyTableBtn.classList.add('copied');
                 setTimeout(() => { copyTableBtn.innerHTML = orig; copyTableBtn.classList.remove('copied'); }, 1500);
             });
-        });
-    }
-
-    // Copy column button handler
-    document.querySelectorAll('.copy-col-btn').forEach(btn => {
-        const col = btn.getAttribute('data-column');
-        if (!col) return;
-        btn.addEventListener('click', () => {
-            const inputs = Array.from(
-                document.querySelectorAll('.edit-input[data-column="' + col + '"]')
-            );
-            const text = inputs.map(i => i.value).join('\n');
-            navigator.clipboard.writeText(text).then(() => {
-                const orig = btn.innerHTML;
-                btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-                btn.classList.add('copied');
-                setTimeout(() => {
-                    btn.innerHTML = orig;
-                    btn.classList.remove('copied');
-                }, 1500);
+            return;
+        }
+        const copyColBtn = e.target.closest('.copy-col-btn[data-column]');
+        if (copyColBtn) {
+            const col = copyColBtn.getAttribute('data-column');
+            const inputs = Array.from(editTable.querySelectorAll('tbody input[data-column="' + col + '"]'));
+            navigator.clipboard.writeText(inputs.map(i => i.value).join('\n')).then(() => {
+                const orig = copyColBtn.innerHTML;
+                copyColBtn.innerHTML = CHECKMARK_SVG;
+                copyColBtn.classList.add('copied');
+                setTimeout(() => { copyColBtn.innerHTML = orig; copyColBtn.classList.remove('copied'); }, 1500);
             });
-        });
+        }
     });
+
+    updateTargetWeightTotal();
+
+    if (editTable.querySelector('tbody').querySelectorAll('tr:not([data-deleted])').length === 0) {
+        const tr = addStockRow();
+        if (tr) tr.querySelector('.new-symbol-input').focus();
+    }
+}
+
+function removeEditTable() {
+    document.getElementById('stock-edit-table')?.remove();
+    const viewTable = document.getElementById('stock-view-table');
+    if (viewTable) viewTable.style.display = '';
 }
 
 // ── Edit mode ─────────────────────────────────────────────────────────────────
@@ -1146,6 +1290,9 @@ function initEditMode() {
         editToggle.classList.toggle('active');
 
         if (isEditing) {
+            // Build and show edit table for stocks
+            showEditTable();
+
             // Reset cash edit table inputs to original values
             document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
                 const keyInput = tr.querySelector('.cash-edit-key');
@@ -1154,53 +1301,6 @@ function initEditMode() {
                 if (valInput) valInput.value = valInput.getAttribute('data-original-value') || '';
             });
 
-            // Populate symbol inputs
-            document.querySelectorAll('.edit-symbol').forEach(input => {
-                const sym = input.getAttribute('data-original-symbol');
-                input.value = sym;
-            });
-
-            // Populate stock qty inputs from current display values
-            document.querySelectorAll('.edit-qty').forEach(input => {
-                const sym = input.getAttribute('data-symbol');
-                const amountCell = document.getElementById('amount-' + sym);
-                const displaySpan = amountCell ? amountCell.querySelector('.display-value') : null;
-                if (displaySpan) input.value = displaySpan.textContent.trim();
-            });
-
-            // Populate target weight and letf inputs from current live data
-            document.querySelectorAll('.portfolio-table tbody tr').forEach(tr => {
-                if (tr.dataset.deleted || tr.dataset.newStock) return;
-                const sym = tr.querySelector('.edit-symbol')?.getAttribute('data-original-symbol');
-                if (!sym) return;
-
-                const weightInput = tr.querySelector('.edit-weight');
-                if (weightInput) {
-                    const hiddenSpan = document.getElementById('current-weight-' + sym)?.querySelector('.target-weight-hidden');
-                    weightInput.value = hiddenSpan ? hiddenSpan.textContent.trim() : '0';
-                }
-
-                const letfInput = tr.querySelector('.edit-letf');
-                if (letfInput) {
-                    const letfAttr = tr.getAttribute('data-letf');
-                    if (letfAttr) {
-                        const tokens = letfAttr.split(',');
-                        const parts = [];
-                        for (let i = 0; i + 1 < tokens.length; i += 2) parts.push(tokens[i] + ' ' + tokens[i + 1]);
-                        letfInput.value = parts.join(' ');
-                    } else {
-                        letfInput.value = '';
-                    }
-                }
-            });
-
-            // Add empty row if stock table has no entries
-            const stockTbody = document.querySelector('.portfolio-table tbody');
-            if (stockTbody && stockTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
-                const tr = addStockRow();
-                if (tr) tr.querySelector('.new-symbol-input').focus();
-            }
-
             // Add empty row if cash edit table has no entries
             const cashTbody = document.querySelector('.cash-edit-table tbody');
             if (cashTbody && cashTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
@@ -1208,17 +1308,10 @@ function initEditMode() {
             }
 
         } else {
-            // Restore deleted rows
-            document.querySelectorAll('[data-deleted="true"]').forEach(el => {
-                el.removeAttribute('data-deleted');
-                el.style.display = '';
-            });
-            // Remove dynamically added new rows
-            document.querySelectorAll('[data-new-stock], [data-new-cash]').forEach(el => el.remove());
-            // Reset symbol inputs to original values
-            document.querySelectorAll('.edit-symbol').forEach(input => {
-                input.value = input.getAttribute('data-original-symbol') || '';
-            });
+            // Remove the dynamic edit table, restore view table
+            removeEditTable();
+            // Remove dynamically added new cash rows
+            document.querySelectorAll('[data-new-cash]').forEach(el => el.remove());
             // Reset cash edit table inputs to original values
             document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
                 const keyInput = tr.querySelector('.cash-edit-key');
@@ -1234,7 +1327,7 @@ function initEditMode() {
     saveBtn.addEventListener('click', () => {
         const updates = [];
         // Existing stock rows (not dynamically added)
-        document.querySelectorAll('.portfolio-table tbody tr:not([data-new-stock])').forEach(tr => {
+        document.querySelectorAll('#stock-edit-table tbody tr:not([data-new-stock])').forEach(tr => {
             if (tr.dataset.deleted) return;
             const symInput = tr.querySelector('.edit-symbol');
             const sym = symInput ? symInput.value.trim().toUpperCase() : null;
@@ -1250,7 +1343,7 @@ function initEditMode() {
             });
         });
         // New stock rows added in edit mode
-        document.querySelectorAll('.portfolio-table tbody tr[data-new-stock]').forEach(tr => {
+        document.querySelectorAll('#stock-edit-table tbody tr[data-new-stock]').forEach(tr => {
             if (tr.dataset.deleted) return;
             const sym = (tr.querySelector('.new-symbol-input')?.value || '').trim().toUpperCase();
             if (!sym) return;
@@ -1347,12 +1440,11 @@ function initEditMode() {
 
         // Apply rebalancing: new qty = targetWeight% * portfolioTotal / markPrice
         const portfolioTotal = getRebalTotal();
-        document.querySelectorAll('.edit-qty').forEach(input => {
+        document.querySelectorAll('#stock-edit-table tbody .edit-qty').forEach(input => {
             const sym = input.getAttribute('data-symbol');
-            const weightCell = document.getElementById('current-weight-' + sym);
-            const targetWeightSpan = weightCell ? weightCell.querySelector('.target-weight-hidden') : null;
-            if (!targetWeightSpan) return;
-            const targetWeight = parseFloat(targetWeightSpan.textContent);
+            const viewRow = document.querySelector('#stock-view-table tbody tr[data-symbol="' + sym + '"]');
+            if (!viewRow) return;
+            const targetWeight = parseFloat(viewRow.dataset.weight);
             if (isNaN(targetWeight)) return;
             if (targetWeight <= 0) {
                 input.value = 0;
@@ -1442,7 +1534,7 @@ function initPasteHandler() {
             const startColIdx = getStockColIndex(activeEl);
             if (startColIdx < 0) return;
 
-            const tbody = document.querySelector('.portfolio-table tbody');
+            const tbody = document.querySelector('#stock-edit-table tbody');
             if (!tbody) return;
             let allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])'));
             const startRow = activeEl.closest('tr');
@@ -1753,8 +1845,7 @@ function initBackupPanel() {
 
 // ── Drag-and-drop row reordering ──────────────────────────────────────────────
 
-function initDragAndDrop() {
-    const tbody = document.querySelector('.portfolio-table tbody');
+function initDragAndDrop(tbody) {
     if (!tbody) return;
     let dragRow = null;
 
@@ -1816,7 +1907,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initCurrencyControls();
     initRebalanceControls();
     initBackupPanel();
-    initDragAndDrop();
 
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
     // Must run before restoring targets so lastMarginUsd is correct

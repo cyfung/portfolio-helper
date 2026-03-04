@@ -500,33 +500,11 @@ private fun TBODY.buildSummaryRows(
 
 private fun FlowContent.buildStockTable(portfolio: Portfolio) {
     table(classes = "portfolio-table") {
+        id = "stock-view-table"
         thead {
             tr {
-                th(classes = "edit-column drag-handle-col") {
-                    button(classes = "copy-table-btn copy-col-btn") {
-                        attributes["type"] = "button"
-                        attributes["title"] = "Copy table to clipboard (Google Sheets)"
-                        unsafe { raw(COPY_ICON_SVG) }
-                    }
-                }
-                th {
-                    +"Symbol"
-                    button(classes = "copy-col-btn") {
-                        attributes["data-column"] = "symbol"
-                        attributes["type"] = "button"
-                        attributes["title"] = "Copy Symbol column to clipboard"
-                        unsafe { raw(COPY_ICON_SVG) }
-                    }
-                }
-                th(classes = "col-num") {
-                    +"Qty"
-                    button(classes = "copy-col-btn") {
-                        attributes["data-column"] = "qty"
-                        attributes["type"] = "button"
-                        attributes["title"] = "Copy Qty column to clipboard"
-                        unsafe { raw(COPY_ICON_SVG) }
-                    }
-                }
+                th { +"Symbol" }
+                th(classes = "col-num") { +"Qty" }
                 th(classes = "col-num col-market-data") { +"Last NAV" }
                 th(classes = "col-num col-market-data") { +"Est Val" }
                 th(classes = "col-num col-market-data") { +"Last" }
@@ -540,56 +518,27 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th(classes = "rebal-column") { +"Rebal Qty" }
                 th(classes = "alloc-column") { +"Alloc \$" }
                 th(classes = "alloc-column") { +"Alloc Qty" }
-                th(classes = "edit-column") {
-                    +"Target %"
-                    button(classes = "copy-col-btn") {
-                        attributes["data-column"] = "weight"
-                        attributes["type"] = "button"
-                        attributes["title"] = "Copy Target % column to clipboard"
-                        unsafe { raw(COPY_ICON_SVG) }
-                    }
-                }
-                th(classes = "edit-column") { +"Letf" }
-                th(classes = "edit-column") { }
             }
         }
         tbody {
             for (stock in portfolio.stocks) {
+                val effectiveTarget = stock.targetWeight ?: 0.0
                 tr {
+                    attributes["data-symbol"] = stock.label
+                    attributes["data-qty"] = formatQty(stock.amount)
+                    attributes["data-weight"] = effectiveTarget.toString()
                     if (stock.letfComponents != null) {
                         attributes["data-letf"] =
                             stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
                     }
 
-                    // Drag handle (edit mode only)
-                    td(classes = "edit-column drag-handle-cell") {
-                        span(classes = "drag-handle") {
-                            attributes["draggable"] = "true"
-                            +"⠿"
-                        }
-                    }
-
-                    // Symbol (editable in edit mode)
-                    td {
-                        span(classes = "display-value") { +stock.label }
-                        input(type = InputType.text, classes = "edit-input edit-symbol") {
-                            attributes["data-original-symbol"] = stock.label
-                            attributes["data-column"] = "symbol"
-                            value = stock.label
-                        }
-                    }
+                    // Symbol
+                    td { +stock.label }
 
                     // Qty (Amount)
                     td(classes = "amount") {
                         id = "amount-${stock.label}"
-                        span(classes = "display-value") { +formatQty(stock.amount) }
-                        input(type = InputType.number, classes = "edit-input edit-qty") {
-                            attributes["data-symbol"] = stock.label
-                            attributes["data-column"] = "qty"
-                            value = formatQty(stock.amount)
-                            attributes["min"] = "0"
-                            attributes["step"] = "any"
-                        }
+                        +formatQty(stock.amount)
                     }
 
                     // Last NAV
@@ -695,7 +644,6 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = "weight-display rebal-column") {
                         id = "current-weight-${stock.label}"
                         val stockValue = stock.value
-                        val effectiveTarget = stock.targetWeight ?: 0.0
                         if (stockValue != null && portfolio.totalValue > 0) {
                             val currentWeight = (stockValue / portfolio.totalValue) * 100
 
@@ -712,12 +660,6 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                             }
                         } else {
                             span(classes = "loading") { +"—" }
-                        }
-                        // Always render the hidden span so edit mode can restore the correct target weight
-                        // even for stocks that have no price yet (loading state)
-                        span(classes = "target-weight-hidden") {
-                            style = "display:none;"
-                            +effectiveTarget.toString()
                         }
                     }
 
@@ -753,68 +695,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = "price-change neutral alloc-column") {
                         id = "alloc-qty-${stock.label}"
                     }
-
-                    // Target % (edit-only column)
-                    td(classes = "edit-column") {
-                        input(type = InputType.number, classes = "edit-input edit-weight") {
-                            attributes["data-symbol"] = stock.label
-                            attributes["data-column"] = "weight"
-                            value = (stock.targetWeight ?: 0.0).toString()
-                            attributes["min"] = "0"
-                            attributes["max"] = "100"
-                            attributes["step"] = "0.1"
-                        }
-                    }
-
-                    // Letf (edit-only column)
-                    val letfRaw = stock.letfComponents
-                        ?.joinToString(" ") { (mult, sym) ->
-                            "${if (mult == mult.toLong().toDouble()) mult.toLong() else mult} $sym"
-                        } ?: ""
-                    td(classes = "edit-column") {
-                        input(type = InputType.text, classes = "edit-input edit-letf") {
-                            attributes["data-symbol"] = stock.label
-                            attributes["data-column"] = "letf"
-                            value = letfRaw
-                            style = "text-align:left;width:120px"
-                        }
-                    }
-
-                    // Delete (edit-only column)
-                    td(classes = "edit-column") {
-                        button(classes = "delete-row-btn") {
-                            attributes["type"] = "button"
-                            +"×"
-                        }
-                    }
                 }
-            }
-        }
-        tfoot {
-            tr {
-                val totalWeight = portfolio.stocks.sumOf { it.targetWeight ?: 0.0 }
-                td(classes = "edit-column") {}
-                td { +"Total" }
-                td {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "col-market-data") {}
-                td(classes = "rebal-column") {}
-                td(classes = "rebal-column") {}
-                td(classes = "rebal-column") {}
-                td(classes = "alloc-column") {}
-                td(classes = "alloc-column") {}
-                td(classes = "edit-column") {
-                    id = "target-weight-total"
-                    +"%.1f%%".format(totalWeight)
-                }
-                td(classes = "edit-column") {}
-                td(classes = "edit-column") {}
             }
         }
     }

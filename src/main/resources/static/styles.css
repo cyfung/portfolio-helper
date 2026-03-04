@@ -1085,33 +1085,6 @@ h1 {
     box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }
 
-.editing-active .display-value {
-    display: none;
-}
-
-/* Edit-only columns (hidden by default, shown only in edit mode) */
-.portfolio-table .edit-column {
-    display: none;
-}
-
-.editing-active .portfolio-table .edit-column {
-    display: table-cell;
-}
-
-/* Always show the input inside edit-column cells (column visibility handles toggling) */
-.edit-column .edit-input {
-    display: block;
-    width: 80px;
-    padding: var(--spacing-xs) var(--spacing-sm);
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-sm);
-    background-color: var(--color-bg-primary);
-    color: var(--color-text-primary);
-    font-family: var(--font-family-mono);
-    font-size: var(--font-size-md);
-    text-align: right;
-    -moz-appearance: textfield;
-}
 
 /* Drag handle column */
 .drag-handle-col,
@@ -1133,12 +1106,6 @@ h1 {
 .portfolio-table tbody tr.drag-over-top td { border-top: 2px solid var(--color-accent-primary); }
 .portfolio-table tbody tr.drag-over-bottom td { border-bottom: 2px solid var(--color-accent-primary); }
 
-/* In edit mode, hide non-essential columns (Last NAV, Est Val, Last, Mark, Day Chg, Day %, Mkt Val, Mkt Val Chg, Weight, Rebal $, Rebal Shares, Alloc $, Alloc Qty) */
-.editing-active .portfolio-table .col-market-data,
-.editing-active .portfolio-table .rebal-column,
-.editing-active .portfolio-table .alloc-column {
-    display: none;
-}
 
 
 /* ============================================
