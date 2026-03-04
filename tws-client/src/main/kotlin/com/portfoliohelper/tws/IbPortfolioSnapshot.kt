@@ -1,12 +1,11 @@
 package com.portfoliohelper.tws
 
+import org.slf4j.LoggerFactory
 import java.io.DataInputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.Socket
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 import kotlin.random.Random
 
 // ── Public Result Models ───────────────────────────────────────────────────────
@@ -59,16 +58,19 @@ data class PortfolioSnapshot(
                 ?: client.firstIndividualAccount()
                 ?: error("No individual account (U-prefix) found in: ${client.managedAccounts}")
 
-            val positions = client.getStockPositions(accountFilter = resolvedAccount, timeoutSeconds = timeoutSeconds)
-            val summary   = client.getAccountSummary(resolvedAccount, timeoutSeconds = timeoutSeconds)
+            val positions = client.getStockPositions(
+                accountFilter = resolvedAccount,
+                timeoutSeconds = timeoutSeconds
+            )
+            val summary = client.getAccountSummary(resolvedAccount, timeoutSeconds = timeoutSeconds)
 
             readerThread.interrupt()
             client.disconnect()
 
             return PortfolioSnapshot(
-                account   = resolvedAccount,
+                account = resolvedAccount,
                 positions = positions,
-                summary   = summary
+                summary = summary
             )
         }
     }
@@ -78,22 +80,22 @@ data class PortfolioSnapshot(
 
 private object OutMsg {
     const val REQ_ACCOUNT_UPDATES = 6
-    const val REQ_POSITIONS       = 61
-    const val CANCEL_POSITIONS    = 64
+    const val REQ_POSITIONS = 61
+    const val CANCEL_POSITIONS = 64
 }
 
 private object InMsg {
-    const val ACCT_VALUE        = 6
+    const val ACCT_VALUE = 6
     const val ACCT_DOWNLOAD_END = 54
-    const val ERR_MSG           = 4
-    const val MANAGED_ACCTS     = 15
-    const val POSITION          = 61
-    const val POSITION_END      = 62
+    const val ERR_MSG = 4
+    const val MANAGED_ACCTS = 15
+    const val POSITION = 61
+    const val POSITION_END = 62
 }
 
 private object AcctKey {
-    const val CASH_BALANCE     = "CashBalance"
-    const val ACCRUED_CASH     = "AccruedCash"      // MTD interest earned/paid
+    const val CASH_BALANCE = "CashBalance"
+    const val ACCRUED_CASH = "AccruedCash"      // MTD interest earned/paid
     const val ACCRUED_DIVIDEND = "AccruedDividend"  // pending dividends
 }
 
@@ -104,6 +106,7 @@ internal class TwsClient(
     private val port: Int = 7496,
     private val clientId: Int = Random.nextInt(1, 10000)
 ) {
+    private val logger = LoggerFactory.getLogger(TwsClient::class.java)
     private lateinit var socket: Socket
     private lateinit var input: DataInputStream
     private lateinit var output: OutputStream
@@ -112,7 +115,8 @@ internal class TwsClient(
     private var positionLatch = CountDownLatch(1)
 
     // account -> key -> currency -> value
-    private val acctValues = ConcurrentHashMap<String, ConcurrentHashMap<String, ConcurrentHashMap<String, Double>>>()
+    private val acctValues =
+        ConcurrentHashMap<String, ConcurrentHashMap<String, ConcurrentHashMap<String, Double>>>()
     private var acctLatch = CountDownLatch(1)
     private var acctSubscribed = false
 
@@ -127,7 +131,7 @@ internal class TwsClient(
     fun connect() {
         socket = Socket()
         socket.connect(java.net.InetSocketAddress(InetAddress.getByName(host), port), 5000)
-        input  = DataInputStream(socket.getInputStream())
+        input = DataInputStream(socket.getInputStream())
         output = socket.getOutputStream()
 
         sendHandshake()
@@ -135,18 +139,18 @@ internal class TwsClient(
         serverVersion = version
         sendStartApi()
 
-        println("✅ Connected to TWS  server version=$serverVersion")
+        logger.info("Connected to TWS server version={}", serverVersion)
     }
 
     fun disconnect() {
         if (acctSubscribed) cancelAccountUpdates("")
         runCatching { socket.close() }
-        println("🔌 Disconnected")
+        logger.info("Disconnected from TWS")
     }
 
     private fun sendHandshake() {
         val payload = "v100..187\u0000".toByteArray(Charsets.UTF_8)
-        val header  = ByteArray(4) { i -> ((payload.size shr ((3 - i) * 8)) and 0xFF).toByte() }
+        val header = ByteArray(4) { i -> ((payload.size shr ((3 - i) * 8)) and 0xFF).toByte() }
         output.write("API\u0000".toByteArray(Charsets.UTF_8))
         output.write(header)
         output.write(payload)
@@ -154,7 +158,7 @@ internal class TwsClient(
     }
 
     private fun readHandshakeResponse(): Pair<Int, String> {
-        val version   = readRawString()
+        val version = readRawString()
         val timestamp = readRawString()
         return Pair(version.toIntOrNull() ?: 0, timestamp)
     }
@@ -177,10 +181,15 @@ internal class TwsClient(
         val complete = positionLatch.await(timeoutSeconds, TimeUnit.SECONDS)
         cancelPositions()
 
-        if (!complete) println("⚠️  Position stream timed out — partial results returned")
+        if (!complete) logger.warn("Position stream timed out — partial results returned")
 
         return positions.values
-            .filter { exchangeFilter == null || it.exchange.equals(exchangeFilter, ignoreCase = true) }
+            .filter {
+                exchangeFilter == null || it.exchange.equals(
+                    exchangeFilter,
+                    ignoreCase = true
+                )
+            }
             .filter { accountFilter == null || it.account == accountFilter }
             .sortedBy { it.symbol }
     }
@@ -198,7 +207,7 @@ internal class TwsClient(
         cancelAccountUpdates(account)
         acctSubscribed = false
 
-        if (!complete) println("⚠️  Account stream timed out — partial results returned")
+        if (!complete) logger.warn("Account stream timed out — partial results returned")
 
         fun valuesFor(key: String): Map<String, Double> =
             acctValues[account]?.get(key)
@@ -206,9 +215,9 @@ internal class TwsClient(
                 ?.toMap() ?: emptyMap()
 
         return AccountSummary(
-            account          = account,
-            cashBalances     = valuesFor(AcctKey.CASH_BALANCE),
-            accruedCash      = valuesFor(AcctKey.ACCRUED_CASH),
+            account = account,
+            cashBalances = valuesFor(AcctKey.CASH_BALANCE),
+            accruedCash = valuesFor(AcctKey.ACCRUED_CASH),
             pendingDividends = valuesFor(AcctKey.ACCRUED_DIVIDEND)
         )
     }
@@ -224,12 +233,14 @@ internal class TwsClient(
     }
 
     private fun requestAccountUpdates(subscribe: Boolean, account: String) {
-        sendMessage(listOf(
-            OutMsg.REQ_ACCOUNT_UPDATES.toString(),
-            "2",
-            if (subscribe) "1" else "0",
-            account
-        ))
+        sendMessage(
+            listOf(
+                OutMsg.REQ_ACCOUNT_UPDATES.toString(),
+                "2",
+                if (subscribe) "1" else "0",
+                account
+            )
+        )
     }
 
     private fun cancelAccountUpdates(account: String) {
@@ -243,36 +254,41 @@ internal class TwsClient(
         if (fields.isEmpty()) return true
 
         when (fields[0].toIntOrNull()) {
-            InMsg.POSITION      -> handlePosition(fields)
-            InMsg.POSITION_END  -> {
-                println("📋 Position stream complete")
+            InMsg.POSITION -> handlePosition(fields)
+            InMsg.POSITION_END -> {
+                logger.debug("Position stream complete")
                 positionLatch.countDown()
             }
-            InMsg.ACCT_VALUE        -> handleAcctValue(fields)
+
+            InMsg.ACCT_VALUE -> handleAcctValue(fields)
             InMsg.ACCT_DOWNLOAD_END -> {
                 val account = if (fields.size >= 3) fields[2] else "?"
-                println("📋 Account download complete: $account")
+                logger.debug("Account download complete: {}", account)
                 acctLatch.countDown()
             }
+
             InMsg.ERR_MSG -> {
                 if (fields.size >= 5) {
-                    val code     = fields[3]
-                    val msg      = fields[4]
+                    val code = fields[3]
+                    val msg = fields[4]
                     val infoOnly = code in listOf("2104", "2106", "2158", "2100", "2119")
-                    if (infoOnly) println("ℹ️  [$code] $msg")
-                    else          println("❌ TWS error [$code]: $msg")
+                    if (infoOnly) logger.info("[{}] {}", code, msg)
+                    else logger.warn("TWS error [{}]: {}", code, msg)
                 }
             }
+
             InMsg.MANAGED_ACCTS -> {
                 if (fields.size >= 3) {
                     managedAccounts.clear()
                     managedAccounts.addAll(
                         fields[2].split(",").map { it.trim() }.filter { it.isNotEmpty() }
                     )
-                    println("🏦 Managed accounts: $managedAccounts")
+                    logger.debug("Managed accounts: {}", managedAccounts)
                 }
             }
-            else -> { /* ignore */ }
+
+            else -> { /* ignore */
+            }
         }
         return true
     }
@@ -287,17 +303,17 @@ internal class TwsClient(
         if (fields[5] != "STK") return
 
         val account = fields[2]
-        val symbol  = fields[4].ifBlank { fields[12] }
-        val qty     = fields[14].toDoubleOrNull() ?: return
+        val symbol = fields[4].ifBlank { fields[12] }
+        val qty = fields[14].toDoubleOrNull() ?: return
         if (qty == 0.0) return
 
         positions["$account:$symbol:${fields[10]}"] = StockPosition(
-            symbol   = symbol,
+            symbol = symbol,
             exchange = fields[10],
             currency = fields[11],
-            qty      = qty,
-            avgCost  = fields[15].toDoubleOrNull() ?: 0.0,
-            account  = account
+            qty = qty,
+            avgCost = fields[15].toDoubleOrNull() ?: 0.0,
+            account = account
         )
     }
 
@@ -305,26 +321,31 @@ internal class TwsClient(
         // [0]=msgId [1]=version [2]=key [3]=value [4]=currency [5]=accountName
         if (fields.size < 6) return
 
-        val key      = fields[2]
-        val value    = fields[3].toDoubleOrNull() ?: return
+        val key = fields[2]
+        val value = fields[3].toDoubleOrNull() ?: return
         val currency = fields[4].ifBlank { "BASE" }
-        val account  = fields[5]
+        val account = fields[5]
 
-        println("  💰 [$account] $key  $currency = $value")
+        logger.trace("[{}] {}  {} = {}", account, key, currency, value)
 
-        if (key !in listOf(AcctKey.CASH_BALANCE, AcctKey.ACCRUED_CASH, AcctKey.ACCRUED_DIVIDEND)) return
+        if (key !in listOf(
+                AcctKey.CASH_BALANCE,
+                AcctKey.ACCRUED_CASH,
+                AcctKey.ACCRUED_DIVIDEND
+            )
+        ) return
 
         acctValues
             .getOrPut(account) { ConcurrentHashMap() }
-            .getOrPut(key)     { ConcurrentHashMap() }[currency] = value
+            .getOrPut(key) { ConcurrentHashMap() }[currency] = value
     }
 
     // ── Wire Helpers ──────────────────────────────────────────────────────────
 
     private fun sendMessage(fields: List<String>) {
         val payload = (fields.joinToString("\u0000") + "\u0000").toByteArray(Charsets.UTF_8)
-        val len     = payload.size
-        val header  = ByteArray(4) { i -> ((len shr ((3 - i) * 8)) and 0xFF).toByte() }
+        val len = payload.size
+        val header = ByteArray(4) { i -> ((len shr ((3 - i) * 8)) and 0xFF).toByte() }
         output.write(header)
         output.write(payload)
         output.flush()
@@ -336,7 +357,7 @@ internal class TwsClient(
 
         val len = ((lenBuf[0].toInt() and 0xFF) shl 24) or
                 ((lenBuf[1].toInt() and 0xFF) shl 16) or
-                ((lenBuf[2].toInt() and 0xFF) shl 8)  or
+                ((lenBuf[2].toInt() and 0xFF) shl 8) or
                 (lenBuf[3].toInt() and 0xFF)
 
         if (len !in 1..1_048_576) return emptyList()
@@ -366,7 +387,8 @@ internal fun TwsClient.startReaderThread(): Thread {
             while (!Thread.currentThread().isInterrupted) {
                 if (!readMessage()) break
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }, "tws-reader")
     t.isDaemon = true
     t.start()
@@ -395,8 +417,10 @@ fun main() {
 
     println("\n  Stock positions (${snapshot.positions.size}):")
     snapshot.positions.forEach { p ->
-        println("    ${p.symbol.padEnd(10)} exchange=${p.exchange.padEnd(8)} " +
-                "qty=${p.qty}  avgCost=${p.avgCost}  ccy=${p.currency}")
+        println(
+            "    ${p.symbol.padEnd(10)} exchange=${p.exchange.padEnd(8)} " +
+                    "qty=${p.qty}  avgCost=${p.avgCost}  ccy=${p.currency}"
+        )
     }
 
     println("\n  By exchange:")

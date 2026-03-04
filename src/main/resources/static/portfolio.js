@@ -1897,6 +1897,98 @@ function initDragAndDrop(tbody) {
     }
 }
 
+// ── TWS Sync ──────────────────────────────────────────────────────────────────
+
+async function initTwsSync() {
+    const btn = document.getElementById('tws-sync-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Syncing\u2026';
+        try {
+            const res = await fetch('/api/tws/snapshot?portfolio=' + portfolioId);
+            const data = await res.json();
+            if (data.error) { showTwsSyncError('TWS sync error: ' + data.error); return; }
+
+            // Enter edit mode if not already active
+            if (!document.body.classList.contains('editing-active')) {
+                document.getElementById('edit-toggle')?.click();
+            }
+
+            // ── Update stock qty ──
+            for (const pos of data.positions) {
+                const sym = pos.symbol;
+                const qty = pos.qty;
+                let qtyInput = document.querySelector(
+                    '#stock-edit-table .edit-qty[data-symbol="' + sym + '"]'
+                );
+                if (qtyInput) {
+                    qtyInput.value = qty;
+                } else {
+                    const tr = addStockRow();
+                    if (tr) {
+                        const [symIn, qtyIn] = getStockRowInputs(tr);
+                        if (symIn) symIn.value = sym;
+                        if (qtyIn) qtyIn.value = qty;
+                    }
+                }
+            }
+
+            // ── Update Cash.XXX.M entries ──
+            for (const [ccy, amt] of Object.entries(data.cashBalances)) {
+                updateOrAddCashRow('Cash.' + ccy + '.M', String(amt));
+            }
+
+            // ── Update MTD Interest.XXX entries ──
+            for (const [ccy, amt] of Object.entries(data.accruedCash)) {
+                updateOrAddCashRow('MTD Interest.' + ccy, String(amt));
+            }
+
+            updateTargetWeightTotal();
+        } catch (e) {
+            showTwsSyncError('TWS sync failed: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Sync TWS';
+        }
+    });
+}
+
+function showTwsSyncError(msg) {
+    let el = document.getElementById('tws-sync-error');
+    if (!el) {
+        el = document.createElement('span');
+        el.id = 'tws-sync-error';
+        el.className = 'tws-sync-error';
+        document.getElementById('tws-sync-btn')?.insertAdjacentElement('afterend', el);
+    }
+    el.textContent = msg;
+    el.style.display = 'inline';
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+function updateOrAddCashRow(key, value) {
+    const rows = document.querySelectorAll('[data-cash-edit-row]');
+    for (const tr of rows) {
+        if (tr.dataset.deleted) continue;
+        const keyInput = tr.querySelector('.cash-edit-key');
+        if (keyInput && keyInput.value.toLowerCase() === key.toLowerCase()) {
+            const valInput = tr.querySelector('.cash-edit-value');
+            if (valInput) valInput.value = value;
+            return;
+        }
+    }
+    const tr = addCashRow();
+    if (tr) {
+        const keyInput = tr.querySelector('.cash-edit-key');
+        const valInput = tr.querySelector('.cash-edit-value');
+        if (keyInput) keyInput.value = key;
+        if (valInput) valInput.value = value;
+    }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1907,6 +1999,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCurrencyControls();
     initRebalanceControls();
     initBackupPanel();
+    initTwsSync();
 
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
     // Must run before restoring targets so lastMarginUsd is correct

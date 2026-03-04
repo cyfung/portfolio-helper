@@ -47,6 +47,8 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20240303")
+
+    implementation(project(":tws-client"))
 }
 
 application {
@@ -166,7 +168,8 @@ launch4j {
 // Portable Distribution Tasks
 tasks.register<Zip>("portableDistZip") {
     group = "distribution"
-    description = "Creates a portable ZIP distribution with shadow JAR and config (data/ generated at runtime)"
+    description =
+        "Creates a portable ZIP distribution with shadow JAR and config (data/ generated at runtime)"
     archiveBaseName.set("${project.name}-portable")
     archiveClassifier.set("complete")
 
@@ -188,7 +191,8 @@ tasks.register<Zip>("portableDistZip") {
 
 tasks.register<Tar>("portableDistTar") {
     group = "distribution"
-    description = "Creates a portable TAR.GZ distribution with shadow JAR and config (data/ generated at runtime)"
+    description =
+        "Creates a portable TAR.GZ distribution with shadow JAR and config (data/ generated at runtime)"
     archiveBaseName.set("${project.name}-portable")
     archiveClassifier.set("complete")
     compression = Compression.GZIP

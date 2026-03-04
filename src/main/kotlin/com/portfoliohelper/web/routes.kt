@@ -1,24 +1,16 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.AppDirs
-import com.portfoliohelper.service.BacktestService
-import com.portfoliohelper.service.BacktestStats
-import com.portfoliohelper.service.DataPoint
-import com.portfoliohelper.service.MarginConfig
-import com.portfoliohelper.service.MultiBacktestRequest
-import com.portfoliohelper.service.PortfolioConfig
-import com.portfoliohelper.service.BackupService
-import com.portfoliohelper.service.IbkrMarginRateService
-import com.portfoliohelper.service.PortfolioRegistry
-import com.portfoliohelper.service.MarginRebalanceMode
-import com.portfoliohelper.service.RebalanceStrategy
-import com.portfoliohelper.service.TickerWeight
+import com.portfoliohelper.service.*
+import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVPrinter
@@ -28,7 +20,15 @@ import java.io.FileWriter
 private val cashKeyKnownFlags = setOf("M")
 
 private val LOAN_COMPARE_FIELDS =
-    listOf("loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows")
+    listOf(
+        "loanAmount",
+        "numPeriods",
+        "periodLength",
+        "payment",
+        "rateApy",
+        "rateFlat",
+        "extraCashflows"
+    )
 
 private fun loanEntryKey(obj: JsonObject): String =
     LOAN_COMPARE_FIELDS.joinToString("|") { obj[it]?.toString() ?: "" }
@@ -57,7 +57,8 @@ fun Application.configureRouting() {
 
         get("/portfolio/{name}") {
             val id = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
-            val entry = PortfolioRegistry.get(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val entry =
+                PortfolioRegistry.get(id) ?: return@get call.respond(HttpStatusCode.NotFound)
             call.renderPortfolioPage(entry, PortfolioRegistry.entries, id)
         }
 
@@ -100,13 +101,17 @@ fun Application.configureRouting() {
 
             val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
             f.parentFile.mkdirs()
-            val existing = if (f.exists()) Json.parseToJsonElement(f.readText()).jsonArray.toMutableList()
-                           else mutableListOf()
+            val existing =
+                if (f.exists()) Json.parseToJsonElement(f.readText()).jsonArray.toMutableList()
+                else mutableListOf()
 
-            val takenNames = existing.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }.toSet()
+            val takenNames =
+                existing.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }.toSet()
             var finalName = name
             var counter = 2
-            while (finalName in takenNames) { finalName = "$name ($counter)"; counter++ }
+            while (finalName in takenNames) {
+                finalName = "$name ($counter)"; counter++
+            }
 
             val saved = buildJsonObject { put("name", finalName); put("config", config) }
             existing.add(saved)
@@ -123,8 +128,10 @@ fun Application.configureRouting() {
                     File(dir, "settings.json").writeText(body)
                 }
 
-                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val fromDate =
+                    json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate =
+                    json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
                 val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
                     val pObj = pel.jsonObject
@@ -143,18 +150,24 @@ fun Application.configureRouting() {
                         marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
                             val mObj = mel.jsonObject
                             MarginConfig(
-                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
-                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull
+                                    ?: 0.0,
+                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull
+                                    ?: 0.015,
+                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull
+                                    ?: 0.05,
+                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull
+                                    ?: 0.05,
                                 upperRebalanceMode = runCatching {
                                     MarginRebalanceMode.valueOf(
-                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull
+                                            ?: "PROPORTIONAL"
                                     )
                                 }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
                                 lowerRebalanceMode = runCatching {
                                     MarginRebalanceMode.valueOf(
-                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull
+                                            ?: "PROPORTIONAL"
                                     )
                                 }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
                             )
@@ -162,7 +175,8 @@ fun Application.configureRouting() {
                     )
                 } ?: emptyList()
 
-                val result = BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
+                val result =
+                    BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
 
                 // Serialise result to JSON manually
                 fun serializeStats(s: BacktestStats) = buildString {
@@ -173,6 +187,7 @@ fun Application.configureRouting() {
                     append(",\"marginLowerTriggers\":${s.marginLowerTriggers ?: "null"}")
                     append("}")
                 }
+
                 fun serializePoints(pts: List<DataPoint>) =
                     "[${pts.joinToString(",") { "{\"date\":\"${it.date}\",\"value\":${it.value}}" }}]"
 
@@ -184,7 +199,8 @@ fun Application.configureRouting() {
                         append("{\"label\":\"$escapedLabel\",\"curves\":[")
                         pr.curves.forEachIndexed { ci, cr ->
                             if (ci > 0) append(",")
-                            val escapedCurveLabel = cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
+                            val escapedCurveLabel =
+                                cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
                             append("{\"label\":\"$escapedCurveLabel\",")
                             append("\"points\":${serializePoints(cr.points)},")
                             append("\"stats\":${serializeStats(cr.stats)}}")
@@ -225,7 +241,8 @@ fun Application.configureRouting() {
                             val amount = obj["amount"]?.jsonPrimitive?.double ?: continue
                             val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
                             val letf = obj["letf"]?.jsonPrimitive?.content ?: ""
-                            val weightStr = if (targetWeight > 0) "%.2f".format(targetWeight) else ""
+                            val weightStr =
+                                if (targetWeight > 0) "%.2f".format(targetWeight) else ""
                             printer.printRecord(symbol, formatQty(amount), weightStr, letf)
                         }
                     }
@@ -355,7 +372,9 @@ fun Application.configureRouting() {
                 val props = if (confFile.exists())
                     confFile.readLines()
                         .filter { '=' in it && !it.startsWith('#') }
-                        .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+                        .associate {
+                            it.substringBefore('=').trim() to it.substringAfter('=').trim()
+                        }
                         .toMutableMap()
                 else mutableMapOf()
                 // Set or clear the key
@@ -387,7 +406,7 @@ fun Application.configureRouting() {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
             val portfolioEntry = PortfolioRegistry.get(portfolioId)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
-            val prefix    = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
+            val prefix = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
             val subfolder = call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
             BackupService.backupNow(portfolioEntry, prefix, subfolder)
             call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
@@ -418,7 +437,8 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val date = call.request.queryParameters["date"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing date parameter")
-                val subfolder = call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
+                val subfolder =
+                    call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
                 BackupService.restoreBackup(portfolioEntry, date, subfolder)
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
@@ -432,11 +452,51 @@ fun Application.configureRouting() {
         // Manual reload for IBKR margin rates
         post("/api/margin-rates/reload") {
             if (!IbkrMarginRateService.canReload()) {
-                call.respond(HttpStatusCode.TooManyRequests, "Reload not allowed within 10 minutes of last fetch")
+                call.respond(
+                    HttpStatusCode.TooManyRequests,
+                    "Reload not allowed within 10 minutes of last fetch"
+                )
                 return@post
             }
             IbkrMarginRateService.reloadNow()
             call.respond(HttpStatusCode.OK, IbkrMarginRateService.getLastFetchMillis().toString())
+        }
+
+        get("/api/tws/snapshot") {
+            try {
+                val host = System.getenv("TWS_HOST") ?: "127.0.0.1"
+                val port = System.getenv("TWS_PORT")?.toIntOrNull() ?: 7496
+                val snapshot = withContext(Dispatchers.IO) { PortfolioSnapshot.fetch(host, port) }
+
+                val exchangeSuffixMap = mapOf("SBF" to ".PA", "LSEETF" to ".L")
+
+                fun symbolWithSuffix(exchange: String, symbol: String): String =
+                    symbol + (exchangeSuffixMap[exchange] ?: "")
+
+                val positionsJson = snapshot.positions.joinToString(",", "[", "]") { pos ->
+                    val sym = symbolWithSuffix(pos.exchange, pos.symbol)
+                    "{\"symbol\":\"$sym\",\"qty\":${pos.qty}}"
+                }
+
+                fun mapToJson(m: Map<String, Double>): String =
+                    m.entries.joinToString(",", "{", "}") { (k, v) -> "\"$k\":$v" }
+
+                val json = buildString {
+                    append("{")
+                    append("\"account\":\"${snapshot.account}\",")
+                    append("\"positions\":$positionsJson,")
+                    append("\"cashBalances\":${mapToJson(snapshot.summary.cashBalances)},")
+                    append("\"accruedCash\":${mapToJson(snapshot.summary.accruedCash)}")
+                    append("}")
+                }
+                call.respondText(json, ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
         }
 
         // Serve static files (CSS, JS)
