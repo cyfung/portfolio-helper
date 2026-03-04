@@ -1092,10 +1092,31 @@ function initColumnVisibility() {
         updateTargetWeightTotal();
     });
 
+    // Copy table button handler (copies all rows as TSV for Google Sheets)
+    const copyTableBtn = document.querySelector('.copy-table-btn');
+    if (copyTableBtn) {
+        copyTableBtn.addEventListener('click', () => {
+            const rows = Array.from(document.querySelectorAll('.portfolio-table tbody tr'))
+                .filter(row => !row.dataset.deleted)
+                .map(row => {
+                    const get = col => row.querySelector('.edit-input[data-column="' + col + '"]')?.value ?? '';
+                    return [get('symbol'), get('qty'), get('weight'), get('letf')].join('\t');
+                });
+            const text = rows.join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = copyTableBtn.innerHTML;
+                copyTableBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+                copyTableBtn.classList.add('copied');
+                setTimeout(() => { copyTableBtn.innerHTML = orig; copyTableBtn.classList.remove('copied'); }, 1500);
+            });
+        });
+    }
+
     // Copy column button handler
     document.querySelectorAll('.copy-col-btn').forEach(btn => {
+        const col = btn.getAttribute('data-column');
+        if (!col) return;
         btn.addEventListener('click', () => {
-            const col = btn.getAttribute('data-column');
             const inputs = Array.from(
                 document.querySelectorAll('.edit-input[data-column="' + col + '"]')
             );

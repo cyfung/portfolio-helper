@@ -502,7 +502,13 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
     table(classes = "portfolio-table") {
         thead {
             tr {
-                th(classes = "edit-column drag-handle-col") { }
+                th(classes = "edit-column drag-handle-col") {
+                    button(classes = "copy-table-btn copy-col-btn") {
+                        attributes["type"] = "button"
+                        attributes["title"] = "Copy table to clipboard (Google Sheets)"
+                        unsafe { raw(COPY_ICON_SVG) }
+                    }
+                }
                 th {
                     +"Symbol"
                     button(classes = "copy-col-btn") {
