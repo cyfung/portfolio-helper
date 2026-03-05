@@ -2038,6 +2038,7 @@ function initSaveToBacktest() {
           : parseFloat(marginPercentEl?.textContent?.replace(/[()%]/g, '')) || 0;
 
       const allocAddMode = document.getElementById('alloc-add-mode')?.value || 'PROPORTIONAL';
+      const allocReduceMode = document.getElementById('alloc-reduce-mode')?.value || 'PROPORTIONAL';
 
       const config = {
           tickers,
@@ -2047,7 +2048,7 @@ function initSaveToBacktest() {
               marginSpread:         0.015,
               marginDeviationUpper: 0.05,
               marginDeviationLower: 0.05,
-              upperRebalanceMode:   allocAddMode,
+              upperRebalanceMode:   allocReduceMode,
               lowerRebalanceMode:   allocAddMode
           }] : []
       };
