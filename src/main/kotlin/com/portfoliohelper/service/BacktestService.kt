@@ -12,6 +12,7 @@ import java.nio.file.Path
 import java.time.LocalDate
 import java.time.temporal.IsoFields
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.pow
@@ -667,6 +668,58 @@ object BacktestService {
         return MarginApplyResult(result, upperTriggers, lowerTriggers)
     }
 
+    fun computeWaterfall(
+        tickers: List<String>,
+        holdings: MutableMap<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double
+    ) {
+        val totalHoldings = holdings.values.sum()
+        val finalTotal = totalHoldings + delta
+        val sign = if (delta >= 0) 1.0 else -1.0
+
+        val currentDev = mutableMapOf<String, Double>()
+        for (ticker in tickers) {
+            currentDev[ticker] = (holdings[ticker] ?: 0.0) / finalTotal - (targetWeights[ticker] ?: 0.0)
+        }
+
+        val sorted = if (delta >= 0)
+            tickers.sortedBy { currentDev[it] ?: 0.0 }
+        else
+            tickers.sortedByDescending { currentDev[it] ?: 0.0 }
+
+        var remaining = abs(delta)
+
+        for (i in sorted.indices) {
+            if (remaining <= 0.0) break
+            val groupDev = currentDev[sorted[0]] ?: 0.0
+            val nextDev = if (i + 1 < sorted.size) currentDev[sorted[i + 1]] ?: 0.0 else sign * Double.POSITIVE_INFINITY
+            val groupSize = i + 1
+
+            val costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize
+
+            if (remaining >= costToLevel) {
+                for (j in 0..i) {
+                    holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + (nextDev - groupDev) * finalTotal
+                    currentDev[sorted[j]] = nextDev
+                }
+                remaining -= costToLevel
+            } else {
+                val perStock = remaining / groupSize
+                for (j in 0..i) {
+                    holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + perStock * sign
+                    currentDev[sorted[j]] = (currentDev[sorted[j]] ?: 0.0) + (perStock / finalTotal) * sign
+                }
+                remaining = 0.0
+            }
+        }
+
+        if (remaining > 0.0) {
+            for (ticker in tickers)
+                holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * sign * (targetWeights[ticker] ?: 0.0)
+        }
+    }
+
     /**
      * Proportional margin rebalance mode: when a margin deviation triggers, only the
      * delta change in total exposure is distributed across tickers by target weight.
@@ -768,127 +821,12 @@ object BacktestService {
 
                         MarginRebalanceMode.WATERFALL -> {
                             val delta = newBorrowed - borrowed
-                            val totalHoldings = holdings.values.sum()
-                            val finalTotal = totalHoldings + delta
-
-// Track each ticker's deviation dynamically as allocations accumulate
-                            val currentDev = mutableMapOf<String, Double>()
-                            for (ticker in tickers) {
-                                currentDev[ticker] = (holdings[ticker] ?: 0.0) / finalTotal - (targetWeights[ticker] ?: 0.0)
-                            }
-
-                            if (delta >= 0) {
-                                val sorted = tickers.sortedBy { currentDev[it] ?: 0.0 }
-                                var remaining = delta
-
-                                for (i in sorted.indices) {
-                                    if (remaining <= 0.0) break
-                                    val groupDev = currentDev[sorted[0]] ?: 0.0
-                                    val nextDev = if (i + 1 < sorted.size) currentDev[sorted[i + 1]] ?: 0.0 else Double.POSITIVE_INFINITY
-                                    val groupSize = i + 1
-
-                                    val costToLevel = (nextDev - groupDev) * finalTotal * groupSize
-
-                                    if (remaining >= costToLevel) {
-                                        for (j in 0..i) {
-                                            val add = (nextDev - groupDev) * finalTotal
-                                            holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + add
-                                            currentDev[sorted[j]] = nextDev
-                                        }
-                                        remaining -= costToLevel
-                                    } else {
-                                        val perStock = remaining / groupSize
-                                        val devIncrease = perStock / finalTotal
-                                        for (j in 0..i) {
-                                            holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + perStock
-                                            currentDev[sorted[j]] = (currentDev[sorted[j]] ?: 0.0) + devIncrease
-                                        }
-                                        remaining = 0.0
-                                    }
-                                }
-
-                                if (remaining > 0.0) {
-                                    for (ticker in tickers)
-                                        holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
-                                }
-
-                            } else {
-                                val sorted = tickers.sortedByDescending { currentDev[it] ?: 0.0 }
-                                var remaining = -delta
-
-                                for (i in sorted.indices) {
-                                    if (remaining <= 0.0) break
-                                    val groupDev = currentDev[sorted[0]] ?: 0.0
-                                    val nextDev = if (i + 1 < sorted.size) currentDev[sorted[i + 1]] ?: 0.0 else Double.NEGATIVE_INFINITY
-                                    val groupSize = i + 1
-
-                                    val costToLevel = (groupDev - nextDev) * finalTotal * groupSize
-
-                                    if (remaining >= costToLevel) {
-                                        for (j in 0..i) {
-                                            val trim = (groupDev - nextDev) * finalTotal
-                                            holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) - trim
-                                            currentDev[sorted[j]] = nextDev
-                                        }
-                                        remaining -= costToLevel
-                                    } else {
-                                        val perStock = remaining / groupSize
-                                        val devDecrease = perStock / finalTotal
-                                        for (j in 0..i) {
-                                            holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) - perStock
-                                            currentDev[sorted[j]] = (currentDev[sorted[j]] ?: 0.0) - devDecrease
-                                        }
-                                        remaining = 0.0
-                                    }
-                                }
-
-                                if (remaining > 0.0) {
-                                    for (ticker in tickers)
-                                        holdings[ticker] = (holdings[ticker] ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
-                                }
-                            }
+                            computeWaterfall(tickers, holdings, targetWeights, delta)
                         }
 
                         MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
                             val delta = newBorrowed - borrowed
-                            val totalHoldings = holdings.values.sum()
-                            val finalTotal = totalHoldings + delta
-
-                            if (delta >= 0) {
-                                val sortedTickers = tickers.sortedBy {
-                                    (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0)
-                                }
-                                var remaining = delta
-                                for (ticker in sortedTickers) {
-                                    if (remaining <= 0.0) break
-                                    val cur = holdings[ticker] ?: 0.0
-                                    val target = finalTotal * (targetWeights[ticker] ?: 0.0)
-                                    val add = minOf(remaining, maxOf(0.0, target - cur))
-                                    holdings[ticker] = cur + add
-                                    remaining -= add
-                                }
-                                if (remaining > 0.0) {
-                                    for (ticker in tickers)
-                                        holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * (targetWeights[ticker] ?: 0.0)
-                                }
-                            } else {
-                                val sortedTickers = tickers.sortedByDescending {
-                                    (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0)
-                                }
-                                var remaining = -delta
-                                for (ticker in sortedTickers) {
-                                    if (remaining <= 0.0) break
-                                    val cur = holdings[ticker] ?: 0.0
-                                    val target = finalTotal * (targetWeights[ticker] ?: 0.0)
-                                    val remove = minOf(remaining, maxOf(0.0, cur - target))
-                                    holdings[ticker] = cur - remove
-                                    remaining -= remove
-                                }
-                                if (remaining > 0.0) {
-                                    for (ticker in tickers)
-                                        holdings[ticker] = (holdings[ticker] ?: 0.0) - remaining * (targetWeights[ticker] ?: 0.0)
-                                }
-                            }
+                            computeUndervalueFirst(tickers, holdings, targetWeights, delta)
                         }
 
                         MarginRebalanceMode.PROPORTIONAL -> {
@@ -919,6 +857,36 @@ object BacktestService {
             result.add(holdings.values.sum() - borrowed)
         }
         return MarginApplyResult(result, upperTriggers, lowerTriggers)
+    }
+
+    fun computeUndervalueFirst(
+        tickers: List<String>,
+        holdings: MutableMap<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double
+    ) {
+        val totalHoldings = holdings.values.sum()
+        val finalTotal = totalHoldings + delta
+        val sign = if (delta >= 0) 1.0 else -1.0
+
+        val sorted = if (delta >= 0)
+            tickers.sortedBy { (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0) }
+        else
+            tickers.sortedByDescending { (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0) }
+
+        var remaining = abs(delta)
+        for (ticker in sorted) {
+            if (remaining <= 0.0) break
+            val cur = holdings[ticker] ?: 0.0
+            val target = finalTotal * (targetWeights[ticker] ?: 0.0)
+            val amount = minOf(remaining, maxOf(0.0, (target - cur) * sign))
+            holdings[ticker] = cur + amount * sign
+            remaining -= amount
+        }
+        if (remaining > 0.0) {
+            for (ticker in tickers)
+                holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * sign * (targetWeights[ticker] ?: 0.0)
+        }
     }
 
     // ── Statistics ────────────────────────────────────────────────────────────

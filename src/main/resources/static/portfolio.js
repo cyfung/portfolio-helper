@@ -727,6 +727,84 @@ function updateAllocColumns(rebalTotal) {
     }
 }
 
+function computeUndervalueFirst(eligible, totalStockValue, delta) {
+    const alloc = {};
+    for (const s of eligible) alloc[s.symbol] = 0;
+
+    const finalTotal = totalStockValue + delta;
+    const sign = delta >= 0 ? 1 : -1;
+
+    const sorted = [...eligible].sort((a, b) =>
+        sign * (
+            (a.currentValue / finalTotal - a.targetWeight / 100) -
+            (b.currentValue / finalTotal - b.targetWeight / 100)
+        )
+    );
+
+    let remaining = Math.abs(delta);
+    for (const s of sorted) {
+        if (remaining <= 0) break;
+        const target = finalTotal * (s.targetWeight / 100);
+        const amount = Math.min(remaining, Math.max(0, (target - s.currentValue) * sign));
+        alloc[s.symbol] = amount * sign;
+        remaining -= amount;
+    }
+
+    if (remaining > 0) {
+        for (const s of eligible)
+            alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining * sign;
+    }
+
+    return alloc;
+}
+
+function computeWaterfall(eligible, totalStockValue, delta) {
+    const alloc = {};
+    for (const s of eligible) alloc[s.symbol] = 0;
+
+    const finalTotal = totalStockValue + delta;
+    const sign = delta >= 0 ? 1 : -1;
+
+    const currentDev = {};
+    for (const s of eligible) {
+        currentDev[s.symbol] = (s.currentValue / finalTotal) - (s.targetWeight / 100);
+    }
+
+    const sorted = [...eligible].sort((a, b) => sign * (currentDev[a.symbol] - currentDev[b.symbol]));
+    let remaining = Math.abs(delta);
+
+    for (let i = 0; i < sorted.length && remaining > 0; i++) {
+        const groupDev = currentDev[sorted[0].symbol];
+        const nextDev = i + 1 < sorted.length ? currentDev[sorted[i + 1].symbol] : sign * Infinity;
+        const groupSize = i + 1;
+
+        const costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize;
+
+        if (remaining >= costToLevel) {
+            for (let j = 0; j <= i; j++) {
+                alloc[sorted[j].symbol] += (nextDev - groupDev) * finalTotal;
+                currentDev[sorted[j].symbol] = nextDev;
+            }
+            remaining -= costToLevel;
+        } else {
+            const perStock = remaining / groupSize;
+            for (let j = 0; j <= i; j++) {
+                alloc[sorted[j].symbol] += perStock * sign;
+                currentDev[sorted[j].symbol] += (perStock / finalTotal) * sign;
+            }
+            remaining = 0;
+        }
+    }
+
+    if (remaining > 0) {
+        for (const s of eligible) {
+            alloc[s.symbol] += (s.targetWeight / 100) * remaining * sign;
+        }
+    }
+
+    return alloc;
+}
+
 function computeAllocations(delta, stocks, totalStockValue, mode) {
     const result = {};
     if (mode === 'PROPORTIONAL') {
@@ -741,128 +819,11 @@ function computeAllocations(delta, stocks, totalStockValue, mode) {
 
     } else if (mode === 'UNDERVALUED_PRIORITY') {
         const eligible = stocks.filter(s => s.targetWeight !== null);
-        const alloc = {};
-        const finalTotal = totalStockValue + delta;
-
-        if (delta >= 0) {
-            const sorted = [...eligible].sort((a, b) =>
-                (a.currentValue / finalTotal - a.targetWeight / 100) -
-                (b.currentValue / finalTotal - b.targetWeight / 100)
-            );
-            let remaining = delta;
-            for (const s of sorted) {
-                const target = finalTotal * (s.targetWeight / 100);
-                const add = Math.min(remaining, Math.max(0, target - s.currentValue));
-                alloc[s.symbol] = add;
-                remaining -= add;
-            }
-            if (remaining > 0)
-                for (const s of eligible)
-                    alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining;
-        } else {
-            const sorted = [...eligible].sort((a, b) =>
-                (b.currentValue / finalTotal - b.targetWeight / 100) -
-                (a.currentValue / finalTotal - a.targetWeight / 100)
-            );
-            let remaining = delta;
-            for (const s of sorted) {
-                if (remaining >= 0) break;
-                const target = finalTotal * (s.targetWeight / 100);
-                const trim = Math.max(remaining, Math.min(0, target - s.currentValue));
-                alloc[s.symbol] = trim;
-                remaining -= trim;
-            }
-            if (remaining < 0)
-                for (const s of eligible)
-                    alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining;
-        }
+        const alloc = computeUndervalueFirst(eligible, totalStockValue, delta);
         for (const s of eligible) result[s.symbol] = alloc[s.symbol] ?? 0;
     } else if (mode === 'WATERFALL') {
         const eligible = stocks.filter(s => s.targetWeight !== null);
-        const alloc = {};
-        for (const s of eligible) alloc[s.symbol] = 0;
-
-        const finalTotal = totalStockValue + delta;
-
-        // Track each stock's deviation dynamically as allocations accumulate
-        const currentDev = {};
-        for (const s of eligible) {
-            currentDev[s.symbol] = (s.currentValue / finalTotal) - (s.targetWeight / 100);
-        }
-
-        if (delta >= 0) {
-            const sorted = [...eligible].sort((a, b) => currentDev[a.symbol] - currentDev[b.symbol]);
-            let remaining = delta;
-
-            for (let i = 0; i < sorted.length && remaining > 0; i++) {
-                // All stocks in group [0..i] are already at the same deviation level (currentDev[sorted[0]])
-                // because previous iterations leveled them together. Use sorted[0]'s dev as the group level.
-                const groupDev = currentDev[sorted[0].symbol];
-                const nextDeviation = i + 1 < sorted.length ? currentDev[sorted[i + 1].symbol] : Infinity;
-                const groupSize = i + 1;
-
-                const costToLevel = (nextDeviation - groupDev) * finalTotal * groupSize;
-
-                if (remaining >= costToLevel) {
-                    for (let j = 0; j <= i; j++) {
-                        const add = (nextDeviation - groupDev) * finalTotal;
-                        alloc[sorted[j].symbol] += add;
-                        currentDev[sorted[j].symbol] = nextDeviation;
-                    }
-                    remaining -= costToLevel;
-                } else {
-                    const perStock = remaining / groupSize;
-                    const devIncrease = perStock / finalTotal;
-                    for (let j = 0; j <= i; j++) {
-                        alloc[sorted[j].symbol] += perStock;
-                        currentDev[sorted[j].symbol] += devIncrease;
-                    }
-                    remaining = 0;
-                }
-            }
-
-            if (remaining > 0) {
-                for (const s of eligible) {
-                    alloc[s.symbol] += (s.targetWeight / 100) * remaining;
-                }
-            }
-
-        } else {
-            const sorted = [...eligible].sort((a, b) => currentDev[b.symbol] - currentDev[a.symbol]);
-            let remaining = delta;
-
-            for (let i = 0; i < sorted.length && remaining < 0; i++) {
-                const groupDev = currentDev[sorted[0].symbol];
-                const nextDeviation = i + 1 < sorted.length ? currentDev[sorted[i + 1].symbol] : -Infinity;
-                const groupSize = i + 1;
-
-                const costToLevel = (groupDev - nextDeviation) * finalTotal * groupSize;
-
-                if (-remaining >= costToLevel) {
-                    for (let j = 0; j <= i; j++) {
-                        const trim = (groupDev - nextDeviation) * finalTotal;
-                        alloc[sorted[j].symbol] -= trim;
-                        currentDev[sorted[j].symbol] = nextDeviation;
-                    }
-                    remaining += costToLevel;
-                } else {
-                    const perStock = remaining / groupSize;
-                    const devDecrease = perStock / finalTotal;
-                    for (let j = 0; j <= i; j++) {
-                        alloc[sorted[j].symbol] += perStock;
-                        currentDev[sorted[j].symbol] += devDecrease;
-                    }
-                    remaining = 0;
-                }
-            }
-
-            if (remaining < 0) {
-                for (const s of eligible) {
-                    alloc[s.symbol] += (s.targetWeight / 100) * remaining;
-                }
-            }
-        }
-
+        const alloc = computeWaterfall(eligible, totalStockValue, delta);
         for (const s of eligible) result[s.symbol] = alloc[s.symbol] ?? 0;
     }
     return result;

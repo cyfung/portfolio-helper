@@ -117,7 +117,8 @@ object IbkrMarginRateService {
 
                 // Parse upper bound from cell[1]
                 // Tier cell examples: "0 - 100,000", "> 100,000", "100,000 - 1,000,000"
-                val numbers = numberRegex.findAll(cell1).map { it.value.replace(",", "").toDoubleOrNull() }.filterNotNull().toList()
+                val numbers = numberRegex.findAll(cell1)
+                    .mapNotNull { it.value.replace(",", "").toDoubleOrNull() }.toList()
                 val upTo: Double? = when {
                     numbers.size >= 2 -> numbers[1]   // "X - Y" → upper bound is Y
                     numbers.size == 1 -> {
