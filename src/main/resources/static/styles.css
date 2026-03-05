@@ -1106,7 +1106,15 @@ h1 {
 .portfolio-table tbody tr.drag-over-top td { border-top: 2px solid var(--color-accent-primary); }
 .portfolio-table tbody tr.drag-over-bottom td { border-bottom: 2px solid var(--color-accent-primary); }
 
+.date-input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
 
+.date-input-row input[type="date"] {
+    flex: 1;
+}
 
 /* ============================================
    Margin Row
@@ -2025,6 +2033,7 @@ body.editing-active .cash-edit-value {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
+    width: fit-content;  /* add this */
 }
 
 .backtest-grid-3 {

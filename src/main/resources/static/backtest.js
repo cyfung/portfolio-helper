@@ -520,4 +520,22 @@
         html += '</tbody></table>';
         statsContainer.innerHTML = html;
     }
+
+    function setDateYearsAgo(inputId, yearsAgo) {
+        const date = new Date();
+        date.setFullYear(date.getFullYear() - yearsAgo);
+        document.getElementById(inputId).value = date.toISOString().split('T')[0];
+    }
+
+    document.getElementById('from-date-quick').addEventListener('change', e => {
+        if (e.target.value === '') return;
+        setDateYearsAgo('from-date', parseInt(e.target.value));
+        e.target.value = ''; // reset dropdown
+    });
+
+    document.getElementById('to-date-quick').addEventListener('change', e => {
+        if (e.target.value === '') return;
+        setDateYearsAgo('to-date', parseInt(e.target.value));
+        e.target.value = ''; // reset dropdown
+    });
 }

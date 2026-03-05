@@ -5,6 +5,35 @@ import io.ktor.server.application.*
 import io.ktor.server.html.*
 import kotlinx.html.*
 
+private fun FlowContent.dateFieldWithQuickSelect(labelText: String, inputId: String) {
+    val quickSelectId = "$inputId-quick"
+    val years = (1..10).toList() + listOf(15, 20, 25, 30)
+
+    div {
+        label {
+            attributes["for"] = inputId
+            +labelText
+        }
+        div(classes = "date-input-row") {
+            input(type = InputType.date) {
+                id = inputId
+            }
+            select {
+                id = quickSelectId
+                attributes["aria-label"] = "Quick select $labelText"
+                option {
+                    value = ""
+                    +"Quick select"
+                }
+                option { value = "0"; +"Today" }
+                years.forEach { y ->
+                    option { value = "$y"; +"${y}Y ago" }
+                }
+            }
+        }
+    }
+}
+
 internal suspend fun ApplicationCall.renderBacktestPage() {
     respondHtml(HttpStatusCode.OK) {
         head {
@@ -52,26 +81,8 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                 div(classes = "backtest-form-card") {
                     // Shared date range
                     div(classes = "backtest-section backtest-grid-2") {
-                        div {
-                            label {
-                                attributes["for"] = "from-date"
-                                +"From Date"
-                            }
-                            input(type = InputType.date) {
-                                id = "from-date"
-                                attributes["placeholder"] = "YYYY-MM-DD"
-                            }
-                        }
-                        div {
-                            label {
-                                attributes["for"] = "to-date"
-                                +"To Date"
-                            }
-                            input(type = InputType.date) {
-                                id = "to-date"
-                                attributes["placeholder"] = "YYYY-MM-DD"
-                            }
-                        }
+                        dateFieldWithQuickSelect("From Date", "from-date")
+                        dateFieldWithQuickSelect("To Date", "to-date")
                     }
 
                     div {
