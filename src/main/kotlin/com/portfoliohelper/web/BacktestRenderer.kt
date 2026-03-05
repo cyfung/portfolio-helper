@@ -83,6 +83,32 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                     div(classes = "backtest-section backtest-grid-2") {
                         dateFieldWithQuickSelect("From Date", "from-date")
                         dateFieldWithQuickSelect("To Date", "to-date")
+
+                        div(classes = "backtest-config-controls") {
+                            div(classes = "backtest-config-group") {
+                                label {
+                                    attributes["for"] = "backtest-import-code"
+                                    +"Config Code"
+                                }
+                                input(type = InputType.text) {
+                                    id = "backtest-import-code"
+                                    attributes["placeholder"] = "Paste code…"
+                                    attributes["spellcheck"] = "false"
+                                }
+                            }
+                            button(classes = "backtest-config-btn") {
+                                id = "backtest-import-btn"
+                                +"Import"
+                            }
+                            button(classes = "backtest-config-btn") {
+                                id = "backtest-export-btn"
+                                +"Export"
+                            }
+                            div {
+                                id = "backtest-config-error"
+                                classes = setOf("backtest-config-error")
+                            }
+                        }
                     }
 
                     div {

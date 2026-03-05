@@ -538,4 +538,47 @@
         setDateYearsAgo('to-date', parseInt(e.target.value));
         e.target.value = ''; // reset dropdown
     });
+
+    function generateConfigCode() {
+        const req = collectRequest();
+        return btoa(JSON.stringify(req));
+    }
+
+    function showConfigError(msg) {
+        const el = document.getElementById('backtest-config-error');
+        el.textContent = msg;
+        setTimeout(() => { el.textContent = ''; }, 3000);
+    }
+
+    function applyConfigCode(code) {
+        try {
+            const req = JSON.parse(atob(code));
+            if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
+            if (req.toDate) document.getElementById('to-date').value = req.toDate;
+            if (req.portfolios) {
+                req.portfolios.forEach((p, i) => {
+                    if (i >= 3) return;
+                    loadPortfolioIntoBlock(i, p, p.label || '');
+                });
+            }
+        } catch (_) {
+            showConfigError('Invalid config code.');
+        }
+    }
+
+    document.getElementById('backtest-export-btn').addEventListener('click', () => {
+        const code = generateConfigCode();
+        document.getElementById('backtest-import-code').value = code;
+        navigator.clipboard.writeText(code).then(() => {
+            const btn = document.getElementById('backtest-export-btn');
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = original; }, 1500);
+        });
+    });
+
+    document.getElementById('backtest-import-btn').addEventListener('click', () => {
+        const code = document.getElementById('backtest-import-code').value.trim();
+        if (code) applyConfigCode(code);
+    });
 }

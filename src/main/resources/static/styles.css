@@ -2031,9 +2031,52 @@ body.editing-active .cash-edit-value {
 
 .backtest-grid-2 {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: auto auto auto;
     gap: 0.75rem;
-    width: fit-content;  /* add this */
+    width: fit-content;
+    align-items: flex-end;
+}
+
+.backtest-config-controls {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.backtest-config-group input {
+    width: 120px;
+}
+
+.backtest-config-btn {
+    height: 100%;
+    padding: 0.375rem 0.625rem;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    border: 1px solid var(--color-accent-primary);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.backtest-config-btn:hover {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.backtest-config-error {
+    font-size: var(--font-size-sm);
+    color: var(--color-negative);
+    min-height: 0;
+    visibility: hidden;
+}
+
+.backtest-config-error:not(:empty) {
+    visibility: visible;
 }
 
 .backtest-grid-3 {
