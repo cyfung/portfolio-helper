@@ -170,10 +170,6 @@ private fun DIV.portfolioBlock(idx: Int) {
                     +"Save New"
                 }
             }
-            input(type = InputType.text) {
-                classes = setOf("portfolio-label")
-                placeholder = "Portfolio ${idx + 1}"
-            }
         }
 
         // Tickers
