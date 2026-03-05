@@ -161,11 +161,11 @@
     }
 
     function updateSaveBtn(block) {
-        const btn = block.querySelector('.save-portfolio-btn');
         const val = block.querySelector('.portfolio-label').value.trim();
-        btn.disabled = !val;
+        block.querySelectorAll('.save-portfolio-btn, .overwrite-portfolio-btn').forEach(btn => {
+            btn.disabled = !val
+        });
     }
-
     // ── Block initialisation ──────────────────────────────────────────────────
 
     function initBlock(blockIdx) {
@@ -174,7 +174,26 @@
         const addTickerBtn = block.querySelector('.add-ticker-btn');
         const addMarginBtn = block.querySelector('.add-margin-btn');
         const labelInput = block.querySelector('.portfolio-label');
-        const saveBtn = block.querySelector('.save-portfolio-btn');
+
+        async function handleSave(btn, overwrite) {  // <-- moved inside initBlock
+            const name = labelInput.value.trim();
+            if (!name) return;
+            const config = collectBlockConfig(blockIdx);
+            if (overwrite) {
+                await fetch(`/api/backtest/savedPortfolios?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+            }
+            const res = await fetch('/api/backtest/savedPortfolios', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, config })
+            });
+            if (res.ok) {
+                refreshSavedPortfolios();
+                const original = btn.textContent;
+                btn.textContent = 'Saved!';
+                setTimeout(() => { btn.textContent = original; }, 1500);
+            }
+        }
 
         // Wire up listeners for any rows that were server-rendered into the HTML
         tickerRowsEl.querySelectorAll('.backtest-ticker-row').forEach(row => {
@@ -192,16 +211,8 @@
 
         labelInput.addEventListener('input', () => updateSaveBtn(block));
 
-        saveBtn.addEventListener('click', async () => {
-            const name = labelInput.value.trim();
-            if (!name) return;
-            const config = collectBlockConfig(blockIdx);
-            const res = await fetch('/api/backtest/savedPortfolios', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, config })
-            });
-            if (res.ok) refreshSavedPortfolios();
+        block.querySelectorAll('.save-portfolio-btn, .overwrite-portfolio-btn').forEach(btn => {
+            btn.addEventListener('click', () => handleSave(btn, btn.classList.contains('overwrite-portfolio-btn')));
         });
 
         // Drag-and-drop: accept chips or margin rows dropped onto this block

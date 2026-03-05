@@ -2027,6 +2027,11 @@ body.editing-active .cash-edit-value {
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 0.25rem;
+    gap: 0.5rem;
+}
+
+.portfolio-label {
+    flex: 1;
 }
 
 .backtest-grid-2 {
@@ -2465,6 +2470,7 @@ body.editing-active .cash-edit-value {
     background: transparent;
     color: var(--color-accent-primary);
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .save-portfolio-btn:disabled {

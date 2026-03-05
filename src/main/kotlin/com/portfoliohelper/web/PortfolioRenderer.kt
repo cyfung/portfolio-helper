@@ -259,6 +259,12 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
 
                     div(classes = "stock-section") {
                         div(classes = "alloc-controls") {
+                            button(classes = "save-portfolio-btn") {
+                                attributes["id"] = "save-to-backtest-btn"
+                                attributes["type"] = "button"
+                                attributes["title"] = "Save current portfolio as a backtest preset"
+                                +"Save to Backtest"
+                            }
                             span(classes = "alloc-controls-label") { +"Alloc" }
                             div(classes = "alloc-mode-group") {
                                 label(classes = "alloc-mode-label") {

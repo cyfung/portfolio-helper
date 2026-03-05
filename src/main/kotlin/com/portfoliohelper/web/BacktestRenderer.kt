@@ -158,11 +158,16 @@ private fun DIV.portfolioBlock(idx: Int) {
         // Label
         div(classes = "backtest-section") {
             div(classes = "backtest-section-header") {
-                label { +"Label" }
-                button(classes = "save-portfolio-btn") {
-                    attributes["type"] = "button"
-                    attributes["disabled"] = "disabled"
+                input(type = InputType.text, classes = "portfolio-label") {
+                    placeholder = "Label"
+                }
+                button(classes = "overwrite-portfolio-btn save-portfolio-btn") {
+                    disabled = true
                     +"Save"
+                }
+                button(classes = "save-portfolio-btn") {
+                    disabled = true
+                    +"Save New"
                 }
             }
             input(type = InputType.text) {

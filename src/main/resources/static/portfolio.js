@@ -2022,6 +2022,65 @@ async function initTwsSync() {
     });
 }
 
+function initSaveToBacktest() {
+  document.getElementById('save-to-backtest-btn')?.addEventListener('click', async () => {
+      // Collect tickers + target weights from the table
+      const tickers = [...document.querySelectorAll('#stock-view-table tbody tr')].map(row => ({
+          ticker: row.dataset.symbol,
+          weight: parseFloat(row.dataset.weight) || 0
+      })).filter(t => t.ticker && t.weight > 0);
+
+      // Margin: use saved target, fall back to current displayed margin %
+      const marginTargetInput = document.getElementById('margin-target-input');
+      const marginPercentEl = document.getElementById('margin-percent');
+      const marginTargetPct = marginTargetInput?.value
+          ? parseFloat(marginTargetInput.value)
+          : parseFloat(marginPercentEl?.textContent?.replace(/[()%]/g, '')) || 0;
+
+      const allocAddMode = document.getElementById('alloc-add-mode')?.value || 'PROPORTIONAL';
+
+      const config = {
+          tickers,
+          rebalanceStrategy: 'YEARLY',
+          marginStrategies: marginTargetPct > 0 ? [{
+              marginRatio:          marginTargetPct / 100,
+              marginSpread:         0.015,
+              marginDeviationUpper: 0.05,
+              marginDeviationLower: 0.05,
+              upperRebalanceMode:   allocAddMode,
+              lowerRebalanceMode:   allocAddMode
+          }] : []
+      };
+
+      const name = document.querySelector('h1')?.textContent?.trim() || 'Portfolio';
+
+      const res = await fetch('/api/backtest/savedPortfolios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config })
+      });
+
+      if (res.ok) {
+          const btn = document.getElementById('save-to-backtest-btn');
+          const original = btn.textContent;
+          btn.textContent = 'Saved!';
+          setTimeout(() => { btn.textContent = original; }, 1500);
+      }
+  });
+}
+
+function initThemeToggle() {
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('ib-viewer-theme', next);
+        });
+    }
+}
+
 function showTwsSyncError(msg) {
     let el = document.getElementById('tws-sync-error');
     if (!el) {
@@ -2067,6 +2126,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initRebalanceControls();
     initBackupPanel();
     initTwsSync();
+    initSaveToBacktest();
+    initThemeToggle();
 
     // Initialize cash totals on page load (USD entries are pre-filled server-side)
     // Must run before restoring targets so lastMarginUsd is correct
