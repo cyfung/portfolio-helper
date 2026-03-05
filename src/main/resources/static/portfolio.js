@@ -1978,6 +1978,11 @@ async function initTwsSync() {
                 document.getElementById('edit-toggle')?.click();
             }
 
+            // ── Clear all existing stock qty values ──
+            document.querySelectorAll('#stock-edit-table .edit-qty').forEach(input => {
+                input.value = '';
+            });
+
             // ── Update stock qty ──
             for (const pos of data.positions) {
                 const sym = pos.symbol;
