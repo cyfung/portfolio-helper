@@ -85,9 +85,8 @@ function buildIbkrRatesTable(data) {
 
     filteredCurrencies.forEach(c => {
         const tr = document.createElement('tr');
-        tr.setAttribute('data-ibkr-rate', c.baseRate.toFixed(8));  // placeholder, recalculated by updateIbkrDailyInterest
+        tr.setAttribute('data-ibkr-rate', '0');
         tr.setAttribute('data-ibkr-days', c.days);
-        tr.setAttribute('data-native-daily', '0');                  // calculated by updateIbkrDailyInterest
         tr.setAttribute('data-ibkr-tiers', JSON.stringify(c.tiers));
         tr.innerHTML = `<td class="ibkr-rate-currency">${c.currency}</td>
                         <td class="ibkr-rate-value">${c.baseRate.toFixed(3)}%</td>`;
@@ -157,7 +156,6 @@ function updateIbkrDailyInterest() {
         // Recalculate effective rate using this currency's own native loan
         const blended = nativeLoan > 0 ? blendedIbkrRate(tiers, nativeLoan) : null;
         const effectiveRate = blended !== null ? blended : baseRate;
-        tr.dataset.ibkrRate = effectiveRate.toFixed(8);
 
         // Hypothetical: if entire USD loan were in this currency
         const hypotheticalNative = loanUsd > 0 ? loanUsd / fxRate : nativeLoan;
@@ -174,7 +172,6 @@ function updateIbkrDailyInterest() {
 
         // Current interest: each currency's own native loan * its own rate
         const nativeDaily = nativeLoan > 0 ? nativeLoan * effectiveRate / 100.0 / days : 0;
-        tr.dataset.nativeDaily = nativeDaily.toFixed(8);
         currentUsd += nativeDaily * fxRate;
 
         // Cheapest: if we moved entire USD loan to this currency, what would interest be

@@ -236,7 +236,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
 
                         if (cashEntries.any { it.marginFlag }) {
-                            buildIbkrRatesTable(cashEntries, ::resolveEntryUsd, fxRateMap)
+                            buildIbkrRatesTable()
                         }
                     }
 

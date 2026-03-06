@@ -55,7 +55,7 @@ object NewTrayService {
         val g2d = img.createGraphics()
 
         // Draw a simple filled circle
-        g2d.color = java.awt.Color(100, 100, 100)
+        g2d.color = Color(100, 100, 100)
         g2d.fillOval(4, 4, 24, 24)
         g2d.dispose()
 
