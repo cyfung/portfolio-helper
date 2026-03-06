@@ -12,22 +12,9 @@ internal suspend fun ApplicationCall.renderLoanCalculatorPage() {
             meta(charset = "UTF-8")
             meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
 
-            // Inline script to prevent flash of wrong theme
-            script {
-                unsafe {
-                    raw(
-                        """
-                        (function(){
-                            const t=localStorage.getItem('ib-viewer-theme')||
-                                    (window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-                            document.documentElement.setAttribute('data-theme',t);
-                        })();
-                        """.trimIndent()
-                    )
-                }
-            }
-
             renderCommonHeadElements()
+
+            script { src = "/static/common/theme.js" }
             
             script {
                 src = "/static/loan-calculator.js"

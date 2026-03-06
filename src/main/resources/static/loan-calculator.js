@@ -280,6 +280,8 @@ function addCashflowRow() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    initThemeToggle();
+
     renderHistory().then(function() {
         var container = document.getElementById('loan-history');
         if (container && container._history && container._history.length > 0) {

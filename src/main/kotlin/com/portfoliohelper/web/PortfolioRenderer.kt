@@ -11,9 +11,6 @@ import io.ktor.server.html.*
 import kotlinx.html.*
 import kotlin.math.abs
 
-private const val COPY_ICON_SVG =
-    """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>"""
-
 internal suspend fun ApplicationCall.renderPortfolioPage(
     entry: ManagedPortfolio,
     allPortfolios: Collection<ManagedPortfolio>,
@@ -79,61 +76,49 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             meta(charset = "UTF-8")
             meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
 
-            // Inline script to prevent flash of wrong theme
-            script {
-                unsafe {
-                    raw(
-                        """
-                        (function(){
-                            const t=localStorage.getItem('ib-viewer-theme')||
-                                    (window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-                            document.documentElement.setAttribute('data-theme',t);
-                        })();
-                    """.trimIndent()
-                    )
-                }
-            }
-
             renderCommonHeadElements()
 
-            // Inline data block: server-rendered dynamic values consumed by portfolio.js
             script {
                 unsafe {
                     raw(
                         """
-                        const portfolioId = "${entry.id}";
-                        const fxRates = ${
-                            buildString {
-                                append("{ USD: 1.0")
-                                fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
-                                append(" }")
-                            }
+                        var portfolioId = "${entry.id}";
+                        var fxRates = ${
+                        buildString {
+                            append("{ USD: 1.0")
+                            fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
+                            append(" }")
+                        }
                         };
-                        const displayCurrencies = ${
-                            buildString {
-                                append("[")
-                                displayCurrencies.joinTo(this, ",") { "\"$it\"" }
-                                append("]")
-                            }
+                        var displayCurrencies = ${
+                        buildString {
+                            append("[")
+                            displayCurrencies.joinTo(this, ",") { "\"$it\"" }
+                            append("]")
+                        }
                         };
-                        let lastMarginUsd = 0;
-                        let lastPortfolioVal =${"%.2f".format(portfolio.totalValue)};
-                        let lastPrevPortfolioVal = ${"%.2f".format(portfolio.previousTotalValue)};
-                        let lastPortfolioDayChangeUsd = ${"%.2f".format(portfolio.dailyChangeDollars)};
-                        let lastCashTotalUsd = ${"%.2f".format(cashTotalUsd)};
-                        let savedRebalTargetUsd = ${"%.2f".format(savedRebalTargetUsd)};
-                        let savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
-                        let savedAllocAddMode = "${savedAllocAddMode}";
-                        let savedAllocReduceMode = "${savedAllocReduceMode}";
+                        var savedRebalTargetUsd = ${"%.2f".format(savedRebalTargetUsd)};
+                        var savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
+                        var savedAllocAddMode = "$savedAllocAddMode";
+                        var savedAllocReduceMode = "$savedAllocReduceMode";
                         """.trimIndent()
                     )
                 }
             }
 
-            script {
-                src = "/static/portfolio.js"
-                defer = true
-            }
+            script { src = "/static/common/theme.js" }
+            script { src = "/static/viewer/globals.js" }
+            script { src = "/static/viewer/utils.js" }
+            script { src = "/static/viewer/ui-helpers.js" }
+            script { src = "/static/viewer/letf.js" }
+            script { src = "/static/viewer/cash.js" }
+            script { src = "/static/viewer/rebalance.js" }
+            script { src = "/static/viewer/portfolio.js" }
+            script { src = "/static/viewer/edit-mode.js" }
+            script { src = "/static/viewer/controls.js" }
+            script { src = "/static/viewer/backup.js" }
+            script { src = "/static/viewer/sse.js" }
+            script { src = "/static/viewer/main.js" }
         }
         body {
             div(classes = "container") {

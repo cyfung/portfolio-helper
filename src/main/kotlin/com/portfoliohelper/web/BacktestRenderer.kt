@@ -41,30 +41,18 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
             meta(charset = "UTF-8")
             meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
 
-            script {
-                unsafe {
-                    raw(
-                        """
-                        (function(){
-                            const t=localStorage.getItem('ib-viewer-theme')||
-                                    (window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-                            document.documentElement.setAttribute('data-theme',t);
-                        })();
-                        """.trimIndent()
-                    )
-                }
-            }
-
             renderCommonHeadElements()
 
             script {
                 src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
                 async = true
             }
-            script {
-                src = "/static/backtest.js"
-                defer = true
-            }
+            script { src = "/static/common/theme.js" }
+            script { src = "/static/backtest/backtest-blocks.js" }
+            script { src = "/static/backtest/backtest-saved.js" }
+            script { src = "/static/backtest/backtest-chart.js" }
+            script { src = "/static/backtest/backtest-run.js" }
+            script { src = "/static/backtest/backtest-main.js" }
         }
         body {
             div(classes = "container") {
