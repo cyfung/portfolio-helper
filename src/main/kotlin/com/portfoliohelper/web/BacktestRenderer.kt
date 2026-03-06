@@ -9,7 +9,7 @@ private fun FlowContent.dateFieldWithQuickSelect(labelText: String, inputId: Str
     val quickSelectId = "$inputId-quick"
     val years = (1..10).toList() + listOf(15, 20, 25, 30)
 
-    div {
+    div(classes = "backtest-date-field") {
         label {
             attributes["for"] = inputId
             +labelText
@@ -81,28 +81,28 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                         dateFieldWithQuickSelect("To Date", "to-date")
 
                         div(classes = "backtest-config-controls") {
+                            label {
+                                attributes["for"] = "backtest-import-code"
+                                +"Config Code"
+                            }
                             div(classes = "backtest-config-group") {
-                                label {
-                                    attributes["for"] = "backtest-import-code"
-                                    +"Config Code"
-                                }
                                 input(type = InputType.text) {
                                     id = "backtest-import-code"
                                     attributes["placeholder"] = "Paste code…"
                                     attributes["spellcheck"] = "false"
                                 }
-                            }
-                            button(classes = "backtest-config-btn") {
-                                id = "backtest-import-btn"
-                                +"Import"
-                            }
-                            button(classes = "backtest-config-btn") {
-                                id = "backtest-export-btn"
-                                +"Export"
-                            }
-                            div {
-                                id = "backtest-config-error"
-                                classes = setOf("backtest-config-error")
+                                button(classes = "backtest-config-btn") {
+                                    id = "backtest-import-btn"
+                                    +"Import"
+                                }
+                                button(classes = "backtest-config-btn") {
+                                    id = "backtest-export-btn"
+                                    +"Export"
+                                }
+                                div {
+                                    id = "backtest-config-error"
+                                    classes = setOf("backtest-config-error")
+                                }
                             }
                         }
                     }

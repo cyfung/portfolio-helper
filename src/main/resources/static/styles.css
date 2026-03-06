@@ -1107,9 +1107,10 @@ h1 {
 .portfolio-table tbody tr.drag-over-bottom td { border-bottom: 2px solid var(--color-accent-primary); }
 
 .date-input-row {
+    flex: 1;
     display: flex;
     gap: 0.5rem;
-    align-items: center;
+    align-items: stretch;
 }
 
 .date-field-box {
@@ -1129,9 +1130,9 @@ h1 {
     outline: none;
     color: inherit;
     font: inherit;
-    padding-top: 3px;
-    padding-bottom: 3px;
-    width: 150px;
+    min-width: 150px;
+    padding-top: calc(0.375rem - 1px);
+    padding-bottom: calc(0.375rem - 1px);
 }
 
 .date-clear-btn {
@@ -2072,22 +2073,27 @@ body.editing-active .cash-edit-value {
     grid-template-columns: auto auto auto;
     gap: 0.75rem;
     width: fit-content;
-    align-items: flex-end;
+    align-items: stretch;
 }
 
+.backtest-date-field,
 .backtest-config-controls {
     display: flex;
-    flex-direction: row;
-    align-items: flex-end;
+    flex-direction: column;
+}
+
+.backtest-config-group {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
     gap: 0.5rem;
 }
 
-.backtest-config-group input {
-    width: 120px;
+.backtest-section .backtest-config-group input {
+    width: 200px;
 }
 
 .backtest-config-btn {
-    height: 100%;
     padding: 0.375rem 0.625rem;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
@@ -2107,9 +2113,12 @@ body.editing-active .cash-edit-value {
 }
 
 .backtest-config-error {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    align-self: center;
     font-size: var(--font-size-sm);
     color: var(--color-negative);
-    min-height: 0;
     visibility: hidden;
 }
 
