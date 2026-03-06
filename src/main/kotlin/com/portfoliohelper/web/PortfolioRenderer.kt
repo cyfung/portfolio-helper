@@ -2,7 +2,6 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
-import com.portfoliohelper.model.Stock
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import io.ktor.http.*
@@ -550,12 +549,9 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Est Val (Estimated Value from LETF components)
-                    val estValText: String? =
-                        estVal(stock)
-
-                    td(classes = if (estValText != null) "col-market-data price loaded" else "col-market-data price") {
+                    td(classes = "col-market-data price") {
                         id = "est-val-${stock.label}"
-                        +(estValText ?: "—")
+                        +"—"
                     }
 
                     // Last Close Price
@@ -700,42 +696,5 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
     div(classes = "rebal-weight-warning") {
         attributes["id"] = "rebal-weight-warning"
         style = "display: none;"
-    }
-}
-
-private fun estVal(stock: Stock): String? {
-    if (stock.letfComponents == null) return null
-    val basePrice = stock.lastNav ?: stock.lastClosePrice ?: return null
-    val baseQuote = YahooMarketDataService.getQuote(stock.label)
-    val nowSeconds = System.currentTimeMillis() / 1000
-    val pastCloseTime =
-        baseQuote?.tradingPeriodEnd?.takeIf { it <= nowSeconds }
-    val isMarketClosed = baseQuote?.isMarketClosed ?: true
-    val stale =
-        isMarketClosed && (
-                pastCloseTime == null ||
-                        nowSeconds - pastCloseTime > 12 * 3600
-                )
-
-    return if (stale) {
-        null
-    } else {
-        val sumComponent = stock.letfComponents.sumOf { (multi, sym) ->
-            getPriceChange(sym)?.times(multi) ?: return null
-        }
-        "$%.2f".format((1.0 + sumComponent / 100.0) * basePrice)
-    }
-}
-
-private fun getPriceChange(
-    sym: String
-): Double? {
-    val quote = YahooMarketDataService.getQuote(sym) ?: return null
-    val previousClose = quote.previousClose
-    val regularMarketPrice = quote.regularMarketPrice
-    return if (regularMarketPrice == null || previousClose == null || previousClose == 0.0) {
-        null
-    } else {
-        ((regularMarketPrice - previousClose) / previousClose) * 100.0
     }
 }
