@@ -51,6 +51,78 @@ function blendedIbkrRate(tiers, amount) {
     return (totalInterest / amount) * 100;
 }
 
+function buildIbkrRatesTable(data) {
+    const wrapper = document.querySelector('.ibkr-rates-wrapper');
+    if (!wrapper) return;
+
+    // Remove existing rate table if any (rebuild on rate update)
+    const existing = wrapper.querySelector('.ibkr-rates-table');
+    if (existing) existing.remove();
+    const existingSummary = wrapper.querySelector('.ibkr-interest-summary');
+    if (existingSummary) existingSummary.remove();
+
+    if (!data.currencies || data.currencies.length === 0) return;
+
+    // Always include USD; add other currencies that have actual margin loans
+    const marginCurrencies = new Set(['USD']);
+    document.querySelectorAll('[data-cash-entry][data-margin-flag="true"]').forEach(row => {
+        const ccy = row.dataset.currency?.toUpperCase();
+        if (ccy && ccy !== 'P') marginCurrencies.add(ccy);
+    });
+
+    const filteredCurrencies = data.currencies.filter(c =>
+        marginCurrencies.has(c.currency.toUpperCase())
+    );
+
+    if (filteredCurrencies.length === 0) return;
+
+    // Build rates table
+    const table = document.createElement('table');
+    table.className = 'ibkr-rates-table';
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>CCY</th><th>IBKR Pro Rate</th></tr>';
+    const tbody = document.createElement('tbody');
+
+    filteredCurrencies.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-ibkr-rate', c.baseRate.toFixed(8));  // placeholder, recalculated by updateIbkrDailyInterest
+        tr.setAttribute('data-ibkr-days', c.days);
+        tr.setAttribute('data-native-daily', '0');                  // calculated by updateIbkrDailyInterest
+        tr.setAttribute('data-ibkr-tiers', JSON.stringify(c.tiers));
+        tr.innerHTML = `<td class="ibkr-rate-currency">${c.currency}</td>
+                        <td class="ibkr-rate-value">${c.baseRate.toFixed(3)}%</td>`;
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+
+    // Build interest summary table
+    const summary = document.createElement('table');
+    summary.className = 'ibkr-interest-summary';
+    summary.innerHTML = `<tbody>
+        <tr><td>Current Daily Interest</td><td id="ibkr-current-interest" class="ibkr-value-muted">—</td></tr>
+        <tr><td>Cheapest <span id="ibkr-cheapest-ccy"></span></td><td id="ibkr-cheapest-interest" class="ibkr-value-muted">—</td></tr>
+        <tr><td id="ibkr-saving-label">Saving</td><td id="ibkr-interest-diff">—</td></tr>
+    </tbody>`;
+
+    // Insert before footer
+    const footer = wrapper.querySelector('.ibkr-rates-footer');
+    wrapper.insertBefore(table, footer);
+    wrapper.insertBefore(summary, footer);
+
+    // Update last fetch timestamp
+    const fetchEl = wrapper.querySelector('.ibkr-last-fetch');
+    if (fetchEl && data.lastFetch > 0) {
+        fetchEl.id = 'ibkr-last-fetch';
+        fetchEl.textContent = new Date(data.lastFetch).toLocaleTimeString();
+    }
+
+    // Update reload button data-last-fetch
+    const reloadBtn = wrapper.querySelector('.ibkr-reload-btn');
+    if (reloadBtn) reloadBtn.dataset.lastFetch = data.lastFetch;
+}
+
 function updateIbkrDailyInterest() {
     const rows = document.querySelectorAll('.ibkr-rates-table tbody tr[data-ibkr-rate]');
     if (!rows.length) return;
@@ -59,40 +131,59 @@ function updateIbkrDailyInterest() {
 
     let currentUsd = 0;
     let cheapestUsd = null, cheapestCcy = null;
+
     rows.forEach(tr => {
         const ccy = tr.querySelector('.ibkr-rate-currency')?.textContent?.trim();
         if (!ccy) return;
 
-        if (tr.dataset.ibkrTiers) {
-            let tiers;
-            try { tiers = JSON.parse(tr.dataset.ibkrTiers); } catch (e) { return; }
-            const baseRate = tiers[0]?.rate;
-            if (baseRate === undefined) return;
-            const fxRate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
-            const loanNative = (fxRate !== null && fxRate > 0) ? loanUsd / fxRate : 0;
-            const blended = blendedIbkrRate(tiers, loanNative);
-            const effectiveRate = blended !== null ? blended : baseRate;
-            tr.dataset.ibkrRate = effectiveRate.toFixed(8);
-            const valueCell = tr.querySelector('.ibkr-rate-value');
-            if (valueCell) {
-                valueCell.textContent = blended !== null
-                    ? blended.toFixed(3) + '% (' + baseRate.toFixed(3) + '%)'
-                    : baseRate.toFixed(3) + '%';
+        if (!tr.dataset.ibkrTiers) return;
+        let tiers;
+        try { tiers = JSON.parse(tr.dataset.ibkrTiers); } catch (e) { return; }
+        const baseRate = tiers[0]?.rate;
+        if (baseRate === undefined) return;
+
+        const fxRate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
+        if (fxRate === null || fxRate <= 0) return;
+
+        // Sum actual margin entries for this specific currency
+        let nativeLoan = 0;
+        document.querySelectorAll('[data-cash-entry][data-margin-flag="true"]').forEach(row => {
+            if (row.dataset.currency?.toUpperCase() === ccy.toUpperCase()) {
+                const amount = parseFloat(row.dataset.amount || '0');
+                if (amount < 0) nativeLoan += -amount;
             }
+        });
+
+        // Recalculate effective rate using this currency's own native loan
+        const blended = nativeLoan > 0 ? blendedIbkrRate(tiers, nativeLoan) : null;
+        const effectiveRate = blended !== null ? blended : baseRate;
+        tr.dataset.ibkrRate = effectiveRate.toFixed(8);
+
+        // Hypothetical: if entire USD loan were in this currency
+        const hypotheticalNative = loanUsd > 0 ? loanUsd / fxRate : nativeLoan;
+        const hypotheticalBlended = blendedIbkrRate(tiers, hypotheticalNative);
+
+        const valueCell = tr.querySelector('.ibkr-rate-value');
+        if (valueCell) {
+            valueCell.textContent = hypotheticalBlended !== null
+                ? `${hypotheticalBlended.toFixed(3)}% (${baseRate.toFixed(3)}%)`
+                : `${baseRate.toFixed(3)}%`;
         }
 
-        const nativeDaily = parseFloat(tr.dataset.nativeDaily || '0');
-        if (nativeDaily > 0) {
-            const rate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
-            if (rate !== null) currentUsd += nativeDaily * rate;
-        }
+        const days = parseInt(tr.dataset.ibkrDays, 10);
 
+        // Current interest: each currency's own native loan * its own rate
+        const nativeDaily = nativeLoan > 0 ? nativeLoan * effectiveRate / 100.0 / days : 0;
+        tr.dataset.nativeDaily = nativeDaily.toFixed(8);
+        currentUsd += nativeDaily * fxRate;
+
+        // Cheapest: if we moved entire USD loan to this currency, what would interest be
         if (loanUsd > 0) {
-            const rate = parseFloat(tr.dataset.ibkrRate);
-            const days = parseInt(tr.dataset.ibkrDays, 10);
-            const interest = loanUsd * rate / 100 / days;
+            const hypotheticalRate = hypotheticalBlended !== null ? hypotheticalBlended : baseRate;
+            const interest = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate;
             if (cheapestUsd === null || interest < cheapestUsd) {
-                cheapestUsd = interest; cheapestCcy = ccy;
+                cheapestUsd = interest;
+                cheapestCcy = ccy;
             }
         }
     });
@@ -103,8 +194,9 @@ function updateIbkrDailyInterest() {
     let label = 'Saving';
     if (cheapestCcy != null && rows.length === 2) {
         if (cheapestCcy === 'USD') {
-            const ccy = rows.find(r => r.currency !== 'USD').currency;
-            label = 'Saving (Sell USD.' + ccy + ')';
+            const otherRow = [...rows].find(r => r.querySelector('.ibkr-rate-currency')?.textContent?.trim() !== 'USD');
+            const ccy = otherRow?.querySelector('.ibkr-rate-currency')?.textContent?.trim();
+            if (ccy) label = 'Saving (Sell USD.' + ccy + ')';
         } else {
             label = 'Saving (Buy USD.' + cheapestCcy + ')';
         }

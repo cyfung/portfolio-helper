@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 object IbkrMarginRateService {
 
@@ -142,6 +143,7 @@ object IbkrMarginRateService {
                 ratesCache.putAll(newRates)
                 lastFetchMillis.set(System.currentTimeMillis())
                 logger.info("Fetched IBKR margin rates for ${newRates.size} currencies: ${newRates.keys.sorted()}")
+                notifyListeners()
             } else {
                 logger.warn("IBKR margin rates page parsed but no valid rates found")
             }
@@ -149,4 +151,18 @@ object IbkrMarginRateService {
             logger.warn("Failed to fetch IBKR margin rates: ${e.message}")
         }
     }
+
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+    fun onUpdateWithReplay(callback: () -> Unit): () -> Unit {
+        listeners.add(callback)
+        if (getLastFetchMillis() > 0L) callback() // replay if already fetched
+        return { listeners.remove(callback) }
+    }
+
+    private fun notifyListeners() {
+        listeners.forEach { it() }
+    }
+
+    fun getAllRates(): Map<String, CurrencyRates> = ratesCache
 }

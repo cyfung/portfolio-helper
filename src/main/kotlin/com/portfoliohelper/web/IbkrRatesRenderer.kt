@@ -66,7 +66,21 @@ internal fun FlowContent.buildIbkrRatesTable(
         RateRow(ccy, rateDisplay, nativeDailyInterest, effectiveRate, daysInYear, tiersJson)
     }
 
-    if (rows.isEmpty()) return
+    if (rows.isEmpty()) {
+        div(classes = "ibkr-rates-wrapper") {
+            div(classes = "ibkr-rates-footer") {
+                span(classes = "ibkr-last-fetch") { +"—" }
+                button(classes = "ibkr-reload-btn") {
+                    id = "ibkr-reload-btn"
+                    attributes["type"] = "button"
+                    attributes["data-last-fetch"] = "0"
+                    attributes["title"] = "Reload IBKR margin rates"
+                    +"↻"
+                }
+            }
+        }
+        return
+    }
 
     val lastFetchMillis = IbkrMarginRateService.getLastFetchMillis()
 

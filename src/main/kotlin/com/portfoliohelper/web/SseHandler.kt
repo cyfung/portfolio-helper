@@ -1,5 +1,7 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.CurrencyConventions
+import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.nav.NavData
@@ -59,6 +61,23 @@ internal suspend fun ApplicationCall.handleSseStream() {
 
     val unregisterNav = NavService.onUpdateWithReplay(navCallback)
 
+    val ibkrCallback: () -> Unit = {
+        val rates = buildString {
+            append("{\"type\":\"ibkr-rates\",\"currencies\":[")
+            val entries = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
+                val tiers = r.tiers.joinToString(",", "[", "]") { t ->
+                    if (t.upTo != null) "{\"upTo\":${t.upTo},\"rate\":${t.rate}}"
+                    else "{\"upTo\":null,\"rate\":${t.rate}}"
+                }
+                "{\"currency\":\"$ccy\",\"baseRate\":${r.baseRate},\"days\":${CurrencyConventions.getDaysInYear(ccy)},\"tiers\":$tiers}"
+            }
+            append(entries.joinToString(","))
+            append("],\"lastFetch\":${IbkrMarginRateService.getLastFetchMillis()}}")
+        }
+        channel.trySend("data: $rates\n\n")
+    }
+    val unregisterIbkr = IbkrMarginRateService.onUpdateWithReplay(ibkrCallback)
+
     // Register callback to emit each portfolio's total value after every price poll batch
     val portfolioValueCallback: () -> Unit = {
         for (p in PortfolioRegistry.entries) {
@@ -98,6 +117,7 @@ internal suspend fun ApplicationCall.handleSseStream() {
         collectJob.cancel()
         unregisterPrice()
         unregisterNav()
+        unregisterIbkr()
         unregisterPortfolioValue()
         channel.close()
     }
