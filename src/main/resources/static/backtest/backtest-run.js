@@ -73,17 +73,34 @@ function setDateYearsAgo(inputId, yearsAgo) {
     document.getElementById(inputId).value = date.toISOString().split('T')[0];
 }
 
+function updateDateClearBtns() {
+    document.querySelectorAll('.date-clear-btn').forEach(btn => {
+        const input = document.getElementById(btn.dataset.target);
+        if (input) btn.style.visibility = input.value ? 'visible' : 'hidden';
+    });
+}
+
+function initDateClearBtns() {
+    document.querySelectorAll('.date-clear-btn').forEach(btn => {
+        const input = document.getElementById(btn.dataset.target);
+        input.addEventListener('change', updateDateClearBtns);
+        btn.addEventListener('click', () => { input.value = ''; updateDateClearBtns(); });
+    });
+}
+
 function initDateQuickSelectors() {
     document.getElementById('from-date-quick').addEventListener('change', e => {
         if (e.target.value === '') return;
         setDateYearsAgo('from-date', parseInt(e.target.value));
         e.target.value = '';
+        updateDateClearBtns();
     });
 
     document.getElementById('to-date-quick').addEventListener('change', e => {
         if (e.target.value === '') return;
         setDateYearsAgo('to-date', parseInt(e.target.value));
         e.target.value = '';
+        updateDateClearBtns();
     });
 }
 
@@ -104,6 +121,7 @@ function applyConfigCode(code) {
         const req = JSON.parse(atob(code));
         if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
         if (req.toDate)   document.getElementById('to-date').value   = req.toDate;
+        updateDateClearBtns();
         if (req.portfolios) {
             req.portfolios.forEach((p, i) => {
                 if (i >= 3) return;

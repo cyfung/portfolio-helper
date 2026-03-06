@@ -15,19 +15,27 @@ private fun FlowContent.dateFieldWithQuickSelect(labelText: String, inputId: Str
             +labelText
         }
         div(classes = "date-input-row") {
-            input(type = InputType.date) {
-                id = inputId
+            div(classes = "date-field-box") {
+                input(type = InputType.date) {
+                    id = inputId
+                }
+                button(classes = "date-clear-btn") {
+                    attributes["type"] = "button"
+                    attributes["data-target"] = inputId
+                    attributes["title"] = "Clear"
+                    attributes["style"] = "visibility:hidden"
+                    +"×"
+                }
             }
             select {
                 id = quickSelectId
-                attributes["aria-label"] = "Quick select $labelText"
+                attributes["aria-label"] = "Years back"
                 option {
                     value = ""
-                    +"Quick select"
+                    +"Yrs"
                 }
-                option { value = "0"; +"Today" }
                 years.forEach { y ->
-                    option { value = "$y"; +"${y}Y ago" }
+                    option { value = "$y"; +"${y}Y" }
                 }
             }
         }

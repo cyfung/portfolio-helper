@@ -1112,8 +1112,41 @@ h1 {
     align-items: center;
 }
 
-.date-input-row input[type="date"] {
+.date-field-box {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    padding: 0 0.4rem 0 0;
+    background: var(--color-bg-primary);
     flex: 1;
+}
+
+.date-field-box input[type="date"] {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    color: inherit;
+    font: inherit;
+    padding-top: 3px;
+    padding-bottom: 3px;
+    width: 150px;
+}
+
+.date-clear-btn {
+    background: none;
+    border: none;
+    padding: 0 0.2rem;
+    font-size: 0.75rem;
+    line-height: 1;
+    color: var(--color-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.date-clear-btn:hover {
+    color: var(--color-danger, #c0392b);
 }
 
 /* ============================================

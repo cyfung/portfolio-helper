@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
             if (req.toDate)   document.getElementById('to-date').value   = req.toDate;
+            updateDateClearBtns();
 
             req.portfolios.forEach((p, i) => {
                 if (i >= 3) return;
@@ -33,5 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Wire up run button, date selectors, import/export
     initRunButton();
     initDateQuickSelectors();
+    initDateClearBtns();
     initImportExport();
 });
