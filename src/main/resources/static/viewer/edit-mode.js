@@ -215,7 +215,10 @@ function initEditMode() {
         const isEditing = body.classList.toggle('editing-active');
         editToggle.classList.toggle('active');
 
+        const allocControls = document.querySelector('.alloc-controls');
+
         if (isEditing) {
+            if (allocControls) allocControls.style.display = 'none';
             showEditTable();
             resetCashEditInputs();
             const cashTbody = document.querySelector('.cash-edit-table tbody');
@@ -223,6 +226,7 @@ function initEditMode() {
                 addCashRow();
             }
         } else {
+            if (allocControls) allocControls.style.display = '';
             removeEditTable();
             document.querySelectorAll('[data-new-cash]').forEach(el => el.remove());
             resetCashEditInputs();
