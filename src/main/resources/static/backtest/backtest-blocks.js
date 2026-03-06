@@ -191,6 +191,15 @@ function initBlock(blockIdx) {
         btn.addEventListener('click', () => handleSave(btn, btn.classList.contains('overwrite-portfolio-btn')));
     });
 
+    block.querySelector('.clear-portfolio-btn').addEventListener('click', () => {
+        labelInput.value = '';
+        block.querySelector('.ticker-rows').innerHTML = '';
+        block.querySelector('.margin-config-rows').innerHTML = '';
+        block.querySelector('.rebalance-select').value = 'YEARLY';
+        updateWeightHint(blockIdx);
+        updateSaveBtn(block);
+    });
+
     // Drag-and-drop: accept chips or margin rows dropped onto this block
     block.addEventListener('dragover', e => {
         const isChip   = e.dataTransfer.types.includes('text/plain')

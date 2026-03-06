@@ -2482,3 +2482,18 @@ body.editing-active .cash-edit-value {
     background: var(--color-accent-primary);
     color: var(--color-text-inverse);
 }
+
+.clear-portfolio-btn {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-muted);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+}
+
+.clear-portfolio-btn:hover {
+    border-color: var(--color-danger, #c0392b);
+    color: var(--color-danger, #c0392b);
+}

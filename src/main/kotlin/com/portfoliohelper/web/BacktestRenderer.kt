@@ -157,6 +157,11 @@ private fun DIV.portfolioBlock(idx: Int) {
                     disabled = true
                     +"Save New"
                 }
+                button(classes = "clear-portfolio-btn") {
+                    attributes["type"] = "button"
+                    attributes["title"] = "Clear portfolio"
+                    +"✕"
+                }
             }
         }
 
