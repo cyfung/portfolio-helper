@@ -69,10 +69,10 @@ function addMarginRow(blockIdx, ratio = 50, spread = 1.5, devUpper = 5, devLower
     row.innerHTML = `
         <input type="text" class="mc-ratio"     value="${ratio}"    title="Margin % of Equity"   placeholder="%" />
         <input type="text" class="mc-spread"    value="${spread}"   title="Spread % (annualised)" placeholder="%" />
-        <input type="text" class="mc-dev-upper" value="${devUpper}" title="Upper Deviation %"     placeholder="%" />
-        <input type="text" class="mc-dev-lower" value="${devLower}" title="Lower Deviation %"     placeholder="%" />
-        ${modeSelectHtml('mc-mode-upper', 'Upper breach rebalance mode')}
-        ${modeSelectHtml('mc-mode-lower', 'Lower breach rebalance mode')}
+        <input type="text" class="mc-dev-upper" value="${devUpper}" title="Upper deviation band %: if margin ratio rises above target + this %, triggers rebalance (market fell → over-leveraged)" placeholder="%" />
+        <input type="text" class="mc-dev-lower" value="${devLower}" title="Lower deviation band %: if margin ratio falls below target − this %, triggers rebalance (market rose → under-leveraged)" placeholder="%" />
+        ${modeSelectHtml('mc-mode-upper', 'Rebalance action when upper band is breached (market fell, over-leveraged)')}
+        ${modeSelectHtml('mc-mode-lower', 'Rebalance action when lower band is breached (market rose, under-leveraged)')}
         <button type="button" class="remove-margin-btn" title="Remove">✕</button>
     `;
     row.querySelector('.mc-mode-upper').value = upperMode;

@@ -158,8 +158,23 @@ fun DIV.portfolioBlock(idx: Int) {
             }
             div(classes = "margin-col-headers") {
                 span {}; span { +"Ratio%" }; span { +"Spread%" }
-                span { +"Dev%↑" }; span { +"Dev%↓" }
-                span { +"Mode↑" }; span { +"Mode↓" }; span {}
+                span {
+                    attributes["title"] = "Upper deviation band: if the margin ratio rises above target + this %, a rebalance is triggered (market fell → over-leveraged)"
+                    +"Dev%↑"
+                }
+                span {
+                    attributes["title"] = "Lower deviation band: if the margin ratio falls below target − this %, a rebalance is triggered (market rose → under-leveraged)"
+                    +"Dev%↓"
+                }
+                span {
+                    attributes["title"] = "What to do when the upper band is breached (market fell, margin ratio too high)"
+                    +"Mode↑"
+                }
+                span {
+                    attributes["title"] = "What to do when the lower band is breached (market rose, margin ratio too low)"
+                    +"Mode↓"
+                }
+                span {}
             }
             div(classes = "margin-config-rows") {}
         }

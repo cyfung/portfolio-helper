@@ -111,8 +111,8 @@ function renderStats(data) {
         '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th>' +
         '<th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>' +
         '<th title="Ulcer Performance Index (Martin Ratio): excess return / Ulcer Index">UPI</th>' +
-        '<th title="Deviation triggers: ratio exceeded upper bound (market fell)">Upper \u2191</th>' +
-        '<th title="Deviation triggers: ratio fell below lower bound (market rose)">Lower \u2193</th>' +
+        '<th title="# of times the margin ratio exceeded target + upper deviation band (market fell → over-leveraged), triggering an extra rebalance">Rebal\u2191</th>' +
+        '<th title="# of times the margin ratio fell below target \u2212 lower deviation band (market rose → under-leveraged), triggering an extra rebalance">Rebal\u2193</th>' +
         '</tr></thead><tbody>';
 
     data.portfolios.forEach((portfolio, pi) => {

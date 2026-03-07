@@ -143,6 +143,7 @@ function renderMcStats(data, percentile) {
     statsContainer.style.display = '';
 
     const cols = [
+        { metric: 'END_VALUE',   label: 'End Value' },
         { metric: 'CAGR',        label: 'CAGR' },
         { metric: 'MAX_DD',      label: 'Max DD' },
         { metric: 'SHARPE',      label: 'Sharpe' },
@@ -152,6 +153,7 @@ function renderMcStats(data, percentile) {
 
     function cellValue(pp, metric) {
         switch (metric) {
+            case 'END_VALUE':   return money(pp.endValue);
             case 'CAGR':        return pct(pp.cagr);
             case 'MAX_DD':      return pct(pp.maxDrawdown);
             case 'SHARPE':      return fmt2(pp.sharpe);
