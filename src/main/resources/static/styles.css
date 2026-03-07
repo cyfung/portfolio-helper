@@ -182,13 +182,10 @@ h1 {
     border-radius: 4px 4px 0 0;
 }
 
-.page-nav-tab-line1 {
+.page-nav-tab-line1,
+.page-nav-tab-line2 {
     font-size: var(--font-size-md);
     font-weight: 600;
-}
-
-.page-nav-tab-line2 {
-    font-size: var(--font-size-xs);
 }
 
 .page-nav-tab.active {
@@ -2351,16 +2348,18 @@ body.editing-active .cash-edit-value {
     display: grid;
     grid-template-columns: repeat(5, auto);
     gap: 1rem;
+    width: fit-content;
 }
 
 @media (max-width: 900px) {
     .mc-params-grid {
         grid-template-columns: repeat(2, 1fr);
+        width: 100%;
     }
 }
 
 .mc-params-grid input {
-    width: 80px;
+    width: 150px;
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
@@ -2371,6 +2370,7 @@ body.editing-active .cash-edit-value {
 }
 
 .mc-params-grid select {
+    width: 120px;
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
