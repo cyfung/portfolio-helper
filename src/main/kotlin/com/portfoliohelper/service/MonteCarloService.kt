@@ -257,10 +257,10 @@ object MonteCarloService {
         var peak = values[0]; var sumSq = 0.0; var count = 0
         for (v in values) {
             if (v > peak) peak = v
-            if (peak > 0) { val dd = (1.0 - v / peak) * 100.0; sumSq += dd * dd; count++ }
+            if (peak > 0) { val dd = 1.0 - v / peak; sumSq += dd * dd; count++ }
         }
         val ulcerIndex = if (count > 0) sqrt(sumSq / count) else 0.0
-        val upi = if (ulcerIndex > 0) annualReturn / ulcerIndex else 0.0
+        val upi = if (ulcerIndex > 0) (annualReturn - rfAnnualized) / ulcerIndex else 0.0
 
         return Triple(sharpe, ulcerIndex, upi)
     }

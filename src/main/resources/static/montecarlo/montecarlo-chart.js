@@ -123,7 +123,7 @@ function renderMcStats(data, percentile) {
             case 'CAGR':        return pct(pp.cagr);
             case 'MAX_DD':      return pct(pp.maxDrawdown);
             case 'SHARPE':      return num2(pp.sharpe);
-            case 'ULCER_INDEX': return num2(pp.ulcerIndex);
+            case 'ULCER_INDEX': return pct(pp.ulcerIndex);
             case 'UPI':         return num2(pp.upi);
         }
     }
