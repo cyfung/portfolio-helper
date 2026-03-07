@@ -3,7 +3,7 @@
 //   theme.js → backtest-blocks.js → backtest-saved.js →
 //   montecarlo-chart.js → montecarlo-run.js → montecarlo-main.js
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initThemeToggle();
 
     // Initialise all 3 portfolio blocks (reuse backtest-blocks.js)
@@ -12,9 +12,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load saved portfolios bar (reuse backtest-saved.js)
     refreshSavedPortfolios();
 
-    // Wire up run button, date selectors, percentile tabs
+    // Wire up run button, date selectors, percentile tabs, import/export
     initMcRunButton();
     initMcDateQuickSelectors();
     initMcDateClearBtns();
     initPercentileTabs();
+    initMcImportExport();
+
+    // Restore saved MC settings
+    try {
+        const res = await fetch('/api/montecarlo/settings');
+        const req = await res.json();
+        if (!req || !Object.keys(req).length) return;
+        if (req.fromDate) document.getElementById('mc-from-date').value = req.fromDate;
+        if (req.toDate)   document.getElementById('mc-to-date').value   = req.toDate;
+        mcUpdateDateClearBtns();
+        if (req.minChunkYears  != null) document.getElementById('mc-min-chunk').value   = req.minChunkYears;
+        if (req.maxChunkYears  != null) document.getElementById('mc-max-chunk').value   = req.maxChunkYears;
+        if (req.simulatedYears != null) document.getElementById('mc-sim-years').value   = req.simulatedYears;
+        if (req.numSimulations != null) document.getElementById('mc-num-sims').value    = req.numSimulations;
+        if (req.sortMetric     != null) document.getElementById('mc-sort-metric').value = req.sortMetric;
+        if (req.portfolios) req.portfolios.forEach((p, i) => {
+            if (i < 3) loadPortfolioIntoBlock(i, p, p.label || '');
+        });
+    } catch (_) { /* silently ignore if settings unavailable */ }
 });

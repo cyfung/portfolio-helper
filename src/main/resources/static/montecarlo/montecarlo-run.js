@@ -28,8 +28,9 @@ function collectMcRequest() {
         return { label, tickers, rebalanceStrategy, marginStrategies };
     }).filter(p => p.tickers.length > 0);
 
+    const sortMetric = document.getElementById('mc-sort-metric').value;
     return { fromDate: fromDate || null, toDate: toDate || null,
-             minChunkYears, maxChunkYears, simulatedYears, numSimulations, portfolios };
+             minChunkYears, maxChunkYears, simulatedYears, numSimulations, sortMetric, portfolios };
 }
 
 function initMcRunButton() {
@@ -59,7 +60,7 @@ function initMcRunButton() {
                 showError(data.error || `Server error ${res.status}`);
                 return;
             }
-            renderMcResults(data);
+            renderMcResults(data, reqBody.sortMetric);
         } catch (e) {
             showError('Request failed: ' + e.message);
         } finally {
@@ -90,6 +91,52 @@ function initMcDateClearBtns() {
         if (!input) return;
         input.addEventListener('change', mcUpdateDateClearBtns);
         btn.addEventListener('click', () => { input.value = ''; mcUpdateDateClearBtns(); });
+    });
+}
+
+// ── Import / Export config ────────────────────────────────────────────────────
+
+function generateMcConfigCode() { return btoa(JSON.stringify(collectMcRequest())); }
+
+function showMcConfigError(msg) {
+    const el = document.getElementById('mc-config-error');
+    el.textContent = msg;
+    setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+function applyMcConfigCode(code) {
+    try {
+        const req = JSON.parse(atob(code));
+        if (req.fromDate) document.getElementById('mc-from-date').value = req.fromDate;
+        if (req.toDate)   document.getElementById('mc-to-date').value   = req.toDate;
+        mcUpdateDateClearBtns();
+        if (req.portfolios) req.portfolios.forEach((p, i) => {
+            if (i < 3) loadPortfolioIntoBlock(i, p, p.label || '');
+        });
+        if (req.minChunkYears  != null) document.getElementById('mc-min-chunk').value   = req.minChunkYears;
+        if (req.maxChunkYears  != null) document.getElementById('mc-max-chunk').value   = req.maxChunkYears;
+        if (req.simulatedYears != null) document.getElementById('mc-sim-years').value   = req.simulatedYears;
+        if (req.numSimulations != null) document.getElementById('mc-num-sims').value    = req.numSimulations;
+        if (req.sortMetric     != null) document.getElementById('mc-sort-metric').value = req.sortMetric;
+    } catch (_) {
+        showMcConfigError('Invalid config code.');
+    }
+}
+
+function initMcImportExport() {
+    document.getElementById('mc-export-btn').addEventListener('click', () => {
+        const code = generateMcConfigCode();
+        document.getElementById('mc-import-code').value = code;
+        navigator.clipboard.writeText(code).then(() => {
+            const btn = document.getElementById('mc-export-btn');
+            const orig = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = orig; }, 1500);
+        }).catch(() => {});
+    });
+    document.getElementById('mc-import-btn').addEventListener('click', () => {
+        const code = document.getElementById('mc-import-code').value.trim();
+        if (code) applyMcConfigCode(code);
     });
 }
 

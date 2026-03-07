@@ -1111,6 +1111,7 @@ h1 {
     display: flex;
     gap: 0.5rem;
     align-items: stretch;
+    margin-top: 0.25rem;
 }
 
 .date-field-box {
@@ -2087,6 +2088,7 @@ body.editing-active .cash-edit-value {
     display: flex;
     align-items: stretch;
     gap: 0.5rem;
+    margin-top: 0.25rem;
 }
 
 .backtest-section .backtest-config-group input {
@@ -2305,7 +2307,7 @@ body.editing-active .cash-edit-value {
 
 .mc-params-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, auto);
     gap: 1rem;
 }
 
@@ -2315,8 +2317,18 @@ body.editing-active .cash-edit-value {
     }
 }
 
-.mc-params-grid input[type="number"] {
-    width: 100%;
+.mc-params-grid input {
+    width: 80px;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    margin-top: 0.25rem;
+}
+
+.mc-params-grid select {
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
@@ -2358,6 +2370,11 @@ body.editing-active .cash-edit-value {
     margin-bottom: 0.5rem;
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
+}
+
+.backtest-stats-table .mc-sort-target {
+    color: var(--color-accent-primary);
+    font-weight: var(--font-weight-semibold);
 }
 
 /* 3-column portfolio block grid */

@@ -9,7 +9,8 @@ data class MonteCarloRequest(
     val maxChunkYears: Double,
     val simulatedYears: Int,
     val numSimulations: Int,
-    val portfolios: List<PortfolioConfig>
+    val portfolios: List<PortfolioConfig>,
+    val sortMetric: String = "END_VALUE"  // END_VALUE, CAGR, MAX_DD, SHARPE, ULCER_INDEX, UPI
 )
 
 data class MonteCarloPercentilePath(
@@ -17,7 +18,10 @@ data class MonteCarloPercentilePath(
     val points: List<Double>,  // full-resolution values, starts at 10 000
     val endValue: Double,
     val cagr: Double,
-    val maxDrawdown: Double
+    val maxDrawdown: Double,
+    val sharpe: Double,
+    val ulcerIndex: Double,
+    val upi: Double
 )
 
 data class MonteCarloCurveResult(

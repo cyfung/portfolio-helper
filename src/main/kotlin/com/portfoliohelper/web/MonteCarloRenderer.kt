@@ -39,17 +39,45 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                 }
 
                 div(classes = "backtest-form-card") {
-                    // Date range + MC params
+                    // Date range + config code
                     div(classes = "backtest-section backtest-grid-2") {
                         mcDateField("From Date (pool)", "mc-from-date")
                         mcDateField("To Date (pool)", "mc-to-date")
                     }
 
+                    div(classes = "backtest-section backtest-grid-2") {
+                        div(classes = "backtest-config-controls") {
+                            label { +"Config Code" }
+                            div(classes = "backtest-config-group") {
+                                input(type = InputType.text) {
+                                    id = "mc-import-code"
+                                    placeholder = "Paste code…"
+                                    attributes["spellcheck"] = "false"
+                                }
+                                button(classes = "backtest-config-btn") { id = "mc-import-btn"; +"Import" }
+                                button(classes = "backtest-config-btn") { id = "mc-export-btn"; +"Export" }
+                                div(classes = "backtest-config-error") { id = "mc-config-error" }
+                            }
+                        }
+                    }
+
                     div(classes = "backtest-section mc-params-grid") {
-                        mcNumberField("Min Chunk Years", "mc-min-chunk", "3", "0.5", "0.5")
-                        mcNumberField("Max Chunk Years", "mc-max-chunk", "8", "0.5", "0.5")
-                        mcNumberField("Simulated Years", "mc-sim-years", "20", "1", "1")
-                        mcNumberField("Simulations", "mc-num-sims", "500", "100", "100")
+                        mcNumberField("Min Chunk Years", "mc-min-chunk", "3")
+                        mcNumberField("Max Chunk Years", "mc-max-chunk", "8")
+                        mcNumberField("Simulated Years", "mc-sim-years", "20")
+                        mcNumberField("Simulations", "mc-num-sims", "500")
+                        div(classes = "backtest-date-field") {
+                            label { attributes["for"] = "mc-sort-metric"; +"Sort Target" }
+                            select {
+                                id = "mc-sort-metric"
+                                option { value = "END_VALUE"; +"End Value" }
+                                option { value = "CAGR"; +"CAGR" }
+                                option { value = "MAX_DD"; +"Max DD" }
+                                option { value = "SHARPE"; +"Sharpe" }
+                                option { value = "ULCER_INDEX"; +"Ulcer Index" }
+                                option { value = "UPI"; +"UPI" }
+                            }
+                        }
                     }
 
                     div {
@@ -132,20 +160,13 @@ private fun FlowContent.mcDateField(labelText: String, inputId: String) {
     }
 }
 
-private fun FlowContent.mcNumberField(
-    labelText: String,
-    inputId: String,
-    defaultVal: String,
-    step: String,
-    min: String
-) {
+private fun FlowContent.mcNumberField(labelText: String, inputId: String, defaultVal: String) {
     div(classes = "backtest-date-field") {
         label { attributes["for"] = inputId; +labelText }
-        input(type = InputType.number) {
+        input(type = InputType.text) {
             id = inputId
             value = defaultVal
-            attributes["step"] = step
-            attributes["min"] = min
+            attributes["inputmode"] = "decimal"
         }
     }
 }

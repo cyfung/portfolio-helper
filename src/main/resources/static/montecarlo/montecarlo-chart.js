@@ -4,6 +4,7 @@
 var mcChartInstance = null;
 var mcCurrentPercentile = 50;
 var mcLastData = null;
+var mcSortMetric = 'END_VALUE';
 
 function showError(msg) {
     const el = document.getElementById('error-msg');
@@ -14,8 +15,9 @@ function showError(msg) {
     document.getElementById('mc-percentile-bar').style.display = 'none';
 }
 
-function renderMcResults(data) {
+function renderMcResults(data, sortMetric) {
     mcLastData = data;
+    if (sortMetric) mcSortMetric = sortMetric;
     document.getElementById('mc-percentile-bar').style.display = '';
     renderMcChart(data, mcCurrentPercentile);
     renderMcStats(data, mcCurrentPercentile);
@@ -104,23 +106,45 @@ function renderMcStats(data, percentile) {
 
     function pct(v)   { return (v * 100).toFixed(2) + '%'; }
     function money(v) { return '$' + v.toFixed(0); }
+    function num2(v)  { return v.toFixed(2); }
+
+    const cols = [
+        { metric: 'END_VALUE',   label: 'End Value' },
+        { metric: 'CAGR',        label: 'CAGR' },
+        { metric: 'MAX_DD',      label: 'Max DD' },
+        { metric: 'SHARPE',      label: 'Sharpe' },
+        { metric: 'ULCER_INDEX', label: 'Ulcer' },
+        { metric: 'UPI',         label: 'UPI' }
+    ];
+
+    function cellValue(pp, metric) {
+        switch (metric) {
+            case 'END_VALUE':   return money(pp.endValue);
+            case 'CAGR':        return pct(pp.cagr);
+            case 'MAX_DD':      return pct(pp.maxDrawdown);
+            case 'SHARPE':      return num2(pp.sharpe);
+            case 'ULCER_INDEX': return num2(pp.ulcerIndex);
+            case 'UPI':         return num2(pp.upi);
+        }
+    }
+
+    function highlight(metric) { return metric === mcSortMetric ? ' class="mc-sort-target"' : ''; }
 
     let html = `<div class="mc-stats-header">Results at <strong>${percentile}th percentile</strong> (${data.numSimulations} simulations, ${data.simulatedYears}yr)</div>`;
-    html += '<table class="summary-table backtest-stats-table"><thead><tr>' +
-        '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th>' +
-        '</tr></thead><tbody>';
+    html += '<table class="summary-table backtest-stats-table"><thead><tr><th>Curve</th>';
+    cols.forEach(c => { html += `<th data-metric="${c.metric}"${highlight(c.metric)}>${c.label}</th>`; });
+    html += '</tr></thead><tbody>';
 
     data.portfolios.forEach(portfolio => {
         portfolio.curves.forEach(curve => {
             const pp = curve.percentilePaths.find(p => p.percentile === percentile);
             if (!pp) return;
             const curveLabel = `${portfolio.label} \u2013 ${curve.label}`;
-            html += `<tr>` +
-                `<td>${curveLabel}</td>` +
-                `<td>${money(pp.endValue)}</td>` +
-                `<td>${pct(pp.cagr)}</td>` +
-                `<td>${pct(pp.maxDrawdown)}</td>` +
-                `</tr>`;
+            html += `<tr><td>${curveLabel}</td>`;
+            cols.forEach(c => {
+                html += `<td data-metric="${c.metric}"${highlight(c.metric)}>${cellValue(pp, c.metric)}</td>`;
+            });
+            html += '</tr>';
         });
     });
 
@@ -136,7 +160,7 @@ function initPercentileTabs() {
             mcCurrentPercentile = parseInt(btn.dataset.pct, 10);
             if (mcLastData) {
                 renderMcChart(mcLastData, mcCurrentPercentile);
-                renderMcStats(mcLastData, mcCurrentPercentile);
+                renderMcStats(mcLastData, mcCurrentPercentile);  // uses mcSortMetric global
             }
         });
     });

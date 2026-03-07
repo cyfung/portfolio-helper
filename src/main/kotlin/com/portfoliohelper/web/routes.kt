@@ -79,6 +79,11 @@ fun Application.configureRouting() {
             call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
         }
 
+        get("/api/montecarlo/settings") {
+            val f = AppDirs.dataDir.resolve(".backtest/mc-settings.json").toFile()
+            call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
+        }
+
         get("/api/backtest/savedPortfolios") {
             val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
             call.respondText(if (f.exists()) f.readText() else "[]", ContentType.Application.Json)
@@ -228,12 +233,18 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
 
+                runCatching {
+                    val dir = AppDirs.dataDir.resolve(".backtest").toFile(); dir.mkdirs()
+                    java.io.File(dir, "mc-settings.json").writeText(body)
+                }
+
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val minChunkYears  = json["minChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 3.0
                 val maxChunkYears  = json["maxChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 8.0
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
+                val sortMetric = json["sortMetric"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "END_VALUE"
 
                 val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
                     val pObj = pel.jsonObject
@@ -273,7 +284,7 @@ fun Application.configureRouting() {
 
                 val request = MonteCarloRequest(
                     fromDate, toDate, minChunkYears, maxChunkYears,
-                    simulatedYears, numSimulations, portfolios
+                    simulatedYears, numSimulations, portfolios, sortMetric
                 )
                 val result = MonteCarloService.runMonteCarlo(request)
 
@@ -298,7 +309,11 @@ fun Application.configureRouting() {
                                 append(",\"points\":${serializePoints(pp.points)}")
                                 append(",\"endValue\":${pp.endValue}")
                                 append(",\"cagr\":${pp.cagr}")
-                                append(",\"maxDrawdown\":${pp.maxDrawdown}}")
+                                append(",\"maxDrawdown\":${pp.maxDrawdown}")
+                                append(",\"sharpe\":${"%.4f".format(pp.sharpe)}")
+                                append(",\"ulcerIndex\":${"%.4f".format(pp.ulcerIndex)}")
+                                append(",\"upi\":${"%.4f".format(pp.upi)}")
+                                append("}")
                             }
                             append("]}")
                         }
