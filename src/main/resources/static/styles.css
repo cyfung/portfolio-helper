@@ -447,7 +447,7 @@ h1 {
 /* ============================================
    Summary Table (Cash + Portfolio Totals)
    ============================================ */
-.summary-table {
+.portfolio-cash-table {
     width: auto;
     border-collapse: separate;
     border-spacing: 0;
@@ -458,67 +458,67 @@ h1 {
     font-size: var(--font-size-md);
 }
 
-.summary-table td {
+.portfolio-cash-table td {
     padding: var(--spacing-xs) var(--spacing-lg);
     white-space: nowrap;
     color: var(--color-text-secondary);
 }
 
-.summary-table td:first-child {
+.portfolio-cash-table td:first-child {
     color: var(--color-text-tertiary);
     font-size: var(--font-size-sm);
 }
 
-.summary-table td:last-child {
+.portfolio-cash-table td:last-child {
     text-align: right;
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
     color: var(--color-text-primary);
 }
 
-.summary-table .cash-raw-col {
+.portfolio-cash-table .cash-raw-col {
     text-align: right;
     font-family: var(--font-family-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
 }
 
-.summary-table td.cash-converted-col {
+.portfolio-cash-table td.cash-converted-col {
     color: var(--color-text-secondary);
 }
 
-.summary-table .summary-section-break td {
+.portfolio-cash-table .summary-section-break td {
     border-top: 2px solid var(--color-border-medium);
     padding-top: var(--spacing-sm);
     padding-bottom: 0;
 }
 
-.summary-table .summary-divider td {
+.portfolio-cash-table .summary-divider td {
     border-top: 1px solid var(--color-border-subtle);
     padding: 0;
 }
 
-.summary-table .total-cash-row td,
-.summary-table .grand-total-row td {
+.portfolio-cash-table .total-cash-row td,
+.portfolio-cash-table .grand-total-row td {
     font-weight: var(--font-weight-semibold);
 }
 
-.summary-table .grand-total-row td:last-child {
+.portfolio-cash-table .grand-total-row td:last-child {
     color: var(--color-accent-primary);
 }
 
-.summary-table .timestamp-row td {
+.portfolio-cash-table .timestamp-row td {
     font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
 }
 
-.summary-table .timestamp-row td:last-child {
+.portfolio-cash-table .timestamp-row td:last-child {
     color: var(--color-positive);
     font-weight: var(--font-weight-semibold);
 }
 
 /* Sub-value: day change nested below its parent value, no extra row needed */
-.summary-table .summary-subvalue {
+.portfolio-cash-table .summary-subvalue {
     font-size: var(--font-size-sm);
     text-align: right;
     margin-top: 2px;
@@ -1193,7 +1193,7 @@ h1 {
 /* ============================================
    Margin Row
    ============================================ */
-.summary-table .margin-row td {
+.portfolio-cash-table .margin-row td {
     color: var(--color-warning);
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
@@ -1207,7 +1207,7 @@ h1 {
 /* ============================================
    Rebalance Target Row
    ============================================ */
-.summary-table .rebal-target-row td:first-child {
+.portfolio-cash-table .rebal-target-row td:first-child {
     color: var(--color-text-tertiary);
     font-size: var(--font-size-sm);
 }
@@ -1799,7 +1799,7 @@ body.editing-active .ibkr-rates-wrapper {
 }
 
 /* Hide summary table in edit mode (replaced by cash-edit-table) */
-body.editing-active .summary-table {
+body.editing-active .portfolio-cash-table {
     display: none;
 }
 
@@ -2332,6 +2332,20 @@ body.editing-active .cash-edit-value {
 .backtest-stats-table {
     width: 100%;
     margin-bottom: 1rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--font-size-md);
+}
+
+.backtest-stats-table td {
+    padding: var(--spacing-xs) var(--spacing-lg);
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+}
+
+.backtest-stats-table td:first-child {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
 }
 
 .backtest-stats-table th:not(:first-child) {

@@ -219,7 +219,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
 
                 div(classes = "portfolio-tables-wrapper") {
                     div(classes = "summary-and-rates") {
-                        table(classes = "summary-table") {
+                        table(classes = "portfolio-cash-table") {
                             tbody {
                                 buildSummaryRows(
                                     cashEntries,
