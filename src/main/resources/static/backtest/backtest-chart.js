@@ -2,6 +2,10 @@
 // Depends on: PALETTE (backtest-blocks.js), stats-formatters.js, Chart.js (external)
 
 var chartInstance = null;
+var selectedCurves = new Set();
+var backtestLastData = null;
+
+function resetCurveSelection() { selectedCurves.clear(); }
 
 function showError(msg) {
     const errorMsg = document.getElementById('error-msg');
@@ -12,6 +16,7 @@ function showError(msg) {
 }
 
 function renderChart(data) {
+    backtestLastData = data;
     const chartContainer = document.getElementById('chart-container');
     chartContainer.style.display = '';
 
@@ -42,6 +47,7 @@ function renderChart(data) {
     data.portfolios.forEach((portfolio, pi) => {
         const palette = PALETTE[pi % PALETTE.length];
         portfolio.curves.forEach((curve, ci) => {
+            if (selectedCurves.size > 0 && !selectedCurves.has(`${pi}-${ci}`)) return;
             const valueMap = new Map(curve.points.map(p => [p.date, p.value]));
             datasets.push({
                 label: `${portfolio.label} \u2013 ${curve.label}`,
@@ -95,7 +101,13 @@ function renderStats(data) {
 
     function trig(v)  { return v == null ? '\u2013' : v; }
 
+    const allKeys = [];
+    data.portfolios.forEach((portfolio, pi) => {
+        portfolio.curves.forEach((curve, ci) => { allKeys.push(`${pi}-${ci}`); });
+    });
+
     let html = '<table class="backtest-stats-table"><thead><tr>' +
+        '<th><input type="checkbox" class="curve-toggle" id="curve-toggle-all"></th>' +
         '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th>' +
         '<th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>' +
         '<th title="Ulcer Performance Index (Martin Ratio): excess return / Ulcer Index">UPI</th>' +
@@ -103,11 +115,13 @@ function renderStats(data) {
         '<th title="Deviation triggers: ratio fell below lower bound (market rose)">Lower \u2193</th>' +
         '</tr></thead><tbody>';
 
-    data.portfolios.forEach(portfolio => {
-        portfolio.curves.forEach(curve => {
+    data.portfolios.forEach((portfolio, pi) => {
+        portfolio.curves.forEach((curve, ci) => {
+            const key = `${pi}-${ci}`;
             const curveLabel = `${portfolio.label} \u2013 ${curve.label}`;
             const s = curve.stats;
             html += `<tr>` +
+                `<td><input type="checkbox" class="curve-toggle" data-key="${key}"></td>` +
                 `<td>${curveLabel}</td>` +
                 `<td>${money(s.endingValue)}</td>` +
                 `<td>${pct(s.cagr)}</td>` +
@@ -123,4 +137,7 @@ function renderStats(data) {
 
     html += '</tbody></table>';
     statsContainer.innerHTML = html;
+
+    wireCurveToggles(statsContainer, allKeys, selectedCurves, 'curve-toggle-all',
+        () => { if (backtestLastData) renderChart(backtestLastData); });
 }

@@ -11,12 +11,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import java.time.temporal.IsoFields
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 import kotlin.math.abs
 import kotlin.math.ln
-import kotlin.math.max
 import kotlin.math.pow
-import kotlin.math.sqrt
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
@@ -683,7 +681,8 @@ object BacktestService {
 
         val currentDev = mutableMapOf<String, Double>()
         for (ticker in tickers) {
-            currentDev[ticker] = (holdings[ticker] ?: 0.0) / finalTotal - (targetWeights[ticker] ?: 0.0)
+            currentDev[ticker] =
+                (holdings[ticker] ?: 0.0) / finalTotal - (targetWeights[ticker] ?: 0.0)
         }
 
         val sorted = if (delta >= 0)
@@ -696,14 +695,16 @@ object BacktestService {
         for (i in sorted.indices) {
             if (remaining <= 0.0) break
             val groupDev = currentDev[sorted[0]] ?: 0.0
-            val nextDev = if (i + 1 < sorted.size) currentDev[sorted[i + 1]] ?: 0.0 else sign * Double.POSITIVE_INFINITY
+            val nextDev = if (i + 1 < sorted.size) currentDev[sorted[i + 1]]
+                ?: 0.0 else sign * Double.POSITIVE_INFINITY
             val groupSize = i + 1
 
             val costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize
 
             if (remaining >= costToLevel) {
                 for (j in 0..i) {
-                    holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + (nextDev - groupDev) * finalTotal
+                    holdings[sorted[j]] =
+                        (holdings[sorted[j]] ?: 0.0) + (nextDev - groupDev) * finalTotal
                     currentDev[sorted[j]] = nextDev
                 }
                 remaining -= costToLevel
@@ -711,7 +712,8 @@ object BacktestService {
                 val perStock = remaining / groupSize
                 for (j in 0..i) {
                     holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + perStock * sign
-                    currentDev[sorted[j]] = (currentDev[sorted[j]] ?: 0.0) + (perStock / finalTotal) * sign
+                    currentDev[sorted[j]] =
+                        (currentDev[sorted[j]] ?: 0.0) + (perStock / finalTotal) * sign
                 }
                 remaining = 0.0
             }
@@ -719,7 +721,8 @@ object BacktestService {
 
         if (remaining > 0.0) {
             for (ticker in tickers)
-                holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * sign * (targetWeights[ticker] ?: 0.0)
+                holdings[ticker] =
+                    (holdings[ticker] ?: 0.0) + remaining * sign * (targetWeights[ticker] ?: 0.0)
         }
     }
 
@@ -875,7 +878,9 @@ object BacktestService {
         val sorted = if (delta >= 0)
             tickers.sortedBy { (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0) }
         else
-            tickers.sortedByDescending { (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0) }
+            tickers.sortedByDescending {
+                (holdings[it] ?: 0.0) / finalTotal - (targetWeights[it] ?: 0.0)
+            }
 
         var remaining = abs(delta)
         for (ticker in sorted) {
@@ -888,7 +893,8 @@ object BacktestService {
         }
         if (remaining > 0.0) {
             for (ticker in tickers)
-                holdings[ticker] = (holdings[ticker] ?: 0.0) + remaining * sign * (targetWeights[ticker] ?: 0.0)
+                holdings[ticker] =
+                    (holdings[ticker] ?: 0.0) + remaining * sign * (targetWeights[ticker] ?: 0.0)
         }
     }
 
@@ -901,11 +907,20 @@ object BacktestService {
         marginUpperTriggers: Int? = null,
         marginLowerTriggers: Int? = null
     ): BacktestStats {
-        if (values.size < 2) return BacktestStats(0.0, 0.0, 0.0, 0.0, 0.0, values.lastOrNull() ?: 0.0)
+        if (values.size < 2) return BacktestStats(
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            values.lastOrNull() ?: 0.0
+        )
         val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
         val stats = computeStats(values, years, computeRfAnnualized(effrx))
-        return BacktestStats(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi,
-            values.last(), marginUpperTriggers, marginLowerTriggers)
+        return BacktestStats(
+            stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi,
+            values.last(), marginUpperTriggers, marginLowerTriggers
+        )
     }
 
     private fun computeRfAnnualized(effrx: Map<LocalDate, Double>): Double {

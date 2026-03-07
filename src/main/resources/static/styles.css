@@ -2343,7 +2343,14 @@ body.editing-active .cash-edit-value {
     color: var(--color-text-secondary);
 }
 
+.backtest-stats-table th:first-child,
 .backtest-stats-table td:first-child {
+    text-align: center;
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+}
+
+.backtest-stats-table td:nth-child(2) {
     color: var(--color-text-tertiary);
     font-size: var(--font-size-sm);
 }
@@ -2352,8 +2359,40 @@ body.editing-active .cash-edit-value {
     text-align: center;
 }
 
-.backtest-stats-table td:not(:first-child) {
+.backtest-stats-table td:not(:first-child):not(:nth-child(2)) {
     text-align: right;
+}
+
+/* Curve visibility toggle checkbox */
+.curve-toggle {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid var(--color-border-strong);
+    border-radius: 3px;
+    cursor: pointer;
+    background: transparent;
+    flex-shrink: 0;
+    transition: background 0.12s, border-color 0.12s;
+    vertical-align: middle;
+}
+.curve-toggle:checked {
+    background-color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5l2.5 2.5 4.5-4.5' stroke='%23fff' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.curve-toggle:indeterminate {
+    background-color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5h6' stroke='%23fff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.curve-toggle:hover {
+    border-color: var(--color-accent-primary);
 }
 
 /* ── Monte Carlo ────────────────────────────────────────────────────────────── */

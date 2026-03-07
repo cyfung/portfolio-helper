@@ -54,6 +54,7 @@ function initRunButton() {
                 showError(data.error || `Server error ${res.status}`);
                 return;
             }
+            resetCurveSelection();
             renderChart(data);
             renderStats(data);
         } catch (e) {

@@ -5,6 +5,9 @@ var mcChartInstance = null;
 var mcCurrentPercentile = 50;
 var mcLastData = null;
 var mcSortMetric = 'CAGR';
+var selectedMcCurves = new Set();
+
+function resetMcCurveSelection() { selectedMcCurves.clear(); }
 
 function showError(msg) {
     const el = document.getElementById('error-msg');
@@ -42,6 +45,7 @@ function renderMcChart(data, percentile) {
     data.portfolios.forEach((portfolio, pi) => {
         const palette = PALETTE[pi % PALETTE.length];
         portfolio.curves.forEach((curve, ci) => {
+            if (selectedMcCurves.size > 0 && !selectedMcCurves.has(`${pi}-${ci}`)) return;
             const pp = curve.percentilePaths.find(p => p.percentile === percentile);
             if (!pp) return;
             datasets.push({
@@ -124,17 +128,27 @@ function renderMcStats(data, percentile) {
 
     function highlight(metric) { return metric === mcSortMetric ? ' class="mc-sort-target"' : ''; }
 
+    const allKeys = [];
+    data.portfolios.forEach((portfolio, pi) => {
+        portfolio.curves.forEach((curve, ci) => { allKeys.push(`${pi}-${ci}`); });
+    });
+
     let html = `<div class="mc-stats-header">Results at <strong>${percentile}th percentile</strong> (${data.numSimulations} simulations, ${data.simulatedYears}yr)</div>`;
-    html += '<table class="backtest-stats-table"><thead><tr><th>Curve</th>';
+    html += '<table class="backtest-stats-table"><thead><tr>';
+    html += '<th><input type="checkbox" class="curve-toggle" id="mc-curve-toggle-all"></th>';
+    html += '<th>Curve</th>';
     cols.forEach(c => { html += `<th data-metric="${c.metric}"${highlight(c.metric)}>${c.label}</th>`; });
     html += '</tr></thead><tbody>';
 
-    data.portfolios.forEach(portfolio => {
-        portfolio.curves.forEach(curve => {
+    data.portfolios.forEach((portfolio, pi) => {
+        portfolio.curves.forEach((curve, ci) => {
             const pp = curve.percentilePaths.find(p => p.percentile === percentile);
             if (!pp) return;
+            const key = `${pi}-${ci}`;
             const curveLabel = `${portfolio.label} \u2013 ${curve.label}`;
-            html += `<tr><td>${curveLabel}</td>`;
+            html += `<tr>`;
+            html += `<td><input type="checkbox" class="curve-toggle" data-key="${key}"></td>`;
+            html += `<td>${curveLabel}</td>`;
             cols.forEach(c => {
                 html += `<td data-metric="${c.metric}"${highlight(c.metric)}>${cellValue(pp, c.metric)}</td>`;
             });
@@ -144,6 +158,9 @@ function renderMcStats(data, percentile) {
 
     html += '</tbody></table>';
     statsContainer.innerHTML = html;
+
+    wireCurveToggles(statsContainer, allKeys, selectedMcCurves, 'mc-curve-toggle-all',
+        () => { if (mcLastData) renderMcChart(mcLastData, mcCurrentPercentile); });
 }
 
 function initPercentileTabs() {

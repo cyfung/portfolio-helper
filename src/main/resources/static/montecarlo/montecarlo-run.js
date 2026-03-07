@@ -60,6 +60,7 @@ function initMcRunButton() {
                 showError(data.error || `Server error ${res.status}`);
                 return;
             }
+            resetMcCurveSelection();
             renderMcResults(data, reqBody.sortMetric);
         } catch (e) {
             showError('Request failed: ' + e.message);
