@@ -35,6 +35,26 @@ function collectMcRequest() {
 
 function initMcRunButton() {
     const runBtn = document.getElementById('run-mc-btn');
+    const progressEl = document.getElementById('mc-progress');
+    let pollInterval = null;
+
+    function startPolling(total) {
+        progressEl.textContent = `0/${total}`;
+        progressEl.style.display = '';
+        pollInterval = setInterval(async () => {
+            try {
+                const r = await fetch('/api/montecarlo/progress');
+                const p = await r.json();
+                progressEl.textContent = `${p.completed}/${p.total}`;
+            } catch (_) {}
+        }, 300);
+    }
+
+    function stopPolling() {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        progressEl.style.display = 'none';
+    }
 
     runBtn.addEventListener('click', async () => {
         document.getElementById('error-msg').style.display = 'none';
@@ -48,6 +68,7 @@ function initMcRunButton() {
 
         runBtn.disabled = true;
         runBtn.textContent = 'Running\u2026';
+        startPolling(reqBody.numSimulations);
 
         try {
             const res = await fetch('/api/montecarlo/run', {
@@ -65,6 +86,7 @@ function initMcRunButton() {
         } catch (e) {
             showError('Request failed: ' + e.message);
         } finally {
+            stopPolling();
             runBtn.disabled = false;
             runBtn.textContent = 'Run Simulation';
         }

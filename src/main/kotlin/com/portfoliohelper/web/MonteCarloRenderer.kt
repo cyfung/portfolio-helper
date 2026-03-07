@@ -87,10 +87,17 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                         }
                     }
 
-                    button(classes = "run-backtest-btn") {
-                        id = "run-mc-btn"
-                        attributes["type"] = "button"
-                        +"Run Simulation"
+                    div {
+                        style = "display:flex; align-items:center;"
+                        button(classes = "run-backtest-btn") {
+                            id = "run-mc-btn"
+                            attributes["type"] = "button"
+                            +"Run Simulation"
+                        }
+                        span {
+                            id = "mc-progress"
+                            style = "display:none; margin-left:0.75rem; font-size:0.85em; opacity:0.7;"
+                        }
                     }
                 }
 

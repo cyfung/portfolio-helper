@@ -2,14 +2,21 @@ package com.portfoliohelper.service
 
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.random.Random
 
 object MonteCarloService {
     private val logger = LoggerFactory.getLogger(MonteCarloService::class.java)
+    private val progressCompleted = AtomicInteger(0)
+    private val progressTotal = AtomicInteger(0)
+
+    fun getProgress(): Pair<Int, Int> = progressCompleted.get() to progressTotal.get()
 
     fun runMonteCarlo(request: MonteCarloRequest): MonteCarloResult {
+        progressCompleted.set(0)
+        progressTotal.set(request.numSimulations)
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
@@ -162,6 +169,7 @@ object MonteCarloService {
                     endValues[pi][ci][simIdx] = computeMetricForSort(values, request.sortMetric, years, rfAnnualized)
                 }
             }
+            progressCompleted.incrementAndGet()
         }
 
         // ── Identify percentile sim indices ───────────────────────────────────
