@@ -185,6 +185,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                     attributes["data-currencies"] =
                                         displayCurrencies.joinToString(",")
                                     attributes["title"] = "Switch display currency"
+                                    span(classes = "currency-toggle-icon") { +"\u21C4" }
                                     span(classes = "toggle-label") { +"USD" }
                                 }
                             } else {
@@ -274,9 +275,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
                 }
 
-                if (portfolio.stocks.isNotEmpty()) {
-                    p(classes = "info") { +"Showing ${portfolio.stocks.size} stock(s)" }
-                }
+
             }
         }
     }
@@ -303,6 +302,7 @@ private fun TBODY.buildSummaryRows(
     tr(classes = "grand-total-row") {
         td { +"Total Value" }
         td {}
+        td {}
         td {
             span {
                 id = "grand-total-value"
@@ -314,7 +314,7 @@ private fun TBODY.buildSummaryRows(
 
     if (cashEntries.isNotEmpty()) {
         tr(classes = "summary-section-break") {
-            td { attributes["colspan"] = "3" }
+            td { attributes["colspan"] = "4" }
         }
     }
 
@@ -339,8 +339,17 @@ private fun TBODY.buildSummaryRows(
                 attributes["data-portfolio-ref"] = entry.portfolioRef
                 attributes["data-portfolio-multiplier"] = entry.amount.toString()
             }
+            if (entry.marginFlag) classes = setOf("cash-margin-entry")
+            else if (entry.portfolioRef != null) classes = setOf("cash-ref-entry")
 
             td { +displayLabel }
+            td(classes = "cash-badge-col") {
+                if (entry.marginFlag) {
+                    span(classes = "cash-type-badge cash-badge-margin") { +"M" }
+                } else if (entry.portfolioRef != null) {
+                    span(classes = "cash-type-badge cash-badge-ref") { +"\u2197" }
+                }
+            }
             td(classes = "cash-raw-col") {
                 if (entry.portfolioRef != null) {
                     val resolvedUsd = resolveEntryUsd(entry)
@@ -361,10 +370,11 @@ private fun TBODY.buildSummaryRows(
 
     if (cashEntries.isNotEmpty()) {
         tr(classes = "summary-divider") {
-            td { attributes["colspan"] = "3" }
+            td { attributes["colspan"] = "4" }
         }
         tr(classes = "total-cash-row") {
             td { +"Total Cash" }
+            td {}
             td {}
             td {
                 span {
@@ -385,6 +395,7 @@ private fun TBODY.buildSummaryRows(
                 if (marginUsd >= 0) style = "display:none;"
                 td { +"Margin" }
                 td {}
+                td {}
                 td {
                     span {
                         id = "margin-total-usd"
@@ -402,12 +413,13 @@ private fun TBODY.buildSummaryRows(
         }
 
         tr(classes = "summary-section-break") {
-            td { attributes["colspan"] = "3" }
+            td { attributes["colspan"] = "4" }
         }
 
         // Portfolio Value row — day change innerHTML owned by JS (updateTotalValue); render empty
         tr {
             td { +"Portfolio Value" }
+            td {}
             td {}
             td {
                 div {
@@ -422,6 +434,7 @@ private fun TBODY.buildSummaryRows(
     // Rebalance Target input row — always shown
     tr(classes = "rebal-target-row") {
         td { +"Rebalance Target" }
+        td {}
         td {}
         td {
             input(type = InputType.text, classes = "rebal-target-input") {
@@ -440,6 +453,7 @@ private fun TBODY.buildSummaryRows(
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"
             td { +"Margin Target" }
+            td {}
             td { span { id = "margin-target-usd" } }
             td {
                 input(type = InputType.text, classes = "margin-target-input") {

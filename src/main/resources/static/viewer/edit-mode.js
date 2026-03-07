@@ -8,13 +8,14 @@ const STOCK_ROW_HTML =
     '<td><input type="text" class="edit-input new-symbol-input" data-column="symbol" placeholder="TICKER" style="text-align:left;width:80px;display:block" /></td>' +
     '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
     '<td><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
-    '<td><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:120px" /></td>' +
+    '<td><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:180px" /></td>' +
     '<td><button type="button" class="delete-row-btn">\u00d7</button></td>';
 
 const CASH_ROW_HTML =
     '<td><input type="text" class="edit-input cash-edit-key" placeholder="Cash.USD.M" /></td>' +
     '<td><input type="text" class="edit-input cash-edit-value" placeholder="0" /></td>' +
-    '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>';
+    '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>' +
+    '<td class="cash-type-badge-cell"><span class="cash-type-badge"></span></td>';
 
 function addStockRow() {
     const tbody = document.querySelector('#stock-edit-table tbody');
@@ -55,6 +56,19 @@ function getStockColIndex(el) {
     if (el.classList.contains('edit-weight') || col === 'weight') return 2;
     if (el.classList.contains('edit-letf')   || col === 'letf')   return 3;
     return -1;
+}
+
+function updateCashRowTypeBadge(tr) {
+    const key = (tr.querySelector('.cash-edit-key')?.value || '').trim();
+    const parts = key.split('.');
+    const suffix = parts[parts.length - 1]?.toUpperCase();
+    const currency = parts[parts.length - 2]?.toUpperCase();
+    let type = 'normal', badgeText = '';
+    if (suffix === 'M') { type = 'margin'; badgeText = 'M'; }
+    else if (currency === 'P' || suffix === 'P') { type = 'ref'; badgeText = '\u2197'; }
+    tr.dataset.entryType = type;
+    const badge = tr.querySelector('.cash-type-badge');
+    if (badge) badge.textContent = badgeText;
 }
 
 // Resets all cash edit row inputs to their original (data-attribute) values
@@ -130,7 +144,7 @@ function buildStockEditTable() {
         tr.appendChild(makeInputCell({ cls: 'edit-symbol', col: 'symbol', value: sym, origAttr: 'data-original-symbol', sym }));
         tr.appendChild(makeInputCell({ cls: 'edit-qty',    col: 'qty',    value: qty,    type: 'number', sym, min: '0', step: 'any' }, 'amount'));
         tr.appendChild(makeInputCell({ cls: 'edit-weight', col: 'weight', value: weight, type: 'number', sym, min: '0', max: '100', step: '0.1' }));
-        tr.appendChild(makeInputCell({ cls: 'edit-letf',   col: 'letf',   value: letfStr, sym, style: { textAlign: 'left', width: '120px' } }));
+        tr.appendChild(makeInputCell({ cls: 'edit-letf',   col: 'letf',   value: letfStr, sym, style: { textAlign: 'left', width: '180px' } }));
 
         const tdDel = document.createElement('td');
         const delBtn = document.createElement('button');
@@ -167,6 +181,11 @@ function showEditTable() {
     const viewTable = document.getElementById('stock-view-table');
     viewTable.parentNode.insertBefore(editTable, viewTable);
     viewTable.style.display = 'none';
+    const stockHint = document.createElement('p');
+    stockHint.className = 'edit-hint';
+    stockHint.id = 'stock-edit-hint';
+    stockHint.textContent = 'Paste from spreadsheet (Ctrl+V) fills from focused cell';
+    editTable.parentNode.insertBefore(stockHint, editTable.nextSibling);
 
     initDragAndDrop(editTable.querySelector('tbody'));
 
@@ -200,6 +219,7 @@ function showEditTable() {
 
 function removeEditTable() {
     document.getElementById('stock-edit-table')?.remove();
+    document.getElementById('stock-edit-hint')?.remove();
     const viewTable = document.getElementById('stock-view-table');
     if (viewTable) viewTable.style.display = '';
 }
@@ -225,6 +245,7 @@ function initEditMode() {
             if (cashTbody && cashTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
                 addCashRow();
             }
+            document.querySelectorAll('[data-cash-edit-row]').forEach(tr => updateCashRowTypeBadge(tr));
         } else {
             if (allocControls) allocControls.style.display = '';
             removeEditTable();
@@ -303,6 +324,10 @@ function initEditMode() {
         if (e.target.classList.contains('edit-weight') || e.target.getAttribute('data-column') === 'weight') {
             if (e.target.value.includes('%')) e.target.value = e.target.value.replace(/%/g, '');
             updateTargetWeightTotal();
+        }
+        if (e.target.classList.contains('cash-edit-key')) {
+            const tr = e.target.closest('tr');
+            if (tr) updateCashRowTypeBadge(tr);
         }
     });
 

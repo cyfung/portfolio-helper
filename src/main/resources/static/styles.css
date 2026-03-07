@@ -311,6 +311,12 @@ h1 {
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
 }
 
+.currency-toggle-icon {
+    font-size: 0.85em;
+    margin-right: 4px;
+    opacity: 0.7;
+}
+
 .currency-select {
     padding: var(--spacing-sm) var(--spacing-xl);
     border: 1px solid var(--color-border-medium);
@@ -2057,6 +2063,63 @@ body.rebalancing-visible .virtual-rebal-btn {
 body.editing-active .cash-edit-value {
     width: 100px;
     text-align: right;
+}
+
+/* ============================================
+   Cash Type Badges
+   ============================================ */
+/* Badge column in cash view table */
+.portfolio-cash-table .cash-badge-col {
+    padding: 0 2px;
+    white-space: nowrap;
+}
+
+.cash-type-badge {
+    display: inline-block;
+    font-size: 0.7em;
+    font-weight: var(--font-weight-semibold);
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-left: 0;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+.cash-badge-margin {
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+.cash-badge-ref {
+    background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
+    color: var(--color-accent-primary);
+    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
+}
+
+/* Cash edit mode: type badge column */
+.cash-edit-table .cash-type-badge-cell {
+    padding-left: 4px;
+}
+.cash-edit-table tr[data-entry-type="margin"] .cash-type-badge {
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+.cash-edit-table tr[data-entry-type="ref"] .cash-type-badge {
+    background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
+    color: var(--color-accent-primary);
+    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
+}
+
+/* Paste / format hint text */
+.edit-hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: var(--spacing-xs);
+}
+
+.cash-edit-table-wrapper .edit-hint {
+    margin-top: 0;
+    margin-bottom: var(--spacing-lg);
 }
 
 /* ============================================
