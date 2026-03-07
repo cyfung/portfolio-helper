@@ -1,11 +1,33 @@
 package com.portfoliohelper.web
 
 import kotlinx.html.DIV
+import kotlinx.html.FlowContent
 import kotlinx.html.HEAD
+import kotlinx.html.a
 import kotlinx.html.button
+import kotlinx.html.div
 import kotlinx.html.link
 import kotlinx.html.span
 import kotlinx.html.unsafe
+
+enum class AppPage(val line1: String, val line2: String, val href: String) {
+    PORTFOLIO("Portfolio", "Viewer", "/"),
+    LOAN("Loan", "Calculator", "/loan"),
+    BACKTEST("Portfolio", "Backtest", "/backtest"),
+    MONTE_CARLO("Monte Carlo", "Simulation", "/montecarlo")
+}
+
+fun FlowContent.renderPageNavTabs(activePage: AppPage) {
+    div(classes = "page-nav-tabs") {
+        for (page in AppPage.entries) {
+            val isActive = page == activePage
+            a(href = page.href, classes = "page-nav-tab${if (isActive) " active" else ""}") {
+                span(classes = "page-nav-tab-line1") { +page.line1 }
+                span(classes = "page-nav-tab-line2") { +page.line2 }
+            }
+        }
+    }
+}
 
 internal fun formatQty(amount: Double) =
     if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()

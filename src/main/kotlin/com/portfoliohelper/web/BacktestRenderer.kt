@@ -66,9 +66,7 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
             div(classes = "container") {
                 div(classes = "portfolio-header") {
                     div(classes = "header-title-group") {
-                        h1 { +"Portfolio Backtester" }
-                        a(href = "/montecarlo", classes = "loan-back-link") { +"Monte Carlo →" }
-                        a(href = "/", classes = "loan-back-link") { +"← Portfolio" }
+                        renderPageNavTabs(AppPage.BACKTEST)
                     }
                     div(classes = "header-buttons") {
                         renderThemeToggle()

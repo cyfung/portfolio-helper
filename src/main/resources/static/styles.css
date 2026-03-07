@@ -155,8 +155,50 @@ h1 {
 
 .header-title-group {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--spacing-md);
+}
+
+/* ============================================
+   Page Navigation Tabs
+   ============================================ */
+.page-nav-tabs {
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+}
+
+.page-nav-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-lg) var(--spacing-2xl);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-secondary);
+    transition: color var(--transition-base), border-color var(--transition-base), background-color var(--transition-base);
+    line-height: 1.25;
+    border-radius: 4px 4px 0 0;
+}
+
+.page-nav-tab-line1 {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+}
+
+.page-nav-tab-line2 {
+    font-size: var(--font-size-xs);
+}
+
+.page-nav-tab.active {
+    color: var(--color-accent-primary);
+    border-bottom-color: var(--color-accent-primary);
+}
+
+.page-nav-tab:hover:not(.active) {
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-hover);
 }
 
 .header-timestamp {

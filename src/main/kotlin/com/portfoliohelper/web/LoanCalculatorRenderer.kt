@@ -25,8 +25,7 @@ internal suspend fun ApplicationCall.renderLoanCalculatorPage() {
             div(classes = "container") {
                 div(classes = "portfolio-header") {
                     div(classes = "header-title-group") {
-                        h1 { +"Loan Calculator" }
-                        a(href = "/", classes = "loan-back-link") { +"← Portfolio" }
+                        renderPageNavTabs(AppPage.LOAN)
                     }
 
                     div(classes = "header-buttons") {

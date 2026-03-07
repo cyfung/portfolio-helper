@@ -124,7 +124,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             div(classes = "container") {
                 div(classes = "portfolio-header") {
                     div(classes = "header-title-group") {
-                        h1 { +entry.name }
+                        renderPageNavTabs(AppPage.PORTFOLIO)
                         span(classes = "header-timestamp") {
                             id = "last-update-time"
                             val now = java.time.LocalTime.now()
@@ -139,10 +139,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
 
                     div(classes = "header-buttons") {
-                        a(href = "/backtest", classes = "loan-calc-link") { +"Backtester" }
-                        a(href = "/montecarlo", classes = "loan-calc-link") { +"Monte Carlo" }
-                        a(href = "/loan", classes = "loan-calc-link") { +"Loan Calc" }
-
                         button(classes = "restore-backup-btn") {
                             attributes["id"] = "restore-backup-btn"
                             attributes["type"] = "button"

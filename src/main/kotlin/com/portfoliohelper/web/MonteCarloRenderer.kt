@@ -29,9 +29,7 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
             div(classes = "container") {
                 div(classes = "portfolio-header") {
                     div(classes = "header-title-group") {
-                        h1 { +"Monte Carlo Simulator" }
-                        a(href = "/backtest", classes = "loan-back-link") { +"← Backtester" }
-                        a(href = "/", classes = "loan-back-link") { +"← Portfolio" }
+                        renderPageNavTabs(AppPage.MONTE_CARLO)
                     }
                     div(classes = "header-buttons") {
                         renderThemeToggle()
