@@ -10,7 +10,7 @@ data class MonteCarloRequest(
     val simulatedYears: Int,
     val numSimulations: Int,
     val portfolios: List<PortfolioConfig>,
-    val sortMetric: String = "END_VALUE"  // END_VALUE, CAGR, MAX_DD, SHARPE, ULCER_INDEX, UPI
+    val sortMetric: String = "CAGR"  // CAGR, MAX_DD, SHARPE, ULCER_INDEX, UPI
 )
 
 data class MonteCarloPercentilePath(

@@ -66,7 +66,6 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                             label { attributes["for"] = "mc-sort-metric"; +"Sort Target" }
                             select {
                                 id = "mc-sort-metric"
-                                option { value = "END_VALUE"; +"End Value" }
                                 option { value = "CAGR"; +"CAGR" }
                                 option { value = "MAX_DD"; +"Max DD" }
                                 option { value = "SHARPE"; +"Sharpe" }

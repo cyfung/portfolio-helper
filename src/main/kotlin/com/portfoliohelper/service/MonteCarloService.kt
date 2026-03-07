@@ -226,7 +226,7 @@ object MonteCarloService {
                     else -> stats.upi
                 }
             }
-            else -> endValue  // END_VALUE (default)
+            else -> (endValue / 10_000.0).pow(1.0 / years) - 1.0  // CAGR (default / fallback)
         }
     }
 

@@ -4,7 +4,7 @@
 var mcChartInstance = null;
 var mcCurrentPercentile = 50;
 var mcLastData = null;
-var mcSortMetric = 'END_VALUE';
+var mcSortMetric = 'CAGR';
 
 function showError(msg) {
     const el = document.getElementById('error-msg');
@@ -105,7 +105,6 @@ function renderMcStats(data, percentile) {
     statsContainer.style.display = '';
 
     const cols = [
-        { metric: 'END_VALUE',   label: 'End Value' },
         { metric: 'CAGR',        label: 'CAGR' },
         { metric: 'MAX_DD',      label: 'Max DD' },
         { metric: 'SHARPE',      label: 'Sharpe' },
@@ -115,7 +114,6 @@ function renderMcStats(data, percentile) {
 
     function cellValue(pp, metric) {
         switch (metric) {
-            case 'END_VALUE':   return money(pp.endValue);
             case 'CAGR':        return pct(pp.cagr);
             case 'MAX_DD':      return pct(pp.maxDrawdown);
             case 'SHARPE':      return fmt2(pp.sharpe);
