@@ -207,6 +207,7 @@ object BacktestService {
                 val extended = chainExtend(existing, extension, latestDate)
                 val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
                 writeSimCsv(newFile, extended)
+                existingFiles.forEach { it.delete() }
                 extended
             } catch (e: Exception) {
                 logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}. Using existing SIM.")
@@ -248,7 +249,8 @@ object BacktestService {
     internal fun loadEffrxSeries(): Map<LocalDate, Double> {
         tickerDir.mkdirs()
         val simPattern = Regex("EFFRX-(\\d{4}-\\d{2}-\\d{2})\\.csv")
-        val latest = findOrCopyFromResources(simPattern).firstOrNull() ?: return emptyMap()
+        val existingFiles = findOrCopyFromResources(simPattern)
+        val latest = existingFiles.firstOrNull() ?: return emptyMap()
         logger.info("Loading EFFRX from ${latest.name}")
         val existing = readSimCsv(latest)
 
@@ -261,6 +263,7 @@ object BacktestService {
             if (extended.size > existing.size) {
                 val newFile = File(tickerDir, "EFFRX-${today}.csv")
                 writeSimCsv(newFile, extended)
+                existingFiles.forEach { it.delete() }
             }
             extended
         } catch (e: Exception) {
