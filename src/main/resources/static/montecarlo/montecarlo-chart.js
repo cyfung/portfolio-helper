@@ -190,31 +190,27 @@ function renderMcStats(data, percentile) {
         });
     });
 
-    html += '</tbody></table>';
-
     const effectiveCurves = getEffectiveCurves(data);
     if (effectiveCurves.length === 1) {
         const { portfolio, curve } = effectiveCurves[0];
         const curveLabel = `${portfolio.label} \u2013 ${curve.label}`;
-        html += `<div class="mc-stats-header" style="margin-top:1.2rem">All percentiles \u2013 <strong>${curveLabel}</strong></div>`;
-        html += '<table class="backtest-stats-table"><thead><tr>';
-        html += '<th>Percentile</th>';
-        cols.forEach(c => { html += `<th data-metric="${c.metric}"${highlight(c.metric)}>${c.label}</th>`; });
-        html += '</tr></thead><tbody>';
+        const totalCols = 2 + cols.length; // checkbox + curve/percentile + metrics
+        html += `<tr class="mc-pct-separator"><td colspan="${totalCols}">All percentiles \u2013 <strong>${curveLabel}</strong></td></tr>`;
         PERCENTILE_LIST.forEach((pct, idx) => {
             const pp = curve.percentilePaths.find(p => p.percentile === pct);
             if (!pp) return;
             const isActive = pct === percentile;
             html += `<tr${isActive ? ' class="mc-active-pct"' : ''}>`;
+            html += '<td></td>';
             html += `<td style="color:${PERCENTILE_COLORS[idx]};font-weight:${pct===50?'bold':'normal'}">P${pct}</td>`;
             cols.forEach(c => {
                 html += `<td data-metric="${c.metric}"${highlight(c.metric)}>${cellValue(pp, c.metric)}</td>`;
             });
             html += '</tr>';
         });
-        html += '</tbody></table>';
     }
 
+    html += '</tbody></table>';
     statsContainer.innerHTML = html;
 
     wireCurveToggles(statsContainer, allKeys, selectedMcCurves, 'mc-curve-toggle-all',

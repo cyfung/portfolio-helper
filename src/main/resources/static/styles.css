@@ -2468,6 +2468,7 @@ body.editing-active .cash-edit-value {
 }
 
 .mc-active-pct td { background: rgba(100,140,200,0.15); }
+.mc-pct-separator td { padding: var(--spacing-md) var(--spacing-lg); color: var(--color-text-secondary); border-top: 1px solid var(--color-border-subtle); font-size: var(--font-size-sm); }
 
 .backtest-stats-table .mc-sort-target {
     color: var(--color-accent-primary);
