@@ -1,3 +1,6 @@
+import com.github.jk1.license.render.TextReportRenderer
+import com.github.jk1.license.render.InventoryHtmlReportRenderer
+
 plugins {
     kotlin("jvm") version "2.3.0"
     kotlin("plugin.serialization") version "2.3.0"
@@ -5,6 +8,7 @@ plugins {
     id("com.gradleup.shadow") version "8.3.5"
     id("edu.sc.seis.launch4j") version "4.0.0"
     id("org.panteleyev.jpackageplugin") version "1.7.6"
+    id("com.github.jk1.dependency-license-report") version "2.9"
 }
 
 group = "com.portfoliohelper"
@@ -132,12 +136,14 @@ tasks.jpackage {
 
 // Copy config files into jpackage output (data/ is generated at runtime on first run)
 tasks.register<Copy>("copyJpackageData") {
-    dependsOn(tasks.jpackage)
+    dependsOn(tasks.jpackage, tasks.named("generateLicenseReport"))
 
     from("src/main/resources") {
         include("logback.xml")
         into("config")
     }
+
+    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt"))
 
     into(layout.buildDirectory.dir("jpackage/Portfolio Helper"))
 }
@@ -173,6 +179,12 @@ tasks.register<Zip>("portableDistZip") {
     archiveBaseName.set("${project.name}-portable")
     archiveClassifier.set("complete")
 
+    dependsOn(tasks.named("generateLicenseReport"))
+
+    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
+        into("${project.name}")
+    }
+
     from(tasks.shadowJar) {
         into("${project.name}")
     }
@@ -198,6 +210,12 @@ tasks.register<Tar>("portableDistTar") {
     compression = Compression.GZIP
     archiveExtension.set("tar.gz")
 
+    dependsOn(tasks.named("generateLicenseReport"))
+
+    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
+        into("${project.name}")
+    }
+
     from(tasks.shadowJar) {
         into("${project.name}")
     }
@@ -220,7 +238,11 @@ tasks.register<Zip>("windowsDistZip") {
     archiveBaseName.set("${project.name}-windows")
     archiveClassifier.set("exe")
 
-    dependsOn(tasks.named("createExe"))
+    dependsOn(tasks.named("createExe"), tasks.named("generateLicenseReport"))
+
+    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
+        into("${project.name}")
+    }
 
     from(layout.buildDirectory.dir("launch4j")) {
         into("${project.name}")
@@ -254,6 +276,15 @@ tasks.register<Zip>("jpackageDistZip") {
     from(layout.buildDirectory.dir("jpackage/Portfolio Helper")) {
         into("Portfolio Helper")
     }
+}
+
+// License report configuration
+licenseReport {
+    renderers = arrayOf(
+        TextReportRenderer("THIRD_PARTY_NOTICES.txt"),
+        InventoryHtmlReportRenderer("index.html", "Third Party Licenses")
+    )
+    excludeGroups = arrayOf("com.portfoliohelper")
 }
 
 // Convenience task for complete jpackage distribution
