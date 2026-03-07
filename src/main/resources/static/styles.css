@@ -2541,6 +2541,12 @@ body.editing-active .cash-edit-value {
     color: var(--color-negative);
 }
 
+.margin-header-btns {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.include-no-margin-btn,
 .add-margin-btn {
     background: none;
     border: 1px solid var(--color-border-medium);
@@ -2551,6 +2557,7 @@ body.editing-active .cash-edit-value {
     border-radius: 4px;
 }
 
+.include-no-margin-btn:hover,
 .add-margin-btn:hover {
     background: var(--color-bg-hover);
 }

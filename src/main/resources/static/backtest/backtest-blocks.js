@@ -117,7 +117,8 @@ function collectBlockConfig(blockIdx) {
         upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
         lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
     }));
-    return { tickers, rebalanceStrategy, marginStrategies };
+    const includeNoMargin = block.querySelector('.include-no-margin-btn').dataset.include === 'true';
+    return { tickers, rebalanceStrategy, marginStrategies, includeNoMargin };
 }
 
 function loadPortfolioIntoBlock(blockIdx, config, name) {
@@ -128,6 +129,12 @@ function loadPortfolioIntoBlock(blockIdx, config, name) {
     (config.tickers || []).forEach(t => addTickerRow(blockIdx, t.ticker, t.weight));
     block.querySelector('.rebalance-select').value = config.rebalanceStrategy || 'YEARLY';
     block.querySelector('.margin-config-rows').innerHTML = '';
+    const noMarginBtn = block.querySelector('.include-no-margin-btn');
+    if (noMarginBtn) {
+        const include = config.includeNoMargin !== false;
+        noMarginBtn.dataset.include = include;
+        noMarginBtn.textContent = include ? 'Unlevered: On' : 'Unlevered: Off';
+    }
     const r = v => Math.round(v * 10000) / 100;
     (config.marginStrategies || []).forEach(m =>
         addMarginRow(blockIdx, r(m.marginRatio), r(m.marginSpread),
@@ -185,6 +192,15 @@ function initBlock(blockIdx) {
 
     addTickerBtn.addEventListener('click', () => addTickerRow(blockIdx));
     addMarginBtn.addEventListener('click', () => addMarginRow(blockIdx));
+
+    const noMarginBtn = block.querySelector('.include-no-margin-btn');
+    if (noMarginBtn) {
+        noMarginBtn.addEventListener('click', () => {
+            const include = noMarginBtn.dataset.include !== 'true';
+            noMarginBtn.dataset.include = include;
+            noMarginBtn.textContent = include ? 'Unlevered: On' : 'Unlevered: Off';
+        });
+    }
     labelInput.addEventListener('input', () => updateSaveBtn(block));
 
     block.querySelectorAll('.save-portfolio-btn, .overwrite-portfolio-btn').forEach(btn => {

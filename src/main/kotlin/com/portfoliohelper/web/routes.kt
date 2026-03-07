@@ -190,7 +190,8 @@ fun Application.configureRouting() {
                                     )
                                 }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
                             )
-                        } ?: emptyList()
+                        } ?: emptyList(),
+                        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
                     )
                 } ?: emptyList()
 
@@ -285,7 +286,8 @@ fun Application.configureRouting() {
                                     )
                                 }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
                             )
-                        } ?: emptyList()
+                        } ?: emptyList(),
+                        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
                     )
                 } ?: emptyList()
 

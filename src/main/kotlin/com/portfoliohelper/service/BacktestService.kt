@@ -96,10 +96,13 @@ object BacktestService {
             val seriesMap = allSeriesMaps[idx]
 
             val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
-            val noMarginPoints =
-                globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
-            val noMarginStats = computeBacktestStats(noMarginValues, globalDates, effrxSeries)
-            val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
+            val curves = mutableListOf<CurveResult>()
+            if (pConfig.includeNoMargin) {
+                val noMarginPoints =
+                    globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
+                val noMarginStats = computeBacktestStats(noMarginValues, globalDates, effrxSeries)
+                curves.add(CurveResult("No Margin", noMarginPoints, noMarginStats))
+            }
 
             pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
                 val marginResult =

@@ -128,7 +128,8 @@ object MonteCarloService {
 
         val portfolioCurveConfigs: List<Pair<PortfolioConfig, List<CurveConfig>>> =
             request.portfolios.map { pConfig ->
-                val curves = mutableListOf(CurveConfig("No Margin", null))
+                val curves = mutableListOf<CurveConfig>()
+                if (pConfig.includeNoMargin) curves.add(CurveConfig("No Margin", null))
                 pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
                     val uAbbr = modeAbbr(mc.upperRebalanceMode)
                     val lAbbr = modeAbbr(mc.lowerRebalanceMode)

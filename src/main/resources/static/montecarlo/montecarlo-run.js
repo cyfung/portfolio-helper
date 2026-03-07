@@ -25,7 +25,7 @@ function collectMcRequest() {
             upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
             lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
         }));
-        return { label, tickers, rebalanceStrategy, marginStrategies };
+        return { label, tickers, rebalanceStrategy, marginStrategies, includeNoMargin: block.querySelector('.include-no-margin-btn').dataset.include === 'true' };
     }).filter(p => p.tickers.length > 0);
 
     const sortMetric = document.getElementById('mc-sort-metric').value;

@@ -33,7 +33,8 @@ data class PortfolioConfig(
     val label: String,
     val tickers: List<TickerWeight>,
     val rebalanceStrategy: RebalanceStrategy,
-    val marginStrategies: List<MarginConfig>  // empty = base curve only
+    val marginStrategies: List<MarginConfig>,  // empty = base curve only
+    val includeNoMargin: Boolean = true
 )
 
 data class MultiBacktestRequest(

@@ -236,8 +236,15 @@ private fun DIV.mcPortfolioBlock(idx: Int) {
         div(classes = "backtest-section") {
             div(classes = "backtest-section-header") {
                 span { +"Margin" }
-                button(classes = "add-margin-btn") {
-                    attributes["type"] = "button"; +"+ Add Margin"
+                div(classes = "margin-header-btns") {
+                    button(classes = "include-no-margin-btn") {
+                        attributes["type"] = "button"
+                        attributes["data-include"] = "true"
+                        +"Unlevered: On"
+                    }
+                    button(classes = "add-margin-btn") {
+                        attributes["type"] = "button"; +"+ Add Margin"
+                    }
                 }
             }
             div(classes = "margin-col-headers") {
