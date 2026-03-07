@@ -70,6 +70,10 @@ fun Application.configureRouting() {
             call.renderBacktestPage()
         }
 
+        get("/montecarlo") {
+            call.renderMonteCarloPage()
+        }
+
         get("/api/backtest/settings") {
             val f = AppDirs.dataDir.resolve(".backtest/settings.json").toFile()
             call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
@@ -213,6 +217,99 @@ fun Application.configureRouting() {
             } catch (e: Exception) {
                 call.respondText(
                     "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        post("/api/montecarlo/run") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+
+                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val minChunkYears  = json["minChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 3.0
+                val maxChunkYears  = json["maxChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 8.0
+                val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
+                val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
+
+                val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
+                    val pObj = pel.jsonObject
+                    PortfolioConfig(
+                        label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
+                        tickers = pObj["tickers"]?.jsonArray?.map { el ->
+                            val obj = el.jsonObject
+                            TickerWeight(
+                                ticker = obj["ticker"]!!.jsonPrimitive.content,
+                                weight = obj["weight"]!!.jsonPrimitive.double
+                            )
+                        } ?: emptyList(),
+                        rebalanceStrategy = runCatching {
+                            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
+                        }.getOrDefault(RebalanceStrategy.YEARLY),
+                        marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
+                            val mObj = mel.jsonObject
+                            MarginConfig(
+                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                                upperRebalanceMode = runCatching {
+                                    MarginRebalanceMode.valueOf(
+                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                                    )
+                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
+                                lowerRebalanceMode = runCatching {
+                                    MarginRebalanceMode.valueOf(
+                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                                    )
+                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
+                            )
+                        } ?: emptyList()
+                    )
+                } ?: emptyList()
+
+                val request = MonteCarloRequest(
+                    fromDate, toDate, minChunkYears, maxChunkYears,
+                    simulatedYears, numSimulations, portfolios
+                )
+                val result = MonteCarloService.runMonteCarlo(request)
+
+                fun serializePoints(pts: List<Double>) =
+                    "[${pts.joinToString(",") { "%.4f".format(it) }}]"
+
+                val resultJson = buildString {
+                    append("{\"simulatedYears\":${result.simulatedYears}")
+                    append(",\"numSimulations\":${result.numSimulations}")
+                    append(",\"portfolios\":[")
+                    result.portfolios.forEachIndexed { pi, pr ->
+                        if (pi > 0) append(",")
+                        val pLabel = pr.label.replace("\\", "\\\\").replace("\"", "\\\"")
+                        append("{\"label\":\"$pLabel\",\"curves\":[")
+                        pr.curves.forEachIndexed { ci, cr ->
+                            if (ci > 0) append(",")
+                            val cLabel = cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
+                            append("{\"label\":\"$cLabel\",\"percentilePaths\":[")
+                            cr.percentilePaths.forEachIndexed { ppi, pp ->
+                                if (ppi > 0) append(",")
+                                append("{\"percentile\":${pp.percentile}")
+                                append(",\"points\":${serializePoints(pp.points)}")
+                                append(",\"endValue\":${pp.endValue}")
+                                append(",\"cagr\":${pp.cagr}")
+                                append(",\"maxDrawdown\":${pp.maxDrawdown}}")
+                            }
+                            append("]}")
+                        }
+                        append("]}")
+                    }
+                    append("]}")
+                }
+                call.respondText(resultJson, ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
                     ContentType.Application.Json,
                     HttpStatusCode.InternalServerError
                 )

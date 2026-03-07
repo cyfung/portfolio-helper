@@ -5,47 +5,10 @@ import io.ktor.server.application.*
 import io.ktor.server.html.*
 import kotlinx.html.*
 
-private fun FlowContent.dateFieldWithQuickSelect(labelText: String, inputId: String) {
-    val quickSelectId = "$inputId-quick"
-    val years = (1..10).toList() + listOf(15, 20, 25, 30)
-
-    div(classes = "backtest-date-field") {
-        label {
-            attributes["for"] = inputId
-            +labelText
-        }
-        div(classes = "date-input-row") {
-            div(classes = "date-field-box") {
-                input(type = InputType.date) {
-                    id = inputId
-                }
-                button(classes = "date-clear-btn") {
-                    attributes["type"] = "button"
-                    attributes["data-target"] = inputId
-                    attributes["title"] = "Clear"
-                    attributes["style"] = "visibility:hidden"
-                    +"×"
-                }
-            }
-            select {
-                id = quickSelectId
-                attributes["aria-label"] = "Years back"
-                option {
-                    value = ""
-                    +"Yrs"
-                }
-                years.forEach { y ->
-                    option { value = "$y"; +"${y}Y" }
-                }
-            }
-        }
-    }
-}
-
-internal suspend fun ApplicationCall.renderBacktestPage() {
+internal suspend fun ApplicationCall.renderMonteCarloPage() {
     respondHtml(HttpStatusCode.OK) {
         head {
-            title { +"Portfolio Backtester" }
+            title { +"Monte Carlo Simulator" }
             meta(charset = "UTF-8")
             meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
 
@@ -58,16 +21,16 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
             script { src = "/static/common/theme.js" }
             script { src = "/static/backtest/backtest-blocks.js" }
             script { src = "/static/backtest/backtest-saved.js" }
-            script { src = "/static/backtest/backtest-chart.js" }
-            script { src = "/static/backtest/backtest-run.js" }
-            script { src = "/static/backtest/backtest-main.js" }
+            script { src = "/static/montecarlo/montecarlo-chart.js" }
+            script { src = "/static/montecarlo/montecarlo-run.js" }
+            script { src = "/static/montecarlo/montecarlo-main.js" }
         }
         body {
             div(classes = "container") {
                 div(classes = "portfolio-header") {
                     div(classes = "header-title-group") {
-                        h1 { +"Portfolio Backtester" }
-                        a(href = "/montecarlo", classes = "loan-back-link") { +"Monte Carlo →" }
+                        h1 { +"Monte Carlo Simulator" }
+                        a(href = "/backtest", classes = "loan-back-link") { +"← Backtester" }
                         a(href = "/", classes = "loan-back-link") { +"← Portfolio" }
                     }
                     div(classes = "header-buttons") {
@@ -76,36 +39,17 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                 }
 
                 div(classes = "backtest-form-card") {
-                    // Shared date range
+                    // Date range + MC params
                     div(classes = "backtest-section backtest-grid-2") {
-                        dateFieldWithQuickSelect("From Date", "from-date")
-                        dateFieldWithQuickSelect("To Date", "to-date")
+                        mcDateField("From Date (pool)", "mc-from-date")
+                        mcDateField("To Date (pool)", "mc-to-date")
+                    }
 
-                        div(classes = "backtest-config-controls") {
-                            label {
-                                attributes["for"] = "backtest-import-code"
-                                +"Config Code"
-                            }
-                            div(classes = "backtest-config-group") {
-                                input(type = InputType.text) {
-                                    id = "backtest-import-code"
-                                    attributes["placeholder"] = "Paste code…"
-                                    attributes["spellcheck"] = "false"
-                                }
-                                button(classes = "backtest-config-btn") {
-                                    id = "backtest-import-btn"
-                                    +"Import"
-                                }
-                                button(classes = "backtest-config-btn") {
-                                    id = "backtest-export-btn"
-                                    +"Export"
-                                }
-                                div {
-                                    id = "backtest-config-error"
-                                    classes = setOf("backtest-config-error")
-                                }
-                            }
-                        }
+                    div(classes = "backtest-section mc-params-grid") {
+                        mcNumberField("Min Chunk Years", "mc-min-chunk", "3", "0.5", "0.5")
+                        mcNumberField("Max Chunk Years", "mc-max-chunk", "8", "0.5", "0.5")
+                        mcNumberField("Simulated Years", "mc-sim-years", "20", "1", "1")
+                        mcNumberField("Simulations", "mc-num-sims", "500", "100", "100")
                     }
 
                     div {
@@ -113,17 +57,17 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                         style = "display:none;"
                     }
 
-                    // 3-column portfolio blocks
+                    // 3-column portfolio blocks (reuse from backtest)
                     div(classes = "portfolio-blocks") {
                         for (idx in 0..2) {
-                            portfolioBlock(idx)
+                            mcPortfolioBlock(idx)
                         }
                     }
 
                     button(classes = "run-backtest-btn") {
-                        id = "run-backtest-btn"
+                        id = "run-mc-btn"
                         attributes["type"] = "button"
-                        +"Run Backtest"
+                        +"Run Simulation"
                     }
                 }
 
@@ -131,6 +75,20 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                     id = "error-msg"
                     style = "display:none;"
                     classes = setOf("backtest-error")
+                }
+
+                // Percentile tab bar (hidden until results arrive)
+                div {
+                    id = "mc-percentile-bar"
+                    classes = setOf("mc-percentile-tabs")
+                    style = "display:none;"
+                    for (pct in listOf(5, 10, 25, 50, 75, 90, 95)) {
+                        button(classes = "mc-pct-tab${if (pct == 50) " active" else ""}") {
+                            attributes["type"] = "button"
+                            attributes["data-pct"] = pct.toString()
+                            +"${pct}th"
+                        }
+                    }
                 }
 
                 div {
@@ -141,30 +99,71 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                 div(classes = "backtest-chart-container") {
                     id = "chart-container"
                     style = "display:none;"
-                    canvas { id = "backtest-chart" }
+                    canvas { id = "mc-chart" }
                 }
             }
         }
     }
 }
 
-private fun DIV.portfolioBlock(idx: Int) {
+private fun FlowContent.mcDateField(labelText: String, inputId: String) {
+    val quickId = "$inputId-quick"
+    val years = (1..10).toList() + listOf(15, 20, 25, 30)
+    div(classes = "backtest-date-field") {
+        label { attributes["for"] = inputId; +labelText }
+        div(classes = "date-input-row") {
+            div(classes = "date-field-box") {
+                input(type = InputType.date) { id = inputId }
+                button(classes = "date-clear-btn") {
+                    attributes["type"] = "button"
+                    attributes["data-target"] = inputId
+                    attributes["title"] = "Clear"
+                    attributes["style"] = "visibility:hidden"
+                    +"×"
+                }
+            }
+            select {
+                id = quickId
+                attributes["aria-label"] = "Years back"
+                option { value = ""; +"Yrs" }
+                years.forEach { y -> option { value = "$y"; +"${y}Y" } }
+            }
+        }
+    }
+}
+
+private fun FlowContent.mcNumberField(
+    labelText: String,
+    inputId: String,
+    defaultVal: String,
+    step: String,
+    min: String
+) {
+    div(classes = "backtest-date-field") {
+        label { attributes["for"] = inputId; +labelText }
+        input(type = InputType.number) {
+            id = inputId
+            value = defaultVal
+            attributes["step"] = step
+            attributes["min"] = min
+        }
+    }
+}
+
+private fun DIV.mcPortfolioBlock(idx: Int) {
     div(classes = "portfolio-block") {
         attributes["data-portfolio-index"] = idx.toString()
 
-        // Label
         div(classes = "backtest-section") {
             div(classes = "backtest-section-header") {
                 input(type = InputType.text, classes = "portfolio-label") {
                     placeholder = "Label"
                 }
                 button(classes = "overwrite-portfolio-btn save-portfolio-btn") {
-                    disabled = true
-                    +"Save"
+                    disabled = true; +"Save"
                 }
                 button(classes = "save-portfolio-btn") {
-                    disabled = true
-                    +"Save New"
+                    disabled = true; +"Save New"
                 }
                 button(classes = "clear-portfolio-btn") {
                     attributes["type"] = "button"
@@ -174,18 +173,15 @@ private fun DIV.portfolioBlock(idx: Int) {
             }
         }
 
-        // Tickers
         div(classes = "backtest-section") {
             div(classes = "backtest-section-header") {
                 span { +"Tickers & Weights" }
                 button(classes = "add-ticker-btn") {
-                    attributes["type"] = "button"
-                    +"+ Add Ticker"
+                    attributes["type"] = "button"; +"+ Add Ticker"
                 }
             }
             div(classes = "backtest-weight-hint") {}
             div(classes = "ticker-rows") {
-                // Seed default tickers for block 0 server-side so they appear instantly
                 if (idx == 0) {
                     for ((ticker, weight) in listOf("VT" to "60", "KMLM" to "40")) {
                         div(classes = "backtest-ticker-row") {
@@ -211,7 +207,6 @@ private fun DIV.portfolioBlock(idx: Int) {
             }
         }
 
-        // Rebalance strategy
         div(classes = "backtest-section") {
             label { +"Rebalance Strategy" }
             select(classes = "rebalance-select") {
@@ -222,24 +217,17 @@ private fun DIV.portfolioBlock(idx: Int) {
             }
         }
 
-        // Margin
         div(classes = "backtest-section") {
             div(classes = "backtest-section-header") {
                 span { +"Margin" }
                 button(classes = "add-margin-btn") {
-                    attributes["type"] = "button"
-                    +"+ Add Margin"
+                    attributes["type"] = "button"; +"+ Add Margin"
                 }
             }
             div(classes = "margin-col-headers") {
-                span {}          // aligns with drag-handle column
-                span { +"Ratio%" }
-                span { +"Spread%" }
-                span { +"Dev%↑" }
-                span { +"Dev%↓" }
-                span { +"Mode↑" }
-                span { +"Mode↓" }
-                span {}          // remove-btn spacer
+                span {}; span { +"Ratio%" }; span { +"Spread%" }
+                span { +"Dev%↑" }; span { +"Dev%↓" }
+                span { +"Mode↑" }; span { +"Mode↓" }; span {}
             }
             div(classes = "margin-config-rows") {}
         }

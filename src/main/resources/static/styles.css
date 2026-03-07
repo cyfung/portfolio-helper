@@ -2301,6 +2301,65 @@ body.editing-active .cash-edit-value {
     text-align: right;
 }
 
+/* ── Monte Carlo ────────────────────────────────────────────────────────────── */
+
+.mc-params-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+}
+
+@media (max-width: 900px) {
+    .mc-params-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+.mc-params-grid input[type="number"] {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    margin-top: 0.25rem;
+}
+
+.mc-percentile-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.mc-pct-tab {
+    padding: 4px 14px;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.15s, color 0.15s;
+}
+
+.mc-pct-tab:hover {
+    border-color: var(--color-accent-primary);
+}
+
+.mc-pct-tab.active {
+    background: var(--color-accent-primary);
+    color: #fff;
+    border-color: var(--color-accent-primary);
+}
+
+.mc-stats-header {
+    margin-bottom: 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
 /* 3-column portfolio block grid */
 .portfolio-blocks {
     display: grid;

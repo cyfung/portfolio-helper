@@ -150,7 +150,7 @@ object BacktestService {
     // ── Ticker data loading ───────────────────────────────────────────────────
 
 
-    private fun getResourceFiles(path: String): List<String> {
+    internal fun getResourceFiles(path: String): List<String> {
         val url = object {}.javaClass.classLoader.getResource(path) ?: return emptyList()
         val uri = url.toURI()
         val dirPath: Path = if (uri.scheme == "jar") {
@@ -172,7 +172,7 @@ object BacktestService {
      * Loads (or fetches) a normalised series for a ticker.
      * Normalised means the series values are chain-linked returns starting at 10 000.
      */
-    private fun loadNormalizedSeries(
+    internal fun loadNormalizedSeries(
         ticker: String,
         neededFromDate: LocalDate
     ): Map<LocalDate, Double> {
@@ -225,7 +225,7 @@ object BacktestService {
         }
     }
 
-    private fun findOrCopyFromResources(simPattern: Regex): List<File> =
+    internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
         findFiles(simPattern).ifEmpty {
             // find and copy from resource folder if missing
             val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
@@ -238,13 +238,13 @@ object BacktestService {
             findFiles(simPattern)
         }
 
-    private fun findFiles(simPattern: Regex): List<File> = (tickerDir.listFiles()
+    internal fun findFiles(simPattern: Regex): List<File> = (tickerDir.listFiles()
         ?.filter { simPattern.matches(it.name) }
         ?.sortedByDescending { it.name }
         ?: emptyList())
 
     /** Loads EFFRX, extending via FRED EFFR if the file is outdated. Returns empty map if not found. */
-    private fun loadEffrxSeries(): Map<LocalDate, Double> {
+    internal fun loadEffrxSeries(): Map<LocalDate, Double> {
         tickerDir.mkdirs()
         val simPattern = Regex("EFFRX-(\\d{4}-\\d{2}-\\d{2})\\.csv")
         val latest = findOrCopyFromResources(simPattern).firstOrNull() ?: return emptyMap()
@@ -334,7 +334,7 @@ object BacktestService {
      * Tokens: alternating <multiplier> <TICKER> pairs, plus optional S=<pct> and R=<strategy>.
      * R values: D=Daily, W=Weekly, M=Monthly, Q=Quarterly, Y=Yearly (default: null = inherit from outer portfolio).
      */
-    private fun parseLETFDefinition(ticker: String): LETFDefinition? {
+    internal fun parseLETFDefinition(ticker: String): LETFDefinition? {
         if (!ticker.contains(' ')) return null
         val tokens = ticker.trim().split(Regex("\\s+"))
         val components = mutableListOf<LETFComponent>()
@@ -394,7 +394,7 @@ object BacktestService {
      * otherwise the outer portfolio's strategy.
      * Returns a Map<LocalDate, Double> parallel to [dates], starting at 10,000.
      */
-    private fun computeLetfSeries(
+    internal fun computeLetfSeries(
         def: LETFDefinition,
         componentSeriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>,
@@ -438,7 +438,7 @@ object BacktestService {
 
     // ── CSV helpers ───────────────────────────────────────────────────────────
 
-    private fun readSimCsv(file: File): Map<LocalDate, Double> {
+    internal fun readSimCsv(file: File): Map<LocalDate, Double> {
         val result = mutableMapOf<LocalDate, Double>()
         file.bufferedReader().use { br ->
             br.readLine() // skip header
@@ -455,7 +455,7 @@ object BacktestService {
         return result
     }
 
-    private fun writeSimCsv(file: File, series: Map<LocalDate, Double>) {
+    internal fun writeSimCsv(file: File, series: Map<LocalDate, Double>) {
         file.bufferedWriter().use { out ->
             out.write("date,value")
             out.newLine()
@@ -473,7 +473,7 @@ object BacktestService {
      * Extends [existing] (date → normalised value) by chaining returns from [yahoo] (date → raw adj-close).
      * The last date in [existing] is used as the pivot.
      */
-    private fun chainExtend(
+    internal fun chainExtend(
         existing: Map<LocalDate, Double>,
         yahoo: Map<LocalDate, Double>,
         lastSimDate: LocalDate
@@ -509,7 +509,7 @@ object BacktestService {
     }
 
     /** Normalises a raw price series so the first value equals [startValue]. */
-    private fun normalizeFromFirst(
+    internal fun normalizeFromFirst(
         raw: Map<LocalDate, Double>,
         startValue: Double
     ): Map<LocalDate, Double> {
@@ -520,7 +520,7 @@ object BacktestService {
 
     // ── Date intersection ─────────────────────────────────────────────────────
 
-    private fun intersectDates(
+    internal fun intersectDates(
         series: List<Map<LocalDate, Double>>,
         from: LocalDate?,
         to: LocalDate
