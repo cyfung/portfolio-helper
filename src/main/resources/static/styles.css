@@ -2467,6 +2467,8 @@ body.editing-active .cash-edit-value {
     color: var(--color-text-secondary);
 }
 
+.mc-active-pct td { background: rgba(100,140,200,0.15); }
+
 .backtest-stats-table .mc-sort-target {
     color: var(--color-accent-primary);
     font-weight: var(--font-weight-semibold);

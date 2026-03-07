@@ -7,6 +7,22 @@ var mcLastData = null;
 var mcSortMetric = 'CAGR';
 var selectedMcCurves = new Set();
 
+const PERCENTILE_COLORS = ['#e05c5c','#e0955c','#d4c84a','#4caf50','#4aabcf','#4a6fcf','#7c4acf'];
+// index 0=P5, 1=P10, 2=P25, 3=P50, 4=P75, 5=P90, 6=P95
+const PERCENTILE_LIST = [5, 10, 25, 50, 75, 90, 95];
+
+function getEffectiveCurves(data) {
+    const result = [];
+    data.portfolios.forEach((portfolio, pi) => {
+        portfolio.curves.forEach((curve, ci) => {
+            if (selectedMcCurves.size === 0 || selectedMcCurves.has(`${pi}-${ci}`)) {
+                result.push({ portfolio, pi, curve, ci });
+            }
+        });
+    });
+    return result;
+}
+
 function resetMcCurveSelection() { selectedMcCurves.clear(); }
 
 function showError(msg) {
@@ -42,10 +58,28 @@ function renderMcChart(data, percentile) {
     const xLabels = Array.from({length: targetDays + 1}, (_, i) => i);
 
     const datasets = [];
-    data.portfolios.forEach((portfolio, pi) => {
-        const palette = PALETTE[pi % PALETTE.length];
-        portfolio.curves.forEach((curve, ci) => {
-            if (selectedMcCurves.size > 0 && !selectedMcCurves.has(`${pi}-${ci}`)) return;
+    const effectiveCurves = getEffectiveCurves(data);
+    const singleCurve = effectiveCurves.length === 1;
+
+    if (singleCurve) {
+        const { portfolio, curve } = effectiveCurves[0];
+        PERCENTILE_LIST.forEach((pct, idx) => {
+            const pp = curve.percentilePaths.find(p => p.percentile === pct);
+            if (!pp) return;
+            datasets.push({
+                label: `P${pct}`,
+                data: pp.points,
+                borderColor: PERCENTILE_COLORS[idx],
+                backgroundColor: 'transparent',
+                borderWidth: pct === 50 ? 2.5 : 1.5,
+                borderDash: pct === 50 ? [] : (idx < 3 ? [4,2] : []),
+                pointRadius: 0,
+                pointHoverRadius: 4
+            });
+        });
+    } else {
+        effectiveCurves.forEach(({ portfolio, pi, curve, ci }) => {
+            const palette = PALETTE[pi % PALETTE.length];
             const pp = curve.percentilePaths.find(p => p.percentile === percentile);
             if (!pp) return;
             datasets.push({
@@ -58,7 +92,7 @@ function renderMcChart(data, percentile) {
                 pointHoverRadius: 4
             });
         });
-    });
+    }
 
     const ctx = document.getElementById('mc-chart').getContext('2d');
     mcChartInstance = new Chart(ctx, {
@@ -157,10 +191,34 @@ function renderMcStats(data, percentile) {
     });
 
     html += '</tbody></table>';
+
+    const effectiveCurves = getEffectiveCurves(data);
+    if (effectiveCurves.length === 1) {
+        const { portfolio, curve } = effectiveCurves[0];
+        const curveLabel = `${portfolio.label} \u2013 ${curve.label}`;
+        html += `<div class="mc-stats-header" style="margin-top:1.2rem">All percentiles \u2013 <strong>${curveLabel}</strong></div>`;
+        html += '<table class="backtest-stats-table"><thead><tr>';
+        html += '<th>Percentile</th>';
+        cols.forEach(c => { html += `<th data-metric="${c.metric}"${highlight(c.metric)}>${c.label}</th>`; });
+        html += '</tr></thead><tbody>';
+        PERCENTILE_LIST.forEach((pct, idx) => {
+            const pp = curve.percentilePaths.find(p => p.percentile === pct);
+            if (!pp) return;
+            const isActive = pct === percentile;
+            html += `<tr${isActive ? ' class="mc-active-pct"' : ''}>`;
+            html += `<td style="color:${PERCENTILE_COLORS[idx]};font-weight:${pct===50?'bold':'normal'}">P${pct}</td>`;
+            cols.forEach(c => {
+                html += `<td data-metric="${c.metric}"${highlight(c.metric)}>${cellValue(pp, c.metric)}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+    }
+
     statsContainer.innerHTML = html;
 
     wireCurveToggles(statsContainer, allKeys, selectedMcCurves, 'mc-curve-toggle-all',
-        () => { if (mcLastData) renderMcChart(mcLastData, mcCurrentPercentile); });
+        () => { if (mcLastData) { renderMcChart(mcLastData, mcCurrentPercentile); renderMcStats(mcLastData, mcCurrentPercentile); } });
 }
 
 function initPercentileTabs() {
