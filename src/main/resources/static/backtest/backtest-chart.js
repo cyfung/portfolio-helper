@@ -1,5 +1,5 @@
 // ── backtest-chart.js — Chart rendering and stats table ──────────────────────
-// Depends on: PALETTE (backtest-blocks.js), Chart.js (external)
+// Depends on: PALETTE (backtest-blocks.js), stats-formatters.js, Chart.js (external)
 
 var chartInstance = null;
 
@@ -93,12 +93,9 @@ function renderStats(data) {
     const statsContainer = document.getElementById('stats-container');
     statsContainer.style.display = '';
 
-    function pct(v)   { return (v * 100).toFixed(2) + '%'; }
-    function fmt2(v)  { return v.toFixed(2); }
-    function money(v) { return '$' + v.toFixed(0); }
     function trig(v)  { return v == null ? '\u2013' : v; }
 
-    let html = '<table class="summary-table backtest-stats-table"><thead><tr>' +
+    let html = '<table class="backtest-stats-table"><thead><tr>' +
         '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th>' +
         '<th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>' +
         '<th title="Ulcer Performance Index (Martin Ratio): excess return / Ulcer Index">UPI</th>' +

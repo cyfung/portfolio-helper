@@ -4,7 +4,6 @@ import org.slf4j.LoggerFactory
 import java.time.LocalDate
 import kotlin.math.max
 import kotlin.math.pow
-import kotlin.math.sqrt
 import kotlin.random.Random
 
 object MonteCarloService {
@@ -159,7 +158,7 @@ object MonteCarloService {
             portfolioCurveConfigs.forEachIndexed { pi, (pConfig, curves) ->
                 curves.forEachIndexed { ci, curveConfig ->
                     val values = simulate(pConfig, curveConfig.mc, path)
-                    endValues[pi][ci][simIdx] = computeMetricForSort(values, request.sortMetric, years, rfAnnualized, avgRfDaily)
+                    endValues[pi][ci][simIdx] = computeMetricForSort(values, request.sortMetric, years, rfAnnualized)
                 }
             }
         }
@@ -195,15 +194,8 @@ object MonteCarloService {
                     val path = fullPaths[simIdx]!!
                     val values = simulate(pConfig, curveConfig.mc, path)
                     val endValue = values.last()
-                    val cagr = if (years > 0 && endValue > 0)
-                        (endValue / 10_000.0).pow(1.0 / years) - 1.0 else 0.0
-                    var peak = values[0]; var maxDD = 0.0
-                    for (v in values) {
-                        if (v > peak) peak = v
-                        if (peak > 0) maxDD = max(maxDD, 1.0 - v / peak)
-                    }
-                    val (sharpe, ulcerIndex, upi) = computeFullStats(values, years, rfAnnualized, avgRfDaily)
-                    MonteCarloPercentilePath(pct, values, endValue, cagr, maxDD, sharpe, ulcerIndex, upi)
+                    val stats = computeStats(values, years, rfAnnualized)
+                    MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi)
                 }
                 MonteCarloCurveResult(curveConfig.label, percentilePaths)
             }
@@ -216,7 +208,7 @@ object MonteCarloService {
     // ── Sort metric computation ───────────────────────────────────────────────
 
     private fun computeMetricForSort(
-        values: List<Double>, metric: String, years: Double, rfAnnualized: Double, avgRfDaily: Double
+        values: List<Double>, metric: String, years: Double, rfAnnualized: Double
     ): Double {
         val endValue = values.last()
         return when (metric) {
@@ -227,42 +219,15 @@ object MonteCarloService {
                 -maxDD  // negated: higher DD = worse = more negative = will be at lower percentile
             }
             "SHARPE", "ULCER_INDEX", "UPI" -> {
-                val (sharpe, ulcer, upi) = computeFullStats(values, years, rfAnnualized, avgRfDaily)
+                val stats = computeStats(values, years, rfAnnualized)
                 when (metric) {
-                    "SHARPE" -> sharpe
-                    "ULCER_INDEX" -> -ulcer  // negated: higher ulcer = worse
-                    else -> upi
+                    "SHARPE" -> stats.sharpe
+                    "ULCER_INDEX" -> -stats.ulcerIndex  // negated: higher ulcer = worse
+                    else -> stats.upi
                 }
             }
             else -> endValue  // END_VALUE (default)
         }
-    }
-
-    private fun computeFullStats(
-        values: List<Double>, years: Double, rfAnnualized: Double, avgRfDaily: Double
-    ): Triple<Double, Double, Double> {
-        // Sharpe via daily log returns (Welford's online)
-        var n = 0; var mean = 0.0; var m2 = 0.0
-        for (i in 1 until values.size) {
-            val prev = values[i - 1]; if (prev <= 0.0) continue
-            val r = values[i] / prev - 1.0
-            n++; val delta = r - mean; mean += delta / n; m2 += delta * (r - mean)
-        }
-        val variance = if (n > 1) m2 / (n - 1) else 0.0
-        val stdDev = sqrt(variance)
-        val annualReturn = if (years > 0 && values.last() > 0) (values.last() / values[0]).pow(1.0 / years) - 1.0 else 0.0
-        val sharpe = if (stdDev > 0) (annualReturn - rfAnnualized) / (stdDev * sqrt(252.0)) else 0.0
-
-        // Ulcer index
-        var peak = values[0]; var sumSq = 0.0; var count = 0
-        for (v in values) {
-            if (v > peak) peak = v
-            if (peak > 0) { val dd = 1.0 - v / peak; sumSq += dd * dd; count++ }
-        }
-        val ulcerIndex = if (count > 0) sqrt(sumSq / count) else 0.0
-        val upi = if (ulcerIndex > 0) (annualReturn - rfAnnualized) / ulcerIndex else 0.0
-
-        return Triple(sharpe, ulcerIndex, upi)
     }
 
     // ── Path assembly ─────────────────────────────────────────────────────────

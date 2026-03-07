@@ -1,5 +1,5 @@
 // ── montecarlo-chart.js — Chart rendering and stats table for MC ──────────────
-// Depends on: PALETTE (backtest-blocks.js), Chart.js (external)
+// Depends on: PALETTE (backtest-blocks.js), stats-formatters.js, Chart.js (external)
 
 var mcChartInstance = null;
 var mcCurrentPercentile = 50;
@@ -104,10 +104,6 @@ function renderMcStats(data, percentile) {
     const statsContainer = document.getElementById('stats-container');
     statsContainer.style.display = '';
 
-    function pct(v)   { return (v * 100).toFixed(2) + '%'; }
-    function money(v) { return '$' + v.toFixed(0); }
-    function num2(v)  { return v.toFixed(2); }
-
     const cols = [
         { metric: 'END_VALUE',   label: 'End Value' },
         { metric: 'CAGR',        label: 'CAGR' },
@@ -122,16 +118,16 @@ function renderMcStats(data, percentile) {
             case 'END_VALUE':   return money(pp.endValue);
             case 'CAGR':        return pct(pp.cagr);
             case 'MAX_DD':      return pct(pp.maxDrawdown);
-            case 'SHARPE':      return num2(pp.sharpe);
+            case 'SHARPE':      return fmt2(pp.sharpe);
             case 'ULCER_INDEX': return pct(pp.ulcerIndex);
-            case 'UPI':         return num2(pp.upi);
+            case 'UPI':         return fmt2(pp.upi);
         }
     }
 
     function highlight(metric) { return metric === mcSortMetric ? ' class="mc-sort-target"' : ''; }
 
     let html = `<div class="mc-stats-header">Results at <strong>${percentile}th percentile</strong> (${data.numSimulations} simulations, ${data.simulatedYears}yr)</div>`;
-    html += '<table class="summary-table backtest-stats-table"><thead><tr><th>Curve</th>';
+    html += '<table class="backtest-stats-table"><thead><tr><th>Curve</th>';
     cols.forEach(c => { html += `<th data-metric="${c.metric}"${highlight(c.metric)}>${c.label}</th>`; });
     html += '</tr></thead><tbody>';
 

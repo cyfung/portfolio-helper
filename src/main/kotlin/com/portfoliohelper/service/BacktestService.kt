@@ -98,7 +98,7 @@ object BacktestService {
             val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
             val noMarginPoints =
                 globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
-            val noMarginStats = computeStats(noMarginValues, globalDates, effrxSeries)
+            val noMarginStats = computeBacktestStats(noMarginValues, globalDates, effrxSeries)
             val curves = mutableListOf(CurveResult("No Margin", noMarginPoints, noMarginStats))
 
             pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
@@ -121,7 +121,7 @@ object BacktestService {
                         marginResult.values[i]
                     )
                 }
-                val marginStats = computeStats(
+                val marginStats = computeBacktestStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers
                 )
@@ -891,7 +891,7 @@ object BacktestService {
 
     // ── Statistics ────────────────────────────────────────────────────────────
 
-    private fun computeStats(
+    private fun computeBacktestStats(
         values: List<Double>,
         dates: List<LocalDate>,
         effrx: Map<LocalDate, Double>,
@@ -899,61 +899,21 @@ object BacktestService {
         marginLowerTriggers: Int? = null
     ): BacktestStats {
         if (values.size < 2) return BacktestStats(0.0, 0.0, 0.0, 0.0, 0.0, values.lastOrNull() ?: 0.0)
-
         val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
-        val cagr = if (years > 0) (values.last() / values.first()).pow(1.0 / years) - 1.0 else 0.0
+        val stats = computeStats(values, years, computeRfAnnualized(effrx))
+        return BacktestStats(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi,
+            values.last(), marginUpperTriggers, marginLowerTriggers)
+    }
 
-        // Max drawdown
-        var peak = values[0]
-        var maxDD = 0.0
-        for (v in values) {
-            if (v > peak) peak = v
-            if (peak > 0) maxDD = max(maxDD, 1.0 - v / peak)
+    private fun computeRfAnnualized(effrx: Map<LocalDate, Double>): Double {
+        if (effrx.size < 2) return 0.0
+        val sorted = effrx.keys.sorted()
+        val rfLogReturns = (1 until sorted.size).mapNotNull { i ->
+            val prev = effrx[sorted[i - 1]] ?: return@mapNotNull null
+            val cur = effrx[sorted[i]] ?: return@mapNotNull null
+            if (prev > 0) ln(cur / prev) else null
         }
-
-        // Sharpe ratio (using daily log returns)
-        val logReturns = (1 until values.size).map { i ->
-            if (values[i - 1] > 0) ln(values[i] / values[i - 1]) else 0.0
-        }
-
-        // Risk-free daily from EFFRX
-        val rfDaily = if (effrx.size >= 2) {
-            val effrxSorted = effrx.keys.sorted()
-            val rfLogReturns = (1 until effrxSorted.size).mapNotNull { i ->
-                val prev = effrx[effrxSorted[i - 1]] ?: return@mapNotNull null
-                val cur = effrx[effrxSorted[i]] ?: return@mapNotNull null
-                if (prev > 0) ln(cur / prev) else null
-            }
-            if (rfLogReturns.isNotEmpty()) rfLogReturns.average() else 0.0
-        } else 0.0
-
-        val meanReturn = logReturns.average()
-        val variance = logReturns.map { (it - meanReturn).pow(2) }.average()
-        val stdDev = sqrt(variance)
-        val sharpe = if (stdDev > 0) (meanReturn - rfDaily) / stdDev * sqrt(252.0) else 0.0
-
-        // Ulcer Index: sqrt(mean of squared drawdowns from running peak)
-        var peakUI = values[0]
-        val squaredDrawdowns = values.map { v ->
-            if (v > peakUI) peakUI = v
-            val dd = if (peakUI > 0) max(0.0, 1.0 - v / peakUI) else 0.0
-            dd * dd
-        }
-        val ulcerIndex = sqrt(squaredDrawdowns.average())
-
-        // UPI (Martin Ratio): annualised excess return / Ulcer Index
-        val rfAnnualized = (1.0 + rfDaily).pow(252.0) - 1.0
-        val upi = if (ulcerIndex > 0) (cagr - rfAnnualized) / ulcerIndex else 0.0
-
-        return BacktestStats(
-            cagr = cagr,
-            maxDrawdown = maxDD,
-            sharpe = sharpe,
-            ulcerIndex = ulcerIndex,
-            upi = upi,
-            endingValue = values.last(),
-            marginUpperTriggers = marginUpperTriggers,
-            marginLowerTriggers = marginLowerTriggers
-        )
+        val rfDaily = if (rfLogReturns.isNotEmpty()) rfLogReturns.average() else 0.0
+        return (1.0 + rfDaily).pow(252.0) - 1.0
     }
 }

@@ -56,6 +56,7 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                 async = true
             }
             script { src = "/static/common/theme.js" }
+            script { src = "/static/common/stats-formatters.js" }
             script { src = "/static/backtest/backtest-blocks.js" }
             script { src = "/static/backtest/backtest-saved.js" }
             script { src = "/static/backtest/backtest-chart.js" }
