@@ -17,6 +17,21 @@ import org.apache.commons.csv.CSVPrinter
 import java.io.File
 import java.io.FileWriter
 
+private val backtestDir get() = AppDirs.dataDir.resolve(".backtest").toFile()
+
+private fun loadBacktestSettings(filename: String): String {
+    val dir = backtestDir
+    val settings = dir.resolve(filename).let { if (it.exists()) Json.parseToJsonElement(it.readText()).jsonObject else JsonObject(emptyMap()) }
+    val portfolios = dir.resolve("portfolios.json").let { if (it.exists()) Json.parseToJsonElement(it.readText()) else JsonArray(emptyList()) }
+    return buildJsonObject { settings.forEach { (k, v) -> put(k, v) }; put("portfolios", portfolios) }.toString()
+}
+
+private fun saveBacktestSettings(json: JsonObject, filename: String) {
+    val dir = backtestDir; dir.mkdirs()
+    File(dir, "portfolios.json").writeText((json["portfolios"] ?: JsonArray(emptyList())).toString())
+    File(dir, filename).writeText(buildJsonObject { json.forEach { (k, v) -> if (k != "portfolios") put(k, v) } }.toString())
+}
+
 private val cashKeyKnownFlags = setOf("M")
 
 private val LOAN_COMPARE_FIELDS =
@@ -75,13 +90,11 @@ fun Application.configureRouting() {
         }
 
         get("/api/backtest/settings") {
-            val f = AppDirs.dataDir.resolve(".backtest/settings.json").toFile()
-            call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
+            call.respondText(loadBacktestSettings("settings.json"), ContentType.Application.Json)
         }
 
         get("/api/montecarlo/settings") {
-            val f = AppDirs.dataDir.resolve(".backtest/mc-settings.json").toFile()
-            call.respondText(if (f.exists()) f.readText() else "{}", ContentType.Application.Json)
+            call.respondText(loadBacktestSettings("mc-settings.json"), ContentType.Application.Json)
         }
 
         get("/api/backtest/savedPortfolios") {
@@ -132,10 +145,7 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                runCatching {
-                    val dir = AppDirs.dataDir.resolve(".backtest").toFile(); dir.mkdirs()
-                    File(dir, "settings.json").writeText(body)
-                }
+                runCatching { saveBacktestSettings(json, "settings.json") }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -233,10 +243,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
 
-                runCatching {
-                    val dir = AppDirs.dataDir.resolve(".backtest").toFile(); dir.mkdirs()
-                    java.io.File(dir, "mc-settings.json").writeText(body)
-                }
+                runCatching { saveBacktestSettings(json, "mc-settings.json") }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }

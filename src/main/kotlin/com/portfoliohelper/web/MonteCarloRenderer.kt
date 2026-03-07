@@ -43,9 +43,6 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                     div(classes = "backtest-section backtest-grid-2") {
                         mcDateField("From Date (pool)", "mc-from-date")
                         mcDateField("To Date (pool)", "mc-to-date")
-                    }
-
-                    div(classes = "backtest-section backtest-grid-2") {
                         div(classes = "backtest-config-controls") {
                             label { +"Config Code" }
                             div(classes = "backtest-config-group") {
