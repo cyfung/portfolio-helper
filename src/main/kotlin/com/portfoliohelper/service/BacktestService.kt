@@ -172,6 +172,11 @@ object BacktestService {
     /**
      * Loads (or fetches) a normalised series for a ticker.
      * Normalised means the series values are chain-linked returns starting at 10 000.
+     *
+     * Three-tier fallback:
+     *   Tier 1 — local .ticker file: load, sanity-check, extend; delete + fall through on failure.
+     *   Tier 2 — resource .ticker file: copy, sanity-check, extend; delete + fall through on failure.
+     *   Tier 3 — rebuild from Yahoo from scratch.
      */
     internal fun loadNormalizedSeries(
         ticker: String,
@@ -183,62 +188,133 @@ object BacktestService {
         tickerDir.mkdirs()
         val upperTicker = ticker.uppercase()
         val simPattern = Regex("${upperTicker}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
+        val today = LocalDate.now()
 
-        // Find latest SIM file
-        val existingFiles = findOrCopyFromResources(simPattern)
-
-        if (existingFiles.isNotEmpty()) {
-            val latestFile = existingFiles.first()
-            val latestDateStr = simPattern.find(latestFile.name)!!.groupValues[1]
-            val latestDate = LocalDate.parse(latestDateStr)
-
-            logger.info("Loading SIM file for $upperTicker: ${latestFile.name}")
-            val existing = readSimCsv(latestFile)
-
-            val today = LocalDate.now()
-            if (latestDate >= today) {
-                return existing
+        // Quick guard: if local file is already dated today, return it without any network call.
+        val localFiles = findFiles(simPattern)
+        if (localFiles.isNotEmpty()) {
+            val filenameDate = LocalDate.parse(simPattern.find(localFiles.first().name)!!.groupValues[1])
+            if (filenameDate >= today) {
+                logger.info("Loading up-to-date SIM file for $upperTicker: ${localFiles.first().name}")
+                return readSimCsv(localFiles.first())
             }
+        }
 
-            // Extend with Yahoo data
-            logger.info("Extending $upperTicker SIM from $latestDate to $today via Yahoo")
-            return try {
-                val extension = YahooHistoricalFetcher.fetchAdjustedClose(ticker, latestDate, today)
-                val extended = chainExtend(existing, extension, latestDate)
-                val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
-                writeSimCsv(newFile, extended)
-                existingFiles.forEach { it.delete() }
-                extended
-            } catch (e: Exception) {
-                logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}. Using existing SIM.")
-                existing
-            }
+        // Tier 1 — local file
+        if (localFiles.isNotEmpty()) {
+            val extended = tryExtendAndValidate(ticker, upperTicker, localFiles, simPattern, neededFromDate, today)
+            if (extended != null) return extended
+            localFiles.forEach { it.delete() }
+            logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
+        }
 
-        } else {
-            // No SIM file — fetch from Yahoo and create one
-            logger.info("No SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
-            val today = LocalDate.now()
-            val raw = YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, today)
-            if (raw.isEmpty()) throw IllegalStateException("No Yahoo data for $ticker from $neededFromDate")
-            val normalized = normalizeFromFirst(raw, 10_000.0)
+        // Tier 2 — resource file
+        val resourceFiles = copyFromResources(simPattern)
+        if (resourceFiles.isNotEmpty()) {
+            val extended = tryExtendAndValidate(ticker, upperTicker, resourceFiles, simPattern, neededFromDate, today)
+            if (extended != null) return extended
+            resourceFiles.forEach { it.delete() }
+            logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, rebuilding from scratch")
+        }
+
+        // Tier 3 — rebuild from scratch
+        logger.info("No valid SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
+        val raw = YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, today)
+        if (raw.isEmpty()) throw IllegalStateException("No Yahoo data for $ticker from $neededFromDate")
+        val normalized = normalizeFromFirst(raw, 10_000.0)
+        val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
+        writeSimCsv(newFile, normalized)
+        return normalized
+    }
+
+    /**
+     * Attempts to extend [files] with Yahoo data and validate sanity checks.
+     * Returns the extended series on success, or null if extension/validation fails
+     * (caller is responsible for deleting the files in that case).
+     */
+    private fun tryExtendAndValidate(
+        ticker: String,
+        upperTicker: String,
+        files: List<File>,
+        simPattern: Regex,
+        neededFromDate: LocalDate,
+        today: LocalDate
+    ): Map<LocalDate, Double>? {
+        val file = files.first()
+        logger.info("Loading SIM file for $upperTicker: ${file.name}")
+        val existing = readSimCsv(file)
+        val lastKnownDate = existing.keys.maxOrNull()
+            ?: LocalDate.parse(simPattern.find(file.name)!!.groupValues[1])
+
+        if (lastKnownDate >= today) return existing  // data already up to date
+
+        logger.info("Extending $upperTicker SIM from $lastKnownDate to $today via Yahoo")
+        return try {
+            val yahoo = YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate, today)
+            if (!passesSanityChecks(existing, yahoo, lastKnownDate, neededFromDate, upperTicker)) return null
+            val extended = chainExtend(existing, yahoo, lastKnownDate)
             val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
-            writeSimCsv(newFile, normalized)
-            return normalized
+            writeSimCsv(newFile, extended)
+            files.forEach { it.delete() }
+            extended
+        } catch (e: Exception) {
+            logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}")
+            null
         }
     }
 
-    internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
-        findFiles(simPattern).ifEmpty {
-            // find and copy from resource folder if missing
-            val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
-                simPattern.matches(it)
-            } ?: return@ifEmpty emptyList()
-            logger.info("ticker {} found in resource", resourcesFile)
-            val cl = object {}::class.java.classLoader
-            cl.getResourceAsStream("data/.ticker/$resourcesFile")
-                ?.use { Files.copy(it, tickerDir.toPath().resolve(resourcesFile)) }
-            findFiles(simPattern)
+    /**
+     * Sanity-checks an existing SIM series against freshly-fetched Yahoo data.
+     *
+     * Check A (tail consistency): over the overlap window (yahoo dates <= lastKnownDate),
+     * if >= 2 dates overlap, compares the cumulative return ratio; fails if divergence > 0.5%.
+     *
+     * Check B (history start): fails if the existing series starts more than 7 days after neededFromDate.
+     */
+    private fun passesSanityChecks(
+        existing: Map<LocalDate, Double>,
+        yahoo: Map<LocalDate, Double>,
+        lastKnownDate: LocalDate,
+        neededFromDate: LocalDate,
+        label: String
+    ): Boolean {
+        // Check B — history start
+        val firstDate = existing.keys.minOrNull()
+        if (firstDate != null && firstDate > neededFromDate.plusDays(7)) {
+            logger.warn("$label sanity B failed: history starts $firstDate, needed from $neededFromDate")
+            return false
         }
+        // Check A — tail consistency
+        val overlap = yahoo.keys.filter { it <= lastKnownDate }.sorted()
+        if (overlap.size >= 2) {
+            val first = overlap.first(); val last = overlap.last()
+            val exFirst = existing[first]; val exLast = existing[last]
+            val yhFirst = yahoo[first]!!; val yhLast = yahoo[last]!!
+            if (exFirst != null && exLast != null && yhFirst != 0.0) {
+                val exReturn = exLast / exFirst
+                val yhReturn = yhLast / yhFirst
+                if (yhReturn != 0.0 && Math.abs(exReturn - yhReturn) / yhReturn > 0.005) {
+                    logger.warn("$label sanity A failed: existing return $exReturn vs yahoo $yhReturn over [$first..$last]")
+                    return false
+                }
+            }
+        }
+        return true
+    }
+
+    private fun copyFromResources(simPattern: Regex): List<File> {
+        val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
+            simPattern.matches(it)
+        } ?: return emptyList()
+        logger.info("ticker {} found in resource", resourcesFile)
+        val cl = object {}::class.java.classLoader
+        cl.getResourceAsStream("data/.ticker/$resourcesFile")
+            ?.use { Files.copy(it, tickerDir.toPath().resolve(resourcesFile)) }
+        return findFiles(simPattern)
+    }
+
+    internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
+        findFiles(simPattern).ifEmpty { copyFromResources(simPattern) }
 
     internal fun findFiles(simPattern: Regex): List<File> = (tickerDir.listFiles()
         ?.filter { simPattern.matches(it.name) }

@@ -83,7 +83,7 @@ object YahooHistoricalFetcher {
             val date = Instant.ofEpochSecond(timestamps.getLong(i))
                 .atZone(ZoneOffset.UTC).toLocalDate()
             val price = adjClose.getDouble(i)
-            if (date >= startDate && date <= endDate) {
+            if (date <= endDate) {
                 prices[date] = price
             }
         }
