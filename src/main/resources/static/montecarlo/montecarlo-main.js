@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!req || !Object.keys(req).length) return;
         if (req.fromDate) document.getElementById('mc-from-date').value = req.fromDate;
         if (req.toDate)   document.getElementById('mc-to-date').value   = req.toDate;
-        mcUpdateDateClearBtns();
+        updateDateClearBtns();
         if (req.minChunkYears  != null) document.getElementById('mc-min-chunk').value   = req.minChunkYears;
         if (req.maxChunkYears  != null) document.getElementById('mc-max-chunk').value   = req.maxChunkYears;
         if (req.simulatedYears != null) document.getElementById('mc-sim-years').value   = req.simulatedYears;

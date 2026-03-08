@@ -1,4 +1,4 @@
-/data/
+/data-bak/
 /.idea/
 /.claude/
 /build/
@@ -13,3 +13,4 @@ build/launch4j/
 *.exe
 /.kotlin/
 /tws-client/build/
+/data/

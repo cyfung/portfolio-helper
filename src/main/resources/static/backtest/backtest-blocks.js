@@ -102,6 +102,44 @@ function addMarginRow(blockIdx, ratio = 50, spread = 1.5, devUpper = 5, devLower
 
 // ── Block config helpers ──────────────────────────────────────────────────────
 
+function collectMarginStrategies(block) {
+    return [...block.querySelectorAll('.margin-config-row')].map(row => ({
+        marginRatio:          (parseFloat(row.querySelector('.mc-ratio').value)     || 0)   / 100,
+        marginSpread:         (parseFloat(row.querySelector('.mc-spread').value)    ?? 1.5) / 100,
+        marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5)   / 100,
+        marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5)   / 100,
+        upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
+        lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
+    }));
+}
+
+function collectAllPortfolios() {
+    return [0, 1, 2].map(i => {
+        const block = document.querySelector(`[data-portfolio-index="${i}"]`);
+        const label = block.querySelector('.portfolio-label').value.trim() || `Portfolio ${i + 1}`;
+        const tickers = [...block.querySelectorAll('.backtest-ticker-row')].map(row => ({
+            ticker: row.querySelector('.ticker-input').value.trim().toUpperCase(),
+            weight: parseFloat(row.querySelector('.weight-input').value) || 0
+        })).filter(t => t.ticker && t.weight > 0);
+        const rebalanceStrategy = block.querySelector('.rebalance-select').value;
+        const marginStrategies = collectMarginStrategies(block);
+        return { label, tickers, rebalanceStrategy, marginStrategies, includeNoMargin: block.querySelector('.include-no-margin-btn').dataset.include === 'true' };
+    }).filter(p => p.tickers.length > 0);
+}
+
+function setDateYearsAgo(inputId, yearsAgo) {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() - yearsAgo);
+    document.getElementById(inputId).value = date.toISOString().split('T')[0];
+}
+
+function updateDateClearBtns() {
+    document.querySelectorAll('.date-clear-btn').forEach(btn => {
+        const input = document.getElementById(btn.dataset.target);
+        if (input) btn.style.visibility = input.value ? 'visible' : 'hidden';
+    });
+}
+
 function collectBlockConfig(blockIdx) {
     const block = document.querySelector(`[data-portfolio-index="${blockIdx}"]`);
     const tickers = [...block.querySelectorAll('.backtest-ticker-row')].map(row => ({
@@ -109,14 +147,7 @@ function collectBlockConfig(blockIdx) {
         weight: parseFloat(row.querySelector('.weight-input').value) || 0
     })).filter(t => t.ticker);
     const rebalanceStrategy = block.querySelector('.rebalance-select').value;
-    const marginStrategies = [...block.querySelectorAll('.margin-config-row')].map(row => ({
-        marginRatio:          (parseFloat(row.querySelector('.mc-ratio').value)     || 0)   / 100,
-        marginSpread:         (parseFloat(row.querySelector('.mc-spread').value)    || 1.5) / 100,
-        marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5)   / 100,
-        marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5)   / 100,
-        upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
-        lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
-    }));
+    const marginStrategies = collectMarginStrategies(block);
     const includeNoMargin = block.querySelector('.include-no-margin-btn').dataset.include === 'true';
     return { tickers, rebalanceStrategy, marginStrategies, includeNoMargin };
 }

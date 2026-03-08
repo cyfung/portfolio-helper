@@ -9,24 +9,7 @@ function collectMcRequest() {
     const simulatedYears = parseInt(document.getElementById('mc-sim-years').value, 10) || 20;
     const numSimulations = parseInt(document.getElementById('mc-num-sims').value, 10)  || 500;
 
-    const portfolios = [0, 1, 2].map(i => {
-        const block = document.querySelector(`[data-portfolio-index="${i}"]`);
-        const label = block.querySelector('.portfolio-label').value.trim() || `Portfolio ${i + 1}`;
-        const tickers = [...block.querySelectorAll('.backtest-ticker-row')].map(row => ({
-            ticker: row.querySelector('.ticker-input').value.trim().toUpperCase(),
-            weight: parseFloat(row.querySelector('.weight-input').value) || 0
-        })).filter(t => t.ticker && t.weight > 0);
-        const rebalanceStrategy = block.querySelector('.rebalance-select').value;
-        const marginStrategies = [...block.querySelectorAll('.margin-config-row')].map(row => ({
-            marginRatio:          (parseFloat(row.querySelector('.mc-ratio').value)     || 0)   / 100,
-            marginSpread:         (parseFloat(row.querySelector('.mc-spread').value)    || 1.5) / 100,
-            marginDeviationUpper: (parseFloat(row.querySelector('.mc-dev-upper').value) || 5)   / 100,
-            marginDeviationLower: (parseFloat(row.querySelector('.mc-dev-lower').value) || 5)   / 100,
-            upperRebalanceMode: row.querySelector('.mc-mode-upper').value,
-            lowerRebalanceMode: row.querySelector('.mc-mode-lower').value
-        }));
-        return { label, tickers, rebalanceStrategy, marginStrategies, includeNoMargin: block.querySelector('.include-no-margin-btn').dataset.include === 'true' };
-    }).filter(p => p.tickers.length > 0);
+    const portfolios = collectAllPortfolios();
 
     const sortMetric = document.getElementById('mc-sort-metric').value;
     return { fromDate: fromDate || null, toDate: toDate || null,
@@ -65,6 +48,10 @@ function initMcRunButton() {
             showError('Add at least one ticker with a positive weight to any portfolio block.');
             return;
         }
+        if (reqBody.portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0)) {
+            showError('Each portfolio must have Unlevered enabled or at least one margin row.');
+            return;
+        }
 
         runBtn.disabled = true;
         runBtn.textContent = 'Running\u2026';
@@ -93,27 +80,15 @@ function initMcRunButton() {
     });
 }
 
-// ── Date quick-selectors (mirrors backtest-run.js) ────────────────────────────
-
-function mcSetDateYearsAgo(inputId, yearsAgo) {
-    const date = new Date();
-    date.setFullYear(date.getFullYear() - yearsAgo);
-    document.getElementById(inputId).value = date.toISOString().split('T')[0];
-}
-
-function mcUpdateDateClearBtns() {
-    document.querySelectorAll('.date-clear-btn').forEach(btn => {
-        const input = document.getElementById(btn.dataset.target);
-        if (input) btn.style.visibility = input.value ? 'visible' : 'hidden';
-    });
-}
+// ── Date quick-selectors ──────────────────────────────────────────────────────
+// setDateYearsAgo and updateDateClearBtns live in backtest-blocks.js
 
 function initMcDateClearBtns() {
     document.querySelectorAll('.date-clear-btn').forEach(btn => {
         const input = document.getElementById(btn.dataset.target);
         if (!input) return;
-        input.addEventListener('change', mcUpdateDateClearBtns);
-        btn.addEventListener('click', () => { input.value = ''; mcUpdateDateClearBtns(); });
+        input.addEventListener('change', updateDateClearBtns);
+        btn.addEventListener('click', () => { input.value = ''; updateDateClearBtns(); });
     });
 }
 
@@ -132,7 +107,7 @@ function applyMcConfigCode(code) {
         const req = JSON.parse(atob(code));
         if (req.fromDate) document.getElementById('mc-from-date').value = req.fromDate;
         if (req.toDate)   document.getElementById('mc-to-date').value   = req.toDate;
-        mcUpdateDateClearBtns();
+        updateDateClearBtns();
         if (req.portfolios) req.portfolios.forEach((p, i) => {
             if (i < 3) loadPortfolioIntoBlock(i, p, p.label || '');
         });
@@ -169,17 +144,17 @@ function initMcDateQuickSelectors() {
     if (fromQuick) {
         fromQuick.addEventListener('change', e => {
             if (!e.target.value) return;
-            mcSetDateYearsAgo('mc-from-date', parseInt(e.target.value));
+            setDateYearsAgo('mc-from-date', parseInt(e.target.value));
             e.target.value = '';
-            mcUpdateDateClearBtns();
+            updateDateClearBtns();
         });
     }
     if (toQuick) {
         toQuick.addEventListener('change', e => {
             if (!e.target.value) return;
-            mcSetDateYearsAgo('mc-to-date', parseInt(e.target.value));
+            setDateYearsAgo('mc-to-date', parseInt(e.target.value));
             e.target.value = '';
-            mcUpdateDateClearBtns();
+            updateDateClearBtns();
         });
     }
 }
