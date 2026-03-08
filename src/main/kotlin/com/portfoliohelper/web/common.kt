@@ -6,17 +6,28 @@ enum class AppPage(val line1: String, val line2: String, val href: String) {
     PORTFOLIO("Portfolio", "Viewer", "/"),
     LOAN("Loan", "Calculator", "/loan"),
     BACKTEST("Portfolio", "Backtest", "/backtest"),
-    MONTE_CARLO("Monte Carlo", "Simulation", "/montecarlo")
+    MONTE_CARLO("Monte Carlo", "Simulation", "/montecarlo"),
+    CONFIG("App", "Settings", "/config")
 }
 
 fun FlowContent.renderPageNavTabs(activePage: AppPage) {
     div(classes = "page-nav-tabs") {
-        for (page in AppPage.entries) {
+        for (page in AppPage.entries.filter { it != AppPage.CONFIG }) {
             val isActive = page == activePage
             a(href = page.href, classes = "page-nav-tab${if (isActive) " active" else ""}") {
                 span(classes = "page-nav-tab-line1") { +page.line1 }
                 span(classes = "page-nav-tab-line2") { +page.line2 }
             }
+        }
+    }
+}
+
+fun DIV.renderConfigButton() {
+    a(href = "/config", classes = "config-button") {
+        attributes["aria-label"] = "App settings"
+        attributes["title"] = "App settings"
+        unsafe {
+            raw("""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>""")
         }
     }
 }

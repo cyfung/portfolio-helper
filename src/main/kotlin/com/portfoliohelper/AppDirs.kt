@@ -4,11 +4,8 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 object AppDirs {
-    val dataDir: Path = run {
-        val override = System.getenv("PORTFOLIO_HELPER_DATA_DIR")
-        if (!override.isNullOrBlank()) {
-            return@run Paths.get(override)
-        }
+    // Computed OS default (used as fallback only)
+    val osDefaultDataDir: Path = run {
         val home = System.getProperty("user.home")
         val appName = "PortfolioHelper"
         when {
@@ -27,4 +24,7 @@ object AppDirs {
             }
         }
     }
+
+    // Set once by main() — do not access before main() resolves it
+    var dataDir: Path = osDefaultDataDir
 }

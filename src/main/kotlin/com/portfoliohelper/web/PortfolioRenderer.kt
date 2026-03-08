@@ -201,6 +201,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
+                        renderConfigButton()
                         renderThemeToggle()
                     }
                 }

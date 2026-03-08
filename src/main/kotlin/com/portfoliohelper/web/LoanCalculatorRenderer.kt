@@ -29,6 +29,7 @@ internal suspend fun ApplicationCall.renderLoanCalculatorPage() {
                     }
 
                     div(classes = "header-buttons") {
+                        renderConfigButton()
                         renderThemeToggle()
                     }
                 }

@@ -10,7 +10,7 @@ object NavService : PollingService<NavData>("NAV") {
         CtaNavProvider
     ).associateBy { it.symbol }
 
-    fun requestNavForSymbols(symbols: List<String>) {
+    fun requestNavForSymbols(symbols: List<String>, intervalSeconds: Long? = null) {
         val supportedSymbols = symbols.filter { it in providers }
 
         if (supportedSymbols.isEmpty()) {
@@ -18,8 +18,13 @@ object NavService : PollingService<NavData>("NAV") {
             return
         }
 
-        logger.info("Starting NAV polling for ${supportedSymbols.size} symbols: $supportedSymbols (next: ${TradingDaySchedule.describeNextFetch()})")
-        startPollingWithSchedule(supportedSymbols, TradingDaySchedule::nextNavFetchDelayMs)
+        if (intervalSeconds != null) {
+            logger.info("Starting NAV polling for ${supportedSymbols.size} symbols: $supportedSymbols (every ${intervalSeconds}s)")
+            startPolling(supportedSymbols, intervalSeconds)
+        } else {
+            logger.info("Starting NAV polling for ${supportedSymbols.size} symbols: $supportedSymbols (next: ${TradingDaySchedule.describeNextFetch()})")
+            startPollingWithSchedule(supportedSymbols, TradingDaySchedule::nextNavFetchDelayMs)
+        }
     }
 
     override suspend fun fetchItem(symbol: String): NavData? {

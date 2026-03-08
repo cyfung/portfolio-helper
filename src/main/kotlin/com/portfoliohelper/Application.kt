@@ -20,6 +20,16 @@ fun main() {
     val logger = LoggerFactory.getLogger("Application")
 
     // ---------------------------------------------------------------
+    // 0. Resolve data directory (env > config file > OS default)
+    // ---------------------------------------------------------------
+    AppDirs.dataDir = System.getenv("PORTFOLIO_HELPER_DATA_DIR")
+        ?.takeIf { it.isNotBlank() }
+        ?.let { Paths.get(it) }
+        ?: AppConfig.get(AppConfig.KEY_DATA_DIR).takeIf { it.isNotBlank() }?.let { Paths.get(it) }
+        ?: AppDirs.osDefaultDataDir
+    logger.info("Active data directory: ${AppDirs.dataDir.toAbsolutePath()}")
+
+    // ---------------------------------------------------------------
     // 1. Ensure data directory exists; seed all bundled files if new
     // ---------------------------------------------------------------
     val dataDir = AppDirs.dataDir
@@ -154,7 +164,9 @@ fun main() {
             NavService.initialize()
             val symbols =
                 PortfolioRegistry.entries.flatMap { it.getStocks().map { s -> s.label } }.distinct()
-            NavService.requestNavForSymbols(symbols)
+            val fixedNavInterval = AppConfig.navUpdateInterval
+            if (fixedNavInterval != null) NavService.requestNavForSymbols(symbols, fixedNavInterval)
+            else NavService.requestNavForSymbols(symbols)
         } catch (e: Exception) {
             logger.error("Failed to initialize NAV service", e)
             logger.warn("Application will continue without NAV data")
@@ -240,7 +252,7 @@ fun main() {
     // ---------------------------------------------------------------
     logger.info("Starting web server on port $port...")
     try {
-        val server = embeddedServer(Netty, port = port, host = "localhost") {
+        val server = embeddedServer(Netty, port = port, host = AppConfig.bindHost) {
             configureRouting()
         }.start(wait = false)
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
@@ -253,7 +265,7 @@ fun main() {
 
     runBlocking {
         delay(1.seconds)
-        BrowserService.openBrowser(url)
+        if (AppConfig.openBrowser) BrowserService.openBrowser(url)
     }
 
     try {
