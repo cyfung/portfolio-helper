@@ -1,7 +1,9 @@
 // ── montecarlo-run.js — Form collection, run handler, date helpers ────────────
 // Depends on: backtest-blocks.js, montecarlo-chart.js
 
-function collectMcRequest() {
+let _lastMcSeed = null;
+
+function collectMcRequest(seed = null) {
     const fromDate = document.getElementById('mc-from-date').value;
     const toDate   = document.getElementById('mc-to-date').value;
     const minChunkYears  = parseFloat(document.getElementById('mc-min-chunk').value)  || 3;
@@ -12,12 +14,15 @@ function collectMcRequest() {
     const portfolios = collectAllPortfolios();
 
     const sortMetric = document.getElementById('mc-sort-metric').value;
-    return { fromDate: fromDate || null, toDate: toDate || null,
-             minChunkYears, maxChunkYears, simulatedYears, numSimulations, sortMetric, portfolios };
+    const req = { fromDate: fromDate || null, toDate: toDate || null,
+                  minChunkYears, maxChunkYears, simulatedYears, numSimulations, sortMetric, portfolios };
+    if (seed != null) req.seed = seed;
+    return req;
 }
 
 function initMcRunButton() {
-    const runBtn = document.getElementById('run-mc-btn');
+    const runBtn    = document.getElementById('run-mc-btn');
+    const rerunBtn  = document.getElementById('rerun-mc-btn');
     const progressEl = document.getElementById('mc-progress');
     let pollInterval = null;
 
@@ -39,11 +44,11 @@ function initMcRunButton() {
         progressEl.style.display = 'none';
     }
 
-    runBtn.addEventListener('click', async () => {
+    async function doRun(seed = null) {
         document.getElementById('error-msg').style.display = 'none';
         document.getElementById('error-msg').textContent = '';
 
-        const reqBody = collectMcRequest();
+        const reqBody = collectMcRequest(seed);
         if (reqBody.portfolios.length === 0) {
             showError('Add at least one ticker with a positive weight to any portfolio block.');
             return;
@@ -54,6 +59,7 @@ function initMcRunButton() {
         }
 
         runBtn.disabled = true;
+        if (rerunBtn) rerunBtn.disabled = true;
         runBtn.textContent = 'Running\u2026';
         startPolling(reqBody.numSimulations);
 
@@ -68,6 +74,10 @@ function initMcRunButton() {
                 showError(data.error || `Server error ${res.status}`);
                 return;
             }
+            if (data.seed != null) {
+                _lastMcSeed = data.seed;
+                if (rerunBtn) rerunBtn.style.display = '';
+            }
             resetMcCurveSelection();
             renderMcResults(data, reqBody.sortMetric);
         } catch (e) {
@@ -75,9 +85,13 @@ function initMcRunButton() {
         } finally {
             stopPolling();
             runBtn.disabled = false;
+            if (rerunBtn) rerunBtn.disabled = false;
             runBtn.textContent = 'Run Simulation';
         }
-    });
+    }
+
+    runBtn.addEventListener('click', () => doRun(null));
+    if (rerunBtn) rerunBtn.addEventListener('click', () => doRun(_lastMcSeed));
 }
 
 // ── Date quick-selectors ──────────────────────────────────────────────────────
@@ -94,7 +108,7 @@ function initMcDateClearBtns() {
 
 // ── Import / Export config ────────────────────────────────────────────────────
 
-function generateMcConfigCode() { return btoa(JSON.stringify(collectMcRequest())); }
+async function generateMcConfigCode() { return compressToCode(collectMcRequest()); }
 
 function showMcConfigError(msg) {
     const el = document.getElementById('mc-config-error');
@@ -102,9 +116,9 @@ function showMcConfigError(msg) {
     setTimeout(() => { el.textContent = ''; }, 3000);
 }
 
-function applyMcConfigCode(code) {
+async function applyMcConfigCode(code) {
     try {
-        const req = JSON.parse(atob(code));
+        const req = await decompressFromCode(code);
         if (req.fromDate) document.getElementById('mc-from-date').value = req.fromDate;
         if (req.toDate)   document.getElementById('mc-to-date').value   = req.toDate;
         updateDateClearBtns();
@@ -122,8 +136,8 @@ function applyMcConfigCode(code) {
 }
 
 function initMcImportExport() {
-    document.getElementById('mc-export-btn').addEventListener('click', () => {
-        const code = generateMcConfigCode();
+    document.getElementById('mc-export-btn').addEventListener('click', async () => {
+        const code = await generateMcConfigCode();
         document.getElementById('mc-import-code').value = code;
         navigator.clipboard.writeText(code).then(() => {
             const btn = document.getElementById('mc-export-btn');
@@ -132,9 +146,9 @@ function initMcImportExport() {
             setTimeout(() => { btn.textContent = orig; }, 1500);
         }).catch(() => {});
     });
-    document.getElementById('mc-import-btn').addEventListener('click', () => {
+    document.getElementById('mc-import-btn').addEventListener('click', async () => {
         const code = document.getElementById('mc-import-code').value.trim();
-        if (code) applyMcConfigCode(code);
+        if (code) await applyMcConfigCode(code);
     });
 }
 

@@ -117,6 +117,9 @@ object MonteCarloService {
             if (prev != null && cur != null && prev != 0.0) cur / prev - 1.0 else 0.0
         }
 
+        val masterSeed = request.seed ?: Random.Default.nextLong()
+        logger.info("MC seed: $masterSeed")
+
         val years = request.simulatedYears.toDouble()
         val avgRfDaily = if (effrxDailyRates.isNotEmpty()) effrxDailyRates.average() else 0.0
         val rfAnnualized = (1.0 + avgRfDaily).pow(252.0) - 1.0
@@ -159,7 +162,7 @@ object MonteCarloService {
         }
 
         for (simIdx in 0 until numSims) {
-            val rng = Random(simIdx.toLong())
+            val rng = Random(masterSeed + simIdx)
             val path = assemblePath(rng, targetDays, minChunkDays, maxChunkDays, poolSize,
                 tickerReturnsByDay, effrxDailyRates)
 
@@ -190,7 +193,7 @@ object MonteCarloService {
         logger.info("MC Pass 2: ${neededSimIndices.size} unique sims for full paths")
 
         val fullPaths: Map<Int, List<AssembledDay>> = neededSimIndices.associateWith { simIdx ->
-            val rng = Random(simIdx.toLong())
+            val rng = Random(masterSeed + simIdx)
             assemblePath(rng, targetDays, minChunkDays, maxChunkDays, poolSize,
                 tickerReturnsByDay, effrxDailyRates)
         }
@@ -211,7 +214,7 @@ object MonteCarloService {
             MonteCarloPortfolioResult(pConfig.label, curveResults)
         }
 
-        return MonteCarloResult(request.simulatedYears, numSims, portfolioResults)
+        return MonteCarloResult(request.simulatedYears, numSims, portfolioResults, masterSeed)
     }
 
     // ── Sort metric computation ───────────────────────────────────────────────

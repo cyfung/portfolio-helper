@@ -79,8 +79,8 @@ function initDateQuickSelectors() {
 
 // ── Import / Export config ────────────────────────────────────────────────────
 
-function generateConfigCode() {
-    return btoa(JSON.stringify(collectRequest()));
+async function generateConfigCode() {
+    return compressToCode(collectRequest());
 }
 
 function showConfigError(msg) {
@@ -89,9 +89,9 @@ function showConfigError(msg) {
     setTimeout(() => { el.textContent = ''; }, 3000);
 }
 
-function applyConfigCode(code) {
+async function applyConfigCode(code) {
     try {
-        const req = JSON.parse(atob(code));
+        const req = await decompressFromCode(code);
         if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
         if (req.toDate)   document.getElementById('to-date').value   = req.toDate;
         updateDateClearBtns();
@@ -107,8 +107,8 @@ function applyConfigCode(code) {
 }
 
 function initImportExport() {
-    document.getElementById('backtest-export-btn').addEventListener('click', () => {
-        const code = generateConfigCode();
+    document.getElementById('backtest-export-btn').addEventListener('click', async () => {
+        const code = await generateConfigCode();
         document.getElementById('backtest-import-code').value = code;
         navigator.clipboard.writeText(code).then(() => {
             const btn = document.getElementById('backtest-export-btn');
@@ -118,8 +118,8 @@ function initImportExport() {
         });
     });
 
-    document.getElementById('backtest-import-btn').addEventListener('click', () => {
+    document.getElementById('backtest-import-btn').addEventListener('click', async () => {
         const code = document.getElementById('backtest-import-code').value.trim();
-        if (code) applyConfigCode(code);
+        if (code) await applyConfigCode(code);
     });
 }

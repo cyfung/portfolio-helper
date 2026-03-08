@@ -10,7 +10,8 @@ data class MonteCarloRequest(
     val simulatedYears: Int,
     val numSimulations: Int,
     val portfolios: List<PortfolioConfig>,
-    val sortMetric: String = "CAGR"  // CAGR, MAX_DD, SHARPE, ULCER_INDEX, UPI
+    val sortMetric: String = "CAGR",  // CAGR, MAX_DD, SHARPE, ULCER_INDEX, UPI
+    val seed: Long? = null            // null = generate fresh random seed
 )
 
 data class MonteCarloPercentilePath(
@@ -37,7 +38,8 @@ data class MonteCarloPortfolioResult(
 data class MonteCarloResult(
     val simulatedYears: Int,
     val numSimulations: Int,
-    val portfolios: List<MonteCarloPortfolioResult>
+    val portfolios: List<MonteCarloPortfolioResult>,
+    val seed: Long
 )
 
 // ── Internal only ─────────────────────────────────────────────────────────────

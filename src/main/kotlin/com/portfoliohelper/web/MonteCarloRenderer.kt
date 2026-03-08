@@ -89,15 +89,21 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                     }
 
                     div {
-                        style = "display:flex; align-items:center;"
+                        style = "display:flex; align-items:center; gap:0.5rem;"
                         button(classes = "run-backtest-btn") {
                             id = "run-mc-btn"
                             attributes["type"] = "button"
                             +"Run Simulation"
                         }
+                        button(classes = "run-backtest-btn") {
+                            id = "rerun-mc-btn"
+                            attributes["type"] = "button"
+                            style = "display:none; opacity:0.75;"
+                            +"Rerun (same seed)"
+                        }
                         span {
                             id = "mc-progress"
-                            style = "display:none; margin-left:0.75rem; font-size:0.85em; opacity:0.7;"
+                            style = "display:none; margin-left:0.25rem; font-size:0.85em; opacity:0.7;"
                         }
                     }
                 }
