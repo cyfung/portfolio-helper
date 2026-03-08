@@ -63,17 +63,6 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                         mcNumberField("Max Chunk Years", "mc-max-chunk", "8")
                         mcNumberField("Simulated Years", "mc-sim-years", "20")
                         mcNumberField("Simulations", "mc-num-sims", "500")
-                        div(classes = "backtest-date-field") {
-                            label { attributes["for"] = "mc-sort-metric"; +"Sort Target" }
-                            select {
-                                id = "mc-sort-metric"
-                                option { value = "CAGR"; +"CAGR" }
-                                option { value = "MAX_DD"; +"Max DD" }
-                                option { value = "SHARPE"; +"Sharpe" }
-                                option { value = "ULCER_INDEX"; +"Ulcer Index" }
-                                option { value = "UPI"; +"UPI" }
-                            }
-                        }
                     }
 
                     div {
@@ -114,7 +103,14 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                     classes = setOf("backtest-error")
                 }
 
-                // Percentile tab bar (hidden until results arrive)
+                // Description + percentile tab bar (hidden until results arrive)
+                div {
+                    id = "mc-metrics-desc"
+                    style = "display:none; opacity:0.7; margin:0.5rem 0 1rem; line-height:1.5;"
+                    p { style = "font-size:var(--font-size-md); margin:0;"; +"⚠\uFE0E Each metric is independently ranked across all simulations." }
+                    p { style = "font-size:0.82em; margin:0;"; +"At P50, CAGR shows the median CAGR outcome, Max DD shows the median worst drawdown (ranked by drawdown), and so on." }
+                    p { style = "font-size:0.82em; margin:0;"; +"The chart always shows the path at the selected percentile when simulations are ranked by CAGR." }
+                }
                 div {
                     id = "mc-percentile-bar"
                     classes = setOf("mc-percentile-tabs")

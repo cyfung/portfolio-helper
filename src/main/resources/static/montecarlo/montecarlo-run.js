@@ -13,9 +13,8 @@ function collectMcRequest(seed = null) {
 
     const portfolios = collectAllPortfolios();
 
-    const sortMetric = document.getElementById('mc-sort-metric').value;
     const req = { fromDate: fromDate || null, toDate: toDate || null,
-                  minChunkYears, maxChunkYears, simulatedYears, numSimulations, sortMetric, portfolios };
+                  minChunkYears, maxChunkYears, simulatedYears, numSimulations, portfolios };
     if (seed != null) req.seed = seed;
     return req;
 }
@@ -79,7 +78,7 @@ function initMcRunButton() {
                 if (rerunBtn) rerunBtn.style.display = '';
             }
             resetMcCurveSelection();
-            renderMcResults(data, reqBody.sortMetric);
+            renderMcResults(data);
         } catch (e) {
             showError('Request failed: ' + e.message);
         } finally {
@@ -129,7 +128,6 @@ async function applyMcConfigCode(code) {
         if (req.maxChunkYears  != null) document.getElementById('mc-max-chunk').value   = req.maxChunkYears;
         if (req.simulatedYears != null) document.getElementById('mc-sim-years').value   = req.simulatedYears;
         if (req.numSimulations != null) document.getElementById('mc-num-sims').value    = req.numSimulations;
-        if (req.sortMetric     != null) document.getElementById('mc-sort-metric').value = req.sortMetric;
     } catch (_) {
         showMcConfigError('Invalid config code.');
     }

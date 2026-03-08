@@ -3,7 +3,6 @@ package com.portfoliohelper.service
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.max
 import kotlin.math.pow
 import kotlin.random.Random
 
@@ -117,7 +116,7 @@ object MonteCarloService {
             if (prev != null && cur != null && prev != 0.0) cur / prev - 1.0 else 0.0
         }
 
-        val masterSeed = request.seed ?: Random.Default.nextLong()
+        val masterSeed = request.seed ?: Random.nextLong()
         logger.info("MC seed: $masterSeed")
 
         val years = request.simulatedYears.toDouble()
@@ -153,12 +152,13 @@ object MonteCarloService {
         val PERCENTILES = listOf(5, 10, 25, 50, 75, 90, 95)
         val numSims = request.numSimulations
 
-        // ── Pass 1: run all simulations, record end values ────────────────────
+        // ── Pass 1: run all simulations, record metrics ───────────────────────
         logger.info("MC Pass 1: $numSims simulations × ${portfolioCurveConfigs.sumOf { it.second.size }} curves")
 
-        // endValues[pi][ci][simIdx]
-        val endValues = Array(portfolioCurveConfigs.size) { pi ->
-            Array(portfolioCurveConfigs[pi].second.size) { DoubleArray(numSims) }
+        // allMetrics[pi][ci][simIdx]
+        val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0)
+        val allMetrics = Array(portfolioCurveConfigs.size) { pi ->
+            Array(portfolioCurveConfigs[pi].second.size) { Array(numSims) { zero } }
         }
 
         for (simIdx in 0 until numSims) {
@@ -169,22 +169,48 @@ object MonteCarloService {
             portfolioCurveConfigs.forEachIndexed { pi, (pConfig, curves) ->
                 curves.forEachIndexed { ci, curveConfig ->
                     val values = simulate(pConfig, curveConfig.mc, path)
-                    endValues[pi][ci][simIdx] = computeMetricForSort(values, request.sortMetric, years, rfAnnualized)
+                    val stats = computeStats(values, years, rfAnnualized)
+                    allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi)
                 }
             }
             progressCompleted.incrementAndGet()
         }
 
-        // ── Identify percentile sim indices ───────────────────────────────────
+        // ── Identify percentile sim indices (CAGR-sorted, for pass 2) ─────────
         // pctSimIndices[pi][ci][pctIdx] = simIdx
-        val pctSimIndices = endValues.map { portfolioEndVals ->
-            portfolioEndVals.map { simEndVals ->
-                val sortedSims = (0 until numSims).sortedBy { simEndVals[it] }
-                PERCENTILES.map { pct ->
-                    val idx = (pct.toDouble() / 100.0 * (numSims - 1)).toInt()
-                        .coerceIn(0, numSims - 1)
-                    sortedSims[idx]
-                }
+        val pctIdxList = PERCENTILES.map { pct ->
+            (pct.toDouble() / 100.0 * (numSims - 1)).toInt().coerceIn(0, numSims - 1)
+        }
+        val pctSimIndices = allMetrics.map { portfolioMetrics ->
+            portfolioMetrics.map { simMetrics ->
+                val sortedByCagr = (0 until numSims).sortedBy { simMetrics[it].cagr }
+                pctIdxList.map { sortedByCagr[it] }
+            }
+        }
+
+        // ── Per-metric independent percentile values ───────────────────────────
+        val maxDdPctValues = allMetrics.map { portMetrics ->
+            portMetrics.map { simMetrics ->
+                val sorted = (0 until numSims).sortedBy { -simMetrics[it].maxDD }
+                pctIdxList.map { simMetrics[sorted[it]].maxDD }
+            }
+        }
+        val sharpePctValues = allMetrics.map { portMetrics ->
+            portMetrics.map { simMetrics ->
+                val sorted = (0 until numSims).sortedBy { simMetrics[it].sharpe }
+                pctIdxList.map { simMetrics[sorted[it]].sharpe }
+            }
+        }
+        val ulcerPctValues = allMetrics.map { portMetrics ->
+            portMetrics.map { simMetrics ->
+                val sorted = (0 until numSims).sortedBy { -simMetrics[it].ulcerIndex }
+                pctIdxList.map { simMetrics[sorted[it]].ulcerIndex }
+            }
+        }
+        val upiPctValues = allMetrics.map { portMetrics ->
+            portMetrics.map { simMetrics ->
+                val sorted = (0 until numSims).sortedBy { simMetrics[it].upi }
+                pctIdxList.map { simMetrics[sorted[it]].upi }
             }
         }
 
@@ -209,37 +235,19 @@ object MonteCarloService {
                     val stats = computeStats(values, years, rfAnnualized)
                     MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi)
                 }
-                MonteCarloCurveResult(curveConfig.label, percentilePaths)
+                MonteCarloCurveResult(
+                    curveConfig.label,
+                    percentilePaths,
+                    maxDdPctValues[pi][ci],
+                    sharpePctValues[pi][ci],
+                    ulcerPctValues[pi][ci],
+                    upiPctValues[pi][ci]
+                )
             }
             MonteCarloPortfolioResult(pConfig.label, curveResults)
         }
 
         return MonteCarloResult(request.simulatedYears, numSims, portfolioResults, masterSeed)
-    }
-
-    // ── Sort metric computation ───────────────────────────────────────────────
-
-    private fun computeMetricForSort(
-        values: List<Double>, metric: String, years: Double, rfAnnualized: Double
-    ): Double {
-        val endValue = values.last()
-        return when (metric) {
-            "CAGR" -> if (years > 0 && endValue > 0) (endValue / 10_000.0).pow(1.0 / years) - 1.0 else -1.0
-            "MAX_DD" -> {
-                var peak = values[0]; var maxDD = 0.0
-                for (v in values) { if (v > peak) peak = v; if (peak > 0) maxDD = max(maxDD, 1.0 - v / peak) }
-                -maxDD  // negated: higher DD = worse = more negative = will be at lower percentile
-            }
-            "SHARPE", "ULCER_INDEX", "UPI" -> {
-                val stats = computeStats(values, years, rfAnnualized)
-                when (metric) {
-                    "SHARPE" -> stats.sharpe
-                    "ULCER_INDEX" -> -stats.ulcerIndex  // negated: higher ulcer = worse
-                    else -> stats.upi
-                }
-            }
-            else -> (endValue / 10_000.0).pow(1.0 / years) - 1.0  // CAGR (default / fallback)
-        }
     }
 
     // ── Path assembly ─────────────────────────────────────────────────────────

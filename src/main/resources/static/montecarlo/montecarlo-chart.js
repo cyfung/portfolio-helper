@@ -4,7 +4,6 @@
 var mcChartInstance = null;
 var mcCurrentPercentile = 50;
 var mcLastData = null;
-var mcSortMetric = 'CAGR';
 var selectedMcCurves = new Set();
 
 const PERCENTILE_COLORS = ['#e05c5c','#e0955c','#d4c84a','#4caf50','#4aabcf','#4a6fcf','#7c4acf'];
@@ -31,12 +30,13 @@ function showError(msg) {
     el.style.display = '';
     document.getElementById('chart-container').style.display = 'none';
     document.getElementById('stats-container').style.display = 'none';
+    document.getElementById('mc-metrics-desc').style.display = 'none';
     document.getElementById('mc-percentile-bar').style.display = 'none';
 }
 
-function renderMcResults(data, sortMetric) {
+function renderMcResults(data) {
     mcLastData = data;
-    if (sortMetric) mcSortMetric = sortMetric;
+    document.getElementById('mc-metrics-desc').style.display = '';
     document.getElementById('mc-percentile-bar').style.display = '';
     renderMcChart(data, mcCurrentPercentile);
     renderMcStats(data, mcCurrentPercentile);
@@ -142,6 +142,8 @@ function renderMcStats(data, percentile) {
     const statsContainer = document.getElementById('stats-container');
     statsContainer.style.display = '';
 
+    const pctIdx = PERCENTILE_LIST.indexOf(percentile);
+
     const cols = [
         { metric: 'END_VALUE',   label: 'End Value' },
         { metric: 'CAGR',        label: 'CAGR' },
@@ -151,18 +153,16 @@ function renderMcStats(data, percentile) {
         { metric: 'UPI',         label: 'UPI' }
     ];
 
-    function cellValue(pp, metric) {
+    function cellValue(curve, pp, idx, metric) {
         switch (metric) {
             case 'END_VALUE':   return money(pp.endValue);
             case 'CAGR':        return pct(pp.cagr);
-            case 'MAX_DD':      return pct(pp.maxDrawdown);
-            case 'SHARPE':      return fmt2(pp.sharpe);
-            case 'ULCER_INDEX': return pct(pp.ulcerIndex);
-            case 'UPI':         return fmt2(pp.upi);
+            case 'MAX_DD':      return pct(curve.maxDdPercentiles[idx]);
+            case 'SHARPE':      return fmt2(curve.sharpePercentiles[idx]);
+            case 'ULCER_INDEX': return pct(curve.ulcerPercentiles[idx]);
+            case 'UPI':         return fmt2(curve.upiPercentiles[idx]);
         }
     }
-
-    function highlight(metric) { return metric === mcSortMetric ? ' class="mc-sort-target"' : ''; }
 
     const allKeys = [];
     data.portfolios.forEach((portfolio, pi) => {
@@ -173,7 +173,7 @@ function renderMcStats(data, percentile) {
     html += '<table class="backtest-stats-table"><thead><tr>';
     html += '<th><input type="checkbox" class="curve-toggle" id="mc-curve-toggle-all"></th>';
     html += '<th>Curve</th>';
-    cols.forEach(c => { html += `<th data-metric="${c.metric}"${highlight(c.metric)}>${c.label}</th>`; });
+    cols.forEach(c => { html += `<th data-metric="${c.metric}">${c.label}</th>`; });
     html += '</tr></thead><tbody>';
 
     data.portfolios.forEach((portfolio, pi) => {
@@ -186,7 +186,7 @@ function renderMcStats(data, percentile) {
             html += `<td><input type="checkbox" class="curve-toggle" data-key="${key}"></td>`;
             html += `<td>${curveLabel}</td>`;
             cols.forEach(c => {
-                html += `<td data-metric="${c.metric}"${highlight(c.metric)}>${cellValue(pp, c.metric)}</td>`;
+                html += `<td data-metric="${c.metric}">${cellValue(curve, pp, pctIdx, c.metric)}</td>`;
             });
             html += '</tr>';
         });
@@ -206,7 +206,7 @@ function renderMcStats(data, percentile) {
             html += '<td></td>';
             html += `<td style="color:${PERCENTILE_COLORS[idx]};font-weight:${pct===50?'bold':'normal'}">P${pct}</td>`;
             cols.forEach(c => {
-                html += `<td data-metric="${c.metric}"${highlight(c.metric)}>${cellValue(pp, c.metric)}</td>`;
+                html += `<td data-metric="${c.metric}">${cellValue(curve, pp, idx, c.metric)}</td>`;
             });
             html += '</tr>';
         });
@@ -227,7 +227,7 @@ function initPercentileTabs() {
             mcCurrentPercentile = parseInt(btn.dataset.pct, 10);
             if (mcLastData) {
                 renderMcChart(mcLastData, mcCurrentPercentile);
-                renderMcStats(mcLastData, mcCurrentPercentile);  // uses mcSortMetric global
+                renderMcStats(mcLastData, mcCurrentPercentile);
             }
         });
     });

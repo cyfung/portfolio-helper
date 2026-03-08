@@ -10,7 +10,6 @@ data class MonteCarloRequest(
     val simulatedYears: Int,
     val numSimulations: Int,
     val portfolios: List<PortfolioConfig>,
-    val sortMetric: String = "CAGR",  // CAGR, MAX_DD, SHARPE, ULCER_INDEX, UPI
     val seed: Long? = null            // null = generate fresh random seed
 )
 
@@ -27,7 +26,11 @@ data class MonteCarloPercentilePath(
 
 data class MonteCarloCurveResult(
     val label: String,
-    val percentilePaths: List<MonteCarloPercentilePath>
+    val percentilePaths: List<MonteCarloPercentilePath>,  // CAGR-sorted, full paths
+    val maxDdPercentiles: List<Double>,   // MaxDD-sorted, raw drawdown values
+    val sharpePercentiles: List<Double>,  // Sharpe-sorted
+    val ulcerPercentiles: List<Double>,   // UlcerIndex-sorted (lower=better → inverted sort)
+    val upiPercentiles: List<Double>      // UPI-sorted
 )
 
 data class MonteCarloPortfolioResult(
@@ -43,6 +46,14 @@ data class MonteCarloResult(
 )
 
 // ── Internal only ─────────────────────────────────────────────────────────────
+
+internal data class SimPassMetrics(
+    val cagr: Double,
+    val maxDD: Double,
+    val sharpe: Double,
+    val ulcerIndex: Double,
+    val upi: Double
+)
 
 internal data class AssembledDay(
     val tickerReturns: Map<String, Double>,  // empty on boundary days

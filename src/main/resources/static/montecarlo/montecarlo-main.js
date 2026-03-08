@@ -31,7 +31,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (req.maxChunkYears  != null) document.getElementById('mc-max-chunk').value   = req.maxChunkYears;
         if (req.simulatedYears != null) document.getElementById('mc-sim-years').value   = req.simulatedYears;
         if (req.numSimulations != null) document.getElementById('mc-num-sims').value    = req.numSimulations;
-        if (req.sortMetric     != null) document.getElementById('mc-sort-metric').value = req.sortMetric;
         if (req.portfolios) req.portfolios.forEach((p, i) => {
             if (i < 3) loadPortfolioIntoBlock(i, p, p.label || '');
         });

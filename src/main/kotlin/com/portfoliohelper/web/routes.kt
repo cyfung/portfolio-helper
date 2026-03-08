@@ -262,7 +262,6 @@ fun Application.configureRouting() {
                 val maxChunkYears  = json["maxChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 8.0
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
-                val sortMetric = json["sortMetric"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "END_VALUE"
 
                 val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
                     val pObj = pel.jsonObject
@@ -303,7 +302,7 @@ fun Application.configureRouting() {
 
                 val request = MonteCarloRequest(
                     fromDate, toDate, minChunkYears, maxChunkYears,
-                    simulatedYears, numSimulations, portfolios, sortMetric
+                    simulatedYears, numSimulations, portfolios
                 )
                 val result = MonteCarloService.runMonteCarlo(request)
 
@@ -334,7 +333,14 @@ fun Application.configureRouting() {
                                 append(",\"upi\":${"%.4f".format(pp.upi)}")
                                 append("}")
                             }
-                            append("]}")
+                            append("]")
+                            fun serializeDoubleList(lst: List<Double>) =
+                                "[${lst.joinToString(",") { "%.6f".format(it) }}]"
+                            append(",\"maxDdPercentiles\":${serializeDoubleList(cr.maxDdPercentiles)}")
+                            append(",\"sharpePercentiles\":${serializeDoubleList(cr.sharpePercentiles)}")
+                            append(",\"ulcerPercentiles\":${serializeDoubleList(cr.ulcerPercentiles)}")
+                            append(",\"upiPercentiles\":${serializeDoubleList(cr.upiPercentiles)}")
+                            append("}")
                         }
                         append("]}")
                     }
