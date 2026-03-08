@@ -28,7 +28,7 @@ internal suspend fun ApplicationCall.renderLoanCalculatorPage() {
                         renderPageNavTabs(AppPage.LOAN)
                     }
 
-                    div(classes = "header-buttons") {
+                    renderHeaderRight {
                         renderConfigButton()
                         renderThemeToggle()
                     }

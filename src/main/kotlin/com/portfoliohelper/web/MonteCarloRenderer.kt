@@ -32,7 +32,7 @@ internal suspend fun ApplicationCall.renderMonteCarloPage() {
                     div(classes = "header-title-group") {
                         renderPageNavTabs(AppPage.MONTE_CARLO)
                     }
-                    div(classes = "header-buttons") {
+                    renderHeaderRight {
                         renderConfigButton()
                         renderThemeToggle()
                     }

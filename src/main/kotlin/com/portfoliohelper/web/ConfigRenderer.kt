@@ -23,7 +23,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                     div(classes = "header-title-group") {
                         renderPageNavTabs(AppPage.CONFIG)
                     }
-                    div(classes = "header-buttons") {
+                    renderHeaderRight {
                         renderThemeToggle()
                     }
                 }

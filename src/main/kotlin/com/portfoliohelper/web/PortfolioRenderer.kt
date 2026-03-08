@@ -138,7 +138,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         }
                     }
 
-                    div(classes = "header-buttons") {
+                    renderHeaderRight {
                         button(classes = "restore-backup-btn") {
                             attributes["id"] = "restore-backup-btn"
                             attributes["type"] = "button"

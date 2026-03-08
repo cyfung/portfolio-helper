@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.APP_VERSION
 import kotlinx.html.*
 
 enum class AppPage(val line1: String, val line2: String, val href: String) {
@@ -41,6 +42,16 @@ fun HEAD.renderCommonHeadElements() {
         attributes["sizes"] = "96x96"
     }
     link(rel = "icon", type = "image/svg+xml", href = "/static/favicon.svg")
+}
+
+internal val appVersion: String get() = APP_VERSION
+
+/** Wraps the header-buttons group with a version label above it, right-aligned. */
+fun DIV.renderHeaderRight(block: DIV.() -> Unit) {
+    div(classes = "header-right") {
+        span(classes = "version-badge") { +"v$appVersion" }
+        div(classes = "header-buttons") { block() }
+    }
 }
 
 fun DIV.renderThemeToggle() {

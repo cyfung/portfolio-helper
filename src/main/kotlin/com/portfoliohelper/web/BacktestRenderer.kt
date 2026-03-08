@@ -32,7 +32,7 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                     div(classes = "header-title-group") {
                         renderPageNavTabs(AppPage.BACKTEST)
                     }
-                    div(classes = "header-buttons") {
+                    renderHeaderRight {
                         renderConfigButton()
                         renderThemeToggle()
                     }

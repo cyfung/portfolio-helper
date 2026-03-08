@@ -224,8 +224,15 @@ h1 {
 .sse-dot--err { background: var(--color-negative); }
 
 /* ============================================
-   Header Button Group
+   Header Right Group (version + buttons)
    ============================================ */
+.header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
 .header-buttons {
     display: flex;
     gap: var(--spacing-lg);
@@ -337,6 +344,18 @@ h1 {
 
 [data-theme="dark"] .currency-select:focus {
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+}
+
+/* ============================================
+   Version Badge
+   ============================================ */
+.version-badge {
+    font-size: 0.7rem;
+    color: var(--color-muted, #888);
+    opacity: 0.6;
+    letter-spacing: 0.02em;
+    user-select: none;
+    white-space: nowrap;
 }
 
 /* ============================================

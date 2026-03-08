@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.4.2"
+version = "0.4.3"
 
 repositories {
     mavenCentral()
@@ -66,6 +66,20 @@ kotlin {
 
 // Kotlin will automatically use the Java toolchain
 // No need for explicit kotlinOptions.jvmTarget when using toolchains
+
+// Generate AppVersion.kt so the version constant is always in sync with build.gradle.kts
+val generateVersionFile = tasks.register("generateVersionFile") {
+    val outputDir = layout.buildDirectory.dir("generated/version")
+    outputs.dir(outputDir)
+    inputs.property("version", version)
+    doLast {
+        val file = outputDir.get().file("com/portfoliohelper/AppVersion.kt").asFile
+        file.parentFile.mkdirs()
+        file.writeText("package com.portfoliohelper\n\ninternal const val APP_VERSION = \"${version}\"\n")
+    }
+}
+tasks.named("compileKotlin") { dependsOn(generateVersionFile) }
+kotlin.sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/version")) }
 
 // Shadow JAR Configuration
 tasks {
