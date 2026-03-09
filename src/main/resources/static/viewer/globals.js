@@ -18,8 +18,8 @@
 var componentDayPercents = {};  // symbol → intraday % (for LETF est val)
 var rawMarkPrices = {};         // symbol → raw mark price
 var rawClosePrices = {};        // symbol → raw close price
-var globalIsMarketClosed = true;
-var marketCloseTimeMs = null;   // Unix ms of tradingPeriodEnd
+var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
+var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
 
 // Display state
 var currentDisplayCurrency = 'USD';

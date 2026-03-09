@@ -11,12 +11,12 @@ function updateNavInUI(symbol, nav) {
 }
 
 function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, tradingPeriodEnd) {
-    // Update global market state
-    globalIsMarketClosed = isMarketClosed;
+    // Update per-symbol market state
+    symbolMarketClosed[symbol] = isMarketClosed;
     if (tradingPeriodEnd !== null && tradingPeriodEnd !== undefined) {
         const endMs = tradingPeriodEnd * 1000;
         if (endMs <= Date.now()) {
-            marketCloseTimeMs = endMs;
+            symbolTradingPeriodEndMs[symbol] = endMs;
         }
     }
 

@@ -2,15 +2,14 @@
 // Depends on: utils.js
 
 function updateAllEstVals() {
-    const stale = globalIsMarketClosed && (
-        marketCloseTimeMs === null ||
-        Date.now() - marketCloseTimeMs > 12 * 3600 * 1000
-    );
-
     document.querySelectorAll('tbody tr[data-letf]').forEach(row => {
         const symbol = row.querySelector('td:first-child').textContent.trim();
         const letfAttr = row.getAttribute('data-letf');
         if (!letfAttr) return;
+
+        const marketClosed = symbolMarketClosed[symbol] !== false; // undefined → assume closed
+        const closeTimeMs = symbolTradingPeriodEndMs[symbol] ?? null;
+        const stale = marketClosed && (closeTimeMs === null || Date.now() - closeTimeMs > 12 * 3600 * 1000);
 
         const estValCell = document.getElementById('est-val-' + symbol);
 
