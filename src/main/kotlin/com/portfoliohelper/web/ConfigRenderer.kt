@@ -45,7 +45,8 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                             tbody {
                                 for (entry in PortfolioRegistry.entries) {
-                                    val virtualBalance = getPortfolioConfValue(entry, "virtualBalance") == "true"
+                                    val virtualBalance =
+                                        getPortfolioConfValue(entry, "virtualBalance") == "true"
                                     tr {
                                         td { +entry.name }
                                         td {
@@ -115,7 +116,8 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 
                     // Server
                     renderConfigSection("Server") {
-                        val bindHostEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_BIND_HOST)
+                        val bindHostEnvOverridden =
+                            AppConfig.isEnvOverridden(AppConfig.KEY_BIND_HOST)
                         renderConfigField(
                             label = "Bind Host",
                             description = "Network interface to listen on. Use 0.0.0.0 for LAN access.",
@@ -186,7 +188,8 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        val navEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_NAV_UPDATE_INTERVAL)
+                        val navEnvOverridden =
+                            AppConfig.isEnvOverridden(AppConfig.KEY_NAV_UPDATE_INTERVAL)
                         renderConfigField(
                             label = "NAV Update Interval (seconds)",
                             description = "How often to fetch NAV data. Leave blank to use the trading-day schedule.",
@@ -250,14 +253,12 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 private fun getPortfolioConfValue(entry: ManagedPortfolio, key: String): String? = runCatching {
     val f = java.io.File(entry.portfolioConfigPath)
     if (!f.exists()) return@runCatching null
-    f.readLines()
-        .filter { '=' in it && !it.startsWith('#') }
-        .mapNotNull {
+    f.readLines().asSequence()
+        .filter { '=' in it && !it.startsWith('#') }.firstNotNullOfOrNull {
             val k = it.substringBefore('=').trim()
             val v = it.substringAfter('=').trim()
             if (k == key && v.isNotEmpty()) v else null
         }
-        .firstOrNull()
 }.getOrNull()
 
 private fun FlowContent.renderConfigSection(title: String, block: DIV.() -> Unit) {
@@ -288,7 +289,7 @@ private fun FlowContent.renderConfigField(
                 span(classes = "config-badge config-badge-$badge") {
                     +when (badge) {
                         "restart" -> "restart required"
-                        "live"    -> "live"
+                        "live" -> "live"
                         "readonly" -> "read-only"
                         "next-launch" -> "next launch"
                         else -> badge

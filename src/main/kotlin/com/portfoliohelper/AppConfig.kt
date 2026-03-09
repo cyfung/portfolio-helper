@@ -83,8 +83,6 @@ object AppConfig {
         }
     }
 
-    fun getDefault(key: String): String = DEFAULTS[key] ?: ""
-
     // Typed accessors
     val bindHost: String get() = get(KEY_BIND_HOST).ifBlank { "localhost" }
     val openBrowser: Boolean get() = get(KEY_OPEN_BROWSER).lowercase() != "false"

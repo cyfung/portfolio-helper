@@ -40,12 +40,6 @@ object IbkrMarginRateService {
             }
             return if (amount > 0) (totalInterest / amount) * 100.0 else baseRate
         }
-
-        /** Returns blended rate only if amount exceeds the base tier cap; otherwise null */
-        fun blendedRateIfMultiTier(amount: Double): Double? {
-            val baseCap = tiers.first().upTo ?: return null
-            return if (amount > baseCap) blendedRate(amount) else null
-        }
     }
 
     private val logger = LoggerFactory.getLogger(IbkrMarginRateService::class.java)
@@ -65,8 +59,6 @@ object IbkrMarginRateService {
             }
         }
     }
-
-    fun getRates(currency: String): CurrencyRates? = ratesCache[currency.uppercase()]
 
     fun getLastFetchMillis(): Long = lastFetchMillis.get()
 
