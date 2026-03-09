@@ -280,7 +280,7 @@ function initSaveToBacktest() {
             }] : []
         };
 
-        const name = document.querySelector('h1')?.textContent?.trim() || 'Portfolio';
+        const name = (typeof portfolioName !== 'undefined' && portfolioName) ? portfolioName : (document.querySelector('h1')?.textContent?.trim() || 'Portfolio');
 
         const res = await fetch('/api/backtest/savedPortfolios', {
             method: 'POST',

@@ -84,6 +84,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     raw(
                         """
                         var portfolioId = "${entry.id}";
+                        var portfolioName = "${entry.name}";
                         var fxRates = ${
                             buildString {
                                 append("{ USD: 1.0")
