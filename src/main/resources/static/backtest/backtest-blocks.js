@@ -270,6 +270,11 @@ function initBlock(blockIdx) {
         block.querySelector('.ticker-rows').innerHTML = '';
         block.querySelector('.margin-config-rows').innerHTML = '';
         block.querySelector('.rebalance-select').value = 'YEARLY';
+        const noMarginBtn = block.querySelector('.include-no-margin-btn');
+        if (noMarginBtn) {
+            noMarginBtn.dataset.include = true;
+            noMarginBtn.textContent = 'Unlevered: On';
+        }
         updateWeightHint(blockIdx);
         updateSaveBtn(block);
     });
