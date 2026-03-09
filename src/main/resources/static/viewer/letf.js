@@ -51,7 +51,56 @@ function updateAllEstVals() {
         if (estValCell && allAvailable) {
             const estVal = (1 + sumComponent) * basePrice;
             estValCell.textContent = '$' + estVal.toFixed(2);
+            estValCell.dataset.estVal = estVal;
             estValCell.classList.add('loaded');
         }
     });
 }
+
+// ── Est Val price ladder tooltip ──────────────────────────────────────────────
+
+let _estValTooltip = null;
+
+function getEstValTooltip() {
+    if (!_estValTooltip) {
+        _estValTooltip = document.createElement('div');
+        _estValTooltip.id = 'est-val-tooltip';
+        document.body.appendChild(_estValTooltip);
+    }
+    return _estValTooltip;
+}
+
+document.addEventListener('mouseenter', e => {
+    const cell = e.target.closest('td[id^="est-val-"].loaded');
+    if (!cell) return;
+    const estVal = parseFloat(cell.dataset.estVal);
+    if (isNaN(estVal)) return;
+
+    const deltas = [0.002, 0.001, 0, -0.001, -0.002];
+    let html = '';
+    for (const d of deltas) {
+        const price = estVal * (1 + d);
+        if (d === 0) {
+            html += '<hr class="ladder-separator">';
+        } else {
+            const sign = d > 0 ? '+' : '−';
+            const label = sign + Math.abs(d * 100).toFixed(1) + '%';
+            const cls = d > 0 ? 'ladder-up' : 'ladder-down';
+            html += `<span class="${cls}">${label}  $${price.toFixed(2)}</span>\n`;
+        }
+    }
+
+    const tip = getEstValTooltip();
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+
+    const rect = cell.getBoundingClientRect();
+    tip.style.left = (rect.right + 8) + 'px';
+    tip.style.top = rect.top + 'px';
+}, true);
+
+document.addEventListener('mouseleave', e => {
+    const cell = e.target.closest('td[id^="est-val-"].loaded');
+    if (!cell) return;
+    if (_estValTooltip) _estValTooltip.style.display = 'none';
+}, true);

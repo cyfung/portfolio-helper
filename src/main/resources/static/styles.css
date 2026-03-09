@@ -3119,3 +3119,44 @@ body.editing-active .cash-edit-value {
     border-color: var(--color-danger, #c0392b);
     color: var(--color-danger, #c0392b);
 }
+
+/* Est Val column header hint */
+.col-info-hint {
+    cursor: help;
+    font-size: 0.75em;
+    opacity: 0.6;
+    user-select: none;
+}
+
+/* Floating price ladder tooltip */
+#est-val-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: var(--bg-secondary, #1e1e1e);
+    border: 1px solid var(--border, #444);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-family: 'Consolas', 'Menlo', 'Monaco', monospace;
+    pointer-events: none;
+    white-space: pre;
+    width: max-content;
+    line-height: 1.6;
+    display: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#est-val-tooltip .ladder-up {
+    color: #f0a04b;
+}
+#est-val-tooltip .ladder-down {
+    color: #7eb8f7;
+}
+#est-val-tooltip hr.ladder-separator {
+    border: none;
+    border-top: 1px solid var(--border, #444);
+    margin: 2px 0;
+}
+/* cursor on hoverable cells */
+td[id^="est-val-"].loaded {
+    cursor: help;
+}

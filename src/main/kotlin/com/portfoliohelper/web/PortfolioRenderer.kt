@@ -481,7 +481,14 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th { +"Symbol" }
                 th(classes = "col-num") { +"Qty" }
                 th(classes = "col-num col-market-data") { +"Last NAV" }
-                th(classes = "col-num col-market-data") { +"Est Val" }
+                th(classes = "col-num col-market-data") {
+                    id = "th-est-val"
+                    +"Est Val "
+                    span(classes = "col-info-hint") {
+                        title = "Hover a cell to see price targets"
+                        +"ⓘ"
+                    }
+                }
                 th(classes = "col-num col-market-data") { +"Last" }
                 th(classes = "col-num col-market-data") { +"Mark" }
                 th(classes = "col-num col-market-data") { +"Day Chg" }
