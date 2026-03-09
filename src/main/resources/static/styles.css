@@ -742,9 +742,14 @@ h1 {
    ============================================ */
 .portfolio-tabs {
     display: flex;
+    align-items: center;
     gap: 0;
     border-bottom: 2px solid var(--color-border-subtle);
     margin-bottom: var(--spacing-xl);
+}
+.portfolio-tabs .save-portfolio-btn {
+    margin-left: auto;
+    margin-bottom: 4px;
 }
 
 .tab-link {

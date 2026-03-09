@@ -211,9 +211,9 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
                 }
 
-                // Tab bar — only shown when multiple portfolios exist
-                if (allPortfolios.size > 1) {
-                    div(classes = "portfolio-tabs") {
+                // Tab bar — always rendered; tabs shown only when multiple portfolios exist
+                div(classes = "portfolio-tabs") {
+                    if (allPortfolios.size > 1) {
                         for (p in allPortfolios) {
                             val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
                             a(
@@ -221,6 +221,12 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                 classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}"
                             ) { +p.name }
                         }
+                    }
+                    button(classes = "save-portfolio-btn") {
+                        attributes["id"] = "save-to-backtest-btn"
+                        attributes["type"] = "button"
+                        attributes["title"] = "Save current portfolio as a backtest preset"
+                        +"Save to Backtest"
                     }
                 }
 
@@ -246,12 +252,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
 
                     div(classes = "stock-section") {
                         div(classes = "alloc-controls") {
-                            button(classes = "save-portfolio-btn") {
-                                attributes["id"] = "save-to-backtest-btn"
-                                attributes["type"] = "button"
-                                attributes["title"] = "Save current portfolio as a backtest preset"
-                                +"Save to Backtest"
-                            }
                             span(classes = "alloc-controls-label") { +"Alloc Strategy" }
                             div(classes = "alloc-mode-group") {
                                 label(classes = "alloc-mode-label alloc-mode-label-deposit") {
@@ -493,8 +493,8 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th(classes = "col-num col-market-data") { +"Mark" }
                 th(classes = "col-num col-market-data") { +"Day Chg" }
                 th(classes = "col-num col-market-data") { +"Day %" }
-                th(classes = "col-num col-market-data") { +"Mkt Val" }
                 th(classes = "col-num col-market-data") { +"Mkt Val Chg" }
+                th(classes = "col-num col-market-data") { +"Mkt Val" }
                 th(classes = "rebal-column") { +"Weight" }
                 th(classes = "rebal-column") { +"Rebal $" }
                 th(classes = "rebal-column") { +"Rebal Qty" }
@@ -555,15 +555,15 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         id = "day-percent-${stock.label}"
                     }
 
+                    // Mkt Val Chg — owned by JS; render empty
+                    td(classes = "col-market-data price-change neutral") {
+                        id = "position-change-${stock.label}"
+                    }
+
                     // Mkt Val — kept for first paint; SSE overwrites immediately
                     td(classes = if (stock.value != null) "col-market-data value loaded" else "col-market-data value") {
                         id = "value-${stock.label}"
                         +(if (stock.value != null) "$%,.2f".format(stock.value) else "—")
-                    }
-
-                    // Mkt Val Chg — owned by JS; render empty
-                    td(classes = "col-market-data price-change neutral") {
-                        id = "position-change-${stock.label}"
                     }
 
                     // Weight — owned by JS (updateCurrentWeights); render empty
