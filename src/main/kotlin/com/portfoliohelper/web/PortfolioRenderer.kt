@@ -252,18 +252,18 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                 attributes["title"] = "Save current portfolio as a backtest preset"
                                 +"Save to Backtest"
                             }
-                            span(classes = "alloc-controls-label") { +"Alloc" }
+                            span(classes = "alloc-controls-label") { +"Alloc Strategy" }
                             div(classes = "alloc-mode-group") {
-                                label(classes = "alloc-mode-label") {
+                                label(classes = "alloc-mode-label alloc-mode-label-deposit") {
                                     attributes["for"] = "alloc-add-mode"
-                                    +"Add"
+                                    +"+"
                                 }
                                 allocMode("alloc-add-mode")
                             }
                             div(classes = "alloc-mode-group") {
-                                label(classes = "alloc-mode-label") {
+                                label(classes = "alloc-mode-label alloc-mode-label-withdraw") {
                                     attributes["for"] = "alloc-reduce-mode"
-                                    +"Reduce"
+                                    +"−"
                                 }
                                 allocMode("alloc-reduce-mode")
                             }

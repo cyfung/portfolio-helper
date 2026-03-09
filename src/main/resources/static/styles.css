@@ -1064,17 +1064,27 @@ h1 {
     gap: var(--spacing-sm);
 }
 .alloc-mode-label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1;
+    min-width: 1ch;
+    text-align: center;
 }
+.alloc-mode-label-deposit { color: #22c55e; }
+.alloc-mode-label-withdraw { color: #ef4444; }
 .alloc-mode-group select {
     padding: var(--spacing-xs) var(--spacing-sm);
-    border: 1px solid var(--color-border-medium);
     border-radius: var(--radius-sm);
     background-color: var(--color-bg-secondary);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
     cursor: pointer;
+}
+#alloc-add-mode {
+    border: 1.5px solid #22c55e;
+}
+#alloc-reduce-mode {
+    border: 1.5px solid #ef4444;
 }
 
 /* ============================================
