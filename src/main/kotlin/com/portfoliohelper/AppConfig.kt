@@ -12,6 +12,9 @@ object AppConfig {
     const val KEY_OPEN_BROWSER        = "openBrowser"
     const val KEY_NAV_UPDATE_INTERVAL = "navUpdateInterval"
     const val KEY_EXCHANGE_SUFFIXES   = "exchangeSuffixes"
+    const val KEY_TWS_HOST            = "twsHost"
+    const val KEY_TWS_PORT            = "twsPort"
+    const val KEY_IBKR_RATE_INTERVAL  = "ibkrRateInterval"
 
     // Fixed OS config path (NOT inside dataDir — avoids circular dependency)
     val userConfigFile: File = run {
@@ -33,14 +36,19 @@ object AppConfig {
 
     private val ENV_MAP = mapOf(
         KEY_BIND_HOST           to "PORTFOLIO_HELPER_BIND_HOST",
-        KEY_NAV_UPDATE_INTERVAL to "NAV_UPDATE_INTERVAL"
+        KEY_NAV_UPDATE_INTERVAL to "NAV_UPDATE_INTERVAL",
+        KEY_TWS_HOST            to "TWS_HOST",
+        KEY_TWS_PORT            to "TWS_PORT"
     )
     private val DEFAULTS = mapOf(
-        KEY_BIND_HOST         to "localhost",
-        KEY_OPEN_BROWSER      to "true",
-        KEY_DATA_DIR          to "",
+        KEY_BIND_HOST           to "localhost",
+        KEY_OPEN_BROWSER        to "true",
+        KEY_DATA_DIR            to "",
         KEY_NAV_UPDATE_INTERVAL to "",
-        KEY_EXCHANGE_SUFFIXES to "SBF=.PA,LSEETF=.L"
+        KEY_EXCHANGE_SUFFIXES   to "SBF=.PA,LSEETF=.L",
+        KEY_TWS_HOST            to "127.0.0.1",
+        KEY_TWS_PORT            to "7496",
+        KEY_IBKR_RATE_INTERVAL  to "3600"
     )
 
     private val lock = ReentrantReadWriteLock()
@@ -75,10 +83,16 @@ object AppConfig {
         }
     }
 
+    fun getDefault(key: String): String = DEFAULTS[key] ?: ""
+
     // Typed accessors
     val bindHost: String get() = get(KEY_BIND_HOST).ifBlank { "localhost" }
     val openBrowser: Boolean get() = get(KEY_OPEN_BROWSER).lowercase() != "false"
     val navUpdateInterval: Long? get() = get(KEY_NAV_UPDATE_INTERVAL).toLongOrNull()?.takeIf { it > 0 }
+    val twsHost: String get() = get(KEY_TWS_HOST).ifBlank { "127.0.0.1" }
+    val twsPort: Int    get() = get(KEY_TWS_PORT).toIntOrNull()?.takeIf { it > 0 } ?: 7496
+    val ibkrRateIntervalMs: Long get() =
+        (get(KEY_IBKR_RATE_INTERVAL).toLongOrNull()?.takeIf { it > 0 } ?: 3600L) * 1000L
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

@@ -1,5 +1,16 @@
 const RESTART_KEYS = new Set(['bindHost', 'navUpdateInterval', 'dataDir']);
 
+const GLOBAL_DEFAULTS = {
+    bindHost: 'localhost',
+    openBrowser: 'true',
+    dataDir: '',
+    navUpdateInterval: '',
+    exchangeSuffixes: 'SBF=.PA,LSEETF=.L',
+    twsHost: '127.0.0.1',
+    twsPort: '7496',
+    ibkrRateInterval: '3600'
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
 
@@ -10,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('config-save-btn').addEventListener('click', async () => {
         const globalUpdates = {};
-        const portfolioUpdates = {};  // { portfolioId: { twsAccount: "..." } }
+        const portfolioUpdates = {};  // { portfolioId: { twsAccount: "...", virtualBalance: "..." } }
         let requiresRestart = false;
 
         document.querySelectorAll('[data-config-key]').forEach(el => {
@@ -52,6 +63,24 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             showStatus('Error: ' + err.message, 'error');
         }
+    });
+
+    document.getElementById('config-restore-btn').addEventListener('click', () => {
+        // Reset global inputs to defaults
+        document.querySelectorAll('[data-config-key]:not([data-portfolio-id])').forEach(el => {
+            if (el.disabled) return;
+            const def = GLOBAL_DEFAULTS[el.dataset.configKey];
+            if (def === undefined) return;
+            if (el.type === 'checkbox') el.checked = def === 'true';
+            else el.value = def;
+        });
+        // Reset per-portfolio inputs to empty/false
+        document.querySelectorAll('[data-portfolio-id]').forEach(el => {
+            if (el.type === 'checkbox') el.checked = false;
+            else el.value = '';
+        });
+        // Trigger save
+        document.getElementById('config-save-btn').click();
     });
 });
 

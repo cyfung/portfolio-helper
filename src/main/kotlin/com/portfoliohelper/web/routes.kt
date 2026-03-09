@@ -628,8 +628,8 @@ fun Application.configureRouting() {
 
         get("/api/tws/snapshot") {
             try {
-                val host = System.getenv("TWS_HOST") ?: "127.0.0.1"
-                val port = System.getenv("TWS_PORT")?.toIntOrNull() ?: 7496
+                val host = AppConfig.twsHost
+                val port = AppConfig.twsPort
                 val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
                 val account = PortfolioRegistry.get(portfolioId)?.getTwsAccount()
                 val snapshot = withContext(Dispatchers.IO) { PortfolioSnapshot.fetch(host, port, account = account) }

@@ -59,6 +59,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
     val savedAllocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL"
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
+    val virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true"
 
     // Compute totals and display currencies at function level so they can be used in both head and body
     val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
@@ -101,6 +102,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         var savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
                         var savedAllocAddMode = "$savedAllocAddMode";
                         var savedAllocReduceMode = "$savedAllocReduceMode";
+                        var virtualBalanceEnabled = $virtualBalanceEnabled;
                         """.trimIndent()
                     )
                 }
@@ -161,12 +163,14 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Edit" }
                         }
 
-                        button(classes = "virtual-rebal-btn") {
-                            attributes["id"] = "virtual-rebal-btn"
-                            attributes["type"] = "button"
-                            attributes["title"] =
-                                "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
-                            span(classes = "toggle-label") { +"Virtual Rebalance" }
+                        if (virtualBalanceEnabled) {
+                            button(classes = "virtual-rebal-btn") {
+                                attributes["id"] = "virtual-rebal-btn"
+                                attributes["type"] = "button"
+                                attributes["title"] =
+                                    "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+                                span(classes = "toggle-label") { +"Virtual Rebalance" }
+                            }
                         }
 
                         button(classes = "rebal-toggle") {

@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.portfoliohelper.AppConfig
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
@@ -59,7 +60,7 @@ object IbkrMarginRateService {
         serviceScope.launch {
             fetchRates()
             while (isActive) {
-                delay(24 * 60 * 60 * 1000L)
+                delay(AppConfig.ibkrRateIntervalMs)
                 fetchRates()
             }
         }

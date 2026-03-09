@@ -2,6 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
+import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PortfolioRegistry
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -33,20 +34,80 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 
                     // IB Connection
                     renderConfigSection("IB Connection") {
-                        for (entry in PortfolioRegistry.entries) {
-                            renderConfigField(
-                                label = "TWS Account (${entry.name})",
-                                description = "Interactive Brokers account ID for the ${entry.name} portfolio",
-                                inputId = "tws-account-${entry.id}",
-                                badge = null
-                            ) {
-                                input(type = InputType.text) {
-                                    id = "tws-account-${entry.id}"
-                                    name = "twsAccount"
-                                    placeholder = "e.g. U1234567"
-                                    value = entry.getTwsAccount() ?: ""
-                                    attributes["data-config-key"] = "twsAccount"
-                                    attributes["data-portfolio-id"] = entry.id
+                        // Per-portfolio table
+                        table(classes = "portfolio-config-table") {
+                            thead {
+                                tr {
+                                    th { +"Portfolio" }
+                                    th { +"TWS Account" }
+                                    th { +"Virtual Balance" }
+                                }
+                            }
+                            tbody {
+                                for (entry in PortfolioRegistry.entries) {
+                                    val virtualBalance = getPortfolioConfValue(entry, "virtualBalance") == "true"
+                                    tr {
+                                        td { +entry.name }
+                                        td {
+                                            input(type = InputType.text) {
+                                                placeholder = "e.g. U1234567"
+                                                value = entry.getTwsAccount() ?: ""
+                                                attributes["data-config-key"] = "twsAccount"
+                                                attributes["data-portfolio-id"] = entry.id
+                                            }
+                                        }
+                                        td(classes = "portfolio-config-table-checkbox-col") {
+                                            input(type = InputType.checkBox) {
+                                                checked = virtualBalance
+                                                attributes["data-config-key"] = "virtualBalance"
+                                                attributes["data-portfolio-id"] = entry.id
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        val twsHostEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_TWS_HOST)
+                        renderConfigField(
+                            label = "TWS Host",
+                            description = "Hostname or IP address of the TWS / IB Gateway.",
+                            inputId = "tws-host",
+                            badge = null
+                        ) {
+                            input(type = InputType.text) {
+                                id = "tws-host"
+                                placeholder = "127.0.0.1"
+                                value = AppConfig.get(AppConfig.KEY_TWS_HOST)
+                                disabled = twsHostEnvOverridden
+                                attributes["data-config-key"] = AppConfig.KEY_TWS_HOST
+                            }
+                            if (twsHostEnvOverridden) {
+                                span(classes = "config-env-override-note") {
+                                    +"Set by TWS_HOST env var"
+                                }
+                            }
+                        }
+
+                        val twsPortEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_TWS_PORT)
+                        renderConfigField(
+                            label = "TWS Port",
+                            description = "Port of the TWS / IB Gateway. Default: 7496 (live), 7497 (paper), 4001 (IB Gateway live).",
+                            inputId = "tws-port",
+                            badge = null
+                        ) {
+                            input(type = InputType.number) {
+                                id = "tws-port"
+                                placeholder = "7496"
+                                value = AppConfig.get(AppConfig.KEY_TWS_PORT)
+                                disabled = twsPortEnvOverridden
+                                attributes["data-config-key"] = AppConfig.KEY_TWS_PORT
+                                attributes["min"] = "1"
+                                attributes["max"] = "65535"
+                            }
+                            if (twsPortEnvOverridden) {
+                                span(classes = "config-env-override-note") {
+                                    +"Set by TWS_PORT env var"
                                 }
                             }
                         }
@@ -146,6 +207,21 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 }
                             }
                         }
+
+                        renderConfigField(
+                            label = "IBKR Margin Rate Interval (seconds)",
+                            description = "How often to refresh IB margin rates. Default: 3600 (1 hour). Takes effect on next fetch cycle.",
+                            inputId = "ibkr-rate-interval",
+                            badge = null
+                        ) {
+                            input(type = InputType.number) {
+                                id = "ibkr-rate-interval"
+                                placeholder = "3600"
+                                value = AppConfig.getRaw(AppConfig.KEY_IBKR_RATE_INTERVAL) ?: ""
+                                attributes["data-config-key"] = AppConfig.KEY_IBKR_RATE_INTERVAL
+                                attributes["min"] = "60"
+                            }
+                        }
                     }
 
                     // Actions
@@ -154,6 +230,11 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             id = "config-save-btn"
                             attributes["type"] = "button"
                             +"Save All"
+                        }
+                        button(classes = "config-restore-btn") {
+                            id = "config-restore-btn"
+                            attributes["type"] = "button"
+                            +"Restore Defaults"
                         }
                         div(classes = "config-status") {
                             id = "config-status"
@@ -165,6 +246,19 @@ internal suspend fun ApplicationCall.renderConfigPage() {
         }
     }
 }
+
+private fun getPortfolioConfValue(entry: ManagedPortfolio, key: String): String? = runCatching {
+    val f = java.io.File(entry.portfolioConfigPath)
+    if (!f.exists()) return@runCatching null
+    f.readLines()
+        .filter { '=' in it && !it.startsWith('#') }
+        .mapNotNull {
+            val k = it.substringBefore('=').trim()
+            val v = it.substringAfter('=').trim()
+            if (k == key && v.isNotEmpty()) v else null
+        }
+        .firstOrNull()
+}.getOrNull()
 
 private fun FlowContent.renderConfigSection(title: String, block: DIV.() -> Unit) {
     div(classes = "config-section") {
@@ -202,8 +296,8 @@ private fun FlowContent.renderConfigField(
                 }
             }
         }
-        block()
         span(classes = "config-field-description") { +description }
+        div(classes = "config-field-input-col") { block() }
     }
 }
 
@@ -213,10 +307,12 @@ private fun FlowContent.renderReadOnlyField(label: String, description: String, 
             span { +label }
             span(classes = "config-badge config-badge-readonly") { +"read-only" }
         }
-        input(type = InputType.text) {
-            this.value = value
-            disabled = true
-        }
         span(classes = "config-field-description") { +description }
+        div(classes = "config-field-input-col") {
+            input(type = InputType.text) {
+                this.value = value
+                disabled = true
+            }
+        }
     }
 }
