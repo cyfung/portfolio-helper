@@ -103,7 +103,7 @@ function updateGroupTable() {
         ['Day %', 'col-num col-market-data'],
         ['Mkt Val Chg', 'col-num col-market-data'],
         ['Mkt Val', 'col-num col-market-data'],
-        ['Weight', 'rebal-column'],
+        ['Weight', ''],
         ['Rebal $', 'rebal-column'],
         ['Alloc $', 'alloc-column'],
     ].forEach(([text, cls]) => {
@@ -145,12 +145,16 @@ function updateGroupTable() {
         mk(formatCurrency(g.mktVal), 'col-num col-market-data value');
         mk(
             weightPct.toFixed(1) + '% <span class="weight-diff ' + diffCls + '">(' + diffSign + Math.abs(weightDiff).toFixed(1) + '%)</span>',
-            'col-num rebal-column value', true
+            'col-num value', true
         );
         mk(formatSignedCurrency(rebalDollars), 'price-change ' + rebalDir + ' rebal-column');
         mk(formatSignedCurrency(allocDollars), 'price-change ' + allocDir + ' alloc-column');
     });
 
+    const warning = document.createElement('p');
+    warning.style.cssText = 'font-size:var(--font-size-md); opacity:0.7; margin:0.5rem 0 0.75rem;';
+    warning.textContent = '\u26A0\uFE0E Group values should be interpreted cautiously — their meaning depends heavily on how groups are defined.';
+    container.appendChild(warning);
     container.appendChild(table);
 }
 

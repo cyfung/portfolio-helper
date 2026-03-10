@@ -167,6 +167,7 @@ function updateAllocColumns(rebalTotal) {
             qtyCell.className = 'price-change loaded alloc-column ' + dir;
         }
     }
+    if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
 }
 
 // ── Allocation computation strategies ────────────────────────────────────────
