@@ -379,7 +379,7 @@ private fun FlowContent.renderUpdatesSection() {
                     id = "apply-update-btn"
                     attributes["type"] = "button"
                     if (phase != DownloadPhase.READY) {
-                        disabled = true
+                        attributes["hidden"] = "hidden"
                     }
                     +"Apply Update & Restart"
                 }

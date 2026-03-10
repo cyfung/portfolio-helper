@@ -166,7 +166,7 @@ function initUpdates() {
             dlBtn.disabled = !info?.hasUpdate || phase !== 'IDLE';
         }
         if (applyBtn) {
-            applyBtn.disabled = phase !== 'READY';
+            applyBtn.hidden = phase !== 'READY';
         }
     }
 
@@ -196,6 +196,7 @@ function initUpdates() {
     fetch('/api/admin/update-info').then(r => r.json()).then(info => {
         updateProgressUI(info);
         setButtonStates(info);
+        if (info.download?.phase === 'DOWNLOADING') startDownloadPoll();
     }).catch(() => {});
 
     const checkBtn = document.getElementById('check-update-btn');

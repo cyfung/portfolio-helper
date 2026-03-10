@@ -1,6 +1,7 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.APP_VERSION
+import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.UpdateService
 import kotlinx.html.*
 
