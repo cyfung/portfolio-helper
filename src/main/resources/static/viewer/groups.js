@@ -124,10 +124,6 @@ function updateGroupTable() {
 
         const isZeroChg = Math.abs(mktValChg) < 0.01;
         const chgCls = isZeroChg ? 'neutral' : mktValChg > 0 ? 'positive' : 'negative';
-        const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'positive' : 'negative') : 'neutral';
-        const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'positive' : 'negative') : 'neutral';
-        const diffCls = Math.abs(weightDiff) > 2.0 ? 'alert' : Math.abs(weightDiff) > 1.0 ? 'warning' : 'good';
-        const diffSign = weightDiff >= 0 ? '-' : '+';
 
         const tr = tbody.insertRow();
         const mk = (html, cls, isHtml) => {
@@ -143,12 +139,23 @@ function updateGroupTable() {
         mk(dayPctText, 'col-num col-market-data price-change ' + chgCls);
         mk(isZeroChg ? '—' : formatSignedCurrency(mktValChg), 'price-change ' + chgCls);
         mk(formatCurrency(g.mktVal), 'col-num col-market-data value');
-        mk(
-            weightPct.toFixed(1) + '% <span class="weight-diff ' + diffCls + '">(' + diffSign + Math.abs(weightDiff).toFixed(1) + '%)</span>',
-            'col-num value', true
-        );
-        mk(formatSignedCurrency(rebalDollars), 'price-change ' + rebalDir + ' rebal-column');
-        mk(formatSignedCurrency(allocDollars), 'price-change ' + allocDir + ' alloc-column');
+
+        if (!portfolioValueKnown) {
+            mk('N/A', 'col-num value');
+            mk('N/A', 'price-change rebal-column');
+            mk('N/A', 'price-change alloc-column');
+        } else {
+            const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'positive' : 'negative') : 'neutral';
+            const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'positive' : 'negative') : 'neutral';
+            const diffCls = Math.abs(weightDiff) > 2.0 ? 'alert' : Math.abs(weightDiff) > 1.0 ? 'warning' : 'good';
+            const diffSign = weightDiff >= 0 ? '-' : '+';
+            mk(
+                weightPct.toFixed(1) + '% <span class="weight-diff ' + diffCls + '">(' + diffSign + Math.abs(weightDiff).toFixed(1) + '%)</span>',
+                'col-num value', true
+            );
+            mk(formatSignedCurrency(rebalDollars), 'price-change ' + rebalDir + ' rebal-column');
+            mk(formatSignedCurrency(allocDollars), 'price-change ' + allocDir + ' alloc-column');
+        }
     });
 
     const warning = document.createElement('p');

@@ -126,6 +126,7 @@ function updateAllocColumns(rebalTotal) {
         document.querySelectorAll('[id^="alloc-qty-"]').forEach(c => {
             c.textContent = 'N/A'; c.className = 'price-change alloc-column';
         });
+        if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
         return;
     }
     const delta = rebalTotal - lastPortfolioVal;
