@@ -1,6 +1,7 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.APP_VERSION
+import com.portfoliohelper.service.UpdateService
 import kotlinx.html.*
 
 enum class AppPage(val line1: String, val line2: String, val href: String) {
@@ -49,7 +50,15 @@ internal val appVersion: String get() = APP_VERSION
 /** Wraps the header-buttons group with a version label above it, right-aligned. */
 fun DIV.renderHeaderRight(block: DIV.() -> Unit) {
     div(classes = "header-right") {
-        span(classes = "version-badge") { +"v$appVersion" }
+        div(classes = "version-badge-wrapper") {
+            span(classes = "version-badge") { +"v$appVersion" }
+            if (UpdateService.getInfo().hasUpdate) {
+                val latest = UpdateService.getInfo().latestVersion
+                span(classes = "update-dot") {
+                    title = if (latest != null) "Update available: v$latest" else "Update available"
+                }
+            }
+        }
         div(classes = "header-buttons") { block() }
     }
 }

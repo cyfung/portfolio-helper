@@ -211,16 +211,14 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                     }
                 }
 
-                // Tab bar — always rendered; tabs shown only when multiple portfolios exist
+                // Tab bar — always rendered
                 div(classes = "portfolio-tabs") {
-                    if (allPortfolios.size > 1) {
-                        for (p in allPortfolios) {
-                            val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
-                            a(
-                                href = href,
-                                classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}"
-                            ) { +p.name }
-                        }
+                    for (p in allPortfolios) {
+                        val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
+                        a(
+                            href = href,
+                            classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}"
+                        ) { +p.name }
                     }
                     button(classes = "save-portfolio-btn") {
                         attributes["id"] = "save-to-backtest-btn"

@@ -1,6 +1,8 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.AppDirs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.awt.*
 import java.awt.event.MouseAdapter
@@ -65,7 +67,7 @@ object NewTrayService {
         return tempIcon.absolutePath
     }
 
-    fun createTray(url: String): Boolean {
+    fun createTray(url: String, scope: CoroutineScope): Boolean {
         if (!SystemTray.isSupported()) {
             return false
         }
@@ -75,9 +77,11 @@ object NewTrayService {
         val popup = PopupMenu()
         val openItem = MenuItem("Open")
         val openDirItem = MenuItem("Open Data Directory")
+        val checkUpdateItem = MenuItem("Check for Updates")
         val exitItem = MenuItem("Exit")
         popup.add(openItem)
         popup.add(openDirItem)
+        popup.add(checkUpdateItem)
         popup.addSeparator()
         popup.add(exitItem)
 
@@ -102,6 +106,11 @@ object NewTrayService {
             } catch (e: Exception) {
                 logger.warn("Failed to open data directory: ${e.message}")
             }
+        }
+
+        checkUpdateItem.addActionListener {
+            scope.launch { UpdateService.checkForUpdate() }
+            BrowserService.openBrowser("$url/config")
         }
 
         exitItem.addActionListener {

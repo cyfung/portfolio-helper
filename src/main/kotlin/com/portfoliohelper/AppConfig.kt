@@ -15,6 +15,7 @@ object AppConfig {
     const val KEY_TWS_HOST            = "twsHost"
     const val KEY_TWS_PORT            = "twsPort"
     const val KEY_IBKR_RATE_INTERVAL  = "ibkrRateInterval"
+    const val KEY_GITHUB_REPO         = "githubRepo"
 
     // Fixed OS config path (NOT inside dataDir — avoids circular dependency)
     val userConfigFile: File = run {
@@ -48,7 +49,8 @@ object AppConfig {
         KEY_EXCHANGE_SUFFIXES   to "SBF=.PA,LSEETF=.L",
         KEY_TWS_HOST            to "127.0.0.1",
         KEY_TWS_PORT            to "7496",
-        KEY_IBKR_RATE_INTERVAL  to "3600"
+        KEY_IBKR_RATE_INTERVAL  to "3600",
+        KEY_GITHUB_REPO         to "cyfung/portfolio-helper"
     )
 
     private val lock = ReentrantReadWriteLock()
@@ -91,6 +93,7 @@ object AppConfig {
     val twsPort: Int    get() = get(KEY_TWS_PORT).toIntOrNull()?.takeIf { it > 0 } ?: 7496
     val ibkrRateIntervalMs: Long get() =
         (get(KEY_IBKR_RATE_INTERVAL).toLongOrNull()?.takeIf { it > 0 } ?: 3600L) * 1000L
+    val githubRepo: String get() = get(KEY_GITHUB_REPO).ifBlank { "cyfung/portfolio-helper" }
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

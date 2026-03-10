@@ -13,6 +13,7 @@ const GLOBAL_DEFAULTS = {
 
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
+    initUpdates();
 
     // Snapshot originals for restart detection
     document.querySelectorAll('[data-config-key]').forEach(el => {
@@ -88,4 +89,160 @@ function showStatus(msg, type) {
     const el = document.getElementById('config-status');
     el.textContent = msg;
     el.className = 'config-status config-status-' + type;
+}
+
+function showUpdateStatus(msg, type) {
+    const el = document.getElementById('update-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'config-status config-status-' + (type || 'ok');
+}
+
+function attemptReconnect() {
+    fetch('/').then(r => {
+        if (r.ok) location.reload();
+        else setTimeout(attemptReconnect, 1000);
+    }).catch(() => setTimeout(attemptReconnect, 1000));
+}
+
+function initUpdates() {
+    let downloadPollTimer = null;
+
+    function fmtBytes(bytes) {
+        if (bytes <= 0) return '?';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    function updateProgressUI(info) {
+        const row = document.getElementById('update-progress-row');
+        const bar = document.getElementById('update-progress-bar');
+        const label = document.getElementById('update-progress-label');
+        if (!row || !bar || !label) return;
+
+        const phase = info.download?.phase;
+        if (phase === 'DOWNLOADING' || phase === 'READY' || phase === 'APPLYING') {
+            row.classList.add('visible');
+            const received = info.download.bytesReceived || 0;
+            const total = info.download.totalBytes || 0;
+            const pct = total > 0 ? Math.round(received / total * 100) : 0;
+            bar.style.width = pct + '%';
+            if (phase === 'READY') {
+                bar.style.width = '100%';
+                label.textContent = 'Download complete';
+            } else if (phase === 'APPLYING') {
+                label.textContent = 'Applying update…';
+            } else {
+                label.textContent = fmtBytes(received) + ' / ' + fmtBytes(total);
+            }
+        } else {
+            row.classList.remove('visible');
+        }
+    }
+
+    function setButtonStates(info) {
+        const dlBtn = document.getElementById('download-update-btn');
+        const applyBtn = document.getElementById('apply-update-btn');
+        const phase = info?.download?.phase || 'IDLE';
+        if (dlBtn) {
+            dlBtn.disabled = !info?.hasUpdate || phase !== 'IDLE';
+        }
+        if (applyBtn) {
+            applyBtn.disabled = phase !== 'READY';
+        }
+    }
+
+    function startDownloadPoll() {
+        if (downloadPollTimer) return;
+        downloadPollTimer = setInterval(async () => {
+            try {
+                const r = await fetch('/api/admin/update-info');
+                const info = await r.json();
+                updateProgressUI(info);
+                setButtonStates(info);
+                if (info.download?.phase !== 'DOWNLOADING') {
+                    clearInterval(downloadPollTimer);
+                    downloadPollTimer = null;
+                    if (info.download?.phase === 'READY') {
+                        showUpdateStatus('Download complete. Click "Apply Update & Restart" to install.', 'ok');
+                    }
+                }
+            } catch (_) {}
+        }, 1000);
+    }
+
+    // Initial state
+    fetch('/api/admin/update-info').then(r => r.json()).then(info => {
+        updateProgressUI(info);
+        setButtonStates(info);
+    }).catch(() => {});
+
+    const checkBtn = document.getElementById('check-update-btn');
+    if (checkBtn) {
+        checkBtn.addEventListener('click', async () => {
+            checkBtn.disabled = true;
+            showUpdateStatus('Checking for updates…', 'ok');
+            try {
+                const r = await fetch('/api/admin/check-update', { method: 'POST' });
+                const info = await r.json();
+                setButtonStates(info);
+                if (info.lastCheckError) {
+                    showUpdateStatus('Check failed: ' + info.lastCheckError, 'error');
+                } else if (info.hasUpdate) {
+                    showUpdateStatus('Update available: v' + info.latestVersion, 'warn');
+                } else {
+                    showUpdateStatus('You are up to date (v' + info.currentVersion + ').', 'ok');
+                }
+            } catch (err) {
+                showUpdateStatus('Error: ' + err.message, 'error');
+            } finally {
+                checkBtn.disabled = false;
+            }
+        });
+    }
+
+    const dlBtn = document.getElementById('download-update-btn');
+    if (dlBtn) {
+        dlBtn.addEventListener('click', async () => {
+            dlBtn.disabled = true;
+            showUpdateStatus('Starting download…', 'ok');
+            try {
+                await fetch('/api/admin/download-update', { method: 'POST' });
+                startDownloadPoll();
+            } catch (err) {
+                showUpdateStatus('Error: ' + err.message, 'error');
+                dlBtn.disabled = false;
+            }
+        });
+    }
+
+    const applyBtn = document.getElementById('apply-update-btn');
+    if (applyBtn) {
+        applyBtn.addEventListener('click', async () => {
+            applyBtn.disabled = true;
+            showUpdateStatus('Applying update and restarting…', 'ok');
+            try {
+                await fetch('/api/admin/apply-update', { method: 'POST' });
+                showUpdateStatus('Restarting… reconnecting when ready.', 'ok');
+                setTimeout(attemptReconnect, 2000);
+            } catch (err) {
+                showUpdateStatus('Error: ' + err.message, 'error');
+            }
+        });
+    }
+
+    const restartBtn = document.getElementById('restart-btn');
+    if (restartBtn) {
+        restartBtn.addEventListener('click', async () => {
+            restartBtn.disabled = true;
+            showUpdateStatus('Restarting app…', 'ok');
+            try {
+                await fetch('/api/admin/restart', { method: 'POST' });
+                showUpdateStatus('Restarting… reconnecting when ready.', 'ok');
+                setTimeout(attemptReconnect, 2000);
+            } catch (err) {
+                showUpdateStatus('Restart signal sent. Reconnecting…', 'ok');
+                setTimeout(attemptReconnect, 2000);
+            }
+        });
+    }
 }

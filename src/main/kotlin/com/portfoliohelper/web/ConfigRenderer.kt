@@ -2,8 +2,11 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
+import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PortfolioRegistry
+import com.portfoliohelper.service.UpdateService
+import com.portfoliohelper.service.UpdateService.DownloadPhase
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
@@ -172,6 +175,9 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                         }
                     }
 
+                    // Updates & Restart
+                    renderUpdatesSection()
+
                     // Market Data
                     renderConfigSection("Market Data") {
                         renderConfigField(
@@ -185,6 +191,20 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 placeholder = "SBF=.PA,LSEETF=.L"
                                 value = AppConfig.get(AppConfig.KEY_EXCHANGE_SUFFIXES)
                                 attributes["data-config-key"] = AppConfig.KEY_EXCHANGE_SUFFIXES
+                            }
+                        }
+
+                        renderConfigField(
+                            label = "GitHub Repository",
+                            description = "GitHub repo for update checks (owner/repo format).",
+                            inputId = "github-repo",
+                            badge = null
+                        ) {
+                            input(type = InputType.text) {
+                                id = "github-repo"
+                                placeholder = "cyfung/portfolio-helper"
+                                value = AppConfig.get(AppConfig.KEY_GITHUB_REPO)
+                                attributes["data-config-key"] = AppConfig.KEY_GITHUB_REPO
                             }
                         }
 
@@ -260,6 +280,103 @@ private fun getPortfolioConfValue(entry: ManagedPortfolio, key: String): String?
             if (k == key && v.isNotEmpty()) v else null
         }
 }.getOrNull()
+
+private fun FlowContent.renderUpdatesSection() {
+    val info = UpdateService.getInfo()
+    val phase = info.download.phase
+    renderConfigSection("Updates & Restart") {
+        // Current version
+        renderReadOnlyField(
+            label = "Current Version",
+            description = "The version of Portfolio Helper currently running.",
+            value = "v$APP_VERSION"
+        )
+
+        // Latest version
+        div(classes = "config-field") {
+            div(classes = "config-field-label-row") {
+                span { +"Latest Version" }
+                if (info.hasUpdate) {
+                    span(classes = "config-badge config-badge-update") { +"update available" }
+                }
+            }
+            span(classes = "config-field-description") { +"Latest release from GitHub." }
+            div(classes = "config-field-input-col") {
+                if (info.latestVersion != null) {
+                    val releaseHref = info.releaseUrl ?: "#"
+                    a(href = releaseHref) {
+                        attributes["target"] = "_blank"
+                        attributes["rel"] = "noopener"
+                        +"v${info.latestVersion}"
+                    }
+                } else if (info.lastCheckError != null) {
+                    span(classes = "config-env-override-note") { +"Check failed: ${info.lastCheckError}" }
+                } else {
+                    span(classes = "config-env-override-note") { +"Not checked yet" }
+                }
+            }
+        }
+
+        // Download progress bar (shown via JS when downloading)
+        div(classes = "update-progress-row") {
+            id = "update-progress-row"
+            div(classes = "config-field-label-row") {
+                span { +"Download Progress" }
+            }
+            div(classes = "update-progress-bar-container") {
+                div(classes = "update-progress-bar") { id = "update-progress-bar" }
+            }
+            span(classes = "config-field-description") {
+                id = "update-progress-label"
+                +"0 / 0 MB"
+            }
+        }
+
+        if (!info.isJpackageInstall) {
+            div(classes = "config-field") {
+                span(classes = "config-env-override-note") {
+                    +"Running as portable JAR — download updates manually from GitHub."
+                }
+            }
+        }
+
+        // Action buttons
+        div(classes = "update-action-buttons") {
+            button(classes = "config-restore-btn") {
+                id = "check-update-btn"
+                attributes["type"] = "button"
+                +"Check for Updates"
+            }
+            if (info.isJpackageInstall) {
+                button(classes = "config-restore-btn") {
+                    id = "download-update-btn"
+                    attributes["type"] = "button"
+                    if (!info.hasUpdate || phase != DownloadPhase.IDLE) {
+                        disabled = true
+                    }
+                    +"Download Update"
+                }
+                button(classes = "config-save-btn") {
+                    id = "apply-update-btn"
+                    attributes["type"] = "button"
+                    if (phase != DownloadPhase.READY) {
+                        disabled = true
+                    }
+                    +"Apply Update & Restart"
+                }
+            }
+            button(classes = "config-restore-btn") {
+                id = "restart-btn"
+                attributes["type"] = "button"
+                +"Restart App"
+            }
+        }
+
+        div(classes = "config-status") {
+            id = "update-status"
+        }
+    }
+}
 
 private fun FlowContent.renderConfigSection(title: String, block: DIV.() -> Unit) {
     div(classes = "config-section") {

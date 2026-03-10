@@ -117,6 +117,7 @@ fun main() {
     // 4b. Backup portfolios (on startup + daily)
     // ---------------------------------------------------------------
     BackupService.start(appScope)
+    UpdateService.initialize(appScope)
 
     // ---------------------------------------------------------------
     // 5. Compute union of all symbols across all portfolios
@@ -245,7 +246,7 @@ fun main() {
     // ---------------------------------------------------------------
     // 11. System tray
     // ---------------------------------------------------------------
-    NewTrayService.createTray(url)
+    NewTrayService.createTray(url, appScope)
 
     // ---------------------------------------------------------------
     // 12. Start web server

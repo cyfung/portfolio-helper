@@ -24,22 +24,6 @@ object IbkrMarginRateService {
         val tiers: List<RateTier>   // ordered lowest → highest threshold
     ) {
         val baseRate: Double get() = tiers.first().rate
-
-        /** Blended interest rate for the given loan amount in this currency */
-        fun blendedRate(amount: Double): Double {
-            var remaining = amount
-            var totalInterest = 0.0
-            var prevUpTo = 0.0
-            for (tier in tiers) {
-                val capacity = if (tier.upTo != null) tier.upTo - prevUpTo else Double.MAX_VALUE
-                val inTier = minOf(remaining, capacity)
-                totalInterest += inTier * tier.rate / 100.0
-                remaining -= inTier
-                if (remaining <= 0) break
-                prevUpTo = tier.upTo ?: 0.0
-            }
-            return if (amount > 0) (totalInterest / amount) * 100.0 else baseRate
-        }
     }
 
     private val logger = LoggerFactory.getLogger(IbkrMarginRateService::class.java)

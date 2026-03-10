@@ -349,6 +349,13 @@ h1 {
 /* ============================================
    Version Badge
    ============================================ */
+.version-badge-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .version-badge {
     font-size: 0.7rem;
     color: var(--color-muted, #888);
@@ -356,6 +363,15 @@ h1 {
     letter-spacing: 0.02em;
     user-select: none;
     white-space: nowrap;
+}
+
+.update-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-accent-primary);
+    flex-shrink: 0;
+    cursor: default;
 }
 
 /* ============================================
@@ -671,6 +687,49 @@ h1 {
 .config-restore-btn:hover {
     border-color: var(--color-border-strong);
     color: var(--color-text-primary);
+}
+
+.config-badge-update {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+[data-theme="dark"] .config-badge-update {
+    background: rgba(16, 185, 129, .15);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, .3);
+}
+
+.update-progress-row {
+    display: none;
+}
+
+.update-progress-row.visible {
+    display: block;
+}
+
+.update-progress-bar-container {
+    width: 100%;
+    height: 6px;
+    background: var(--color-border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.update-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--color-accent-primary);
+    transition: width 0.3s ease;
+}
+
+.update-action-buttons {
+    display: flex;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+    margin-top: var(--spacing-md);
 }
 
 .portfolio-config-table {

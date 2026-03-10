@@ -1,5 +1,8 @@
 import com.github.jk1.license.render.TextReportRenderer
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 plugins {
     kotlin("jvm") version "2.3.0"
@@ -12,7 +15,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.4.4"
+version = "0.4.5"
 
 repositories {
     mavenCentral()
@@ -86,7 +89,7 @@ tasks {
     shadowJar {
         archiveBaseName.set("portfolio-helper")
         archiveClassifier.set("all")
-        archiveVersion.set(project.version.toString())
+        archiveVersion.set("")
 
         mergeServiceFiles()  // Critical for Ktor's ServiceLoader
 
@@ -299,6 +302,78 @@ licenseReport {
         InventoryHtmlReportRenderer("index.html", "Third Party Licenses")
     )
     excludeGroups = arrayOf("com.portfoliohelper")
+}
+
+// GitHub Release Task
+tasks.register("githubRelease") {
+    group = "distribution"
+    description = "Creates a GitHub release and uploads distribution artifacts. Requires GITHUB_TOKEN env var and a pre-existing git tag matching v{version}."
+    dependsOn(tasks.named("portableDistZip"), tasks.named("jpackageDistZip"))
+    doLast {
+        val token = System.getenv("GITHUB_TOKEN") ?: error("GITHUB_TOKEN required")
+        val repo = System.getenv("GITHUB_REPO")
+            ?: (project.findProperty("githubRepo") as? String)
+            ?: error("GITHUB_REPO env or githubRepo in gradle.properties required")
+        val ver = project.version.toString()
+        val tagName = "v$ver"
+
+        fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+
+        val releaseBody = """## Portfolio Helper $tagName
+
+### Downloads
+- **Self-contained app** (no Java required): `ib-viewer-jpackage-$ver.zip`
+- **Portable JAR** (requires Java 17+): `ib-viewer-portable-complete.zip`"""
+
+        // Step 1: Create release
+        println("Creating GitHub release $tagName on $repo...")
+        val releasePayload = """{"tag_name":"$tagName","name":"Portfolio Helper $tagName","body":"${releaseBody.escapeJson()}","draft":false,"prerelease":false}"""
+        val releaseConn = URL("https://api.github.com/repos/$repo/releases").openConnection() as HttpURLConnection
+        releaseConn.requestMethod = "POST"
+        releaseConn.setRequestProperty("Authorization", "Bearer $token")
+        releaseConn.setRequestProperty("Content-Type", "application/json")
+        releaseConn.setRequestProperty("Accept", "application/vnd.github+json")
+        releaseConn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        releaseConn.doOutput = true
+        releaseConn.outputStream.use { it.write(releasePayload.toByteArray(Charsets.UTF_8)) }
+
+        val releaseCode = releaseConn.responseCode
+        val releaseText = if (releaseCode in 200..299)
+            releaseConn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        else
+            releaseConn.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+
+        if (releaseCode !in 200..299) error("Failed to create release (HTTP $releaseCode): $releaseText")
+
+        val uploadUrlTemplate = Regex("\"upload_url\"\\s*:\\s*\"([^\"]+)\"").find(releaseText)?.groupValues?.get(1)
+            ?: error("No upload_url in response: $releaseText")
+        val uploadBaseUrl = uploadUrlTemplate.substringBefore("{")
+        println("Release created. Uploading artifacts...")
+
+        // Step 2: Upload artifacts
+        val distDir = layout.buildDirectory.dir("distributions").get().asFile
+        val artifacts = distDir.listFiles { f -> f.name.endsWith(".zip") } ?: emptyArray()
+        for (artifact in artifacts) {
+            println("Uploading ${artifact.name} (${"%.1f".format(artifact.length() / 1024.0 / 1024.0)} MB)...")
+            val uploadUrl = URL("$uploadBaseUrl?name=${URLEncoder.encode(artifact.name, "UTF-8")}")
+            val uploadConn = uploadUrl.openConnection() as HttpURLConnection
+            uploadConn.requestMethod = "POST"
+            uploadConn.setRequestProperty("Authorization", "Bearer $token")
+            uploadConn.setRequestProperty("Content-Type", "application/zip")
+            uploadConn.setRequestProperty("Accept", "application/vnd.github+json")
+            uploadConn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+            uploadConn.doOutput = true
+            uploadConn.setFixedLengthStreamingMode(artifact.length())
+            uploadConn.outputStream.use { out -> artifact.inputStream().use { it.copyTo(out) } }
+            val upCode = uploadConn.responseCode
+            if (upCode !in 200..299) {
+                val err = uploadConn.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+                error("Failed to upload ${artifact.name} (HTTP $upCode): $err")
+            }
+            println("  Uploaded ${artifact.name}")
+        }
+        println("GitHub release $tagName created successfully!")
+    }
 }
 
 // Convenience task for complete jpackage distribution

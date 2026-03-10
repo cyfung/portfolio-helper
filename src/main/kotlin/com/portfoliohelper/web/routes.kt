@@ -3,6 +3,8 @@ package com.portfoliohelper.web
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.*
+import com.portfoliohelper.service.UpdateService
+import com.portfoliohelper.service.UpdateService.toJson
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -11,6 +13,9 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import org.apache.commons.csv.CSVFormat
@@ -662,6 +667,55 @@ fun Application.configureRouting() {
                     ContentType.Application.Json,
                     HttpStatusCode.InternalServerError
                 )
+            }
+        }
+
+        // Admin
+        get("/api/admin/update-info") {
+            call.respondText(UpdateService.getInfo().toJson(), ContentType.Application.Json)
+        }
+
+        post("/api/admin/check-update") {
+            try {
+                UpdateService.checkForUpdate()
+                call.respondText(UpdateService.getInfo().toJson(), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    UpdateService.getInfo().toJson(),
+                    ContentType.Application.Json,
+                    HttpStatusCode.OK
+                )
+            }
+        }
+
+        post("/api/admin/download-update") {
+            if (!UpdateService.isJpackageInstall) {
+                call.respondText("""{"status":"not-supported"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
+                return@post
+            }
+            GlobalScope.launch(Dispatchers.IO) {
+                runCatching { UpdateService.downloadUpdate() }
+            }
+            call.respond(HttpStatusCode.Accepted, """{"status":"started"}""")
+        }
+
+        post("/api/admin/apply-update") {
+            if (!UpdateService.isJpackageInstall) {
+                call.respondText("""{"status":"not-supported"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
+                return@post
+            }
+            call.respondText("""{"status":"applying"}""", ContentType.Application.Json)
+            GlobalScope.launch(Dispatchers.IO) {
+                delay(500)
+                UpdateService.applyUpdate()
+            }
+        }
+
+        post("/api/admin/restart") {
+            call.respondText("""{"status":"restarting"}""", ContentType.Application.Json)
+            GlobalScope.launch(Dispatchers.IO) {
+                delay(500)
+                UpdateService.relaunchSelf()
             }
         }
 
