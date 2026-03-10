@@ -20,6 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Must run before restoring targets so lastMarginUsd is correct.
     updateCashTotals();
 
+    // Populate lastPortfolioVal from server-rendered DOM prices before restoring targets,
+    // so delta is correct and alloc columns don't flash wrong values on load.
+    updateTotalValue();
+
     // Restore saved rebalance/margin targets — margin % takes priority
     const marginTargetInput = document.getElementById('margin-target-input');
     const rebalTargetInput = document.getElementById('rebal-target-input');
