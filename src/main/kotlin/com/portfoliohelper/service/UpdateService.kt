@@ -150,7 +150,7 @@ object UpdateService {
                     .header("User-Agent", "portfolio-helper/$APP_VERSION")
                     .build()
                 httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) error("Download failed: ${response.code}")
+                    if (!response.isSuccessful) error("HTTP ${response.code}")
                     val body = response.body ?: error("Empty response body")
                     val totalBytes = body.contentLength()
                     Files.newOutputStream(pendingJar).use { out ->
@@ -181,7 +181,7 @@ object UpdateService {
             onDownloadReady?.invoke()
         } catch (e: Exception) {
             logger.error("Download failed: ${e.message}", e)
-            state.set(state.get().copy(download = DownloadProgress(DownloadPhase.IDLE), lastCheckError = "Download failed: ${e.message}"))
+            state.set(state.get().copy(download = DownloadProgress(DownloadPhase.IDLE), lastCheckError = e.message))
             throw e
         }
     }
