@@ -343,6 +343,22 @@ private fun FlowContent.renderUpdatesSection() {
             }
         }
 
+        // Update check interval
+        renderConfigField(
+            label = "Update Check Interval (seconds)",
+            description = "How often to check GitHub for a new release. Default: 86400 (24 hours). Minimum: 60.",
+            inputId = "update-check-interval",
+            badge = null
+        ) {
+            input(type = InputType.number) {
+                id = "update-check-interval"
+                placeholder = "86400"
+                value = AppConfig.getRaw(AppConfig.KEY_UPDATE_CHECK_INTERVAL) ?: ""
+                attributes["data-config-key"] = AppConfig.KEY_UPDATE_CHECK_INTERVAL
+                attributes["min"] = "60"
+            }
+        }
+
         // Auto Update checkbox (jpackage only)
         if (info.isJpackageInstall) {
             renderConfigField(

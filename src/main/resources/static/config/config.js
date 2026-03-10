@@ -9,7 +9,8 @@ const GLOBAL_DEFAULTS = {
     twsHost: '127.0.0.1',
     twsPort: '7496',
     ibkrRateInterval: '3600',
-    autoUpdate: 'true'
+    autoUpdate: 'true',
+    updateCheckInterval: '86400'
 };
 
 document.addEventListener('DOMContentLoaded', () => {

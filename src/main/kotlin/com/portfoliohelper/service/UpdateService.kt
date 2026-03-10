@@ -98,7 +98,7 @@ object UpdateService {
                             .onFailure { logger.warn("Auto-download failed: ${it.message}") }
                     }
                 }
-                delay(24L * 60 * 60_000)
+                delay(AppConfig.updateCheckIntervalMs)
             }
         }
     }
