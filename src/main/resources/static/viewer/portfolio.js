@@ -155,6 +155,7 @@ function updateTotalValue() {
     }
 
     updateMarginDisplay(lastMarginUsd);
+    if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
 }
 
 function updateCurrentWeights(portfolioTotal) {

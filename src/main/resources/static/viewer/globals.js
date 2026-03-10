@@ -45,3 +45,6 @@ var allocAddMode = (typeof savedAllocAddMode !== 'undefined' ? savedAllocAddMode
     || localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
 var allocReduceMode = (typeof savedAllocReduceMode !== 'undefined' ? savedAllocReduceMode : null)
     || localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
+
+// Group view state
+var groupViewActive = false;

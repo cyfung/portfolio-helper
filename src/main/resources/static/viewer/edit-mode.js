@@ -9,6 +9,7 @@ const STOCK_ROW_HTML =
     '<td class="amount"><input type="number" class="edit-input" data-column="qty" value="0" min="0" step="any" style="display:block" /></td>' +
     '<td><input type="number" class="edit-input" data-column="weight" value="0" min="0" max="100" step="0.1" /></td>' +
     '<td><input type="text" class="edit-input" data-column="letf" placeholder="e.g. 2 IVV" style="text-align:left;width:180px" /></td>' +
+    '<td><input type="text" class="edit-input" data-column="groups" placeholder="e.g. 1 Equity" style="text-align:left;width:180px" /></td>' +
     '<td><button type="button" class="delete-row-btn">\u00d7</button></td>';
 
 const CASH_ROW_HTML =
@@ -38,23 +39,25 @@ function addCashRow() {
     return tr;
 }
 
-// Returns [symInput, qtyInput, weightInput, letfInput] for any stock row
+// Returns [symInput, qtyInput, weightInput, letfInput, groupsInput] for any stock row
 function getStockRowInputs(tr) {
     return [
         tr.querySelector('.edit-symbol') || tr.querySelector('.new-symbol-input') || tr.querySelector('input[data-column="symbol"]'),
         tr.querySelector('.edit-qty')    || tr.querySelector('input[data-column="qty"]'),
         tr.querySelector('.edit-weight') || tr.querySelector('input[data-column="weight"]'),
         tr.querySelector('.edit-letf')   || tr.querySelector('input[data-column="letf"]'),
+        tr.querySelector('.edit-groups') || tr.querySelector('input[data-column="groups"]'),
     ].filter(Boolean);
 }
 
-// Returns 0=sym, 1=qty, 2=weight, 3=letf — or -1 if not a stock input
+// Returns 0=sym, 1=qty, 2=weight, 3=letf, 4=groups — or -1 if not a stock input
 function getStockColIndex(el) {
     if (el.classList.contains('edit-symbol') || el.classList.contains('new-symbol-input')) return 0;
     const col = el.getAttribute('data-column');
     if (el.classList.contains('edit-qty')    || col === 'qty')    return 1;
     if (el.classList.contains('edit-weight') || col === 'weight') return 2;
     if (el.classList.contains('edit-letf')   || col === 'letf')   return 3;
+    if (el.classList.contains('edit-groups') || col === 'groups') return 4;
     return -1;
 }
 
@@ -101,6 +104,7 @@ function buildStockEditTable() {
     mkTh('Qty <button type="button" class="copy-col-btn col-num" data-column="qty" title="Copy Qty column">' + COPY_ICON_SVG + '</button>', 'col-num');
     mkTh('Target % <button type="button" class="copy-col-btn" data-column="weight" title="Copy Target % column">' + COPY_ICON_SVG + '</button>');
     mkTh('Letf');
+    mkTh('Groups');
     mkTh('');
 
     const tbody = document.createElement('tbody');
@@ -135,6 +139,7 @@ function buildStockEditTable() {
             for (let i = 0; i + 1 < tokens.length; i += 2) parts.push(tokens[i] + ' ' + tokens[i + 1]);
             letfStr = parts.join(' ');
         }
+        const groupsStr = viewRow.dataset.groups || '';
 
         const tr = document.createElement('tr');
         const tdDrag = document.createElement('td');
@@ -144,7 +149,8 @@ function buildStockEditTable() {
         tr.appendChild(makeInputCell({ cls: 'edit-symbol', col: 'symbol', value: sym, origAttr: 'data-original-symbol', sym }));
         tr.appendChild(makeInputCell({ cls: 'edit-qty',    col: 'qty',    value: qty,    type: 'number', sym, min: '0', step: 'any' }, 'amount'));
         tr.appendChild(makeInputCell({ cls: 'edit-weight', col: 'weight', value: weight, type: 'number', sym, min: '0', max: '100', step: '0.1' }));
-        tr.appendChild(makeInputCell({ cls: 'edit-letf',   col: 'letf',   value: letfStr, sym, style: { textAlign: 'left', width: '180px' } }));
+        tr.appendChild(makeInputCell({ cls: 'edit-letf',   col: 'letf',   value: letfStr,  sym, style: { textAlign: 'left', width: '180px' } }));
+        tr.appendChild(makeInputCell({ cls: 'edit-groups', col: 'groups', value: groupsStr, sym, style: { textAlign: 'left', width: '180px' } }));
 
         const tdDel = document.createElement('td');
         const delBtn = document.createElement('button');
@@ -171,6 +177,7 @@ function buildStockEditTable() {
     mkTd('target-weight-total', '');
     mkTd('', '');
     mkTd('', '');
+    mkTd('', '');
     table.appendChild(tfoot);
 
     return table;
@@ -181,6 +188,8 @@ function showEditTable() {
     const viewTable = document.getElementById('stock-view-table');
     viewTable.parentNode.insertBefore(editTable, viewTable);
     viewTable.style.display = 'none';
+    const groupContainer = document.getElementById('group-table-container');
+    if (groupContainer) groupContainer.style.display = 'none';
     const stockHint = document.createElement('p');
     stockHint.className = 'edit-hint';
     stockHint.id = 'stock-edit-hint';
@@ -196,7 +205,7 @@ function showEditTable() {
                 .filter(row => !row.dataset.deleted)
                 .map(row => {
                     const get = col => row.querySelector('input[data-column="' + col + '"]')?.value ?? '';
-                    return [get('symbol'), get('qty'), get('weight'), get('letf')].join('\t');
+                    return [get('symbol'), get('qty'), get('weight'), get('letf'), get('groups')].join('\t');
                 });
             navigator.clipboard.writeText(rows.join('\n')).then(() => flashCopyButton(copyTableBtn));
             return;
@@ -222,6 +231,7 @@ function removeEditTable() {
     document.getElementById('stock-edit-hint')?.remove();
     const viewTable = document.getElementById('stock-view-table');
     if (viewTable) viewTable.style.display = '';
+    if (typeof applyGroupViewState === 'function') applyGroupViewState();
 }
 
 // ── Edit mode init ────────────────────────────────────────────────────────────
@@ -264,14 +274,16 @@ function initEditMode() {
                 ? (tr.querySelector('.new-symbol-input')?.value || '').trim().toUpperCase()
                 : (tr.querySelector('.edit-symbol')?.value || '').trim().toUpperCase();
             if (!sym) return;
-            const qtyInput    = isNew ? tr.querySelector('input[data-column="qty"]')    : tr.querySelector('.edit-qty');
-            const weightInput = isNew ? tr.querySelector('input[data-column="weight"]') : tr.querySelector('.edit-weight');
-            const letfInput   = isNew ? tr.querySelector('input[data-column="letf"]')   : tr.querySelector('.edit-letf');
+            const qtyInput     = isNew ? tr.querySelector('input[data-column="qty"]')     : tr.querySelector('.edit-qty');
+            const weightInput  = isNew ? tr.querySelector('input[data-column="weight"]')  : tr.querySelector('.edit-weight');
+            const letfInput    = isNew ? tr.querySelector('input[data-column="letf"]')    : tr.querySelector('.edit-letf');
+            const groupsInput  = isNew ? tr.querySelector('input[data-column="groups"]')  : tr.querySelector('.edit-groups');
             updates.push({
                 symbol: sym,
                 amount: parseFloat(qtyInput?.value) || 0,
                 targetWeight: weightInput ? parseFloat(weightInput.value) || 0 : 0,
-                letf: letfInput?.value || ''
+                letf: letfInput?.value || '',
+                groups: groupsInput?.value || ''
             });
         });
 

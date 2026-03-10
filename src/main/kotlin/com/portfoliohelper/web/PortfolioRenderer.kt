@@ -117,6 +117,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             script { src = "/static/viewer/cash.js" }
             script { src = "/static/viewer/rebalance.js" }
             script { src = "/static/viewer/portfolio.js" }
+            script { src = "/static/viewer/groups.js" }
             script { src = "/static/viewer/edit-mode.js" }
             script { src = "/static/viewer/controls.js" }
             script { src = "/static/viewer/backup.js" }
@@ -172,6 +173,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                     "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
                                 span(classes = "toggle-label") { +"Virtual Rebalance" }
                             }
+                        }
+
+                        button(classes = "groups-toggle") {
+                            attributes["id"] = "groups-toggle"
+                            attributes["type"] = "button"
+                            attributes["title"] = "Switch between stock view and group view"
+                            span(classes = "toggle-label") { +"Groups" }
                         }
 
                         button(classes = "rebal-toggle") {
@@ -268,6 +276,11 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         }
 
                         buildStockTable(portfolio)
+
+                        div {
+                            id = "group-table-container"
+                            style = "display: none;"
+                        }
                     }
 
                     div(classes = "edit-add-buttons") {
@@ -510,6 +523,10 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     if (stock.letfComponents != null) {
                         attributes["data-letf"] =
                             stock.letfComponents.joinToString(",") { "${it.first},${it.second}" }
+                    }
+                    if (stock.groups.isNotEmpty()) {
+                        attributes["data-groups"] =
+                            stock.groups.joinToString(";") { "${it.first} ${it.second}" }
                     }
 
                     // Symbol

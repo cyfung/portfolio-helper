@@ -374,7 +374,7 @@ fun Application.configureRouting() {
                 val csvPath = portfolioEntry.csvPath
                 FileWriter(File(csvPath)).use { writer ->
                     val csvFormat = CSVFormat.DEFAULT.builder()
-                        .setHeader("stock_label", "amount", "target_weight", "letf")
+                        .setHeader("stock_label", "amount", "target_weight", "letf", "groups")
                         .build()
                     CSVPrinter(writer, csvFormat).use { printer ->
                         for (element in updates) {
@@ -383,9 +383,10 @@ fun Application.configureRouting() {
                             val amount = obj["amount"]?.jsonPrimitive?.double ?: continue
                             val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
                             val letf = obj["letf"]?.jsonPrimitive?.content ?: ""
+                            val groups = obj["groups"]?.jsonPrimitive?.content ?: ""
                             val weightStr =
                                 if (targetWeight > 0) "%.2f".format(targetWeight) else ""
-                            printer.printRecord(symbol, formatQty(amount), weightStr, letf)
+                            printer.printRecord(symbol, formatQty(amount), weightStr, letf, groups)
                         }
                     }
                 }

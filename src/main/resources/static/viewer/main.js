@@ -6,6 +6,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     initSseConnection();
     initColumnVisibility();
+    initGroupViewToggle();
     initEditMode();
     initPasteHandler();
     initCurrencyControls();

@@ -243,7 +243,8 @@ h1 {
    Rebalancing Toggle Button
    ============================================ */
 .rebal-toggle,
-.margin-rebal-toggle {
+.margin-rebal-toggle,
+.groups-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -261,26 +262,30 @@ h1 {
 }
 
 .rebal-toggle:hover,
-.margin-rebal-toggle:hover {
+.margin-rebal-toggle:hover,
+.groups-toggle:hover {
     background-color: var(--color-bg-hover);
     border-color: var(--color-accent-primary);
 }
 
 .rebal-toggle.active,
-.margin-rebal-toggle.active {
+.margin-rebal-toggle.active,
+.groups-toggle.active {
     background-color: var(--color-accent-primary);
     color: var(--color-text-inverse);
     border-color: var(--color-accent-primary);
 }
 
 .rebal-toggle:focus,
-.margin-rebal-toggle:focus {
+.margin-rebal-toggle:focus,
+.groups-toggle:focus {
     outline: none;
     box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
 }
 
 [data-theme="dark"] .rebal-toggle:focus,
-[data-theme="dark"] .margin-rebal-toggle:focus {
+[data-theme="dark"] .margin-rebal-toggle:focus,
+[data-theme="dark"] .groups-toggle:focus {
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
 }
 

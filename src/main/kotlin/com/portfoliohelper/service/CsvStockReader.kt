@@ -61,6 +61,26 @@ object CsvStockReader {
                         null  // Invalid format
                     }
 
+                    // Read groups column if exists (backward compatible)
+                    // Format: "1 Managed Futures;1 US Stock" → listOf(1.0 to "Managed Futures", 1.0 to "US Stock")
+                    val groups = try {
+                        val groupsValue = record.get("groups")?.trim()
+                        if (!groupsValue.isNullOrBlank()) {
+                            groupsValue.split(";").mapNotNull { entry ->
+                                val trimmed = entry.trim()
+                                val spaceIdx = trimmed.indexOf(' ')
+                                if (spaceIdx < 0) null
+                                else {
+                                    val mult = trimmed.substring(0, spaceIdx).toDoubleOrNull() ?: return@mapNotNull null
+                                    val name = trimmed.substring(spaceIdx + 1).trim()
+                                    if (name.isEmpty()) null else mult to name
+                                }
+                            }
+                        } else emptyList()
+                    } catch (e: IllegalArgumentException) {
+                        emptyList()  // Column doesn't exist in CSV
+                    }
+
                     // Create stock with null prices - will be populated by IB API
                     stocks.add(Stock(
                         label = label,
@@ -68,7 +88,8 @@ object CsvStockReader {
                         markPrice = null,
                         lastClosePrice = null,
                         targetWeight = targetWeight,
-                        letfComponents = letfComponents
+                        letfComponents = letfComponents,
+                        groups = groups
                     ))
                 } catch (e: NumberFormatException) {
                     throw IllegalArgumentException("Invalid number format in CSV at record ${record.recordNumber}: ${e.message}")
