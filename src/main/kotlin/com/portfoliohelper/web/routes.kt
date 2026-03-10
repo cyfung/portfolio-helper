@@ -693,6 +693,10 @@ fun Application.configureRouting() {
                 call.respondText("""{"status":"not-supported"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
                 return@post
             }
+            if (UpdateService.getInfo().download.phase != UpdateService.DownloadPhase.IDLE) {
+                call.respondText("""{"status":"already-downloading"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
+                return@post
+            }
             GlobalScope.launch(Dispatchers.IO) {
                 runCatching { UpdateService.downloadUpdate() }
             }

@@ -296,12 +296,15 @@ private fun FlowContent.renderUpdatesSection() {
         div(classes = "config-field") {
             div(classes = "config-field-label-row") {
                 span { +"Latest Version" }
-                if (info.hasUpdate) {
-                    span(classes = "config-badge config-badge-update") { +"update available" }
+                span(classes = "config-badge config-badge-update") {
+                    id = "latest-version-badge"
+                    if (!info.hasUpdate) attributes["hidden"] = "hidden"
+                    +"update available"
                 }
             }
             span(classes = "config-field-description") { +"Latest release from GitHub." }
             div(classes = "config-field-input-col") {
+                id = "latest-version-value"
                 if (info.latestVersion != null) {
                     val releaseHref = info.releaseUrl ?: "#"
                     a(href = releaseHref) {
@@ -336,6 +339,22 @@ private fun FlowContent.renderUpdatesSection() {
             div(classes = "config-field") {
                 span(classes = "config-env-override-note") {
                     +"Running as portable JAR — download updates manually from GitHub."
+                }
+            }
+        }
+
+        // Auto Update checkbox (jpackage only)
+        if (info.isJpackageInstall) {
+            renderConfigField(
+                label = "Auto Update",
+                description = "Automatically download updates in the background when a new version is found (jpackage install only). Requires manual apply & restart.",
+                inputId = "auto-update",
+                badge = null
+            ) {
+                input(type = InputType.checkBox) {
+                    id = "auto-update"
+                    checked = AppConfig.autoUpdate
+                    attributes["data-config-key"] = AppConfig.KEY_AUTO_UPDATE
                 }
             }
         }

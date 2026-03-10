@@ -1,8 +1,10 @@
 import com.github.jk1.license.render.TextReportRenderer
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
+import org.panteleyev.jpackage.ImageType
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.Properties
 
 plugins {
     kotlin("jvm") version "2.3.0"
@@ -15,7 +17,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.4.5"
+version = "0.4.4"
 
 repositories {
     mavenCentral()
@@ -71,7 +73,7 @@ kotlin {
 // No need for explicit kotlinOptions.jvmTarget when using toolchains
 
 // Generate AppVersion.kt so the version constant is always in sync with build.gradle.kts
-val generateVersionFile = tasks.register("generateVersionFile") {
+val generateVersionFile: TaskProvider<Task?>? = tasks.register("generateVersionFile") {
     val outputDir = layout.buildDirectory.dir("generated/version")
     outputs.dir(outputDir)
     inputs.property("version", version)
@@ -137,7 +139,7 @@ tasks.jpackage {
 
     // Create app image only (not installer)
     // This creates a self-contained application bundle without requiring WiX
-    type = org.panteleyev.jpackage.ImageType.APP_IMAGE
+    type = ImageType.APP_IMAGE
 
     // JVM arguments for Netty/Ktor
     javaOptions = listOf(
@@ -308,12 +310,19 @@ licenseReport {
 tasks.register("githubRelease") {
     group = "distribution"
     description = "Creates a GitHub release and uploads distribution artifacts. Requires GITHUB_TOKEN env var and a pre-existing git tag matching v{version}."
-    dependsOn(tasks.named("portableDistZip"), tasks.named("jpackageDistZip"))
+    dependsOn(tasks.named("jpackageDistZip"), tasks.shadowJar)
     doLast {
-        val token = System.getenv("GITHUB_TOKEN") ?: error("GITHUB_TOKEN required")
+        val localProps = Properties().apply {
+            rootProject.file("../local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        }
+        val token = System.getenv("GITHUB_TOKEN")
+            ?: localProps.getProperty("githubToken")
+            ?: (project.findProperty("githubToken") as? String)
+            ?: error("GITHUB_TOKEN env var or githubToken in local.properties / ~/.gradle/gradle.properties required")
         val repo = System.getenv("GITHUB_REPO")
+            ?: localProps.getProperty("githubRepo")
             ?: (project.findProperty("githubRepo") as? String)
-            ?: error("GITHUB_REPO env or githubRepo in gradle.properties required")
+            ?: error("GITHUB_REPO env var or githubRepo in local.properties / ~/.gradle/gradle.properties required")
         val ver = project.version.toString()
         val tagName = "v$ver"
 
@@ -322,8 +331,7 @@ tasks.register("githubRelease") {
         val releaseBody = """## Portfolio Helper $tagName
 
 ### Downloads
-- **Self-contained app** (no Java required): `ib-viewer-jpackage-$ver.zip`
-- **Portable JAR** (requires Java 17+): `ib-viewer-portable-complete.zip`"""
+- **Self-contained app** (no Java required): `ib-viewer-jpackage-$ver.zip`"""
 
         // Step 1: Create release
         println("Creating GitHub release $tagName on $repo...")
@@ -351,26 +359,32 @@ tasks.register("githubRelease") {
         println("Release created. Uploading artifacts...")
 
         // Step 2: Upload artifacts
+        data class Artifact(val file: File, val contentType: String, val uploadName: String)
         val distDir = layout.buildDirectory.dir("distributions").get().asFile
-        val artifacts = distDir.listFiles { f -> f.name.endsWith(".zip") } ?: emptyArray()
-        for (artifact in artifacts) {
-            println("Uploading ${artifact.name} (${"%.1f".format(artifact.length() / 1024.0 / 1024.0)} MB)...")
-            val uploadUrl = URL("$uploadBaseUrl?name=${URLEncoder.encode(artifact.name, "UTF-8")}")
+        val shadowJarFile = tasks.shadowJar.get().archiveFile.get().asFile
+        val artifacts = listOf(
+            Artifact(File(distDir, "${project.name}-jpackage-$ver.zip"), "application/zip", "${project.name}-jpackage-$ver.zip"),
+            Artifact(shadowJarFile, "application/java-archive", "${project.name}-jpackage-$ver.jar")
+        )
+        for ((file, contentType, uploadName) in artifacts) {
+            if (!file.exists()) error("Artifact not found: ${file.absolutePath}")
+            println("Uploading $uploadName (${"%.1f".format(file.length() / 1024.0 / 1024.0)} MB)...")
+            val uploadUrl = URL("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}")
             val uploadConn = uploadUrl.openConnection() as HttpURLConnection
             uploadConn.requestMethod = "POST"
             uploadConn.setRequestProperty("Authorization", "Bearer $token")
-            uploadConn.setRequestProperty("Content-Type", "application/zip")
+            uploadConn.setRequestProperty("Content-Type", contentType)
             uploadConn.setRequestProperty("Accept", "application/vnd.github+json")
             uploadConn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
             uploadConn.doOutput = true
-            uploadConn.setFixedLengthStreamingMode(artifact.length())
-            uploadConn.outputStream.use { out -> artifact.inputStream().use { it.copyTo(out) } }
+            uploadConn.setFixedLengthStreamingMode(file.length())
+            uploadConn.outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
             val upCode = uploadConn.responseCode
             if (upCode !in 200..299) {
                 val err = uploadConn.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
-                error("Failed to upload ${artifact.name} (HTTP $upCode): $err")
+                error("Failed to upload $uploadName (HTTP $upCode): $err")
             }
-            println("  Uploaded ${artifact.name}")
+            println("  Uploaded $uploadName")
         }
         println("GitHub release $tagName created successfully!")
     }

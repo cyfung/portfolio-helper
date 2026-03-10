@@ -49,11 +49,9 @@ object UpdateService {
         val detected = jarPath?.let { p ->
             runCatching {
                 val parent = p.parent
-                val grandParent = parent?.parent
-                val root = grandParent?.parent
+                val root = parent?.parent
                 if (parent?.fileName?.toString() == "app" &&
-                    grandParent?.fileName?.toString() == "lib" &&
-                    root != null && Files.exists(root.resolve("lib/runtime"))
+                    root != null && Files.exists(root.resolve("runtime"))
                 ) root else null
             }.getOrNull()
         }
@@ -84,12 +82,22 @@ object UpdateService {
 
     fun getInfo(): UpdateInfo = state.get()
 
+    var onDownloadReady: (() -> Unit)? = null
+
     fun initialize(scope: CoroutineScope) {
         scope.launch {
             delay(5_000)
             while (true) {
                 runCatching { checkForUpdate() }
                     .onFailure { logger.warn("Update check failed: ${it.message}") }
+                val current = state.get()
+                if (AppConfig.autoUpdate && current.hasUpdate && isJpackageInstall &&
+                    current.download.phase == DownloadPhase.IDLE) {
+                    launch {
+                        runCatching { downloadUpdate() }
+                            .onFailure { logger.warn("Auto-download failed: ${it.message}") }
+                    }
+                }
                 delay(24L * 60 * 60_000)
             }
         }
@@ -128,44 +136,54 @@ object UpdateService {
 
     suspend fun downloadUpdate() {
         val dir = installDir ?: error("Not a jpackage install")
-        val url = state.get().jpackageAssetUrl ?: error("No jpackage asset URL available")
-        val pendingJar = dir.resolve("lib/app/portfolio-helper-pending.jar")
+        val pendingJar = dir.resolve("app/portfolio-helper-pending.jar")
 
-        state.set(state.get().copy(download = DownloadProgress(DownloadPhase.DOWNLOADING)))
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "portfolio-helper/$APP_VERSION")
-                .build()
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) error("Download failed: ${response.code}")
-                val body = response.body ?: error("Empty response body")
-                val totalBytes = body.contentLength()
-                Files.newOutputStream(pendingJar).use { out ->
-                    body.byteStream().use { input ->
-                        val buf = ByteArray(512 * 1024)
-                        var received = 0L
-                        var n: Int
-                        while (input.read(buf).also { n = it } != -1) {
-                            out.write(buf, 0, n)
-                            received += n
-                            state.set(
-                                state.get().copy(
-                                    download = DownloadProgress(DownloadPhase.DOWNLOADING, received, totalBytes)
+        val current = state.get()
+        if (current.download.phase != DownloadPhase.IDLE) error("Download already in progress (phase=${current.download.phase})")
+
+        state.set(state.get().copy(download = DownloadProgress(DownloadPhase.DOWNLOADING), lastCheckError = null))
+        try {
+            val url = state.get().jpackageAssetUrl ?: error("No jpackage asset URL available")
+            withContext(Dispatchers.IO) {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "portfolio-helper/$APP_VERSION")
+                    .build()
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) error("Download failed: ${response.code}")
+                    val body = response.body ?: error("Empty response body")
+                    val totalBytes = body.contentLength()
+                    Files.newOutputStream(pendingJar).use { out ->
+                        body.byteStream().use { input ->
+                            val buf = ByteArray(512 * 1024)
+                            var received = 0L
+                            var n: Int
+                            while (input.read(buf).also { n = it } != -1) {
+                                out.write(buf, 0, n)
+                                received += n
+                                state.set(
+                                    state.get().copy(
+                                        download = DownloadProgress(DownloadPhase.DOWNLOADING, received, totalBytes)
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
             }
-        }
-        state.set(
-            state.get().copy(
-                download = state.get().download.copy(phase = DownloadPhase.READY),
-                pendingJarPath = pendingJar.toString()
+            state.set(
+                state.get().copy(
+                    download = state.get().download.copy(phase = DownloadPhase.READY),
+                    pendingJarPath = pendingJar.toString()
+                )
             )
-        )
-        logger.info("Download complete: $pendingJar")
+            logger.info("Download complete: $pendingJar")
+            onDownloadReady?.invoke()
+        } catch (e: Exception) {
+            logger.error("Download failed: ${e.message}", e)
+            state.set(state.get().copy(download = DownloadProgress(DownloadPhase.IDLE), lastCheckError = "Download failed: ${e.message}"))
+            throw e
+        }
     }
 
     fun relaunchSelf() {
@@ -173,7 +191,9 @@ object UpdateService {
         val isWindows = System.getProperty("os.name").lowercase().contains("win")
         if (dir != null) {
             val exeName = if (isWindows) "Portfolio Helper.exe" else "Portfolio Helper"
-            ProcessBuilder(dir.resolve("bin/$exeName").toString())
+            // Windows app-image: exe is at root; Linux app-image: exe is in bin/
+            val exePath = if (isWindows) dir.resolve(exeName) else dir.resolve("bin/$exeName")
+            ProcessBuilder(exePath.toString())
                 .also { it.inheritIO() }
                 .start()
         } else {
@@ -201,8 +221,8 @@ object UpdateService {
             Files.writeString(scriptPath, buildString {
                 appendLine("@echo off")
                 appendLine("set INSTALL=%~dp0")
-                appendLine("set PENDING=%INSTALL%lib\\app\\portfolio-helper-pending.jar")
-                appendLine("set DEST=%INSTALL%lib\\app\\portfolio-helper-all.jar")
+                appendLine("set PENDING=%INSTALL%app\\portfolio-helper-pending.jar")
+                appendLine("set DEST=%INSTALL%app\\portfolio-helper-all.jar")
                 appendLine(":wait")
                 appendLine("tasklist /FI \"PID eq %1\" 2>nul | find \"%1\" >nul || goto replace")
                 appendLine("timeout /t 1 /nobreak >nul")
@@ -210,7 +230,7 @@ object UpdateService {
                 appendLine(":replace")
                 appendLine("del /f /q \"%DEST%\"")
                 appendLine("move /y \"%PENDING%\" \"%DEST%\"")
-                appendLine("start \"\" \"%INSTALL%bin\\Portfolio Helper.exe\"")
+                appendLine("start \"\" \"%INSTALL%Portfolio Helper.exe\"")
                 appendLine("del /f /q \"%~f0\"")
             })
             ProcessBuilder("cmd", "/c", "start", "/min", "cmd", "/c", scriptPath.toString(), pid)
@@ -221,8 +241,8 @@ object UpdateService {
             Files.writeString(scriptPath, buildString {
                 appendLine("#!/bin/sh")
                 appendLine("D=\"\$(cd \"\$(dirname \"\$0\")\" && pwd)\"")
-                appendLine("PENDING=\"\$D/lib/app/portfolio-helper-pending.jar\"")
-                appendLine("DEST=\"\$D/lib/app/portfolio-helper-all.jar\"")
+                appendLine("PENDING=\"\$D/app/portfolio-helper-pending.jar\"")
+                appendLine("DEST=\"\$D/app/portfolio-helper-all.jar\"")
                 appendLine("while kill -0 \"\$1\" 2>/dev/null; do sleep 0.5; done")
                 appendLine("rm -f \"\$DEST\"")
                 appendLine("mv \"\$PENDING\" \"\$DEST\"")
@@ -249,14 +269,23 @@ object UpdateService {
     private fun parseAssetsForJpackage(json: String): String? {
         val assetsSection = Regex("\"assets\"\\s*:\\s*\\[(.*?)\\]", RegexOption.DOT_MATCHES_ALL)
             .find(json)?.groupValues?.get(1) ?: return null
-        val chunks = assetsSection.split(Regex("(?=\\{)")).filter { it.contains('"') }
-        val nameRx = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"")
-        val urlRx = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"")
-        for (chunk in chunks) {
-            val name = nameRx.find(chunk)?.groupValues?.get(1) ?: continue
-            if ("jpackage" in name.lowercase()) return urlRx.find(chunk)?.groupValues?.get(1)
+        // Match name→browser_download_url pairs across each asset object.
+        // Splitting at '{' was wrong: the uploader sub-object pushes browser_download_url
+        // into a different chunk than the asset's own "name" field.
+        val pairRx = Regex(
+            "\"name\"\\s*:\\s*\"([^\"]+)\".*?\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        var fallbackUrl: String? = null
+        for (match in pairRx.findAll(assetsSection)) {
+            val name = match.groupValues[1]
+            val url  = match.groupValues[2]
+            if ("jpackage" in name.lowercase()) {
+                if (name.endsWith(".jar")) return url  // prefer JAR for in-place update
+                if (fallbackUrl == null) fallbackUrl = url
+            }
         }
-        return null
+        return fallbackUrl
     }
 
     private fun isNewerVersion(latest: String, current: String): Boolean {
@@ -279,6 +308,7 @@ object UpdateService {
         append("\"releaseUrl\":${releaseUrl?.let { "\"${it.esc()}\"" } ?: "null"},")
         append("\"hasUpdate\":$hasUpdate,")
         append("\"isJpackageInstall\":$isJpackageInstall,")
+        append("\"autoUpdate\":${AppConfig.autoUpdate},")
         append("\"lastCheckedMs\":$lastCheckedMs,")
         append("\"lastCheckError\":${lastCheckError?.let { "\"${it.esc()}\"" } ?: "null"},")
         append("\"download\":{")

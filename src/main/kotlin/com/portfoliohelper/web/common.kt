@@ -43,6 +43,7 @@ fun HEAD.renderCommonHeadElements() {
         attributes["sizes"] = "96x96"
     }
     link(rel = "icon", type = "image/svg+xml", href = "/static/favicon.svg")
+    script(src = "/static/common/update-notifier.js") { defer = true }
 }
 
 internal val appVersion: String get() = APP_VERSION
@@ -52,11 +53,35 @@ fun DIV.renderHeaderRight(block: DIV.() -> Unit) {
     div(classes = "header-right") {
         div(classes = "version-badge-wrapper") {
             span(classes = "version-badge") { +"v$appVersion" }
-            if (UpdateService.getInfo().hasUpdate) {
-                val latest = UpdateService.getInfo().latestVersion
-                span(classes = "update-dot") {
-                    title = if (latest != null) "Update available: v$latest" else "Update available"
+            val info = UpdateService.getInfo()
+            val phase = info.download.phase
+            val autoDownloads = info.isJpackageInstall && AppConfig.autoUpdate
+            // Text tag: shown when update available but auto-download won't run (not jpackage, or autoUpdate off)
+            a(href = "/config", classes = "update-available-tag") {
+                id = "header-update-available"
+                if (!info.hasUpdate || autoDownloads || phase == UpdateService.DownloadPhase.READY || phase == UpdateService.DownloadPhase.APPLYING) {
+                    attributes["hidden"] = "hidden"
                 }
+                title = if (info.latestVersion != null) "Update available: v${info.latestVersion} — go to Settings" else "Update available — go to Settings"
+                +"Update Available"
+            }
+            // Dot: shown when update found and auto-download is active (will download in background)
+            span(classes = "update-dot") {
+                id = "header-update-dot"
+                if (!info.hasUpdate || !autoDownloads || phase == UpdateService.DownloadPhase.READY || phase == UpdateService.DownloadPhase.APPLYING) {
+                    attributes["hidden"] = "hidden"
+                } else {
+                    title = if (info.latestVersion != null) "Update available: v${info.latestVersion}" else "Update available"
+                }
+            }
+            // Tag: shown when download is ready to apply
+            span(classes = "update-ready-tag") {
+                id = "header-update-ready"
+                if (phase != UpdateService.DownloadPhase.READY && phase != UpdateService.DownloadPhase.APPLYING) {
+                    attributes["hidden"] = "hidden"
+                }
+                title = "Update v${info.latestVersion} ready — click to apply"
+                +"Update Is Ready"
             }
         }
         div(classes = "header-buttons") { block() }

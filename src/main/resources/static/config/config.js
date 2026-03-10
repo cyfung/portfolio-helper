@@ -8,7 +8,8 @@ const GLOBAL_DEFAULTS = {
     exchangeSuffixes: 'SBF=.PA,LSEETF=.L',
     twsHost: '127.0.0.1',
     twsPort: '7496',
-    ibkrRateInterval: '3600'
+    ibkrRateInterval: '3600',
+    autoUpdate: 'true'
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -139,6 +140,24 @@ function initUpdates() {
         }
     }
 
+    function updateLatestVersionUI(info) {
+        const valueEl = document.getElementById('latest-version-value');
+        const badgeEl = document.getElementById('latest-version-badge');
+        if (valueEl) {
+            if (info.latestVersion) {
+                const href = info.releaseUrl || '#';
+                valueEl.innerHTML = `<a href="${href}" target="_blank" rel="noopener">v${info.latestVersion}</a>`;
+            } else if (info.lastCheckError) {
+                valueEl.innerHTML = `<span class="config-env-override-note">Check failed: ${info.lastCheckError}</span>`;
+            } else {
+                valueEl.innerHTML = `<span class="config-env-override-note">Not checked yet</span>`;
+            }
+        }
+        if (badgeEl) {
+            badgeEl.hidden = !info.hasUpdate;
+        }
+    }
+
     function setButtonStates(info) {
         const dlBtn = document.getElementById('download-update-btn');
         const applyBtn = document.getElementById('apply-update-btn');
@@ -164,6 +183,9 @@ function initUpdates() {
                     downloadPollTimer = null;
                     if (info.download?.phase === 'READY') {
                         showUpdateStatus('Download complete. Click "Apply Update & Restart" to install.', 'ok');
+                    } else if (info.download?.phase === 'IDLE' && info.lastCheckError) {
+                        showUpdateStatus('Download failed: ' + info.lastCheckError, 'error');
+                        document.getElementById('download-update-btn').disabled = false;
                     }
                 }
             } catch (_) {}
@@ -185,6 +207,7 @@ function initUpdates() {
                 const r = await fetch('/api/admin/check-update', { method: 'POST' });
                 const info = await r.json();
                 setButtonStates(info);
+                updateLatestVersionUI(info);
                 if (info.lastCheckError) {
                     showUpdateStatus('Check failed: ' + info.lastCheckError, 'error');
                 } else if (info.hasUpdate) {
@@ -206,8 +229,19 @@ function initUpdates() {
             dlBtn.disabled = true;
             showUpdateStatus('Starting download…', 'ok');
             try {
-                await fetch('/api/admin/download-update', { method: 'POST' });
-                startDownloadPoll();
+                const r = await fetch('/api/admin/download-update', { method: 'POST' });
+                if (r.status === 409) {
+                    const body = await r.json().catch(() => ({}));
+                    if (body.status === 'already-downloading') {
+                        showUpdateStatus('Download already in progress.', 'warn');
+                        startDownloadPoll();
+                    } else {
+                        showUpdateStatus('Not supported on this install type.', 'error');
+                        dlBtn.disabled = false;
+                    }
+                } else {
+                    startDownloadPoll();
+                }
             } catch (err) {
                 showUpdateStatus('Error: ' + err.message, 'error');
                 dlBtn.disabled = false;

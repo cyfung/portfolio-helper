@@ -374,6 +374,53 @@ h1 {
     cursor: default;
 }
 
+.update-available-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #1e40af;
+    background: #dbeafe;
+    border-radius: 10px;
+    padding: 1px 7px;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    transition: background 0.15s;
+    text-decoration: none;
+}
+.update-available-tag:hover {
+    background: #bfdbfe;
+}
+[data-theme="dark"] .update-available-tag {
+    background: rgba(59, 130, 246, .18);
+    color: #93c5fd;
+}
+[data-theme="dark"] .update-available-tag:hover {
+    background: rgba(59, 130, 246, .3);
+}
+
+.update-ready-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #065f46;
+    background: #d1fae5;
+    border-radius: 10px;
+    padding: 1px 7px;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    transition: background 0.15s;
+}
+.update-ready-tag:hover {
+    background: #a7f3d0;
+}
+[data-theme="dark"] .update-ready-tag {
+    background: rgba(16, 185, 129, .18);
+    color: #34d399;
+}
+[data-theme="dark"] .update-ready-tag:hover {
+    background: rgba(16, 185, 129, .3);
+}
+
 /* ============================================
    Theme Toggle Button
    ============================================ */
