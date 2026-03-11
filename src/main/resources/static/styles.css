@@ -1125,15 +1125,73 @@ h1 {
 }
 
 .weight-diff {
-    margin-left: var(--spacing-xs);
-    font-weight: var(--font-weight-normal);
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    margin-left: 6px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
 }
 
-.weight-diff.good { color: var(--color-positive); }
-.weight-diff.warning { color: #f59e0b; }
-.weight-diff.alert { color: var(--color-negative); }
+/* Near target — neutral grey */
+.weight-diff.good {
+    background: #1e2433;
+    color: #94a3b8;
+    border: 1px solid #334155;
+}
 
-[data-theme="dark"] .weight-diff.warning { color: #fbbf24; }
+/* Mild deviation — orange */
+.weight-diff.warning {
+    background: #2d1f0e;
+    color: #fb923c;
+    border: 1px solid #7c3a0a;
+}
+
+/* Overweight (positive) — red */
+.weight-diff.alert-over {
+    background: #3f1d1d;
+    color: #f87171;
+    border: 1px solid #7f1d1d;
+}
+
+/* Underweight (negative) — green */
+.weight-diff.alert-under {
+    background: #1a2e1a;
+    color: #4ade80;
+    border: 1px solid #14532d;
+}
+
+/* Light theme overrides */
+[data-theme="light"] .weight-diff.good {
+    background: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .weight-diff.warning {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fdba74;
+}
+
+[data-theme="light"] .weight-diff.alert-over {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+}
+
+[data-theme="light"] .weight-diff.alert-under {
+    background: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #86efac;
+}
+
+.weight-tgt {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    margin-left: 4px;
+}
+
 
 /* ============================================
    Rebalancing Column Visibility

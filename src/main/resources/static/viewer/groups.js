@@ -1,5 +1,5 @@
 // ── groups.js — Group table aggregation and toggle ──────────────────────────
-// Depends on: globals.js, utils.js, rebalance.js
+// Depends on: globals.js, utils.js, rebalance.js, rebalance-ga.js
 
 function parseGroupsAttr(attrValue, symbol) {
     const raw = (attrValue || '').trim();
@@ -54,15 +54,13 @@ function buildGroupMap() {
 function updateGroupTable() {
     const container = document.getElementById('group-table-container');
     if (!container) return;
-    container.innerHTML = '';
 
     const groups = buildGroupMap();
-    if (groups.size === 0) return;
+    if (groups.size === 0) { container.innerHTML = ''; return; }
 
     const rebalTotal = getRebalTotal();
     const delta = rebalTotal - lastPortfolioVal;
 
-    // Compute per-symbol alloc using the same strategy as the stock table
     const stocksForAlloc = [];
     let totalStockValue = 0;
     document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
@@ -76,16 +74,21 @@ function updateGroupTable() {
         stocksForAlloc.push({ symbol, markPrice, targetWeight, currentValue });
         totalStockValue += currentValue;
     });
-    const allocMode = delta >= 0 ? allocAddMode : allocReduceMode;
-    const perSymbolAlloc = computeAllocations(delta, stocksForAlloc, totalStockValue, allocMode);
+
+    computeGAAllocations(delta, stocksForAlloc, totalStockValue, (perSymbolAlloc) => {
+        _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal);
+    });
+}
+
+function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
+    container.innerHTML = '';
 
     // Aggregate per-symbol alloc into groups (respecting multipliers)
     const groupAllocMap = new Map();
     document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
         if (row.dataset.deleted) return;
         const symbol = row.dataset.symbol;
-        if (!symbol) return;
-        if (!row.dataset.groups) return;
+        if (!symbol || !row.dataset.groups) return;
         const symAlloc = perSymbolAlloc[symbol];
         if (symAlloc == null) return;
         for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
@@ -103,7 +106,7 @@ function updateGroupTable() {
         ['Day %', 'col-num col-market-data'],
         ['Mkt Val Chg', 'col-num col-market-data'],
         ['Mkt Val', 'col-num col-market-data'],
-        ['Weight', ''],
+        ['Weight / Tgt / Dev', ''],
         ['Rebal $', 'rebal-column'],
         ['Alloc $', 'alloc-column'],
     ].forEach(([text, cls]) => {
@@ -147,12 +150,12 @@ function updateGroupTable() {
         } else {
             const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'positive' : 'negative') : 'neutral';
             const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'positive' : 'negative') : 'neutral';
-            const diffCls = Math.abs(weightDiff) > 2.0 ? 'alert' : Math.abs(weightDiff) > 1.0 ? 'warning' : 'good';
-            const diffSign = weightDiff >= 0 ? '-' : '+';
-            mk(
-                weightPct.toFixed(1) + '% <span class="weight-diff ' + diffCls + '">(' + diffSign + Math.abs(weightDiff).toFixed(1) + '%)</span>',
-                'col-num value', true
-            );
+            const diffClass = Math.abs(weightDiff) > 1.0 ? (weightDiff > 0 ? 'alert-over' : 'alert-under')
+                            : Math.abs(weightDiff) > 0.2 ? 'warning' : 'good';
+            const pillSign  = weightDiff >= 0 ? '+' : '';
+            const pillHtml  = `<span class="weight-diff ${diffClass}">${pillSign}${weightDiff.toFixed(1)}%</span>`;
+            const tgtHtml   = `<span class="weight-tgt">/ ${targetWeightPct.toFixed(1)}%</span>`;
+            mk(weightPct.toFixed(1) + '%' + tgtHtml + pillHtml, 'col-num value', true);
             mk(formatSignedCurrency(rebalDollars), 'price-change ' + rebalDir + ' rebal-column');
             mk(formatSignedCurrency(allocDollars), 'price-change ' + allocDir + ' alloc-column');
         }

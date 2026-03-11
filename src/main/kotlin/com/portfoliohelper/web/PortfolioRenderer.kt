@@ -117,6 +117,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             script { src = "/static/viewer/cash.js" }
             script { src = "/static/viewer/rebalance.js" }
             script { src = "/static/viewer/portfolio.js" }
+            script { src = "/static/viewer/rebalance-ga.js" }
             script { src = "/static/viewer/groups.js" }
             script { src = "/static/viewer/edit-mode.js" }
             script { src = "/static/viewer/controls.js" }

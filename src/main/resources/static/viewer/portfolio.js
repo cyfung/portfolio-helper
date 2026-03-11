@@ -181,12 +181,12 @@ function updateCurrentWeights(portfolioTotal) {
 
         if (targetWeight !== null && !isNaN(targetWeight)) {
             const diff = currentWeight - targetWeight;
-            const sign = diff >= 0 ? '-' : '+';
-            const diffClass = Math.abs(diff) > 2.0 ? 'alert' :
-                              Math.abs(diff) > 1.0 ? 'warning' : 'good';
-            weightCell.innerHTML =
-                currentWeight.toFixed(1) + '% ' +
-                '<span class="weight-diff ' + diffClass + '">(' + sign + Math.abs(diff).toFixed(1) + '%)</span>';
+            const diffClass = Math.abs(diff) > 1.0 ? (diff > 0 ? 'alert-over' : 'alert-under')
+                            : Math.abs(diff) > 0.2 ? 'warning' : 'good';
+            const diffSign = diff >= 0 ? '+' : '';
+            const tgtHtml = `<span class="weight-tgt">/ ${targetWeight.toFixed(1)}%</span>`;
+            const pillHtml = `<span class="weight-diff ${diffClass}">${diffSign}${diff.toFixed(1)}%</span>`;
+            weightCell.innerHTML = currentWeight.toFixed(1) + '%' + tgtHtml + pillHtml;
         } else {
             weightCell.textContent = currentWeight.toFixed(1) + '%';
         }
