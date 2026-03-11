@@ -5,6 +5,7 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     initSseConnection();
+    initMoreInfoToggle();
     initColumnVisibility();
     initGroupViewToggle();
     initEditMode();

@@ -176,6 +176,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
+                        button(classes = "more-info-toggle") {
+                            attributes["id"] = "more-info-toggle"
+                            attributes["type"] = "button"
+                            attributes["title"] = "Show/Hide Last NAV, Last, and Mkt Val columns"
+                            span(classes = "toggle-label") { +"More Info" }
+                        }
+
                         button(classes = "groups-toggle") {
                             attributes["id"] = "groups-toggle"
                             attributes["type"] = "button"
@@ -492,7 +499,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
             tr {
                 th { +"Symbol" }
                 th(classes = "col-num") { +"Qty" }
-                th(classes = "col-num col-market-data") { +"Last NAV" }
+                th(classes = "col-num col-market-data col-moreinfo") { +"Last NAV" }
                 th(classes = "col-num col-market-data") {
                     id = "th-est-val"
                     +"Est Val "
@@ -501,17 +508,20 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         +"ⓘ"
                     }
                 }
-                th(classes = "col-num col-market-data") { +"Last" }
+                th(classes = "col-num col-market-data col-moreinfo") { +"Last" }
                 th(classes = "col-num col-market-data") { +"Mark" }
                 th(classes = "col-num col-market-data") { +"Day Chg" }
                 th(classes = "col-num col-market-data") { +"Day %" }
                 th(classes = "col-num col-market-data") { +"Mkt Val Chg" }
-                th(classes = "col-num col-market-data") { +"Mkt Val" }
-                th(classes = "rebal-column") { +"Weight" }
+                th(classes = "col-num col-market-data col-moreinfo") { +"Mkt Val" }
+                th(classes = "col-num") {
+                    +"Weight "
+                    span(classes = "th-sub") { +"Cur / Tgt / Dev" }
+                }
                 th(classes = "rebal-column") { +"Rebal $" }
-                th(classes = "rebal-column") { +"Rebal Qty" }
+                th(classes = "rebal-column col-moreinfo") { +"Rebal Qty" }
                 th(classes = "alloc-column") { +"Alloc \$" }
-                th(classes = "alloc-column") { +"Alloc Qty" }
+                th(classes = "alloc-column col-moreinfo") { +"Alloc Qty" }
             }
         }
         tbody {
@@ -540,7 +550,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Last NAV — kept server-side as it comes from a separate NAV feed, not SSE
-                    td(classes = if (stock.lastNav != null) "col-market-data price loaded muted" else "col-market-data price muted") {
+                    td(classes = if (stock.lastNav != null) "col-market-data price loaded muted col-moreinfo" else "col-market-data price muted col-moreinfo") {
                         id = "nav-${stock.label}"
                         +(if (stock.lastNav != null) "$%.2f".format(stock.lastNav) else "—")
                     }
@@ -552,7 +562,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Last Close Price — kept for first paint; SSE overwrites immediately
-                    td(classes = if (stock.lastClosePrice != null) "col-market-data price loaded" else "col-market-data price") {
+                    td(classes = if (stock.lastClosePrice != null) "col-market-data price loaded col-moreinfo" else "col-market-data price col-moreinfo") {
                         id = "close-${stock.label}"
                         +(if (stock.lastClosePrice != null) "$%.2f".format(stock.lastClosePrice) else "—")
                     }
@@ -577,13 +587,13 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Mkt Val — kept for first paint; SSE overwrites immediately
-                    td(classes = if (stock.value != null) "col-market-data value loaded" else "col-market-data value") {
+                    td(classes = if (stock.value != null) "col-market-data value loaded col-moreinfo" else "col-market-data value col-moreinfo") {
                         id = "value-${stock.label}"
                         +(if (stock.value != null) "$%,.2f".format(stock.value) else "—")
                     }
 
                     // Weight — owned by JS (updateCurrentWeights); render empty
-                    td(classes = "weight-display rebal-column") {
+                    td(classes = "weight-display col-num") {
                         id = "current-weight-${stock.label}"
                     }
 
@@ -591,7 +601,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = "price-change neutral rebal-column") {
                         id = "rebal-dollars-${stock.label}"
                     }
-                    td(classes = "price-change neutral rebal-column") {
+                    td(classes = "price-change neutral rebal-column col-moreinfo") {
                         id = "rebal-qty-${stock.label}"
                     }
 
@@ -599,7 +609,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     td(classes = "price-change neutral alloc-column") {
                         id = "alloc-dollars-${stock.label}"
                     }
-                    td(classes = "price-change neutral alloc-column") {
+                    td(classes = "price-change neutral alloc-column col-moreinfo") {
                         id = "alloc-qty-${stock.label}"
                     }
                 }

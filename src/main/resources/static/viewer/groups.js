@@ -75,9 +75,22 @@ function updateGroupTable() {
         totalStockValue += currentValue;
     });
 
-    computeGAAllocations(delta, stocksForAlloc, totalStockValue, (perSymbolAlloc) => {
+    const mode = delta >= 0 ? allocAddMode : allocReduceMode;
+    if (mode === 'WATERFALL') {
+        computeGAAllocations(delta, stocksForAlloc, totalStockValue, (perSymbolAlloc) => {
+            _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal);
+        });
+    } else {
+        const perSymbolAlloc = {};
+        document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
+            if (row.dataset.deleted) return;
+            const symbol = row.dataset.symbol;
+            if (!symbol) return;
+            const cell = document.getElementById('alloc-dollars-' + symbol);
+            perSymbolAlloc[symbol] = cell ? (parsePrice(cell.textContent) ?? 0) : 0;
+        });
         _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal);
-    });
+    }
 }
 
 function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
@@ -102,17 +115,17 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
 
     const hRow = table.createTHead().insertRow();
     [
-        ['Group', ''],
-        ['Day %', 'col-num col-market-data'],
-        ['Mkt Val Chg', 'col-num col-market-data'],
-        ['Mkt Val', 'col-num col-market-data'],
-        ['Weight / Tgt / Dev', ''],
-        ['Rebal $', 'rebal-column'],
-        ['Alloc $', 'alloc-column'],
-    ].forEach(([text, cls]) => {
+        ['Group', '', false],
+        ['Day %', 'col-num col-market-data', false],
+        ['Mkt Val Chg', 'col-num col-market-data', false],
+        ['Mkt Val', 'col-num col-market-data col-moreinfo', false],
+        ['Weight <span class="th-sub">Cur / Tgt / Dev</span>', 'col-num', true],
+        ['Rebal $', 'rebal-column', false],
+        ['Alloc $', 'alloc-column', false],
+    ].forEach(([text, cls, isHtml]) => {
         const th = document.createElement('th');
         if (cls) th.className = cls;
-        th.textContent = text;
+        if (isHtml) th.innerHTML = text; else th.textContent = text;
         hRow.appendChild(th);
     });
 
@@ -141,7 +154,7 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         mk(name, '');
         mk(dayPctText, 'col-num col-market-data price-change ' + chgCls);
         mk(isZeroChg ? '—' : formatSignedCurrency(mktValChg), 'price-change ' + chgCls);
-        mk(formatCurrency(g.mktVal), 'col-num col-market-data value');
+        mk(formatCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
 
         if (!portfolioValueKnown) {
             mk('N/A', 'col-num value');
@@ -153,9 +166,11 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             const diffClass = Math.abs(weightDiff) > 1.0 ? (weightDiff > 0 ? 'alert-over' : 'alert-under')
                             : Math.abs(weightDiff) > 0.2 ? 'warning' : 'good';
             const pillSign  = weightDiff >= 0 ? '+' : '';
+            const curHtml   = `<span class="weight-cur">${weightPct.toFixed(1)}%</span>`;
+            const sepHtml   = `<span class="weight-sep">/</span>`;
+            const tgtHtml   = `<span class="weight-tgt">${targetWeightPct.toFixed(1)}%</span>`;
             const pillHtml  = `<span class="weight-diff ${diffClass}">${pillSign}${weightDiff.toFixed(1)}%</span>`;
-            const tgtHtml   = `<span class="weight-tgt">/ ${targetWeightPct.toFixed(1)}%</span>`;
-            mk(weightPct.toFixed(1) + '%' + tgtHtml + pillHtml, 'col-num value', true);
+            mk(curHtml + sepHtml + tgtHtml + pillHtml, 'col-num value', true);
             mk(formatSignedCurrency(rebalDollars), 'price-change ' + rebalDir + ' rebal-column');
             mk(formatSignedCurrency(allocDollars), 'price-change ' + allocDir + ' alloc-column');
         }

@@ -184,9 +184,11 @@ function updateCurrentWeights(portfolioTotal) {
             const diffClass = Math.abs(diff) > 1.0 ? (diff > 0 ? 'alert-over' : 'alert-under')
                             : Math.abs(diff) > 0.2 ? 'warning' : 'good';
             const diffSign = diff >= 0 ? '+' : '';
-            const tgtHtml = `<span class="weight-tgt">/ ${targetWeight.toFixed(1)}%</span>`;
+            const curHtml  = `<span class="weight-cur">${currentWeight.toFixed(1)}%</span>`;
+            const sepHtml  = `<span class="weight-sep">/</span>`;
+            const tgtHtml  = `<span class="weight-tgt">${targetWeight.toFixed(1)}%</span>`;
             const pillHtml = `<span class="weight-diff ${diffClass}">${diffSign}${diff.toFixed(1)}%</span>`;
-            weightCell.innerHTML = currentWeight.toFixed(1) + '%' + tgtHtml + pillHtml;
+            weightCell.innerHTML = curHtml + sepHtml + tgtHtml + pillHtml;
         } else {
             weightCell.textContent = currentWeight.toFixed(1) + '%';
         }

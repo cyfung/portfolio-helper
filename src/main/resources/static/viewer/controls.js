@@ -3,6 +3,22 @@
 
 // ── Column visibility ─────────────────────────────────────────────────────────
 
+function initMoreInfoToggle() {
+    const btn = document.getElementById('more-info-toggle');
+    if (!btn) return;
+    const body = document.body;
+    const visible = localStorage.getItem('ib-viewer-more-info-visible') === 'true';
+    if (visible) {
+        body.classList.add('more-info-visible');
+        btn.classList.add('active');
+    }
+    btn.addEventListener('click', () => {
+        const isVisible = body.classList.toggle('more-info-visible');
+        btn.classList.toggle('active', isVisible);
+        localStorage.setItem('ib-viewer-more-info-visible', isVisible);
+    });
+}
+
 function initColumnVisibility() {
     const rebalToggle = document.getElementById('rebal-toggle');
     const body = document.body;

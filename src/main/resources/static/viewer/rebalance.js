@@ -70,7 +70,7 @@ function updateRebalancingColumns(portfolioTotal) {
             c.textContent = 'N/A'; c.className = 'price-change rebal-column';
         });
         document.querySelectorAll('[id^="rebal-qty-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'price-change rebal-column';
+            c.textContent = 'N/A'; c.className = 'price-change rebal-column col-moreinfo';
         });
         return;
     }
@@ -111,7 +111,7 @@ function updateRebalancingColumns(portfolioTotal) {
                 const rebalQtyCell = document.getElementById('rebal-qty-' + symbol);
                 if (rebalQtyCell) {
                     rebalQtyCell.textContent = (rebalShares >= 0 ? '+' : '-') + Math.abs(rebalShares).toFixed(2);
-                    rebalQtyCell.className = 'price-change loaded rebal-column ' + direction;
+                    rebalQtyCell.className = 'price-change loaded rebal-column col-moreinfo ' + direction;
                 }
             }
         }
@@ -124,7 +124,7 @@ function updateAllocColumns(rebalTotal) {
             c.textContent = 'N/A'; c.className = 'price-change alloc-column';
         });
         document.querySelectorAll('[id^="alloc-qty-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'price-change alloc-column';
+            c.textContent = 'N/A'; c.className = 'price-change alloc-column col-moreinfo';
         });
         if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
         return;
@@ -165,7 +165,7 @@ function updateAllocColumns(rebalTotal) {
         if (qtyCell && s.markPrice > 0) {
             const qty = amt / s.markPrice;
             qtyCell.textContent = (qty >= 0 ? '+' : '-') + Math.abs(qty).toFixed(2);
-            qtyCell.className = 'price-change loaded alloc-column ' + dir;
+            qtyCell.className = 'price-change loaded alloc-column col-moreinfo ' + dir;
         }
     }
     if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
