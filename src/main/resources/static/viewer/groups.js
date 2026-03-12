@@ -70,7 +70,9 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     container.innerHTML = '';
 
     // Aggregate per-symbol alloc into groups (respecting multipliers)
+    // Also track per-symbol contributions per group for tooltip
     const groupAllocMap = new Map();
+    const groupAllocMembersMap = new Map(); // groupName -> {symbol: contribution}
     document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
         if (row.dataset.deleted) return;
         const symbol = row.dataset.symbol;
@@ -79,6 +81,8 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         if (symAlloc == null) return;
         for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
             groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAlloc * multiplier);
+            if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
+            groupAllocMembersMap.get(name)[symbol] = symAlloc * multiplier;
         }
     });
 
@@ -116,6 +120,8 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
 
         const tr = tbody.insertRow();
         tr.dataset.groupMembers = g.members.join(',');
+        const memberAllocs = groupAllocMembersMap.get(name) ?? {};
+        tr.dataset.groupMemberAllocs = JSON.stringify(memberAllocs);
         tr.addEventListener('mouseenter', _showGroupTooltip);
         tr.addEventListener('mousemove',  _moveGroupTooltip);
         tr.addEventListener('mouseleave', _hideGroupTooltip);
@@ -206,12 +212,12 @@ function _showGroupTooltip(e) {
     if (!members.length) return;
 
     const col = _getTooltipCol(e.target.closest('td'));
+    const memberAllocs = col === 'alloc' ? JSON.parse(this.dataset.groupMemberAllocs || '{}') : null;
 
     const rows = members.map(symbol => {
         let valHtml = '';
 
         if (col === 'daypct') {
-            // Show mark price + day % pill, same as the Mark cell in the portfolio table
             const markCell = document.getElementById('mark-' + symbol);
             valHtml = markCell ? markCell.innerHTML : `<span class="group-tooltip-na">—</span>`;
 
@@ -237,7 +243,13 @@ function _showGroupTooltip(e) {
             valHtml = _actionHtml('rebal-dollars-' + symbol);
 
         } else if (col === 'alloc') {
-            valHtml = _actionHtml('alloc-dollars-' + symbol);
+            const amt = memberAllocs[symbol];
+            if (amt == null) {
+                valHtml = `<span class="group-tooltip-na">—</span>`;
+            } else {
+                const cls = amt > 0.5 ? 'action-positive' : amt < -0.5 ? 'action-negative' : 'action-neutral';
+                valHtml = `<span class="${cls}">${formatSignedCurrency(amt)}</span>`;
+            }
         }
 
         const valCell = valHtml ? `<td class="group-tooltip-alloc">${valHtml}</td>` : '';
