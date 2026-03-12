@@ -180,23 +180,68 @@ function _ensureGroupTooltip() {
     return _groupTooltip;
 }
 
+function _getTooltipCol(td) {
+    if (!td) return 'name';
+    if (td.classList.contains('alloc-column'))  return 'alloc';
+    if (td.classList.contains('rebal-column'))  return 'rebal';
+    if (td.classList.contains('col-moreinfo'))  return 'mktval';
+    if (td.classList.contains('col-market-data')) return 'daypct';
+    if (td.classList.contains('price-change'))  return 'mktvalchg';
+    if (td.classList.contains('value'))         return 'weight';
+    return 'name';
+}
+
+function _actionHtml(cellId) {
+    const cell = document.getElementById(cellId);
+    const text = cell ? cell.textContent.trim() : '';
+    const val  = parseFloat(text.replace(/[^0-9.\-]/g, ''));
+    if (!text || text === '—' || isNaN(val))
+        return `<span class="group-tooltip-na">—</span>`;
+    const cls = val > 0.5 ? 'action-positive' : val < -0.5 ? 'action-negative' : 'action-neutral';
+    return `<span class="${cls}">${text}</span>`;
+}
+
 function _showGroupTooltip(e) {
     const members = (this.dataset.groupMembers || '').split(',').filter(Boolean);
     if (!members.length) return;
 
+    const col = _getTooltipCol(e.target.closest('td'));
+
     const rows = members.map(symbol => {
-        const allocCell = document.getElementById('alloc-dollars-' + symbol);
-        const allocText = allocCell ? allocCell.textContent.trim() : '';
-        const allocVal = allocText ? parseFloat(allocText.replace(/[^0-9.\-]/g, '')) : NaN;
-        const isReady  = allocText && allocText !== '—' && !isNaN(allocVal);
-        const allocClass = !isReady ? '' : allocVal > 0.5 ? 'action-positive' : allocVal < -0.5 ? 'action-negative' : 'action-neutral';
-        const allocDisplay = isReady
-            ? `<span class="price-change ${allocClass}">${allocText}</span>`
-            : `<span class="group-tooltip-na">N/A</span>`;
-        return `<tr>
-            <td class="group-tooltip-symbol">${symbol}</td>
-            <td class="group-tooltip-alloc">${allocDisplay}</td>
-        </tr>`;
+        let valHtml = '';
+
+        if (col === 'daypct') {
+            // Show mark price + day % pill, same as the Mark cell in the portfolio table
+            const markCell = document.getElementById('mark-' + symbol);
+            valHtml = markCell ? markCell.innerHTML : `<span class="group-tooltip-na">—</span>`;
+
+        } else if (col === 'mktvalchg') {
+            const cell = document.getElementById('position-change-' + symbol);
+            const text = cell ? cell.textContent.trim() : '';
+            const val  = parseFloat(text.replace(/[^0-9.\-]/g, ''));
+            const cls  = !text || text === '—' ? 'neutral' : val > 0 ? 'positive' : val < 0 ? 'negative' : 'neutral';
+            valHtml = text && text !== '—'
+                ? `<span class="price-change ${cls}">${text}</span>`
+                : `<span class="group-tooltip-na">—</span>`;
+
+        } else if (col === 'mktval') {
+            const cell = document.getElementById('value-' + symbol);
+            const text = cell ? cell.textContent.trim() : '';
+            valHtml = text ? `<span>${text}</span>` : `<span class="group-tooltip-na">—</span>`;
+
+        } else if (col === 'weight') {
+            const cell = document.getElementById('current-weight-' + symbol);
+            valHtml = cell && cell.innerHTML ? cell.innerHTML : `<span class="group-tooltip-na">—</span>`;
+
+        } else if (col === 'rebal') {
+            valHtml = _actionHtml('rebal-dollars-' + symbol);
+
+        } else if (col === 'alloc') {
+            valHtml = _actionHtml('alloc-dollars-' + symbol);
+        }
+
+        const valCell = valHtml ? `<td class="group-tooltip-alloc">${valHtml}</td>` : '';
+        return `<tr><td class="group-tooltip-symbol">${symbol}</td>${valCell}</tr>`;
     }).join('');
 
     const tip = _ensureGroupTooltip();
@@ -207,6 +252,15 @@ function _showGroupTooltip(e) {
 
 function _moveGroupTooltip(e) {
     if (!_groupTooltip) return;
+    // Re-render if hovered column changed
+    const td = e.target.closest('td');
+    const cur = _getTooltipCol(td);
+    const prev = _groupTooltip.dataset.hoverCol || '';
+    if (cur !== prev) {
+        _groupTooltip.dataset.hoverCol = cur;
+        _showGroupTooltip.call(e.currentTarget, e);
+        return;
+    }
     const offset = 14;
     const tw = _groupTooltip.offsetWidth;
     const th = _groupTooltip.offsetHeight;
@@ -219,7 +273,10 @@ function _moveGroupTooltip(e) {
 }
 
 function _hideGroupTooltip() {
-    if (_groupTooltip) _groupTooltip.style.display = 'none';
+    if (_groupTooltip) {
+        _groupTooltip.style.display = 'none';
+        _groupTooltip.dataset.hoverCol = '';
+    }
 }
 
 function applyGroupViewState() {
