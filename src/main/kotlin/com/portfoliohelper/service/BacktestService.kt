@@ -200,6 +200,13 @@ object BacktestService {
             }
         }
 
+        // Quick guard: if we wrote this file recently (within the last hour), trust it as-is
+        // and skip any network extension — it's fresh from our own pipeline.
+        if (localFiles.isNotEmpty() && recentlyWrittenByUs(localFiles.first())) {
+            logger.info("Skipping Yahoo fetch for $upperTicker — CSV was written by us recently (${localFiles.first().name})")
+            return readSimCsv(localFiles.first())
+        }
+
         // Tier 1 — local file
         if (localFiles.isNotEmpty()) {
             val extended = tryExtendAndValidate(ticker, upperTicker, localFiles, simPattern, neededFromDate, today)
@@ -320,6 +327,13 @@ object BacktestService {
         ?.filter { simPattern.matches(it.name) }
         ?.sortedByDescending { it.name }
         ?: emptyList())
+
+    /**
+     * Returns true if [file] was last modified within the past hour, which indicates it was
+     * written by our own pipeline and can be trusted without a network refetch.
+     */
+    private fun recentlyWrittenByUs(file: File, thresholdMs: Long = 60 * 60 * 1_000L): Boolean =
+        (System.currentTimeMillis() - file.lastModified()) < thresholdMs
 
     /** Loads EFFRX, extending via FRED EFFR if the file is outdated. Returns empty map if not found. */
     internal fun loadEffrxSeries(): Map<LocalDate, Double> {

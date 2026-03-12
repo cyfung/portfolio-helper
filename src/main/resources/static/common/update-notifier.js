@@ -1,6 +1,40 @@
 (function () {
     'use strict';
 
+    // ── Custom confirm overlay (replaces native confirm()) ────────────────────
+    // Styles live in styles.css under "Custom Confirm Overlay"
+    function showConfirmOverlay(message) {
+        return new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.id = 'confirm-overlay-backdrop';
+            backdrop.innerHTML = `
+                <div id="confirm-overlay-box">
+                    <div id="confirm-overlay-icon">⚡</div>
+                    <p id="confirm-overlay-message">${message}</p>
+                    <div id="confirm-overlay-actions">
+                        <button class="confirm-overlay-btn" id="confirm-overlay-cancel">Cancel</button>
+                        <button class="confirm-overlay-btn" id="confirm-overlay-ok">Apply &amp; Restart</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backdrop);
+
+            function dismiss(result) {
+                backdrop.remove();
+                resolve(result);
+            }
+
+            document.getElementById('confirm-overlay-ok').addEventListener('click', () => dismiss(true));
+            document.getElementById('confirm-overlay-cancel').addEventListener('click', () => dismiss(false));
+            backdrop.addEventListener('click', e => { if (e.target === backdrop) dismiss(false); });
+            document.addEventListener('keydown', function onKey(e) {
+                if (e.key === 'Escape') { dismiss(false); document.removeEventListener('keydown', onKey); }
+                if (e.key === 'Enter')  { dismiss(true);  document.removeEventListener('keydown', onKey); }
+            });
+        });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     function attemptReconnect() {
         if (typeof window.attemptReconnect === 'function' && window.attemptReconnect !== attemptReconnect) {
             window.attemptReconnect();
@@ -62,7 +96,8 @@
         const readyTag = document.getElementById('header-update-ready');
         if (readyTag) {
             readyTag.addEventListener('click', async () => {
-                if (!confirm('Apply update and restart the app?')) return;
+                const confirmed = await showConfirmOverlay('Apply update and restart the app?');
+                if (!confirmed) return;
                 readyTag.style.pointerEvents = 'none';
                 readyTag.textContent = 'Restarting…';
                 try {
