@@ -256,7 +256,7 @@ function buildGAGroups(stocksForAlloc) {
 
 let _gaWorker = null;
 let _gaRunning = false;
-let _gaPending = null; // { delta, stocksForAlloc, totalStockValue, callback }
+let _gaPending = null; // pending callback only — payload is re-snapshotted at dispatch time
 
 function _getWorker() {
     if (_gaWorker) return _gaWorker;
@@ -272,9 +272,9 @@ function _dispatch(payload, callback) {
         _gaRunning = false;
         callback(e.data);
         if (_gaPending) {
-            const { payload: p, callback: cb } = _gaPending;
+            const cb = _gaPending;
             _gaPending = null;
-            _dispatch(p, cb);
+            _dispatchFromLiveState(cb);
         }
     };
     worker.onerror = function(err) {
@@ -282,17 +282,50 @@ function _dispatch(payload, callback) {
         _gaRunning = false;
         callback({});
         if (_gaPending) {
-            const { payload: p, callback: cb } = _gaPending;
+            const cb = _gaPending;
             _gaPending = null;
-            _dispatch(p, cb);
+            _dispatchFromLiveState(cb);
         }
     };
     worker.postMessage(payload);
 }
 
-// ── Public entry point ───────────────────────────────────────────────────────
+// Snapshots all live state immediately before posting to the worker.
+// Also owns the WATERFALL vs non-WATERFALL branching so callers never
+// touch DOM data that could be stale by the time the callback fires.
+function _dispatchFromLiveState(callback) {
+    const stocksForAlloc = [];
+    let totalStockValue = 0;
+    document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
+        if (row.dataset.deleted) return;
+        const symbol = row.dataset.symbol;
+        if (!symbol) return;
+        const markPrice = rawMarkPrices[symbol] ?? parsePrice(document.getElementById('mark-' + symbol)?.querySelector('.mark-price-value')?.textContent);
+        const targetWeight = parseFloat(row.dataset.weight) || 0;
+        const valueCell = document.getElementById('value-' + symbol);
+        const currentValue = valueCell ? (parsePrice(valueCell.textContent) ?? 0) : 0;
+        stocksForAlloc.push({ symbol, markPrice, targetWeight, currentValue });
+        totalStockValue += currentValue;
+    });
 
-function computeGAAllocations(delta, stocksForAlloc, totalStockValue, callback) {
+    const rebalTotal = getRebalTotal();
+    const delta = rebalTotal - lastPortfolioVal;
+    const mode = delta >= 0 ? allocAddMode : allocReduceMode;
+
+    if (mode !== 'WATERFALL') {
+        // Non-GA path: read alloc-dollars cells right now and return synchronously
+        const perSymbolAlloc = {};
+        document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
+            if (row.dataset.deleted) return;
+            const symbol = row.dataset.symbol;
+            if (!symbol) return;
+            const cell = document.getElementById('alloc-dollars-' + symbol);
+            perSymbolAlloc[symbol] = cell ? (parsePrice(cell.textContent) ?? 0) : 0;
+        });
+        callback(perSymbolAlloc);
+        return;
+    }
+
     if (!delta || Math.abs(delta) < 0.01) { callback({}); return; }
 
     const twSum = stocksForAlloc.reduce((a, s) => a + (s.targetWeight || 0), 0);
@@ -305,11 +338,19 @@ function computeGAAllocations(delta, stocksForAlloc, totalStockValue, callback) 
     }));
     const currentVals = Object.fromEntries(stocks.map(s => [s.symbol, s.currentVal]));
     const groups = buildGAGroups(stocksForAlloc);
-    const payload = { delta, stocks, groups, currentVals, totalStockValue };
+    _dispatch({ delta, stocks, groups, currentVals, totalStockValue }, callback);
+}
 
+// ── Public entry point ───────────────────────────────────────────────────────
+//
+// computeGAAllocations(callback)
+//   All inputs are snapshotted from live DOM/globals at dispatch time,
+//   never at call time, to avoid stale-data races.
+
+function computeGAAllocations(callback) {
     if (_gaRunning) {
-        _gaPending = { payload, callback };
+        _gaPending = callback;
         return;
     }
-    _dispatch(payload, callback);
+    _dispatchFromLiveState(callback);
 }

@@ -58,39 +58,10 @@ function updateGroupTable() {
     const groups = buildGroupMap();
     if (groups.size === 0) { container.innerHTML = ''; return; }
 
-    const rebalTotal = getRebalTotal();
-    const delta = rebalTotal - lastPortfolioVal;
-
-    const stocksForAlloc = [];
-    let totalStockValue = 0;
-    document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
-        if (row.dataset.deleted) return;
-        const symbol = row.dataset.symbol;
-        if (!symbol) return;
-        const markPrice = rawMarkPrices[symbol] ?? parsePrice(document.getElementById('mark-' + symbol)?.textContent);
-        const targetWeight = parseFloat(row.dataset.weight) || 0;
-        const valueCell = document.getElementById('value-' + symbol);
-        const currentValue = valueCell ? (parsePrice(valueCell.textContent) ?? 0) : 0;
-        stocksForAlloc.push({ symbol, markPrice, targetWeight, currentValue });
-        totalStockValue += currentValue;
+    computeGAAllocations((perSymbolAlloc) => {
+        // Re-read rebalTotal at render time — it's cheap and avoids a stale closure
+        _renderGroupTable(container, groups, perSymbolAlloc, getRebalTotal());
     });
-
-    const mode = delta >= 0 ? allocAddMode : allocReduceMode;
-    if (mode === 'WATERFALL') {
-        computeGAAllocations(delta, stocksForAlloc, totalStockValue, (perSymbolAlloc) => {
-            _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal);
-        });
-    } else {
-        const perSymbolAlloc = {};
-        document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
-            if (row.dataset.deleted) return;
-            const symbol = row.dataset.symbol;
-            if (!symbol) return;
-            const cell = document.getElementById('alloc-dollars-' + symbol);
-            perSymbolAlloc[symbol] = cell ? (parsePrice(cell.textContent) ?? 0) : 0;
-        });
-        _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal);
-    }
 }
 
 function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
@@ -151,8 +122,16 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         const dayPct = g.prevMktVal > 0 ? (mktValChg / g.prevMktVal) * 100 : null;
         const dayPctText = (isZeroChg || dayPct === null) ? '—' : (dayPct >= 0 ? '+' : '') + dayPct.toFixed(2) + '%';
 
+        const isNeutral = dayPct !== null && Math.abs(dayPct) < 0.1;
+        const dayPctColorClass = (isZeroChg || dayPct === null) ? 'neutral'
+            : isNeutral ? 'neutral'
+            : dayPct > 0 ? 'positive' : 'negative';
+        const dayPctHtml = (isZeroChg || dayPct === null)
+            ? ''
+            : `<span class="mark-day-pct ${dayPctColorClass}">${dayPct >= 0 ? '+' : '−'}${Math.abs(dayPct).toFixed(2)}%</span>`;
+
         mk(name, '');
-        mk(dayPctText, 'col-num col-market-data price-change ' + chgCls);
+        mk(dayPctHtml, 'col-num col-market-data', true);
         mk(isZeroChg ? '—' : formatSignedCurrency(mktValChg), 'price-change ' + chgCls);
         mk(formatCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
 
