@@ -3517,3 +3517,76 @@ td[id^="est-val-"].loaded {
 .mark-day-pct.after-hours {
     opacity: 0.75;
 }
+
+/* ============================================
+   Group Row Hover Tooltip
+   ============================================ */
+#group-hover-tooltip {
+    position: fixed;
+    z-index: 9999;
+    display: none;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    pointer-events: none;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family-mono);
+    white-space: nowrap;
+}
+
+#group-hover-tooltip table {
+    border-collapse: collapse;
+}
+
+#group-hover-tooltip tr + tr td {
+    padding-top: var(--spacing-xs);
+}
+
+.group-tooltip-symbol {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+    padding-right: var(--spacing-2xl);
+}
+
+.group-tooltip-alloc {
+    text-align: right;
+}
+
+.group-tooltip-na {
+    color: var(--color-text-tertiary);
+}
+
+/* ============================================
+   Action columns (Rebal $ / Rebal Qty / Alloc $ / Alloc Qty)
+   Distinct hue from day-change: blue = buy, red = sell
+   ============================================ */
+.action-neutral {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--color-text-tertiary);
+}
+
+.action-positive {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+    color: #185FA5;
+}
+
+.action-negative {
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+    color: #A32D2D;
+}
+
+[data-theme="dark"] .action-positive { color: #85B7EB; }
+[data-theme="dark"] .action-negative { color: #F09595; }

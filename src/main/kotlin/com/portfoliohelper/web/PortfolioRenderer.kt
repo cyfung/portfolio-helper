@@ -599,18 +599,18 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Rebal $ / Rebal Qty — owned by JS (updateRebalancingColumns); render empty
-                    td(classes = "price-change neutral rebal-column") {
+                    td(classes = "action-neutral rebal-column") {
                         id = "rebal-dollars-${stock.label}"
                     }
-                    td(classes = "price-change neutral rebal-column col-moreinfo") {
+                    td(classes = "action-neutral rebal-column col-moreinfo") {
                         id = "rebal-qty-${stock.label}"
                     }
 
                     // Alloc $ / Alloc Qty — owned by JS (updateAllocColumns); always empty
-                    td(classes = "price-change neutral alloc-column") {
+                    td(classes = "action-neutral alloc-column") {
                         id = "alloc-dollars-${stock.label}"
                     }
-                    td(classes = "price-change neutral alloc-column col-moreinfo") {
+                    td(classes = "action-neutral alloc-column col-moreinfo") {
                         id = "alloc-qty-${stock.label}"
                     }
                 }

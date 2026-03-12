@@ -36,7 +36,8 @@ function buildGroupMap() {
             if (!groups.has(name)) {
                 groups.set(name, {
                     mktVal: 0, prevMktVal: 0, targetWeight: 0,
-                    stockCount: 0, singleSymbol: null, singleMarkPrice: null
+                    stockCount: 0, singleSymbol: null, singleMarkPrice: null,
+                    members: []
                 });
             }
             const g = groups.get(name);
@@ -44,6 +45,7 @@ function buildGroupMap() {
             if (prevMktVal !== null) g.prevMktVal += prevMktVal * multiplier;
             g.targetWeight += targetWeight * multiplier;
             g.stockCount++;
+            if (!g.members.includes(symbol)) g.members.push(symbol);
             if (g.stockCount === 1) { g.singleSymbol = symbol; g.singleMarkPrice = markPrice; }
             else                    { g.singleSymbol = null;    g.singleMarkPrice = null; }
         }
@@ -113,6 +115,10 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         const chgCls = isZeroChg ? 'neutral' : mktValChg > 0 ? 'positive' : 'negative';
 
         const tr = tbody.insertRow();
+        tr.dataset.groupMembers = g.members.join(',');
+        tr.addEventListener('mouseenter', _showGroupTooltip);
+        tr.addEventListener('mousemove',  _moveGroupTooltip);
+        tr.addEventListener('mouseleave', _hideGroupTooltip);
         const mk = (html, cls, isHtml) => {
             const td = document.createElement('td');
             if (cls) td.className = cls;
@@ -137,11 +143,11 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
 
         if (!portfolioValueKnown) {
             mk('N/A', 'col-num value');
-            mk('N/A', 'price-change rebal-column');
-            mk('N/A', 'price-change alloc-column');
+            mk('N/A', 'action-neutral rebal-column');
+            mk('N/A', 'action-neutral alloc-column');
         } else {
-            const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'positive' : 'negative') : 'neutral';
-            const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'positive' : 'negative') : 'neutral';
+            const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
+            const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
             const diffClass = Math.abs(weightDiff) > 1.0 ? (weightDiff > 0 ? 'alert-over' : 'alert-under')
                             : Math.abs(weightDiff) > 0.2 ? 'warning' : 'good';
             const pillSign  = weightDiff >= 0 ? '+' : '';
@@ -150,8 +156,8 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             const tgtHtml   = `<span class="weight-tgt">${targetWeightPct.toFixed(1)}%</span>`;
             const pillHtml  = `<span class="weight-diff ${diffClass}">${pillSign}${weightDiff.toFixed(1)}%</span>`;
             mk(curHtml + sepHtml + tgtHtml + pillHtml, 'col-num value', true);
-            mk(formatSignedCurrency(rebalDollars), 'price-change ' + rebalDir + ' rebal-column');
-            mk(formatSignedCurrency(allocDollars), 'price-change ' + allocDir + ' alloc-column');
+            mk(formatSignedCurrency(rebalDollars), 'action-neutral ' + rebalDir + ' rebal-column');
+            mk(formatSignedCurrency(allocDollars), 'action-neutral ' + allocDir + ' alloc-column');
         }
     });
 
@@ -160,6 +166,60 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     warning.textContent = '\u26A0\uFE0E Group values should be interpreted cautiously — their meaning depends heavily on how groups are defined.';
     container.appendChild(warning);
     container.appendChild(table);
+}
+
+// ── Group row hover tooltip ──────────────────────────────────────────────────
+
+let _groupTooltip = null;
+
+function _ensureGroupTooltip() {
+    if (_groupTooltip) return _groupTooltip;
+    _groupTooltip = document.createElement('div');
+    _groupTooltip.id = 'group-hover-tooltip';
+    document.body.appendChild(_groupTooltip);
+    return _groupTooltip;
+}
+
+function _showGroupTooltip(e) {
+    const members = (this.dataset.groupMembers || '').split(',').filter(Boolean);
+    if (!members.length) return;
+
+    const rows = members.map(symbol => {
+        const allocCell = document.getElementById('alloc-dollars-' + symbol);
+        const allocText = allocCell ? allocCell.textContent.trim() : '';
+        const allocVal = allocText ? parseFloat(allocText.replace(/[^0-9.\-]/g, '')) : NaN;
+        const isReady  = allocText && allocText !== '—' && !isNaN(allocVal);
+        const allocClass = !isReady ? '' : allocVal > 0.5 ? 'action-positive' : allocVal < -0.5 ? 'action-negative' : 'action-neutral';
+        const allocDisplay = isReady
+            ? `<span class="price-change ${allocClass}">${allocText}</span>`
+            : `<span class="group-tooltip-na">N/A</span>`;
+        return `<tr>
+            <td class="group-tooltip-symbol">${symbol}</td>
+            <td class="group-tooltip-alloc">${allocDisplay}</td>
+        </tr>`;
+    }).join('');
+
+    const tip = _ensureGroupTooltip();
+    tip.innerHTML = `<table>${rows}</table>`;
+    tip.style.display = 'block';
+    _moveGroupTooltip(e);
+}
+
+function _moveGroupTooltip(e) {
+    if (!_groupTooltip) return;
+    const offset = 14;
+    const tw = _groupTooltip.offsetWidth;
+    const th = _groupTooltip.offsetHeight;
+    let x = e.clientX + offset;
+    let y = e.clientY + offset;
+    if (x + tw > window.innerWidth  - 8) x = e.clientX - tw - offset;
+    if (y + th > window.innerHeight - 8) y = e.clientY - th - offset;
+    _groupTooltip.style.left = x + 'px';
+    _groupTooltip.style.top  = y + 'px';
+}
+
+function _hideGroupTooltip() {
+    if (_groupTooltip) _groupTooltip.style.display = 'none';
 }
 
 function applyGroupViewState() {
