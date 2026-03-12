@@ -3562,6 +3562,7 @@ td[id^="est-val-"].loaded {
    Action columns (Rebal $ / Rebal Qty / Alloc $ / Alloc Qty)
    Distinct hue from day-change: blue = buy, red = sell
    ============================================ */
+.portfolio-table .action-neutral,
 .action-neutral {
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
@@ -3570,23 +3571,27 @@ td[id^="est-val-"].loaded {
     color: var(--color-text-tertiary);
 }
 
+.portfolio-table .action-positive,
 .action-positive {
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
     text-align: right;
     white-space: nowrap;
-    color: #185FA5;
+    color: #4338CA;
 }
 
+.portfolio-table .action-negative,
 .action-negative {
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
     text-align: right;
     white-space: nowrap;
-    color: #A32D2D;
+    color: #BE185D;
 }
 
+[data-theme="dark"] .portfolio-table .action-positive,
 [data-theme="dark"] .action-positive { color: #85B7EB; }
+[data-theme="dark"] .portfolio-table .action-negative,
 [data-theme="dark"] .action-negative { color: #F09595; }

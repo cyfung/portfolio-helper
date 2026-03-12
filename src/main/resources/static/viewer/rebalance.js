@@ -67,10 +67,10 @@ function updateMarginTargetDisplay() {
 function updateRebalancingColumns(portfolioTotal) {
     if (!portfolioValueKnown) {
         document.querySelectorAll('[id^="rebal-dollars-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'price-change rebal-column';
+            c.textContent = 'N/A'; c.className = 'action-neutral rebal-column';
         });
         document.querySelectorAll('[id^="rebal-qty-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'price-change rebal-column col-moreinfo';
+            c.textContent = 'N/A'; c.className = 'action-neutral rebal-column col-moreinfo';
         });
         return;
     }
@@ -98,12 +98,12 @@ function updateRebalancingColumns(portfolioTotal) {
             const targetValue = (targetWeight / 100) * portfolioTotal;
             const rebalDollars = targetValue - value;
             const direction = Math.abs(rebalDollars) > 0.50 ?
-                (rebalDollars > 0 ? 'positive' : 'negative') : 'neutral';
+                (rebalDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
 
             const rebalDollarsCell = document.getElementById('rebal-dollars-' + symbol);
             if (rebalDollarsCell) {
                 rebalDollarsCell.textContent = formatSignedCurrency(rebalDollars);
-                rebalDollarsCell.className = 'price-change loaded rebal-column ' + direction;
+                rebalDollarsCell.className = 'action-neutral loaded rebal-column ' + direction;
             }
 
             if (markPrice !== null && markPrice > 0) {
@@ -111,7 +111,7 @@ function updateRebalancingColumns(portfolioTotal) {
                 const rebalQtyCell = document.getElementById('rebal-qty-' + symbol);
                 if (rebalQtyCell) {
                     rebalQtyCell.textContent = (rebalShares >= 0 ? '+' : '-') + Math.abs(rebalShares).toFixed(2);
-                    rebalQtyCell.className = 'price-change loaded rebal-column col-moreinfo ' + direction;
+                    rebalQtyCell.className = 'action-neutral loaded rebal-column col-moreinfo ' + direction;
                 }
             }
         }
@@ -121,10 +121,10 @@ function updateRebalancingColumns(portfolioTotal) {
 function updateAllocColumns(rebalTotal) {
     if (!portfolioValueKnown) {
         document.querySelectorAll('[id^="alloc-dollars-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'price-change alloc-column';
+            c.textContent = 'N/A'; c.className = 'action-neutral alloc-column';
         });
         document.querySelectorAll('[id^="alloc-qty-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'price-change alloc-column col-moreinfo';
+            c.textContent = 'N/A'; c.className = 'action-neutral alloc-column col-moreinfo';
         });
         if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
         return;
@@ -157,15 +157,15 @@ function updateAllocColumns(rebalTotal) {
             if (qtyCell) qtyCell.textContent = '';
             continue;
         }
-        const dir = amt > 0.50 ? 'positive' : amt < -0.50 ? 'negative' : 'neutral';
+        const dir = amt > 0.50 ? 'action-positive' : amt < -0.50 ? 'action-negative' : 'action-neutral';
         if (dollarsCell) {
             dollarsCell.textContent = formatSignedCurrency(amt);
-            dollarsCell.className = 'price-change loaded alloc-column ' + dir;
+            dollarsCell.className = 'action-neutral loaded alloc-column ' + dir;
         }
         if (qtyCell && s.markPrice > 0) {
             const qty = amt / s.markPrice;
             qtyCell.textContent = (qty >= 0 ? '+' : '-') + Math.abs(qty).toFixed(2);
-            qtyCell.className = 'price-change loaded alloc-column col-moreinfo ' + dir;
+            qtyCell.className = 'action-neutral loaded alloc-column col-moreinfo ' + dir;
         }
     }
     if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
