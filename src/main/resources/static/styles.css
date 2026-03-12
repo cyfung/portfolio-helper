@@ -1123,7 +1123,8 @@ h1 {
 .price-change.neutral { color: var(--color-text-tertiary); }
 
 /* After-hours styling - use secondary text color */
-.price-change.after-hours {
+.price-change.after-hours,
+.price.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 0.8;
 }
@@ -3474,4 +3475,45 @@ td[id^="est-val-"].loaded {
 #confirm-overlay-ok {
     background: var(--color-warning);
     color: var(--color-text-inverse);
+}
+
+/* ============================================
+   Mark Price Cell — inline Day % pill
+   ============================================ */
+.mark-day-pct {
+    display: inline-block;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    font-family: var(--font-family-mono);
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 5px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.mark-day-pct:empty {
+    display: none;
+}
+
+.mark-day-pct.positive {
+    background: color-mix(in srgb, var(--color-positive) 15%, transparent);
+    color: var(--color-positive);
+    border: 1px solid color-mix(in srgb, var(--color-positive) 30%, transparent);
+}
+
+.mark-day-pct.negative {
+    background: color-mix(in srgb, var(--color-negative) 15%, transparent);
+    color: var(--color-negative);
+    border: 1px solid color-mix(in srgb, var(--color-negative) 30%, transparent);
+}
+
+.mark-day-pct.neutral {
+    background: color-mix(in srgb, var(--color-text-tertiary) 12%, transparent);
+    color: var(--color-text-tertiary);
+    border: 1px solid color-mix(in srgb, var(--color-text-tertiary) 25%, transparent);
+}
+
+.mark-day-pct.after-hours {
+    opacity: 0.75;
 }

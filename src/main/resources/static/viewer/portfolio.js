@@ -38,7 +38,9 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
         previousValue = parsePrice(valueCell.textContent);
     }
 
-    setPriceCell(document.getElementById('mark-' + symbol), markPrice);
+    const markCell = document.getElementById('mark-' + symbol);
+    setPriceCell(markCell?.querySelector('.mark-price-value'), markPrice);
+    if (markCell) markCell.classList.toggle('after-hours', !!isMarketClosed);
     setPriceCell(document.getElementById('close-' + symbol), lastClosePrice);
 
     if (markPrice !== null && lastClosePrice !== null) {
@@ -52,10 +54,19 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
             applyChangeClasses(changeCell, changeDollars, isZeroChange, isMarketClosed);
         }
 
-        const changePercentCell = document.getElementById('day-percent-' + symbol);
-        if (changePercentCell) {
-            changePercentCell.textContent = isZeroChange ? '—' : (changePercent >= 0 ? '+' : '-') + Math.abs(changePercent).toFixed(2) + '%';
-            applyChangeClasses(changePercentCell, changePercent, isZeroChange, isMarketClosed);
+        const pctSpan = document.getElementById('day-percent-' + symbol);
+        if (pctSpan) {
+            if (isZeroChange) {
+                pctSpan.textContent = '';
+                pctSpan.className = 'mark-day-pct';
+            } else {
+                const sign = changePercent >= 0 ? '+' : '−';
+                pctSpan.textContent = sign + Math.abs(changePercent).toFixed(2) + '%';
+                const isNeutral = Math.abs(changePercent) < 0.1;
+                const colorClass = isNeutral ? 'neutral' : changePercent > 0 ? 'positive' : 'negative';
+                const staleClass = isMarketClosed ? ' after-hours' : '';
+                pctSpan.className = 'mark-day-pct ' + colorClass + staleClass;
+            }
         }
 
         if (amountCell) {

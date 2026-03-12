@@ -511,7 +511,6 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th(classes = "col-num col-market-data col-moreinfo") { +"Last" }
                 th(classes = "col-num col-market-data") { +"Mark" }
                 th(classes = "col-num col-market-data") { +"Day Chg" }
-                th(classes = "col-num col-market-data") { +"Day %" }
                 th(classes = "col-num col-market-data") { +"Mkt Val Chg" }
                 th(classes = "col-num col-market-data col-moreinfo") { +"Mkt Val" }
                 th(classes = "col-num") {
@@ -570,15 +569,17 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Mark Price — kept for first paint; SSE overwrites immediately
                     td(classes = if (stock.markPrice != null) "col-market-data price loaded" else "col-market-data price") {
                         id = "mark-${stock.label}"
-                        +(if (stock.markPrice != null) "$%.2f".format(stock.markPrice) else "—")
+                        span(classes = "mark-price-value") {
+                            +(if (stock.markPrice != null) "$%.2f".format(stock.markPrice) else "—")
+                        }
+                        span(classes = "mark-day-pct") {
+                            id = "day-percent-${stock.label}"
+                        }
                     }
 
-                    // Day Chg / Day % / Mkt Val Chg — all owned by JS (updatePriceInUI); render empty
+                    // Day Chg / Mkt Val Chg — owned by JS (updatePriceInUI); render empty
                     td(classes = "col-market-data price-change neutral") {
                         id = "day-change-${stock.label}"
-                    }
-                    td(classes = "col-market-data price-change neutral") {
-                        id = "day-percent-${stock.label}"
                     }
 
                     // Mkt Val Chg — owned by JS; render empty
