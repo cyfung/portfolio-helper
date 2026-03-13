@@ -49,7 +49,7 @@ interface CashDao {
 
 @Database(
     entities = [Position::class, CashEntry::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

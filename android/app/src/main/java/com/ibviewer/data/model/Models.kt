@@ -11,8 +11,6 @@ import kotlinx.serialization.Serializable
 data class Position(
     @PrimaryKey val symbol: String,
     val quantity: Double,
-    val markPrice: Double?,       // latest price
-    val closePrice: Double?,      // prior close
     val targetWeight: Double,     // % 0–100
     val groups: String = "",      // semicolon-separated "multiplier name" entries
     val isDeleted: Boolean = false

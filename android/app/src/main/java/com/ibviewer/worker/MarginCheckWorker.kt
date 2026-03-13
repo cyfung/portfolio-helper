@@ -6,16 +6,23 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import androidx.work.*
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import com.ibviewer.IbViewerApp
 import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.data.repository.PortfolioCalculator
+import com.ibviewer.data.repository.PrefsKeys
+import com.ibviewer.data.repository.YahooFinanceClient
 import com.ibviewer.data.repository.dataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import java.util.concurrent.TimeUnit
-import androidx.datastore.preferences.core.*
-import com.ibviewer.data.repository.PrefsKeys
 
 class MarginCheckWorker(
     private val context: Context,
@@ -23,10 +30,10 @@ class MarginCheckWorker(
 ) : CoroutineWorker(context, workerParams) {
 
     companion object {
-        const val WORK_NAME       = "margin_check"
-        const val CHANNEL_ID      = "margin_alerts"
-        const val NOTIF_ID_LOWER  = 1001
-        const val NOTIF_ID_UPPER  = 1002
+        const val WORK_NAME = "margin_check"
+        const val CHANNEL_ID = "margin_alerts"
+        const val NOTIF_ID_LOWER = 1001
+        const val NOTIF_ID_UPPER = 1002
 
         fun schedule(context: Context, settings: MarginAlertSettings) {
             val wm = WorkManager.getInstance(context)
@@ -38,7 +45,7 @@ class MarginCheckWorker(
                 settings.checkIntervalMinutes.toLong(), TimeUnit.MINUTES
             ).setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
             ).build()
 
@@ -54,20 +61,29 @@ class MarginCheckWorker(
         val prefs = context.dataStore.data.first()
 
         // Read alert settings
-        val enabled    = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
+        val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
         if (!enabled) return Result.success()
-        val lowerPct   = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
-        val upperPct   = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
+        val lowerPct = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
+        val upperPct = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
 
         // Read portfolio data from DB
-        val app        = context.applicationContext as IbViewerApp
-        val positions  = app.database.positionDao().getAll()
+        val app = context.applicationContext as IbViewerApp
+        val positions = app.database.positionDao().getAll()
         val cashEntries = app.database.cashDao().getAll()
 
+        // Fetch current prices
+        val prices = positions.map { it.symbol }.distinct().mapNotNull { symbol ->
+            try {
+                symbol to YahooFinanceClient.fetchQuote(symbol)
+            } catch (e: Exception) {
+                null
+            }
+        }.toMap()
+
         // Compute FX rates
-        val fxJson     = prefs[PrefsKeys.FX_RATES_JSON] ?: "{}"
-        val fxRates    = if (fxJson == "{}") emptyMap<String, Double>()
-                         else Json.decodeFromString<Map<String, Double>>(fxJson)
+        val fxJson = prefs[PrefsKeys.FX_RATES_JSON] ?: "{}"
+        val fxRates = if (fxJson == "{}") emptyMap<String, Double>()
+        else Json.decodeFromString<Map<String, Double>>(fxJson)
 
         // Compute margin USD
         var marginUsd = 0.0
@@ -77,19 +93,23 @@ class MarginCheckWorker(
             marginUsd += e.amount * rate
         }
 
-        val totals    = PortfolioCalculator.computeTotals(positions, marginUsd)
+        val totals = PortfolioCalculator.computeTotals(positions, prices, marginUsd)
         val marginPct = totals.marginPct
 
         ensureChannel()
 
         if (marginPct < lowerPct) {
-            notify(NOTIF_ID_LOWER,
+            notify(
+                NOTIF_ID_LOWER,
                 "⚠️ Margin Low",
-                "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, lowerPct))
+                "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, lowerPct)
+            )
         } else if (marginPct > upperPct) {
-            notify(NOTIF_ID_UPPER,
+            notify(
+                NOTIF_ID_UPPER,
                 "⚠️ Margin High",
-                "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, upperPct))
+                "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, upperPct)
+            )
         }
 
         return Result.success()
@@ -99,7 +119,11 @@ class MarginCheckWorker(
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Margin Alerts", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Margin Alerts",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
                     .apply { description = "Alerts when margin % crosses configured thresholds" }
             )
         }
@@ -132,13 +156,15 @@ class BootReceiver : BroadcastReceiver() {
 
 class ReScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
-        val prefs    = applicationContext.dataStore.data.first()
-        val enabled  = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
+        val prefs = applicationContext.dataStore.data.first()
+        val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
         val interval = prefs[PrefsKeys.MARGIN_ALERT_INTERVAL] ?: 15
-        val lower    = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
-        val upper    = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
-        MarginCheckWorker.schedule(applicationContext,
-            MarginAlertSettings(enabled, lower, upper, interval))
+        val lower = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
+        val upper = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
+        MarginCheckWorker.schedule(
+            applicationContext,
+            MarginAlertSettings(enabled, lower, upper, interval)
+        )
         return Result.success()
     }
 }

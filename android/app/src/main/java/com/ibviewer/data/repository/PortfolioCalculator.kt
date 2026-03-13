@@ -19,13 +19,20 @@ object PortfolioCalculator {
 
     fun computeTotals(
         positions: List<Position>,
+        prices: Map<String, YahooQuote>,
         marginUsd: Double           // negative = loan
     ): PortfolioTotals {
-        val total     = positions.sumOf { (it.markPrice  ?: it.closePrice ?: 0.0) * it.quantity }
-        val prevTotal = positions.sumOf { (it.closePrice ?: it.markPrice  ?: 0.0) * it.quantity }
-        val equity    = total + marginUsd
+        val total = positions.sumOf { pos ->
+            val quote = prices[pos.symbol]
+            (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+        }
+        val prevTotal = positions.sumOf { pos ->
+            val quote = prices[pos.symbol]
+            (quote?.previousClose ?: quote?.regularMarketPrice ?: 0.0) * pos.quantity
+        }
+        val equity = total + marginUsd
         val marginPct = if (equity != 0.0) abs(marginUsd / equity) * 100.0 else 0.0
-        val change    = total - prevTotal
+        val change = total - prevTotal
         val changePct = if (prevTotal != 0.0) change / prevTotal * 100.0 else 0.0
         return PortfolioTotals(total, prevTotal, marginPct, change, changePct)
     }
@@ -38,13 +45,23 @@ object PortfolioCalculator {
         val rebalQty: Double?
     )
 
-    fun computeRebal(positions: List<Position>, rebalTotal: Double): List<RebalRow> {
+    fun computeRebal(
+        positions: List<Position>,
+        prices: Map<String, YahooQuote>,
+        rebalTotal: Double
+    ): List<RebalRow> {
         return positions.map { pos ->
-            val markPrice = pos.markPrice ?: pos.closePrice ?: return@map RebalRow(pos.symbol, 0.0, null)
+            val quote = prices[pos.symbol]
+            val markPrice =
+                quote?.regularMarketPrice ?: quote?.previousClose ?: return@map RebalRow(
+                    pos.symbol,
+                    0.0,
+                    null
+                )
             val currentVal = markPrice * pos.quantity
-            val targetVal  = (pos.targetWeight / 100.0) * rebalTotal
-            val dollars    = targetVal - currentVal
-            val qty        = if (markPrice > 0) dollars / markPrice else null
+            val targetVal = (pos.targetWeight / 100.0) * rebalTotal
+            val dollars = targetVal - currentVal
+            val qty = if (markPrice > 0) dollars / markPrice else null
             RebalRow(pos.symbol, dollars, qty)
         }
     }
@@ -54,9 +71,13 @@ object PortfolioCalculator {
     fun computeAllocations(
         delta: Double,
         positions: List<Position>,
+        prices: Map<String, YahooQuote>,
         mode: AllocMode
     ): Map<String, Double> {
-        val totalVal = positions.sumOf { (it.markPrice ?: it.closePrice ?: 0.0) * it.quantity }
+        val totalVal = positions.sumOf { pos ->
+            val quote = prices[pos.symbol]
+            (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+        }
 
         return when (mode) {
             AllocMode.PROPORTIONAL -> positions.associate { pos ->
@@ -64,18 +85,26 @@ object PortfolioCalculator {
             }
 
             AllocMode.CURRENT_WEIGHT -> positions.associate { pos ->
-                val w = if (totalVal > 0) (pos.markPrice ?: pos.closePrice ?: 0.0) * pos.quantity / totalVal else 0.0
+                val quote = prices[pos.symbol]
+                val markPrice = quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0
+                val w = if (totalVal > 0) markPrice * pos.quantity / totalVal else 0.0
                 pos.symbol to w * delta
             }
 
-            AllocMode.UNDERVALUED_PRIORITY -> computeUndervaluedFirst(positions, totalVal, delta)
+            AllocMode.UNDERVALUED_PRIORITY -> computeUndervaluedFirst(
+                positions,
+                prices,
+                totalVal,
+                delta
+            )
 
-            AllocMode.WATERFALL -> computeWaterfall(positions, totalVal, delta)
+            AllocMode.WATERFALL -> computeWaterfall(positions, prices, totalVal, delta)
         }
     }
 
     private fun computeUndervaluedFirst(
         positions: List<Position>,
+        prices: Map<String, YahooQuote>,
         totalVal: Double,
         delta: Double
     ): Map<String, Double> {
@@ -84,13 +113,15 @@ object PortfolioCalculator {
         val alloc = positions.associate { it.symbol to 0.0 }.toMutableMap()
         val eligible = positions.filter { it.targetWeight > 0 }
         val sorted = eligible.sortedBy { pos ->
-            val curVal = (pos.markPrice ?: pos.closePrice ?: 0.0) * pos.quantity
+            val quote = prices[pos.symbol]
+            val curVal = (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
             sign * ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }
         var remaining = abs(delta)
         for (pos in sorted) {
             if (remaining <= 0) break
-            val curVal = (pos.markPrice ?: pos.closePrice ?: 0.0) * pos.quantity
+            val quote = prices[pos.symbol]
+            val curVal = (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
             val target = finalTotal * (pos.targetWeight / 100.0)
             val amount = minOf(remaining, maxOf(0.0, (target - curVal) * sign))
             alloc[pos.symbol] = amount * sign
@@ -99,7 +130,8 @@ object PortfolioCalculator {
         if (remaining > 0) {
             val totalW = eligible.sumOf { it.targetWeight }
             eligible.forEach { pos ->
-                alloc[pos.symbol] = (alloc[pos.symbol] ?: 0.0) + (pos.targetWeight / totalW) * remaining * sign
+                alloc[pos.symbol] =
+                    (alloc[pos.symbol] ?: 0.0) + (pos.targetWeight / totalW) * remaining * sign
             }
         }
         return alloc
@@ -107,6 +139,7 @@ object PortfolioCalculator {
 
     private fun computeWaterfall(
         positions: List<Position>,
+        prices: Map<String, YahooQuote>,
         totalVal: Double,
         delta: Double
     ): Map<String, Double> {
@@ -115,20 +148,23 @@ object PortfolioCalculator {
         val eligible = positions.filter { it.targetWeight > 0 }
         val alloc = eligible.associate { it.symbol to 0.0 }.toMutableMap()
         val dev = eligible.associate { pos ->
-            val curVal = (pos.markPrice ?: pos.closePrice ?: 0.0) * pos.quantity
+            val quote = prices[pos.symbol]
+            val curVal = (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
             pos.symbol to ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }.toMutableMap()
         val sorted = eligible.sortedBy { sign * (dev[it.symbol] ?: 0.0) }
         var remaining = abs(delta)
         for (i in sorted.indices) {
             if (remaining <= 0) break
-            val groupDev  = dev[sorted[0].symbol] ?: 0.0
-            val nextDev   = if (i + 1 < sorted.size) dev[sorted[i + 1].symbol] ?: 0.0 else sign * Double.MAX_VALUE
+            val groupDev = dev[sorted[0].symbol] ?: 0.0
+            val nextDev = if (i + 1 < sorted.size) dev[sorted[i + 1].symbol]
+                ?: 0.0 else sign * Double.MAX_VALUE
             val groupSize = i + 1
             val costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize
             if (remaining >= costToLevel) {
                 for (j in 0..i) {
-                    alloc[sorted[j].symbol] = (alloc[sorted[j].symbol] ?: 0.0) + (nextDev - groupDev) * finalTotal
+                    alloc[sorted[j].symbol] =
+                        (alloc[sorted[j].symbol] ?: 0.0) + (nextDev - groupDev) * finalTotal
                     dev[sorted[j].symbol] = nextDev
                 }
                 remaining -= costToLevel
@@ -136,7 +172,8 @@ object PortfolioCalculator {
                 val perStock = remaining / groupSize
                 for (j in 0..i) {
                     alloc[sorted[j].symbol] = (alloc[sorted[j].symbol] ?: 0.0) + perStock * sign
-                    dev[sorted[j].symbol] = (dev[sorted[j].symbol] ?: 0.0) + (perStock / finalTotal) * sign
+                    dev[sorted[j].symbol] =
+                        (dev[sorted[j].symbol] ?: 0.0) + (perStock / finalTotal) * sign
                 }
                 remaining = 0.0
             }
@@ -144,7 +181,8 @@ object PortfolioCalculator {
         if (remaining > 0) {
             val totalW = eligible.sumOf { it.targetWeight }
             eligible.forEach { pos ->
-                alloc[pos.symbol] = (alloc[pos.symbol] ?: 0.0) + (pos.targetWeight / totalW) * remaining * sign
+                alloc[pos.symbol] =
+                    (alloc[pos.symbol] ?: 0.0) + (pos.targetWeight / totalW) * remaining * sign
             }
         }
         return alloc
@@ -152,24 +190,30 @@ object PortfolioCalculator {
 
     // ── Groups ────────────────────────────────────────────────────────────────
 
-    fun computeGroups(positions: List<Position>, portfolioTotal: Double): List<GroupRow> {
+    fun computeGroups(
+        positions: List<Position>,
+        prices: Map<String, YahooQuote>,
+        portfolioTotal: Double
+    ): List<GroupRow> {
         data class Acc(
             var mktVal: Double = 0.0,
             var prevMktVal: Double = 0.0,
             var targetWeight: Double = 0.0,
             val members: MutableList<String> = mutableListOf()
         )
+
         val map = mutableMapOf<String, Acc>()
         for (pos in positions) {
             if (pos.groups.isBlank()) continue
             val entries = parseGroups(pos.groups, pos.symbol)
-            val mark  = pos.markPrice  ?: pos.closePrice ?: 0.0
-            val close = pos.closePrice ?: pos.markPrice  ?: 0.0
-            val mktVal     = mark  * pos.quantity
+            val quote = prices[pos.symbol]
+            val mark = quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0
+            val close = quote?.previousClose ?: quote?.regularMarketPrice ?: 0.0
+            val mktVal = mark * pos.quantity
             val prevMktVal = close * pos.quantity
             for ((mult, name) in entries) {
                 val acc = map.getOrPut(name) { Acc() }
-                acc.mktVal     += mktVal     * mult
+                acc.mktVal += mktVal * mult
                 acc.prevMktVal += prevMktVal * mult
                 acc.targetWeight += pos.targetWeight * mult
                 if (!acc.members.contains(pos.symbol)) acc.members.add(pos.symbol)

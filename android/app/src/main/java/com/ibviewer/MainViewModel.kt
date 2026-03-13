@@ -9,6 +9,7 @@ import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.data.model.Position
 import com.ibviewer.data.repository.PortfolioCalculator
 import com.ibviewer.data.repository.YahooMarketDataService
+import com.ibviewer.data.repository.YahooQuote
 import com.ibviewer.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +19,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -51,6 +51,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    // ── Market Data (In-memory) ───────────────────────────────────────────────
+
+    private val _marketData = MutableStateFlow<Map<String, YahooQuote>>(emptyMap())
+    val marketData: StateFlow<Map<String, YahooQuote>> = _marketData
+
     // ── Rebal target (UI state) ───────────────────────────────────────────────
 
     private val _rebalTargetUsd = MutableStateFlow<Double?>(null)
@@ -77,8 +82,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
-        combine(positions, cashTotals) { pos, cash ->
-            PortfolioCalculator.computeTotals(pos, cash.marginUsd)
+        combine(positions, marketData, cashTotals) { pos, prices, cash ->
+            PortfolioCalculator.computeTotals(pos, prices, cash.marginUsd)
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
             PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0)
@@ -87,16 +92,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Derived: rebal rows ───────────────────────────────────────────────────
 
     val rebalRows: StateFlow<List<PortfolioCalculator.RebalRow>> =
-        combine(positions, portfolioTotals, rebalTargetUsd) { pos, totals, target ->
+        combine(
+            positions,
+            marketData,
+            portfolioTotals,
+            rebalTargetUsd
+        ) { pos, prices, totals, target ->
             val rebalTotal = target ?: (totals.totalMktVal + maxOf(0.0, cashTotals.value.marginUsd))
-            PortfolioCalculator.computeRebal(pos, rebalTotal)
+            PortfolioCalculator.computeRebal(pos, prices, rebalTotal)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ── Derived: groups ───────────────────────────────────────────────────────
 
     val groupRows: StateFlow<List<GroupRow>> =
-        combine(positions, portfolioTotals) { pos, totals ->
-            PortfolioCalculator.computeGroups(pos, totals.totalMktVal)
+        combine(positions, marketData, portfolioTotals) { pos, prices, totals ->
+            PortfolioCalculator.computeGroups(pos, prices, totals.totalMktVal)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ── Write operations ──────────────────────────────────────────────────────
@@ -128,16 +138,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         MarginCheckWorker.schedule(getApplication(), s)
     }
 
-    fun updatePrice(symbol: String, mark: Double?, close: Double?) = viewModelScope.launch {
-        val pos = db.positionDao().get(symbol) ?: return@launch
-        db.positionDao().upsert(pos.copy(markPrice = mark, closePrice = close))
-    }
-
     // ── Market Data ───────────────────────────────────────────────────────────
 
     init {
         YahooMarketDataService.setOnUpdateListener { symbol, quote ->
-            updatePrice(symbol, quote.regularMarketPrice, quote.previousClose)
+            _marketData.value += (symbol to quote)
         }
         viewModelScope.launch {
             positions.collect { posList ->
