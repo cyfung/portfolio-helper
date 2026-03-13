@@ -118,7 +118,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                     listOf(
                         "Symbol" to 1.4f,
                         "Mark" to 1.3f,
-                        "Day %" to 0.9f,
+                        "CHG %" to 0.9f,
                         "Mkt Val" to 1.3f,
                         "Weight %" to 1.1f
                     )
@@ -208,7 +208,7 @@ fun PositionRow(
             )
         }
 
-        // Day %
+        // CHG %
         Box(modifier = Modifier.weight(0.9f), contentAlignment = Alignment.CenterEnd) {
             if (dayPct != null) DayPctPill(dayPct)
             else MonoText("—", color = ext.textTertiary)

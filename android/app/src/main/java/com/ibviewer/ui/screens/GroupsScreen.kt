@@ -38,7 +38,7 @@ fun GroupsScreen(vm: MainViewModel) {
         item {
             TableHeader(listOf(
                 "Group"   to 1.5f,
-                "Day %"   to 0.9f,
+                "CHG %"   to 0.9f,
                 "Mkt Val" to 1.2f,
                 "Cur/Tgt" to 1.1f,
                 "Diff %"  to 1.1f
@@ -93,7 +93,7 @@ fun GroupRow(
                 color      = ext.textPrimary
             )
 
-            // Day %
+            // CHG %
             Box(modifier = Modifier.weight(0.9f), contentAlignment = Alignment.CenterEnd) {
                 if (dayPct != null) DayPctPill(dayPct)
                 else MonoText("—", color = ext.textTertiary)

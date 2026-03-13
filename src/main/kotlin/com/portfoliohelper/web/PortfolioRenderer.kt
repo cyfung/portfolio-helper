@@ -502,7 +502,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th(classes = "col-num col-market-data col-moreinfo") { +"Last NAV" }
                 th(classes = "col-num col-market-data") {
                     id = "th-est-val"
-                    +"Est Val "
+                    +"EST "
                     span(classes = "col-info-hint") {
                         title = "Hover a cell to see price targets"
                         +"ⓘ"
@@ -510,16 +510,16 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 }
                 th(classes = "col-num col-market-data col-moreinfo") { +"Last" }
                 th(classes = "col-num col-market-data") { +"Mark" }
-                th(classes = "col-num col-market-data") { +"Day Chg" }
-                th(classes = "col-num col-market-data") { +"Mkt Val Chg" }
+                th(classes = "col-num col-market-data") { +"CHG" }
+                th(classes = "col-num col-market-data") { +"P&L" }
                 th(classes = "col-num col-market-data col-moreinfo") { +"Mkt Val" }
                 th(classes = "col-num") {
                     +"Weight "
                     span(classes = "th-sub") { +"Cur / Tgt / Dev" }
                 }
-                th(classes = "rebal-column") { +"Rebal $" }
+                th(classes = "rebal-column") { +"Rebal" }
                 th(classes = "rebal-column col-moreinfo") { +"Rebal Qty" }
-                th(classes = "alloc-column") { +"Alloc \$" }
+                th(classes = "alloc-column") { +"Alloc" }
                 th(classes = "alloc-column col-moreinfo") { +"Alloc Qty" }
             }
         }
@@ -554,7 +554,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         +(if (stock.lastNav != null) "$%.2f".format(stock.lastNav) else "—")
                     }
 
-                    // Est Val — always blank; fully owned by letf.js via SSE component prices
+                    // EST — always blank; fully owned by letf.js via SSE component prices
                     td(classes = "col-market-data price") {
                         id = "est-val-${stock.label}"
                         +"—"
@@ -577,12 +577,12 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         }
                     }
 
-                    // Day Chg / Mkt Val Chg — owned by JS (updatePriceInUI); render empty
+                    // CHG / P&L — owned by JS (updatePriceInUI); render empty
                     td(classes = "col-market-data price-change neutral") {
                         id = "day-change-${stock.label}"
                     }
 
-                    // Mkt Val Chg — owned by JS; render empty
+                    // P&L — owned by JS; render empty
                     td(classes = "col-market-data price-change neutral") {
                         id = "position-change-${stock.label}"
                     }
@@ -598,7 +598,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         id = "current-weight-${stock.label}"
                     }
 
-                    // Rebal $ / Rebal Qty — owned by JS (updateRebalancingColumns); render empty
+                    // Rebal / Rebal Qty — owned by JS (updateRebalancingColumns); render empty
                     td(classes = "action-neutral rebal-column") {
                         id = "rebal-dollars-${stock.label}"
                     }
@@ -606,7 +606,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         id = "rebal-qty-${stock.label}"
                     }
 
-                    // Alloc $ / Alloc Qty — owned by JS (updateAllocColumns); always empty
+                    // Alloc / Alloc Qty — owned by JS (updateAllocColumns); always empty
                     td(classes = "action-neutral alloc-column") {
                         id = "alloc-dollars-${stock.label}"
                     }

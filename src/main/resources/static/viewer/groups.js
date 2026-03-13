@@ -93,12 +93,12 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     const hRow = table.createTHead().insertRow();
     [
         ['Group', '', false],
-        ['Day %', 'col-num col-market-data', false],
-        ['Mkt Val Chg', 'col-num col-market-data', false],
+        ['CHG %', 'col-num col-market-data', false],
+        ['P&L', 'col-num col-market-data', false],
         ['Mkt Val', 'col-num col-market-data col-moreinfo', false],
         ['Weight <span class="th-sub">Cur / Tgt / Dev</span>', 'col-num', true],
-        ['Rebal $', 'rebal-column', false],
-        ['Alloc $', 'alloc-column', false],
+        ['Rebal', 'rebal-column', false],
+        ['Alloc', 'alloc-column', false],
     ].forEach(([text, cls, isHtml]) => {
         const th = document.createElement('th');
         if (cls) th.className = cls;
