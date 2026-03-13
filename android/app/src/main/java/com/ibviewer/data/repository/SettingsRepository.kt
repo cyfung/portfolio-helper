@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
-import com.ibviewer.data.model.AllocMode
 import com.ibviewer.data.model.MarginAlertSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -31,14 +30,6 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
-    val allocAddMode: Flow<AllocMode> = context.dataStore.data.map { prefs ->
-        AllocMode.valueOf(prefs[PrefsKeys.ALLOC_ADD_MODE] ?: AllocMode.WATERFALL.name)
-    }
-
-    val allocReduceMode: Flow<AllocMode> = context.dataStore.data.map { prefs ->
-        AllocMode.valueOf(prefs[PrefsKeys.ALLOC_REDUCE_MODE] ?: AllocMode.WATERFALL.name)
-    }
-
     suspend fun saveMarginAlertSettings(s: MarginAlertSettings) {
         context.dataStore.edit { prefs ->
             prefs[PrefsKeys.MARGIN_ALERT_ENABLED]   = s.enabled
@@ -48,10 +39,4 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun saveAllocModes(addMode: AllocMode, reduceMode: AllocMode) {
-        context.dataStore.edit { prefs ->
-            prefs[PrefsKeys.ALLOC_ADD_MODE]    = addMode.name
-            prefs[PrefsKeys.ALLOC_REDUCE_MODE] = reduceMode.name
-        }
-    }
 }

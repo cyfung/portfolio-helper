@@ -46,16 +46,6 @@ fun changeColor(value: Double, threshold: Double = 0.01): Color {
     }
 }
 
-@Composable
-fun actionColor(value: Double, threshold: Double = 0.50): Color {
-    val ext = MaterialTheme.ext
-    return when {
-        value >  threshold -> ext.actionPositive
-        value < -threshold -> ext.actionNegative
-        else               -> ext.actionNeutral
-    }
-}
-
 // ── Reusable composables ──────────────────────────────────────────────────────
 
 @Composable
