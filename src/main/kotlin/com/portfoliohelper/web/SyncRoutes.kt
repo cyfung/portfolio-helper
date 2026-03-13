@@ -18,32 +18,39 @@ private val logger = LoggerFactory.getLogger("SyncRoutes")
 
 fun Route.configureSyncRoutes() {
     
-    // Middleware check for sync endpoints
+    // Security Interceptor for /api/sync
     intercept(ApplicationCallPipeline.Plugins) {
         val path = call.request.path()
-        if (path.startsWith("/api/sync/") && path != "/api/sync/pair") {
-            val clientAddress = call.request.origin.remoteHost
-            if (!PairingService.isAuthorized(clientAddress)) {
-                logger.warn("Unauthorized access attempt to $path from $clientAddress")
-                call.respond(HttpStatusCode.Unauthorized, "Device not paired")
-                return@intercept finish()
-            }
+        if (!path.startsWith("/api/sync/")) return@intercept
+
+        // "Announce" is the only sync endpoint allowed without a paired ID
+        if (path == "/api/sync/announce") return@intercept
+
+        val deviceId = call.request.headers["X-Device-ID"]
+        if (deviceId == null || !PairingService.isAuthorized(deviceId)) {
+            logger.warn("Unauthorized sync access attempt to $path. Device ID: $deviceId")
+            call.respond(HttpStatusCode.Unauthorized, "Device not paired")
+            return@intercept finish()
         }
     }
 
-    // Pairing Endpoint - PIN verification
-    post("/api/sync/pair") {
+    /**
+     * Called by Android device to initiate pairing.
+     * Android generates a PIN, displays it to user, and sends it here.
+     */
+    post("/api/sync/announce") {
+        val deviceId = call.request.queryParameters["deviceId"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing Device ID")
+        val deviceName = call.request.queryParameters["deviceName"] ?: "Android Device"
         val pin = call.request.queryParameters["pin"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing PIN")
         val clientAddress = call.request.origin.remoteHost
         
-        logger.info("Received pairing request from $clientAddress with PIN $pin")
-        if (PairingService.verifyPin(pin, clientAddress)) {
-            call.respond(HttpStatusCode.OK, "Paired successfully")
-        } else {
-            call.respond(HttpStatusCode.Unauthorized, "Invalid or expired PIN")
-        }
+        PairingService.addPendingPairing(deviceId, deviceName, pin, clientAddress)
+        call.respond(HttpStatusCode.Accepted, "Announcement received. Please authorize on server.")
     }
 
+    /**
+     * Data Sync: Positions
+     */
     get("/api/sync/positions.csv") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
         val entry = PortfolioRegistry.get(id = portfolioId) ?: return@get call.respond(HttpStatusCode.NotFound)
@@ -56,17 +63,15 @@ fun Route.configureSyncRoutes() {
         CSVPrinter(sw, csvFormat).use { printer ->
             entry.getStocks().forEach { stock ->
                 val groupsStr = stock.groups.joinToString(";") { (mult, name) -> "$mult $name" }
-                printer.printRecord(
-                    stock.label,
-                    formatQty(stock.amount),
-                    stock.targetWeight ?: 0.0,
-                    groupsStr
-                )
+                printer.printRecord(stock.label, formatQty(stock.amount), stock.targetWeight ?: 0.0, groupsStr)
             }
         }
         call.respondText(sw.toString(), ContentType.Text.CSV)
     }
 
+    /**
+     * Data Sync: Cash
+     */
     get("/api/sync/cash.csv") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
         val entry = PortfolioRegistry.get(id = portfolioId) ?: return@get call.respond(HttpStatusCode.NotFound)
@@ -78,12 +83,7 @@ fun Route.configureSyncRoutes() {
             
         CSVPrinter(sw, csvFormat).use { printer ->
             entry.getCash().forEach { cash ->
-                printer.printRecord(
-                    cash.label,
-                    cash.currency,
-                    cash.amount,
-                    cash.marginFlag
-                )
+                printer.printRecord(cash.label, cash.currency, cash.amount, cash.marginFlag)
             }
         }
         call.respondText(sw.toString(), ContentType.Text.CSV)

@@ -40,31 +40,38 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                     renderConfigSection("Android Sync Pairing") {
                         div(classes = "config-field") {
                             div(classes = "config-field-label-row") {
-                                span { +"Pairing PIN" }
+                                span { +"Authorize New Device" }
                                 span(classes = "config-badge config-badge-live") { +"live" }
                             }
                             span(classes = "config-field-description") { 
-                                +"Enter this 4-digit PIN in the IB Viewer Android app to pair your device."
+                                +"Pending pairing requests from Android devices will appear here."
                                 br()
-                                +"PINs expire after 5 minutes."
+                                +"Enter the 4-digit PIN displayed on your phone to authorize sync."
                             }
                             div(classes = "pairing-pin-container") {
                                 id = "pairing-pin-display"
-                                val activePins = PairingService.getActivePins()
-                                if (activePins.isEmpty()) {
-                                    button(classes = "config-save-btn", type = ButtonType.button) {
-                                        id = "generate-pin-btn"
-                                        +"Generate PIN"
-                                    }
-                                } else {
-                                    div(classes = "pin-number-display") {
-                                        +activePins.first()
-                                    }
-                                    button(classes = "config-restore-btn", type = ButtonType.button) {
-                                        id = "generate-pin-btn"
-                                        +"Generate New PIN"
-                                    }
+                                // Populated by JS
+                                p(classes = "config-env-override-note") { +"Waiting for requests..." }
+                            }
+                        }
+
+                        hr(classes = "config-divider")
+
+                        div(classes = "config-field") {
+                            div(classes = "config-field-label-row") {
+                                span { +"Paired Devices" }
+                                button(classes = "config-text-link-btn", type = ButtonType.button) {
+                                    id = "unpair-all-btn"
+                                    +"Unlink All"
                                 }
+                            }
+                            span(classes = "config-field-description") { 
+                                +"Devices authorized to sync with this server."
+                            }
+                            div(classes = "paired-devices-list") {
+                                id = "paired-devices-list"
+                                // Populated by JS
+                                p(classes = "config-env-override-note") { +"Loading devices..." }
                             }
                         }
                     }

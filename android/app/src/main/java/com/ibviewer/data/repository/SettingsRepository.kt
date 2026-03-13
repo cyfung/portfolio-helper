@@ -6,7 +6,9 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.ibviewer.data.model.MarginAlertSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ibviewer_prefs")
 
@@ -20,6 +22,7 @@ object PrefsKeys {
     val SYNC_SERVER_HOST        = stringPreferencesKey("sync_server_host")
     val SYNC_SERVER_PORT        = intPreferencesKey("sync_server_port")
     val SYNC_SERVER_NAME        = stringPreferencesKey("sync_server_name")
+    val DEVICE_ID               = stringPreferencesKey("device_id")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -33,6 +36,16 @@ class SettingsRepository(private val context: Context) {
                 port = prefs[PrefsKeys.SYNC_SERVER_PORT] ?: 0
             )
         } else null
+    }
+
+    suspend fun getDeviceId(): String {
+        val prefs = context.dataStore.data.first()
+        var id = prefs[PrefsKeys.DEVICE_ID]
+        if (id == null) {
+            id = UUID.randomUUID().toString()
+            context.dataStore.edit { it[PrefsKeys.DEVICE_ID] = id!! }
+        }
+        return id
     }
 
     suspend fun saveSyncServerInfo(info: SyncServerInfo?) {

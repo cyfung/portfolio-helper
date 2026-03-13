@@ -9,6 +9,7 @@ import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
+import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -22,6 +23,7 @@ import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVPrinter
 import java.io.File
 import java.io.FileWriter
+import java.net.InetAddress
 
 private val backtestDir get() = AppDirs.dataDir.resolve(".backtest").toFile()
 
@@ -68,6 +70,29 @@ private fun normalizeCashKey(raw: String): String {
 
 fun Application.configureRouting() {
     routing {
+        
+        // Security Interceptor: Restrict non-sync routes to localhost
+        val localOnlyPlugin = createRouteScopedPlugin("LocalOnlyPlugin") {
+            onCall { call ->
+                val path = call.request.path()
+                if (path.startsWith("/api/sync/") || path.startsWith("/static/")) return@onCall
+
+                val remoteAddress = call.request.origin.remoteHost
+                val isAllowed = try {
+                    val inetAddress = InetAddress.getByName(remoteAddress)
+                    inetAddress.isLoopbackAddress || inetAddress.isSiteLocalAddress
+                } catch (_: Exception) {
+                    false
+                }
+
+                if (!isAllowed) {
+                    println("DEBUG Forbidden: $remoteAddress")
+                    call.respond(HttpStatusCode.Forbidden, "Access restricted to localhost")
+                }
+            }
+        }
+        install(localOnlyPlugin)
+
         // Android Sync Endpoints
         configureSyncRoutes()
 
@@ -514,7 +539,7 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val body = call.receiveText().trim()
                 val confFile = File(portfolioEntry.csvPath).resolveSibling("portfolio.conf")
-                // Parse existing xconf
+                // Parse existing conf
                 val props = if (confFile.exists())
                     confFile.readLines()
                         .filter { '=' in it && !it.startsWith('#') }
@@ -571,10 +596,52 @@ fun Application.configureRouting() {
             }
         }
 
-        // Pairing API
-        post("/api/pairing/generate") {
-            val pin = PairingService.generatePin()
-            call.respondText("{\"pin\":\"$pin\"}", ContentType.Application.Json)
+        // Device Management Endpoints (Localhost only)
+        get("/api/paired-devices") {
+            val clients = PairingService.getPairedClients()
+            val json = buildJsonArray {
+                clients.forEach { client ->
+                    add(buildJsonObject {
+                        put("id", client.id)
+                        put("name", client.name)
+                        put("pairedAt", client.pairedAt)
+                        put("lastIp", client.lastIp)
+                    })
+                }
+            }
+            call.respondText(json.toString(), ContentType.Application.Json)
+        }
+
+        get("/api/pending-pairings") {
+            val pending = PairingService.getPendingRequests()
+            val json = buildJsonArray {
+                pending.forEach { p ->
+                    add(buildJsonObject {
+                        put("id", p.deviceId)
+                        put("name", p.deviceName)
+                        put("timestamp", p.timestamp)
+                        put("ip", p.ip)
+                    })
+                }
+            }
+            call.respondText(json.toString(), ContentType.Application.Json)
+        }
+
+        post("/api/authorize-device") {
+            val deviceId = call.request.queryParameters["deviceId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val pin = call.request.queryParameters["pin"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            if (PairingService.authorizeDevice(deviceId, pin)) {
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } else {
+                call.respond(HttpStatusCode.Unauthorized, "Invalid PIN or request expired")
+            }
+        }
+
+        post("/api/unpair-device") {
+            val deviceId = call.request.queryParameters["deviceId"]
+            if (deviceId != null) PairingService.unpairClient(deviceId)
+            else PairingService.unpairAll()
+            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
         }
 
         // Server-Sent Events (SSE) endpoint for streaming price updates

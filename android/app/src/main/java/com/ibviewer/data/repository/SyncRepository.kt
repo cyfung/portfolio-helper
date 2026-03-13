@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.util.Log
 import androidx.room.withTransaction
 import com.ibviewer.data.model.CashEntry
@@ -93,8 +94,12 @@ class SyncRepository(
     }
 
     suspend fun pair(host: String, port: Int, pin: String) {
+        val deviceId = settings.getDeviceId()
+        val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
         val response = client.post("http://$host:$port/api/sync/pair") {
             parameter("pin", pin)
+            parameter("deviceId", deviceId)
+            parameter("deviceName", deviceName)
         }
         if (response.status != HttpStatusCode.OK) {
             val body = response.bodyAsText()
@@ -120,14 +125,19 @@ class SyncRepository(
             throw Exception("Could not find server IP. Ensure you are on the same WiFi.")
         }
 
+        val deviceId = settings.getDeviceId()
         val baseUrl = "http://$host:$port/api/sync"
         Log.d("SyncRepository", "Syncing from $baseUrl")
 
         try {
-            val positionsCsv = client.get("$baseUrl/positions.csv").bodyAsText()
+            val positionsCsv = client.get("$baseUrl/positions.csv") {
+                header("X-Device-ID", deviceId)
+            }.bodyAsText()
             if (positionsCsv.contains("Device not paired")) throw UnauthorizedException()
             
-            val cashCsv = client.get("$baseUrl/cash.csv").bodyAsText()
+            val cashCsv = client.get("$baseUrl/cash.csv") {
+                header("X-Device-ID", deviceId)
+            }.bodyAsText()
             if (cashCsv.contains("Device not paired")) throw UnauthorizedException()
 
             parseAndSave(positionsCsv, cashCsv)
