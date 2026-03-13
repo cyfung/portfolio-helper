@@ -74,7 +74,7 @@ fun CashScreen(vm: MainViewModel) {
 
             // ── Table header ──────────────────────────────────────────────────
             item {
-                TableHeader(listOf("Label" to 1.8f, "CCY" to 0.6f, "Amount" to 1.2f, "USD" to 1.2f))
+                TableHeader(listOf("Label" to 1.5f, "" to 0.4f, "Amount" to 1.5f, "USD" to 1.3f))
                 Divider()
             }
 
@@ -125,25 +125,53 @@ fun CashEntryRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(if (entry.isMargin) ext.bgSecondary else ext.bgPrimary)
+                .background(ext.bgPrimary)
                 .clickable { showActions = !showActions }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1.8f)) {
-                Text(entry.label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ext.textPrimary)
-                if (entry.isMargin) Text("MARGIN", fontSize = 9.sp, color = ext.negative, fontWeight = FontWeight.Bold)
-            }
-            MonoText(entry.currency, color = ext.textTertiary, modifier = Modifier.weight(0.6f))
-            MonoText(
-                formatCurrency(abs(entry.amount)),
-                color    = if (entry.amount < 0) ext.negative else ext.textSecondary,
-                modifier = Modifier.weight(1.2f)
+            // Label
+            Text(
+                text = entry.label,
+                modifier = Modifier.weight(1.5f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = ext.textPrimary
             )
+
+            // Margin Badge
+            Box(modifier = Modifier.weight(0.4f), contentAlignment = Alignment.CenterStart) {
+                if (entry.isMargin) CashTypeBadge("M")
+            }
+
+            // Raw Amount + Currency on same line
+            Row(
+                modifier = Modifier.weight(1.5f),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MonoText(
+                    text = "%,.2f".format(entry.amount),
+                    color = if (entry.amount < 0) ext.negative else ext.textPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = entry.currency,
+                    fontSize = 11.sp,
+                    color = ext.textTertiary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // USD Converted
             MonoText(
-                if (usd != null) formatCurrency(abs(usd)) else "...",
-                color    = if (usd != null && usd < 0) ext.negative else ext.textTertiary,
-                modifier = Modifier.weight(1.2f)
+                text = if (usd != null) formatCurrency(usd) else "—",
+                color = if (usd != null && usd < 0) ext.negative else ext.textSecondary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                modifier = Modifier.weight(1.3f)
             )
         }
 

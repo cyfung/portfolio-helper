@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ibviewer.ui.theme.ext
@@ -76,7 +77,7 @@ fun SummaryCard(
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily  = FontFamily.Monospace,
                     fontWeight  = FontWeight.SemiBold,
-                    fontSize    = 13.sp
+                    fontSize    = 14.sp
                 ),
                 color = valueColor)
         }
@@ -98,7 +99,7 @@ fun TableHeader(columns: List<Pair<String, Float>>) {
                 modifier  = Modifier.weight(weight),
                 style     = MaterialTheme.typography.labelSmall.copy(
                     fontWeight = FontWeight.SemiBold,
-                    fontSize   = 11.sp
+                    fontSize   = 12.sp
                 ),
                 color     = ext.headerText,
                 textAlign = if (label == columns.first().first) TextAlign.Start else TextAlign.End
@@ -117,6 +118,7 @@ fun MonoText(
     text: String,
     color: Color = MaterialTheme.ext.textSecondary,
     fontWeight: FontWeight = FontWeight.Normal,
+    fontSize: TextUnit = 14.sp,
     textAlign: TextAlign = TextAlign.End,
     modifier: Modifier = Modifier
 ) {
@@ -126,7 +128,7 @@ fun MonoText(
         style    = MaterialTheme.typography.bodySmall.copy(
             fontFamily = FontFamily.Monospace,
             fontWeight = fontWeight,
-            fontSize   = 12.sp
+            fontSize   = fontSize
         ),
         textAlign = textAlign,
         modifier = modifier
@@ -151,7 +153,7 @@ fun DayPctPill(pct: Double, isStale: Boolean = false) {
                 shape  = RoundedCornerShape(3.dp)
             )
             .border(0.5.dp, color.copy(alpha = 0.25f * alpha), RoundedCornerShape(3.dp))
-            .padding(horizontal = 5.dp, vertical = 1.dp)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
         Text(
             text  = text,
@@ -159,7 +161,97 @@ fun DayPctPill(pct: Double, isStale: Boolean = false) {
             style = MaterialTheme.typography.labelSmall.copy(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold,
-                fontSize   = 11.sp
+                fontSize   = 12.sp
+            )
+        )
+    }
+}
+
+@Composable
+fun WeightDiffPill(diff: Double) {
+    val ext = MaterialTheme.ext
+    val color = when {
+        abs(diff) > 1.0 -> if (diff > 0) ext.negative else ext.positive
+        abs(diff) > 0.2 -> ext.warning
+        else -> ext.textTertiary
+    }
+    
+    val text = "${if (diff >= 0) "+" else ""}${"%.1f".format(diff)}%"
+    
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(3.dp))
+            .border(0.5.dp, color.copy(alpha = 0.25f), RoundedCornerShape(3.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp)
+    ) {
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            )
+        )
+    }
+}
+
+@Composable
+fun WeightBreakdown(
+    current: Double,
+    target: Double,
+    modifier: Modifier = Modifier
+) {
+    val ext = MaterialTheme.ext
+    val diff = current - target
+    
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${"%.1f".format(current)}%",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = ext.textPrimary
+            )
+            Text(
+                text = "/",
+                fontSize = 11.sp,
+                color = ext.textTertiary,
+                modifier = Modifier.padding(horizontal = 2.dp)
+            )
+            Text(
+                text = "${"%.1f".format(target)}%",
+                fontSize = 12.sp,
+                color = ext.textSecondary
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        WeightDiffPill(diff)
+    }
+}
+
+@Composable
+fun CashTypeBadge(type: String) {
+    val ext = MaterialTheme.ext
+    val (color, text) = when (type) {
+        "M" -> ext.warning to "M"
+        else -> ext.actionPositive to type
+    }
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(3.dp))
+            .border(0.5.dp, color.copy(alpha = 0.25f), RoundedCornerShape(3.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+    ) {
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
             )
         )
     }

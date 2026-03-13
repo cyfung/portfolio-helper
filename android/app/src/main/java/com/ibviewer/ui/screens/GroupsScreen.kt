@@ -15,7 +15,6 @@ import com.ibviewer.MainViewModel
 import com.ibviewer.data.model.GroupRow
 import com.ibviewer.ui.components.*
 import com.ibviewer.ui.theme.ext
-import kotlin.math.abs
 
 @Composable
 fun GroupsScreen(vm: MainViewModel) {
@@ -38,18 +37,15 @@ fun GroupsScreen(vm: MainViewModel) {
         item {
             TableHeader(listOf(
                 "Group"   to 1.5f,
-                "CHG %"   to 0.9f,
-                "Mkt Val" to 1.2f,
-                "Cur/Tgt" to 1.1f,
-                "Diff %"  to 1.1f
+                "CHG %"   to 1.2f,
+                "P&L"     to 1.5f
             ))
             Divider()
         }
 
         items(groups, key = { it.name }) { group ->
             GroupRow(
-                group        = group,
-                portfolioVal = totals.totalMktVal
+                group = group
             )
             Divider()
         }
@@ -67,87 +63,42 @@ fun GroupsScreen(vm: MainViewModel) {
 
 @Composable
 fun GroupRow(
-    group: GroupRow,
-    portfolioVal: Double
+    group: GroupRow
 ) {
     val ext        = MaterialTheme.ext
     val mktValChg  = group.mktVal - group.prevMktVal
-    val dayPct     = if (group.prevMktVal > 0) mktValChg / group.prevMktVal * 100.0 else null
-    val weightPct  = if (portfolioVal > 0) group.mktVal / portfolioVal * 100.0 else 0.0
-    val weightDiff = weightPct - group.targetWeight
+    val dayPct     = if (group.prevMktVal > 0) (mktValChg / group.prevMktVal * 100.0) else null
 
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(ext.bgPrimary)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Group name
-            Text(
-                text       = group.name,
-                modifier   = Modifier.weight(1.5f),
-                fontWeight = FontWeight.Medium,
-                fontSize   = 13.sp,
-                color      = ext.textPrimary
-            )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ext.bgPrimary)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Group name
+        Text(
+            text       = group.name,
+            modifier   = Modifier.weight(1.5f),
+            fontWeight = FontWeight.Bold,
+            fontSize   = 15.sp,
+            color      = ext.textPrimary
+        )
 
-            // CHG %
-            Box(modifier = Modifier.weight(0.9f), contentAlignment = Alignment.CenterEnd) {
-                if (dayPct != null) DayPctPill(dayPct)
-                else MonoText("—", color = ext.textTertiary)
-            }
-
-            // Mkt Val
-            MonoText(
-                text     = formatCurrency(group.mktVal),
-                color    = ext.textSecondary,
-                modifier = Modifier.weight(1.2f)
-            )
-
-            // Cur / Tgt weight
-            Column(modifier = Modifier.weight(1.1f), horizontalAlignment = Alignment.End) {
-                Text("${weightPct.toFixed(1)}% / ${group.targetWeight.toFixed(1)}%",
-                    fontSize   = 10.sp,
-                    fontWeight = FontWeight.Normal,
-                    color      = ext.textTertiary)
-            }
-
-            // Diff %
-            val diffColor = when {
-                abs(weightDiff) > 1.0 -> if (weightDiff > 0) ext.negative else ext.actionPositive
-                abs(weightDiff) > 0.2 -> ext.warning
-                else                  -> ext.positive
-            }
-            Text(
-                text       = "${if (weightDiff >= 0) "+" else ""}${weightDiff.toFixed(1)}%",
-                modifier   = Modifier.weight(1.1f),
-                fontSize   = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color      = diffColor,
-                textAlign  = androidx.compose.ui.text.style.TextAlign.End
-            )
+        // CHG %
+        Box(modifier = Modifier.weight(1.2f), contentAlignment = Alignment.CenterEnd) {
+            if (dayPct != null) DayPctPill(dayPct)
+            else MonoText("—", color = ext.textTertiary, fontSize = 15.sp)
         }
 
-        // Member chips on tap
-        if (group.members.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(ext.bgSecondary)
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                group.members.forEach { symbol ->
-                    SuggestionChip(
-                        onClick = {},
-                        label   = { Text(symbol, fontSize = 10.sp) }
-                    )
-                }
-            }
-        }
+        // P&L
+        val pnlColor = changeColor(mktValChg)
+        MonoText(
+            text     = if (mktValChg != 0.0) formatSignedCurrency(mktValChg) else "—",
+            color    = pnlColor,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            modifier = Modifier.weight(1.5f)
+        )
     }
 }
-
-private fun Double.toFixed(n: Int) = "%.${n}f".format(this)
