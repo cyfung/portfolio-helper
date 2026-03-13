@@ -514,7 +514,7 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val body = call.receiveText().trim()
                 val confFile = File(portfolioEntry.csvPath).resolveSibling("portfolio.conf")
-                // Parse existing conf
+                // Parse existing xconf
                 val props = if (confFile.exists())
                     confFile.readLines()
                         .filter { '=' in it && !it.startsWith('#') }
@@ -569,6 +569,12 @@ fun Application.configureRouting() {
                     ContentType.Application.Json, HttpStatusCode.InternalServerError
                 )
             }
+        }
+
+        // Pairing API
+        post("/api/pairing/generate") {
+            val pin = PairingService.generatePin()
+            call.respondText("{\"pin\":\"$pin\"}", ContentType.Application.Json)
         }
 
         // Server-Sent Events (SSE) endpoint for streaming price updates

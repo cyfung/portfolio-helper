@@ -10,6 +10,7 @@ import com.ibviewer.data.model.GroupRow
 import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.data.model.Position
 import com.ibviewer.data.repository.PortfolioCalculator
+import com.ibviewer.data.repository.SyncRepository
 import com.ibviewer.data.repository.SyncServerInfo
 import com.ibviewer.data.repository.YahooMarketDataService
 import com.ibviewer.data.repository.YahooQuote
@@ -19,7 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -29,6 +30,7 @@ sealed class SyncStatus {
     object Syncing : SyncStatus()
     object Success : SyncStatus()
     data class Error(val message: String) : SyncStatus()
+    data class NeedsPairing(val server: NsdServiceInfo) : SyncStatus()
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -146,19 +148,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _syncStatus = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus
 
-    fun pairServer(service: NsdServiceInfo) = viewModelScope.launch {
-        Log.i("MainViewModel", "Pairing with server: ${service.serviceName}")
-        settings.saveSyncServerInfo(SyncServerInfo(
-            name = service.serviceName,
-            host = service.host?.hostAddress ?: "",
-            port = service.port
-        ))
-        sync()
+    fun requestPairing(service: NsdServiceInfo) {
+        _syncStatus.value = SyncStatus.NeedsPairing(service)
+    }
+
+    fun pairServer(service: NsdServiceInfo, pin: String) = viewModelScope.launch {
+        Log.i("MainViewModel", "Attempting to pair with server: ${service.serviceName} using PIN $pin")
+        _syncStatus.value = SyncStatus.Syncing
+        try {
+            val host = service.host?.hostAddress ?: ""
+            val port = service.port
+            syncRepo.pair(host, port, pin)
+            
+            settings.saveSyncServerInfo(SyncServerInfo(
+                name = service.serviceName,
+                host = host,
+                port = port
+            ))
+            Log.i("MainViewModel", "Pairing successful")
+            sync()
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Pairing failed: ${e.message}")
+            _syncStatus.value = SyncStatus.Error("Pairing failed: ${e.message}")
+        }
     }
 
     fun unpairServer() = viewModelScope.launch {
         Log.i("MainViewModel", "Unpairing server")
         settings.saveSyncServerInfo(null)
+        _syncStatus.value = SyncStatus.Idle
     }
 
     fun sync() = viewModelScope.launch {
@@ -170,8 +188,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
         } catch (e: Exception) {
-            Log.e("MainViewModel", "Sync failed with error: ${e.message}", e)
-            _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error occurred")
+            if (e is SyncRepository.UnauthorizedException) {
+                Log.w("MainViewModel", "Sync failed: Unauthorized. Re-pairing needed.")
+                _syncStatus.value = SyncStatus.Error("Device not paired or pairing expired.")
+            } else {
+                Log.e("MainViewModel", "Sync failed with error: ${e.message}", e)
+                _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error occurred")
+            }
         }
     }
 
@@ -200,7 +223,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         
         // Initial sync if paired
         viewModelScope.launch {
-            if (settings.syncServerInfo.first() != null) {
+            if (settings.syncServerInfo.firstOrNull() != null) {
                 sync()
             }
         }

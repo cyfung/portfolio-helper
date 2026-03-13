@@ -3,21 +3,18 @@ package com.ibviewer.ui.screens
 import android.net.nsd.NsdServiceInfo
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ibviewer.MainViewModel
@@ -104,7 +101,7 @@ fun SettingsScreen(vm: MainViewModel) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     } else {
                         discoveredServers.forEach { server ->
-                            ServerItem(server) { vm.pairServer(server) }
+                            ServerItem(server) { vm.requestPairing(server) }
                         }
                     }
                 } else {
@@ -119,6 +116,16 @@ fun SettingsScreen(vm: MainViewModel) {
                     }
                 }
             }
+        }
+
+        // ── Pairing Dialog ───────────────────────────────────────────────────
+        if (syncStatus is SyncStatus.NeedsPairing) {
+            val server = (syncStatus as SyncStatus.NeedsPairing).server
+            PairingPinDialog(
+                serverName = server.serviceName,
+                onDismiss = { vm.clearSyncStatus() },
+                onConfirm = { pin -> vm.pairServer(server, pin) }
+            )
         }
 
         // ── Margin Alert section ──────────────────────────────────────────────
@@ -229,9 +236,45 @@ fun ServerItem(server: NsdServiceInfo, onPair: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(server.serviceName, fontWeight = FontWeight.Medium, color = ext.textPrimary)
-                Text("${server.host?.hostAddress}:${server.port}", fontSize = 11.sp, color = ext.textSecondary)
+                Text("${server.host?.hostAddress ?: "Resolving..."}:${server.port}", fontSize = 11.sp, color = ext.textSecondary)
             }
             Text("Pair", color = ext.actionPositive, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
+}
+
+@Composable
+fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var pin by remember { mutableStateOf("") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pair with $serverName") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Enter the 4-digit PIN displayed on your computer screen.")
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 4) pin = it.filter { c -> c.isDigit() } },
+                    label = { Text("PIN") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (pin.length == 4) onConfirm(pin) },
+                enabled = pin.length == 4
+            ) {
+                Text("Pair")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

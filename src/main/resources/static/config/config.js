@@ -16,6 +16,7 @@ const GLOBAL_DEFAULTS = {
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initUpdates();
+    initPairing();
 
     // Snapshot originals for restart detection
     document.querySelectorAll('[data-config-key]').forEach(el => {
@@ -86,6 +87,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('config-save-btn').click();
     });
 });
+
+function initPairing() {
+    const container = document.getElementById('pairing-pin-display');
+    if (!container) return;
+
+    container.addEventListener('click', async (e) => {
+        if (e.target.id === 'generate-pin-btn') {
+            try {
+                const r = await fetch('/api/pairing/generate', { method: 'POST' });
+                const { pin } = await r.json();
+                container.innerHTML = `
+                    <div class="pin-number-display">${pin}</div>
+                    <button class="config-restore-btn" id="generate-pin-btn" type="button">Generate New PIN</button>
+                `;
+            } catch (err) {
+                console.error('Failed to generate PIN', err);
+            }
+        }
+    });
+}
 
 function showStatus(msg, type) {
     const el = document.getElementById('config-status');

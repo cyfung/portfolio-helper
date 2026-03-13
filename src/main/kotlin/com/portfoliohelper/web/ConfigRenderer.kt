@@ -4,6 +4,7 @@ import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
 import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.service.ManagedPortfolio
+import com.portfoliohelper.service.PairingService
 import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.UpdateService
 import com.portfoliohelper.service.UpdateService.DownloadPhase
@@ -34,6 +35,39 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 
                 main(classes = "config-page") {
                     h1 { +"App Settings" }
+
+                    // Android Sync Pairing
+                    renderConfigSection("Android Sync Pairing") {
+                        div(classes = "config-field") {
+                            div(classes = "config-field-label-row") {
+                                span { +"Pairing PIN" }
+                                span(classes = "config-badge config-badge-live") { +"live" }
+                            }
+                            span(classes = "config-field-description") { 
+                                +"Enter this 4-digit PIN in the IB Viewer Android app to pair your device."
+                                br()
+                                +"PINs expire after 5 minutes."
+                            }
+                            div(classes = "pairing-pin-container") {
+                                id = "pairing-pin-display"
+                                val activePins = PairingService.getActivePins()
+                                if (activePins.isEmpty()) {
+                                    button(classes = "config-save-btn", type = ButtonType.button) {
+                                        id = "generate-pin-btn"
+                                        +"Generate PIN"
+                                    }
+                                } else {
+                                    div(classes = "pin-number-display") {
+                                        +activePins.first()
+                                    }
+                                    button(classes = "config-restore-btn", type = ButtonType.button) {
+                                        id = "generate-pin-btn"
+                                        +"Generate New PIN"
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // IB Connection
                     renderConfigSection("IB Connection") {

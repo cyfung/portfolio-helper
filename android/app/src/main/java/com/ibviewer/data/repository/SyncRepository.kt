@@ -12,6 +12,7 @@ import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -91,6 +92,16 @@ class SyncRepository(
         }
     }
 
+    suspend fun pair(host: String, port: Int, pin: String) {
+        val response = client.post("http://$host:$port/api/sync/pair") {
+            parameter("pin", pin)
+        }
+        if (response.status != HttpStatusCode.OK) {
+            val body = response.bodyAsText()
+            throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+        }
+    }
+
     suspend fun sync() {
         val serverInfo = settings.syncServerInfo.firstOrNull() ?: run {
             Log.w("SyncRepository", "Sync skipped: No paired server")
@@ -99,7 +110,7 @@ class SyncRepository(
         
         Log.d("SyncRepository", "Starting sync with ${serverInfo.name}")
         
-        // Re-discover to get latest IP if it changed. Give it a generous 10s timeout.
+        // Re-discover to get latest IP if it changed
         val resolved = findServer(serverInfo.name)
         val host = resolved?.host?.hostAddress ?: serverInfo.host
         val port = resolved?.port ?: serverInfo.port
@@ -109,12 +120,15 @@ class SyncRepository(
             throw Exception("Could not find server IP. Ensure you are on the same WiFi.")
         }
 
-        val baseUrl = "http://$host:$port"
+        val baseUrl = "http://$host:$port/api/sync"
         Log.d("SyncRepository", "Syncing from $baseUrl")
 
         try {
             val positionsCsv = client.get("$baseUrl/positions.csv").bodyAsText()
+            if (positionsCsv.contains("Device not paired")) throw UnauthorizedException()
+            
             val cashCsv = client.get("$baseUrl/cash.csv").bodyAsText()
+            if (cashCsv.contains("Device not paired")) throw UnauthorizedException()
 
             parseAndSave(positionsCsv, cashCsv)
             Log.i("SyncRepository", "Sync successful")
@@ -122,6 +136,7 @@ class SyncRepository(
             settings.saveSyncServerInfo(serverInfo.copy(host = host, port = port))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
+            if (e is UnauthorizedException) throw e
             Log.e("SyncRepository", "Sync failed: ${e.message}", e)
             throw Exception("Connection failed: ${e.message}")
         }
@@ -172,4 +187,6 @@ class SyncRepository(
             cashEntries.forEach { db.cashDao().upsert(it) }
         }
     }
+
+    class UnauthorizedException : Exception("Device not paired or authentication failed")
 }
