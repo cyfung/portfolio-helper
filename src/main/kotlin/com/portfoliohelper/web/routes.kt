@@ -79,18 +79,16 @@ fun Application.configureRouting() {
 
     install(SSE)
 
-    routing {
+    intercept(ApplicationCallPipeline.Plugins) {
+        if (call.request.local.localPort == httpPort) {
+            val host = call.request.host()
+            val path = call.request.uri
+            call.respondRedirect("https://$host:$httpsPort$path", permanent = true)
+            return@intercept finish()
+        }
+    }
 
-        // HTTP -> HTTPS redirect disabled temporarily for performance testing.
-        // Re-enable by uncommenting the block below.
-        // intercept(ApplicationCallPipeline.Plugins) {
-        //     if (call.request.local.port == httpPort) {
-        //         val host = call.request.host()
-        //         val path = call.request.uri
-        //         call.respondRedirect("https://$host:$httpsPort$path", permanent = true)
-        //         return@intercept finish()
-        //     }
-        // }
+    routing {
 
         // Android Sync Endpoints
         configureSyncRoutes()

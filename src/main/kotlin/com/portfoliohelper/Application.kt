@@ -277,6 +277,7 @@ fun main() {
             ) {
                 port = httpsPort
                 host = AppConfig.bindHost
+                enableHttp2 = false
             }
             // HTTP — redirect to HTTPS only, no data served
             connector {
