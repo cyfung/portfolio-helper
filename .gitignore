@@ -14,3 +14,8 @@ build/launch4j/
 /.kotlin/
 /tws-client/build/
 /data/
+/android/.gradle/
+/android/.idea/
+/android/.kotlin/
+/android/build/
+/android/app/build/
