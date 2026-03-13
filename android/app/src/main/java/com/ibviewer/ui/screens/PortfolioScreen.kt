@@ -47,7 +47,6 @@ import com.ibviewer.ui.components.Divider
 import com.ibviewer.ui.components.MonoText
 import com.ibviewer.ui.components.SummaryCard
 import com.ibviewer.ui.components.TableHeader
-import com.ibviewer.ui.components.actionColor
 import com.ibviewer.ui.components.changeColor
 import com.ibviewer.ui.components.formatCurrency
 import com.ibviewer.ui.components.formatSignedCurrency
@@ -61,7 +60,6 @@ fun PortfolioScreen(vm: MainViewModel) {
     val positions by vm.positions.collectAsState()
     val marketData by vm.marketData.collectAsState()
     val totals by vm.portfolioTotals.collectAsState()
-    val rebalRows by vm.rebalRows.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -122,7 +120,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                         "Mark" to 1.3f,
                         "Day %" to 0.9f,
                         "Mkt Val" to 1.3f,
-                        "Rebal $" to 1.1f
+                        "Weight %" to 1.1f
                     )
                 )
                 Divider()
@@ -130,12 +128,11 @@ fun PortfolioScreen(vm: MainViewModel) {
 
             // ── Position rows ─────────────────────────────────────────────────
             items(positions, key = { it.symbol }) { pos ->
-                val rebal = rebalRows.find { it.symbol == pos.symbol }
                 val quote = marketData[pos.symbol]
                 PositionRow(
                     pos = pos,
                     quote = quote,
-                    rebal = rebal?.rebalDollars,
+                    portfolioVal = totals.totalMktVal,
                     onEdit = { editPosition = pos },
                     onDelete = { vm.deletePosition(pos.symbol) }
                 )
@@ -165,7 +162,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 fun PositionRow(
     pos: Position,
     quote: YahooQuote?,
-    rebal: Double?,
+    portfolioVal: Double,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -175,6 +172,7 @@ fun PositionRow(
     val dayPct = if (mark != null && close != null && close != 0.0)
         (mark - close) / close * 100.0 else null
     val mktVal = (mark ?: 0.0) * pos.quantity
+    val weightPct = if (portfolioVal > 0) mktVal / portfolioVal * 100.0 else 0.0
 
     var showActions by remember { mutableStateOf(false) }
 
@@ -223,17 +221,13 @@ fun PositionRow(
             modifier = Modifier.weight(1.3f),
         )
 
-        // Rebal $
-        if (rebal != null) {
-            MonoText(
-                text = formatSignedCurrency(rebal),
-                color = actionColor(rebal),
-                fontWeight = if (abs(rebal) > 0.5) FontWeight.SemiBold else FontWeight.Normal,
-                modifier = Modifier.weight(1.1f)
-            )
-        } else {
-            MonoText("—", color = ext.textTertiary, modifier = Modifier.weight(1.1f))
-        }
+        // Weight %
+        MonoText(
+            text = "${weightPct.toFixed(1)}%",
+            color = ext.textSecondary,
+            modifier = Modifier.weight(1.1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End
+        )
     }
 
     // Inline action row
@@ -315,3 +309,5 @@ fun PositionDialog(
         }
     )
 }
+
+private fun Double.toFixed(n: Int) = "%.${n}f".format(this)

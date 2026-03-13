@@ -21,8 +21,8 @@ object IbColors {
     val BorderMedium     = Color(0xFFDEE2E6)
     val Positive         = Color(0xFF00875A)
     val Negative         = Color(0xFFDE350B)
-    val ActionPositive   = Color(0xFF4338CA)   // indigo — rebal/alloc buy
-    val ActionNegative   = Color(0xFFBE185D)   // crimson — rebal/alloc sell
+    val ActionPositive   = Color(0xFF4338CA)   // indigo — alloc buy
+    val ActionNegative   = Color(0xFFBE185D)   // crimson — alloc sell
     val ActionNeutral    = Color(0xFF6C757D)
     val Warning          = Color(0xFFE67E22)
     val HeaderBg         = Color(0xFFDEE2E6)

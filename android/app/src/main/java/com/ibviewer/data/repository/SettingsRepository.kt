@@ -16,7 +16,6 @@ object PrefsKeys {
     val MARGIN_ALERT_LOWER_PCT  = floatPreferencesKey("margin_alert_lower_pct")
     val MARGIN_ALERT_UPPER_PCT  = floatPreferencesKey("margin_alert_upper_pct")
     val MARGIN_ALERT_INTERVAL   = intPreferencesKey("margin_alert_interval_min")
-    val REBAL_TARGET_USD        = floatPreferencesKey("rebal_target_usd")
     val ALLOC_ADD_MODE          = stringPreferencesKey("alloc_add_mode")
     val ALLOC_REDUCE_MODE       = stringPreferencesKey("alloc_reduce_mode")
     val FX_RATES_JSON           = stringPreferencesKey("fx_rates_json")   // "{CCY:rate,...}"

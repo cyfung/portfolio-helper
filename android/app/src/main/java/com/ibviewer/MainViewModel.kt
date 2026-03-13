@@ -56,15 +56,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _marketData = MutableStateFlow<Map<String, YahooQuote>>(emptyMap())
     val marketData: StateFlow<Map<String, YahooQuote>> = _marketData
 
-    // ── Rebal target (UI state) ───────────────────────────────────────────────
-
-    private val _rebalTargetUsd = MutableStateFlow<Double?>(null)
-    val rebalTargetUsd: StateFlow<Double?> = _rebalTargetUsd
-
-    fun setRebalTarget(usd: Double?) {
-        _rebalTargetUsd.value = usd
-    }
-
     // ── Derived: cash totals ──────────────────────────────────────────────────
 
     val cashTotals: StateFlow<CashTotals> = combine(cashEntries, fxRates) { entries, rates ->
@@ -88,19 +79,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope, SharingStarted.Eagerly,
             PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0)
         )
-
-    // ── Derived: rebal rows ───────────────────────────────────────────────────
-
-    val rebalRows: StateFlow<List<PortfolioCalculator.RebalRow>> =
-        combine(
-            positions,
-            marketData,
-            portfolioTotals,
-            rebalTargetUsd
-        ) { pos, prices, totals, target ->
-            val rebalTotal = target ?: (totals.totalMktVal + maxOf(0.0, cashTotals.value.marginUsd))
-            PortfolioCalculator.computeRebal(pos, prices, rebalTotal)
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ── Derived: groups ───────────────────────────────────────────────────────
 

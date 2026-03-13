@@ -13,17 +13,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ibviewer.MainViewModel
 import com.ibviewer.data.model.GroupRow
-import com.ibviewer.data.repository.PortfolioCalculator
 import com.ibviewer.ui.components.*
 import com.ibviewer.ui.theme.ext
 import kotlin.math.abs
 
 @Composable
 fun GroupsScreen(vm: MainViewModel) {
-    val ext       = MaterialTheme.ext
-    val groups    by vm.groupRows.collectAsState()
-    val totals    by vm.portfolioTotals.collectAsState()
-    val rebalRows by vm.rebalRows.collectAsState()
+    val ext    = MaterialTheme.ext
+    val groups by vm.groupRows.collectAsState()
+    val totals by vm.portfolioTotals.collectAsState()
 
     if (groups.isEmpty()) {
         Box(Modifier.fillMaxSize().background(ext.bgPrimary), contentAlignment = Alignment.Center) {
@@ -43,7 +41,7 @@ fun GroupsScreen(vm: MainViewModel) {
                 "Day %"   to 0.9f,
                 "Mkt Val" to 1.2f,
                 "Cur/Tgt" to 1.1f,
-                "Rebal $" to 1.1f
+                "Diff %"  to 1.1f
             ))
             Divider()
         }
@@ -51,8 +49,7 @@ fun GroupsScreen(vm: MainViewModel) {
         items(groups, key = { it.name }) { group ->
             GroupRow(
                 group        = group,
-                portfolioVal = totals.totalMktVal,
-                rebalTotal   = totals.totalMktVal + maxOf(0.0, 0.0) // simplified
+                portfolioVal = totals.totalMktVal
             )
             Divider()
         }
@@ -71,17 +68,13 @@ fun GroupsScreen(vm: MainViewModel) {
 @Composable
 fun GroupRow(
     group: GroupRow,
-    portfolioVal: Double,
-    rebalTotal: Double
+    portfolioVal: Double
 ) {
     val ext        = MaterialTheme.ext
     val mktValChg  = group.mktVal - group.prevMktVal
     val dayPct     = if (group.prevMktVal > 0) mktValChg / group.prevMktVal * 100.0 else null
     val weightPct  = if (portfolioVal > 0) group.mktVal / portfolioVal * 100.0 else 0.0
-    val rebalDollars = (group.targetWeight / 100.0) * rebalTotal - group.mktVal
     val weightDiff = weightPct - group.targetWeight
-
-    var expanded by remember { mutableStateOf(false) }
 
     Column {
         Row(
@@ -115,27 +108,25 @@ fun GroupRow(
 
             // Cur / Tgt weight
             Column(modifier = Modifier.weight(1.1f), horizontalAlignment = Alignment.End) {
-                val diffColor = when {
-                    abs(weightDiff) > 1.0 -> if (weightDiff > 0) ext.negative else ext.actionPositive
-                    abs(weightDiff) > 0.2 -> ext.warning
-                    else                  -> ext.positive
-                }
                 Text("${weightPct.toFixed(1)}% / ${group.targetWeight.toFixed(1)}%",
                     fontSize   = 10.sp,
                     fontWeight = FontWeight.Normal,
                     color      = ext.textTertiary)
-                Text("${if (weightDiff >= 0) "+" else ""}${weightDiff.toFixed(1)}%",
-                    fontSize   = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color      = diffColor)
             }
 
-            // Rebal $
-            MonoText(
-                text       = formatSignedCurrency(rebalDollars),
-                color      = actionColor(rebalDollars),
-                fontWeight = if (abs(rebalDollars) > 0.5) FontWeight.SemiBold else FontWeight.Normal,
-                modifier   = Modifier.weight(1.1f)
+            // Diff %
+            val diffColor = when {
+                abs(weightDiff) > 1.0 -> if (weightDiff > 0) ext.negative else ext.actionPositive
+                abs(weightDiff) > 0.2 -> ext.warning
+                else                  -> ext.positive
+            }
+            Text(
+                text       = "${if (weightDiff >= 0) "+" else ""}${weightDiff.toFixed(1)}%",
+                modifier   = Modifier.weight(1.1f),
+                fontSize   = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = diffColor,
+                textAlign  = androidx.compose.ui.text.style.TextAlign.End
             )
         }
 

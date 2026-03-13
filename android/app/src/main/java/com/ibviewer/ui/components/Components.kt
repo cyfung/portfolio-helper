@@ -127,6 +127,7 @@ fun MonoText(
     text: String,
     color: Color = MaterialTheme.ext.textSecondary,
     fontWeight: FontWeight = FontWeight.Normal,
+    textAlign: TextAlign = TextAlign.End,
     modifier: Modifier = Modifier
 ) {
     Text(
@@ -137,6 +138,7 @@ fun MonoText(
             fontWeight = fontWeight,
             fontSize   = 12.sp
         ),
+        textAlign = textAlign,
         modifier = modifier
     )
 }

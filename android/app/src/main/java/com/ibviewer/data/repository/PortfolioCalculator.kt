@@ -37,35 +37,6 @@ object PortfolioCalculator {
         return PortfolioTotals(total, prevTotal, marginPct, change, changePct)
     }
 
-    // ── Rebalancing ───────────────────────────────────────────────────────────
-
-    data class RebalRow(
-        val symbol: String,
-        val rebalDollars: Double,
-        val rebalQty: Double?
-    )
-
-    fun computeRebal(
-        positions: List<Position>,
-        prices: Map<String, YahooQuote>,
-        rebalTotal: Double
-    ): List<RebalRow> {
-        return positions.map { pos ->
-            val quote = prices[pos.symbol]
-            val markPrice =
-                quote?.regularMarketPrice ?: quote?.previousClose ?: return@map RebalRow(
-                    pos.symbol,
-                    0.0,
-                    null
-                )
-            val currentVal = markPrice * pos.quantity
-            val targetVal = (pos.targetWeight / 100.0) * rebalTotal
-            val dollars = targetVal - currentVal
-            val qty = if (markPrice > 0) dollars / markPrice else null
-            RebalRow(pos.symbol, dollars, qty)
-        }
-    }
-
     // ── Allocation ────────────────────────────────────────────────────────────
 
     fun computeAllocations(
