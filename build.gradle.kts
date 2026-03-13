@@ -57,11 +57,15 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20240303")
 
+    // mDNS for Android Sync
+    implementation("org.jmdns:jmdns:3.6.3")
+
     implementation(project(":tws-client"))
 }
 
 application {
     mainClass.set("com.portfoliohelper.ApplicationKt")
+    applicationDefaultJvmArgs = listOf("-Djava.net.preferIPv4Stack=true")
 }
 
 // Java Toolchain Configuration (replaces sourceCompatibility/targetCompatibility)
@@ -146,7 +150,8 @@ tasks.jpackage {
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
         "--add-opens", "java.base/java.nio=ALL-UNNAMED",
         "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
-        "-Dfile.encoding=UTF-8"
+        "-Dfile.encoding=UTF-8",
+        "-Djava.net.preferIPv4Stack=true"
     )
 
     // Platform-specific icons
@@ -177,6 +182,7 @@ launch4j {
     companyName.set("Portfolio Helper")
     icon.set("${projectDir}/src/main/resources/static/images/favicon.ico")
     setJarTask(tasks.shadowJar.get())
+    jvmOptions = listOf("-Djava.net.preferIPv4Stack=true")
 }
 
 //// Configure createExe to use shadowJar instead of regular jar

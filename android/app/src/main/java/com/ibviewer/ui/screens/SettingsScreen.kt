@@ -1,9 +1,18 @@
 package com.ibviewer.ui.screens
 
+import android.net.nsd.NsdServiceInfo
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,18 +21,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ibviewer.MainViewModel
+import com.ibviewer.SyncStatus
 import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.ui.theme.ext
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
-    val ext     = MaterialTheme.ext
-    val current by vm.marginAlertSettings.collectAsState()
+    val ext = MaterialTheme.ext
+    val currentAlerts by vm.marginAlertSettings.collectAsState()
+    val syncServer by vm.syncServerInfo.collectAsState()
+    val discoveredServers by vm.discoveredServers.collectAsState()
+    val syncStatus by vm.syncStatus.collectAsState()
 
-    var enabled  by remember(current) { mutableStateOf(current.enabled) }
-    var lowerPct by remember(current) { mutableStateOf(current.lowerPct.toString()) }
-    var upperPct by remember(current) { mutableStateOf(current.upperPct.toString()) }
-    var interval by remember(current) { mutableStateOf(current.checkIntervalMinutes.toString()) }
+    var enabled by remember(currentAlerts) { mutableStateOf(currentAlerts.enabled) }
+    var lowerPct by remember(currentAlerts) { mutableStateOf(currentAlerts.lowerPct.toString()) }
+    var upperPct by remember(currentAlerts) { mutableStateOf(currentAlerts.upperPct.toString()) }
+    var interval by remember(currentAlerts) { mutableStateOf(currentAlerts.checkIntervalMinutes.toString()) }
 
     var saved by remember { mutableStateOf(false) }
 
@@ -37,9 +50,80 @@ fun SettingsScreen(vm: MainViewModel) {
     ) {
         Text("Settings", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = ext.textPrimary)
 
+        // ── Data Sync Section ──────────────────────────────────────────────
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = ext.bgElevated,
+            tonalElevation = 1.dp,
+            shadowElevation = 1.dp
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Data Sync", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary, modifier = Modifier.weight(1f))
+                    if (syncServer != null) {
+                        IconButton(
+                            onClick = { vm.sync() },
+                            enabled = syncStatus !is SyncStatus.Syncing
+                        ) {
+                            if (syncStatus is SyncStatus.Syncing) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = ext.actionPositive)
+                            } else {
+                                Icon(Icons.Default.Sync, contentDescription = "Sync Now", tint = ext.actionPositive)
+                            }
+                        }
+                    }
+                }
+
+                AnimatedVisibility(visible = syncStatus is SyncStatus.Error) {
+                    val error = (syncStatus as? SyncStatus.Error)?.message ?: ""
+                    Text(
+                        text = "Error: $error",
+                        color = ext.negative,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
+                AnimatedVisibility(visible = syncStatus is SyncStatus.Success) {
+                    Text(
+                        text = "✓ Sync successful",
+                        color = ext.positive,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    LaunchedEffect(Unit) {
+                        kotlinx.coroutines.delay(3000)
+                        vm.clearSyncStatus()
+                    }
+                }
+
+                if (syncServer == null) {
+                    Text("No server paired. Discovering servers on local network...", fontSize = 12.sp, color = ext.textSecondary)
+                    
+                    if (discoveredServers.isEmpty()) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        discoveredServers.forEach { server ->
+                            ServerItem(server) { vm.pairServer(server) }
+                        }
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Paired with: ${syncServer!!.name}", fontSize = 14.sp, color = ext.textPrimary)
+                            Text("Host: ${syncServer!!.host}:${syncServer!!.port}", fontSize = 12.sp, color = ext.textTertiary)
+                        }
+                        TextButton(onClick = { vm.unpairServer() }) {
+                            Text("Unpair", color = ext.negative)
+                        }
+                    }
+                }
+            }
+        }
+
         // ── Margin Alert section ──────────────────────────────────────────────
         Surface(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(10.dp),
             color = ext.bgElevated,
             tonalElevation = 1.dp,
             shadowElevation = 1.dp
@@ -117,7 +201,7 @@ fun SettingsScreen(vm: MainViewModel) {
 
         // ── About ─────────────────────────────────────────────────────────────
         Surface(
-            shape          = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            shape          = RoundedCornerShape(10.dp),
             color          = ext.bgElevated,
             tonalElevation = 1.dp
         ) {
@@ -126,6 +210,28 @@ fun SettingsScreen(vm: MainViewModel) {
                 Text("IB Viewer 1.0", color = ext.textTertiary, fontSize = 12.sp)
                 Text("Portfolio tracking & rebalancing", color = ext.textTertiary, fontSize = 12.sp)
             }
+        }
+    }
+}
+
+@Composable
+fun ServerItem(server: NsdServiceInfo, onPair: () -> Unit) {
+    val ext = MaterialTheme.ext
+    Surface(
+        onClick = onPair,
+        color = ext.bgSecondary,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(server.serviceName, fontWeight = FontWeight.Medium, color = ext.textPrimary)
+                Text("${server.host?.hostAddress}:${server.port}", fontSize = 11.sp, color = ext.textSecondary)
+            }
+            Text("Pair", color = ext.actionPositive, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 }

@@ -1,6 +1,8 @@
 package com.ibviewer
 
 import android.app.Application
+import android.net.nsd.NsdServiceInfo
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ibviewer.data.model.CashEntry
@@ -8,6 +10,7 @@ import com.ibviewer.data.model.GroupRow
 import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.data.model.Position
 import com.ibviewer.data.repository.PortfolioCalculator
+import com.ibviewer.data.repository.SyncServerInfo
 import com.ibviewer.data.repository.YahooMarketDataService
 import com.ibviewer.data.repository.YahooQuote
 import com.ibviewer.worker.MarginCheckWorker
@@ -16,15 +19,24 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+
+sealed class SyncStatus {
+    object Idle : SyncStatus()
+    object Syncing : SyncStatus()
+    object Success : SyncStatus()
+    data class Error(val message: String) : SyncStatus()
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val db = (app as IbViewerApp).database
     private val settings = (app as IbViewerApp).settingsRepo
+    private val syncRepo = (app as IbViewerApp).syncRepo
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -42,10 +54,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val marginAlertSettings: StateFlow<MarginAlertSettings> = settings.marginAlertSettings
         .stateIn(viewModelScope, SharingStarted.Eagerly, MarginAlertSettings())
 
+    val syncServerInfo: StateFlow<SyncServerInfo?> = settings.syncServerInfo
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     // ── Market Data (In-memory) ───────────────────────────────────────────────
 
     private val _marketData = MutableStateFlow<Map<String, YahooQuote>>(emptyMap())
     val marketData: StateFlow<Map<String, YahooQuote>> = _marketData
+
+    // ── Discovery ─────────────────────────────────────────────────────────────
+
+    val discoveredServers: StateFlow<List<NsdServiceInfo>> = syncRepo.discoverServers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ── Derived: FX rates ─────────────────────────────────────────────────────
 
@@ -121,6 +141,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         MarginCheckWorker.schedule(getApplication(), s)
     }
 
+    // ── Sync ──────────────────────────────────────────────────────────────────
+
+    private val _syncStatus = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
+    val syncStatus: StateFlow<SyncStatus> = _syncStatus
+
+    fun pairServer(service: NsdServiceInfo) = viewModelScope.launch {
+        Log.i("MainViewModel", "Pairing with server: ${service.serviceName}")
+        settings.saveSyncServerInfo(SyncServerInfo(
+            name = service.serviceName,
+            host = service.host?.hostAddress ?: "",
+            port = service.port
+        ))
+        sync()
+    }
+
+    fun unpairServer() = viewModelScope.launch {
+        Log.i("MainViewModel", "Unpairing server")
+        settings.saveSyncServerInfo(null)
+    }
+
+    fun sync() = viewModelScope.launch {
+        Log.i("MainViewModel", "Sync button clicked or auto-sync started")
+        _syncStatus.value = SyncStatus.Syncing
+        try {
+            syncRepo.sync()
+            Log.i("MainViewModel", "Sync repository call completed successfully")
+            _syncStatus.value = SyncStatus.Success
+            refreshMarketData()
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Sync failed with error: ${e.message}", e)
+            _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error occurred")
+        }
+    }
+
+    fun clearSyncStatus() {
+        _syncStatus.value = SyncStatus.Idle
+    }
+
     // ── Market Data ───────────────────────────────────────────────────────────
 
     init {
@@ -137,6 +195,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (activeSymbols.isNotEmpty()) {
                     YahooMarketDataService.start(activeSymbols)
                 }
+            }
+        }
+        
+        // Initial sync if paired
+        viewModelScope.launch {
+            if (settings.syncServerInfo.first() != null) {
+                sync()
             }
         }
     }

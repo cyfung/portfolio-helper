@@ -17,9 +17,37 @@ object PrefsKeys {
     val MARGIN_ALERT_INTERVAL   = intPreferencesKey("margin_alert_interval_min")
     val ALLOC_ADD_MODE          = stringPreferencesKey("alloc_add_mode")
     val ALLOC_REDUCE_MODE       = stringPreferencesKey("alloc_reduce_mode")
+    val SYNC_SERVER_HOST        = stringPreferencesKey("sync_server_host")
+    val SYNC_SERVER_PORT        = intPreferencesKey("sync_server_port")
+    val SYNC_SERVER_NAME        = stringPreferencesKey("sync_server_name")
 }
 
 class SettingsRepository(private val context: Context) {
+
+    val syncServerInfo: Flow<SyncServerInfo?> = context.dataStore.data.map { prefs ->
+        val name = prefs[PrefsKeys.SYNC_SERVER_NAME]
+        if (name != null) {
+            SyncServerInfo(
+                name = name,
+                host = prefs[PrefsKeys.SYNC_SERVER_HOST] ?: "",
+                port = prefs[PrefsKeys.SYNC_SERVER_PORT] ?: 0
+            )
+        } else null
+    }
+
+    suspend fun saveSyncServerInfo(info: SyncServerInfo?) {
+        context.dataStore.edit { prefs ->
+            if (info == null) {
+                prefs.remove(PrefsKeys.SYNC_SERVER_NAME)
+                prefs.remove(PrefsKeys.SYNC_SERVER_HOST)
+                prefs.remove(PrefsKeys.SYNC_SERVER_PORT)
+            } else {
+                prefs[PrefsKeys.SYNC_SERVER_NAME] = info.name
+                prefs[PrefsKeys.SYNC_SERVER_HOST] = info.host
+                prefs[PrefsKeys.SYNC_SERVER_PORT] = info.port
+            }
+        }
+    }
 
     val marginAlertSettings: Flow<MarginAlertSettings> = context.dataStore.data.map { prefs ->
         MarginAlertSettings(
@@ -40,3 +68,5 @@ class SettingsRepository(private val context: Context) {
     }
 
 }
+
+data class SyncServerInfo(val name: String, val host: String, val port: Int)

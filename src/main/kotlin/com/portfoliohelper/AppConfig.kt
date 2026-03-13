@@ -44,7 +44,7 @@ object AppConfig {
         KEY_TWS_PORT            to "TWS_PORT"
     )
     private val DEFAULTS = mapOf(
-        KEY_BIND_HOST           to "localhost",
+        KEY_BIND_HOST           to "0.0.0.0",
         KEY_OPEN_BROWSER        to "true",
         KEY_DATA_DIR            to "",
         KEY_NAV_UPDATE_INTERVAL to "",
@@ -90,7 +90,7 @@ object AppConfig {
     }
 
     // Typed accessors
-    val bindHost: String get() = get(KEY_BIND_HOST).ifBlank { "localhost" }
+    val bindHost: String get() = get(KEY_BIND_HOST).ifBlank { "0.0.0.0" }
     val openBrowser: Boolean get() = get(KEY_OPEN_BROWSER).lowercase() != "false"
     val navUpdateInterval: Long? get() = get(KEY_NAV_UPDATE_INTERVAL).toLongOrNull()?.takeIf { it > 0 }
     val twsHost: String get() = get(KEY_TWS_HOST).ifBlank { "127.0.0.1" }

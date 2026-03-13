@@ -68,6 +68,9 @@ private fun normalizeCashKey(raw: String): String {
 
 fun Application.configureRouting() {
     routing {
+        // Android Sync Endpoints
+        configureSyncRoutes()
+
         get("/") {
             call.renderPortfolioPage(
                 PortfolioRegistry.main(),

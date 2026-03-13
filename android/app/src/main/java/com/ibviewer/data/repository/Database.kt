@@ -24,6 +24,9 @@ interface PositionDao {
     @Query("DELETE FROM positions WHERE symbol = :symbol")
     suspend fun hardDelete(symbol: String)
 
+    @Query("DELETE FROM positions")
+    suspend fun hardDeleteAll()
+
     @Query("SELECT * FROM positions WHERE symbol = :symbol LIMIT 1")
     suspend fun get(symbol: String): Position?
 }
@@ -43,6 +46,9 @@ interface CashDao {
 
     @Delete
     suspend fun delete(entry: CashEntry)
+
+    @Query("DELETE FROM cash_entries")
+    suspend fun deleteAll()
 }
 
 // ── Database ──────────────────────────────────────────────────────────────────

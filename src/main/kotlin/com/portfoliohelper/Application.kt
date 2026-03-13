@@ -17,6 +17,9 @@ fun String.toPortfolioSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").tri
 fun String.toPortfolioDisplayName() = replaceFirstChar { it.uppercase() }
 
 fun main() {
+    // Force IPv4 to avoid JmDNS issues on Windows (SocketException: setsockopt)
+    System.setProperty("java.net.preferIPv4Stack", "true")
+
     val logger = LoggerFactory.getLogger("Application")
 
     // ---------------------------------------------------------------
@@ -238,6 +241,7 @@ fun main() {
         IbkrMarginRateService.shutdown()
         NavService.shutdown()
         YahooMarketDataService.shutdown()
+        SyncDiscoveryService.stop()
         logger.info("Cleanup completed")
     })
 
@@ -257,6 +261,9 @@ fun main() {
             configureRouting()
         }.start(wait = false)
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
+
+        // Start mDNS discovery for Android sync
+        SyncDiscoveryService.start(port)
     } catch (e: Exception) {
         logger.error("Failed to start web server: ${e.message}", e)
         exitProcess(1)
