@@ -21,7 +21,6 @@ import com.ibviewer.data.repository.PrefsKeys
 import com.ibviewer.data.repository.YahooFinanceClient
 import com.ibviewer.data.repository.dataStore
 import kotlinx.coroutines.flow.first
-import kotlinx.serialization.json.Json
 import java.util.concurrent.TimeUnit
 
 class MarginCheckWorker(
@@ -72,23 +71,32 @@ class MarginCheckWorker(
         val cashEntries = app.database.cashDao().getAll()
 
         // Fetch current prices
-        val prices = positions.map { it.symbol }.distinct().mapNotNull { symbol ->
+        val prices = positions.map { it.symbol }.distinct().associateWith { symbol ->
             try {
-                symbol to YahooFinanceClient.fetchQuote(symbol)
+                YahooFinanceClient.fetchQuote(symbol)
             } catch (e: Exception) {
                 null
             }
-        }.toMap()
+        }.filterValues { it != null }.mapValues { it.value!! }
 
-        // Compute FX rates
-        val fxJson = prefs[PrefsKeys.FX_RATES_JSON] ?: "{}"
-        val fxRates = if (fxJson == "{}") emptyMap<String, Double>()
-        else Json.decodeFromString<Map<String, Double>>(fxJson)
+        // Fetch FX rates
+        val fxRates = mutableMapOf<String, Double>()
+        val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+        for (ccy in currencies) {
+            try {
+                val quote = YahooFinanceClient.fetchQuote("${ccy}USD=X")
+                val rate = quote.regularMarketPrice ?: quote.previousClose
+                if (rate != null) {
+                    fxRates[ccy] = rate
+                }
+            } catch (e: Exception) {
+                // Skip if fetch fails
+            }
+        }
 
         // Compute margin USD
         var marginUsd = 0.0
         for (e in cashEntries) {
-            if (!e.isMargin) continue
             val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency] ?: continue
             marginUsd += e.amount * rate
         }

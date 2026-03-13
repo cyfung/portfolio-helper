@@ -18,7 +18,6 @@ object PrefsKeys {
     val MARGIN_ALERT_INTERVAL   = intPreferencesKey("margin_alert_interval_min")
     val ALLOC_ADD_MODE          = stringPreferencesKey("alloc_add_mode")
     val ALLOC_REDUCE_MODE       = stringPreferencesKey("alloc_reduce_mode")
-    val FX_RATES_JSON           = stringPreferencesKey("fx_rates_json")   // "{CCY:rate,...}"
 }
 
 class SettingsRepository(private val context: Context) {
@@ -40,10 +39,6 @@ class SettingsRepository(private val context: Context) {
         AllocMode.valueOf(prefs[PrefsKeys.ALLOC_REDUCE_MODE] ?: AllocMode.WATERFALL.name)
     }
 
-    val fxRatesJson: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[PrefsKeys.FX_RATES_JSON] ?: "{}"
-    }
-
     suspend fun saveMarginAlertSettings(s: MarginAlertSettings) {
         context.dataStore.edit { prefs ->
             prefs[PrefsKeys.MARGIN_ALERT_ENABLED]   = s.enabled
@@ -51,10 +46,6 @@ class SettingsRepository(private val context: Context) {
             prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] = s.upperPct.toFloat()
             prefs[PrefsKeys.MARGIN_ALERT_INTERVAL]  = s.checkIntervalMinutes
         }
-    }
-
-    suspend fun saveFxRates(json: String) {
-        context.dataStore.edit { it[PrefsKeys.FX_RATES_JSON] = json }
     }
 
     suspend fun saveAllocModes(addMode: AllocMode, reduceMode: AllocMode) {

@@ -38,13 +38,6 @@ data class CashEntry(
     val isMargin: Boolean = false
 )
 
-// ── FX rate (in-memory only, entered manually) ────────────────────────────────
-
-data class FxRate(
-    val currency: String,
-    val rateToUsd: Double       // 1 unit of currency = X USD
-)
-
 // ── Margin alert settings ─────────────────────────────────────────────────────
 
 data class MarginAlertSettings(

@@ -1,12 +1,14 @@
 package com.ibviewer.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +31,6 @@ fun CashScreen(vm: MainViewModel) {
     val fxRates     by vm.fxRates.collectAsState()
 
     var showAddDialog  by remember { mutableStateOf(false) }
-    var showFxDialog   by remember { mutableStateOf(false) }
     var editEntry      by remember { mutableStateOf<CashEntry?>(null) }
 
     Scaffold(
@@ -71,16 +72,6 @@ fun CashScreen(vm: MainViewModel) {
                 }
             }
 
-            // ── FX rates button ───────────────────────────────────────────────
-            item {
-                TextButton(
-                    onClick  = { showFxDialog = true },
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    Text("Edit FX Rates", fontSize = 12.sp, color = ext.actionPositive)
-                }
-            }
-
             // ── Table header ──────────────────────────────────────────────────
             item {
                 TableHeader(listOf("Label" to 1.8f, "CCY" to 0.6f, "Amount" to 1.2f, "USD" to 1.2f))
@@ -115,14 +106,6 @@ fun CashScreen(vm: MainViewModel) {
             onSave    = { vm.upsertCashEntry(it); editEntry = null }
         )
     }
-
-    if (showFxDialog) {
-        FxRatesDialog(
-            current   = fxRates,
-            onDismiss = { showFxDialog = false },
-            onSave    = { vm.saveFxRates(it); showFxDialog = false }
-        )
-    }
 }
 
 @Composable
@@ -143,6 +126,7 @@ fun CashEntryRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(if (entry.isMargin) ext.bgSecondary else ext.bgPrimary)
+                .clickable { showActions = !showActions }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -157,7 +141,7 @@ fun CashEntryRow(
                 modifier = Modifier.weight(1.2f)
             )
             MonoText(
-                if (usd != null) formatCurrency(abs(usd)) else "N/A",
+                if (usd != null) formatCurrency(abs(usd)) else "...",
                 color    = if (usd != null && usd < 0) ext.negative else ext.textTertiary,
                 modifier = Modifier.weight(1.2f)
             )
@@ -167,12 +151,18 @@ fun CashEntryRow(
             Row(
                 modifier              = Modifier.fillMaxWidth().background(ext.bgSecondary)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = { onEdit(); showActions = false }) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text("Edit", fontSize = 12.sp)
                 }
                 TextButton(onClick = { onDelete(); showActions = false }) {
+                    Icon(Icons.Default.Delete, contentDescription = null,
+                        modifier = Modifier.size(16.dp), tint = ext.negative)
+                    Spacer(Modifier.width(4.dp))
                     Text("Delete", fontSize = 12.sp, color = ext.negative)
                 }
             }
@@ -214,46 +204,6 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
                     isMargin = isMargin
                 )
                 if (entry.label.isNotEmpty()) onSave(entry)
-            }) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@Composable
-fun FxRatesDialog(
-    current: Map<String, Double>,
-    onDismiss: () -> Unit,
-    onSave: (Map<String, Double>) -> Unit
-) {
-    var text by remember {
-        mutableStateOf(current.entries.joinToString("\n") { "${it.key}=${it.value}" })
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("FX Rates (to USD)") },
-        text = {
-            Column {
-                Text("One per line: CCY=rate\ne.g. HKD=0.1282",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.ext.textTertiary)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth().height(160.dp))
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val map = text.lines()
-                    .mapNotNull { line ->
-                        val parts = line.trim().split("=")
-                        if (parts.size == 2) {
-                            val ccy  = parts[0].trim().uppercase()
-                            val rate = parts[1].trim().toDoubleOrNull()
-                            if (ccy.isNotEmpty() && rate != null) ccy to rate else null
-                        } else null
-                    }.toMap()
-                onSave(map)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

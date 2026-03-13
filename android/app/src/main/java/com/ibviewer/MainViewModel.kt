@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -43,18 +42,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val marginAlertSettings: StateFlow<MarginAlertSettings> = settings.marginAlertSettings
         .stateIn(viewModelScope, SharingStarted.Eagerly, MarginAlertSettings())
 
-    val fxRates: StateFlow<Map<String, Double>> = settings.fxRatesJson.map { jsonStr ->
-        if (jsonStr.isBlank() || jsonStr == "{}") emptyMap()
-        else {
-            runCatching { json.decodeFromString<Map<String, Double>>(jsonStr) }
-                .getOrDefault(emptyMap())
-        }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
     // ── Market Data (In-memory) ───────────────────────────────────────────────
 
     private val _marketData = MutableStateFlow<Map<String, YahooQuote>>(emptyMap())
     val marketData: StateFlow<Map<String, YahooQuote>> = _marketData
+
+    // ── Derived: FX rates ─────────────────────────────────────────────────────
+
+    val fxRates: StateFlow<Map<String, Double>> = marketData.combine(cashEntries) { data, entries ->
+        val rates = mutableMapOf<String, Double>()
+        val currencies = entries.map { it.currency }.distinct().filter { it != "USD" }
+        for (ccy in currencies) {
+            val pair = "${ccy}USD=X"
+            val quote = data[pair]
+            val rate = quote?.regularMarketPrice ?: quote?.previousClose
+            if (rate != null) {
+                rates[ccy] = rate
+            }
+        }
+        rates
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     // ── Derived: cash totals ──────────────────────────────────────────────────
 
@@ -101,14 +108,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun upsertCashEntry(entry: CashEntry) = viewModelScope.launch {
         db.cashDao().upsert(entry)
+        refreshMarketData()
     }
 
     fun deleteCashEntry(entry: CashEntry) = viewModelScope.launch {
         db.cashDao().delete(entry)
-    }
-
-    fun saveFxRates(rates: Map<String, Double>) = viewModelScope.launch {
-        settings.saveFxRates(json.encodeToString(rates))
+        refreshMarketData()
     }
 
     fun saveMarginAlertSettings(s: MarginAlertSettings) = viewModelScope.launch {
@@ -123,8 +128,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _marketData.value += (symbol to quote)
         }
         viewModelScope.launch {
-            positions.collect { posList ->
-                val activeSymbols = posList.filter { !it.isDeleted }.map { it.symbol }
+            combine(positions, cashEntries) { pos, cash ->
+                val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableList()
+                val currencies = cash.map { it.currency }.distinct().filter { it != "USD" }
+                currencies.forEach { symbols.add("${it}USD=X") }
+                symbols
+            }.collect { activeSymbols ->
                 if (activeSymbols.isNotEmpty()) {
                     YahooMarketDataService.start(activeSymbols)
                 }
@@ -133,9 +142,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun refreshMarketData() {
-        val activeSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }
-        if (activeSymbols.isNotEmpty()) {
-            YahooMarketDataService.start(activeSymbols)
+        val posSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }
+        val fxSymbols = cashEntries.value.map { it.currency }.distinct().filter { it != "USD" }.map { "${it}USD=X" }
+        val all = posSymbols + fxSymbols
+        if (all.isNotEmpty()) {
+            YahooMarketDataService.start(all)
         }
     }
 
