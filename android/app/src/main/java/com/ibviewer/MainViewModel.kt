@@ -8,6 +8,7 @@ import com.ibviewer.data.model.GroupRow
 import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.data.model.Position
 import com.ibviewer.data.repository.PortfolioCalculator
+import com.ibviewer.data.repository.YahooMarketDataService
 import com.ibviewer.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,10 +103,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun upsertPosition(position: Position) = viewModelScope.launch {
         db.positionDao().upsert(position)
+        refreshMarketData()
     }
 
     fun deletePosition(symbol: String) = viewModelScope.launch {
         db.positionDao().softDelete(symbol)
+        refreshMarketData()
     }
 
     fun upsertCashEntry(entry: CashEntry) = viewModelScope.launch {
@@ -128,6 +131,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updatePrice(symbol: String, mark: Double?, close: Double?) = viewModelScope.launch {
         val pos = db.positionDao().get(symbol) ?: return@launch
         db.positionDao().upsert(pos.copy(markPrice = mark, closePrice = close))
+    }
+
+    // ── Market Data ───────────────────────────────────────────────────────────
+
+    init {
+        YahooMarketDataService.setOnUpdateListener { symbol, quote ->
+            updatePrice(symbol, quote.regularMarketPrice, quote.previousClose)
+        }
+        viewModelScope.launch {
+            positions.collect { posList ->
+                val activeSymbols = posList.filter { !it.isDeleted }.map { it.symbol }
+                if (activeSymbols.isNotEmpty()) {
+                    YahooMarketDataService.start(activeSymbols)
+                }
+            }
+        }
+    }
+
+    private fun refreshMarketData() {
+        val activeSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }
+        if (activeSymbols.isNotEmpty()) {
+            YahooMarketDataService.start(activeSymbols)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        YahooMarketDataService.stop()
     }
 }
 
