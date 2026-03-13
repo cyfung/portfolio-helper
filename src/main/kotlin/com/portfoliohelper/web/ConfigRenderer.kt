@@ -1,11 +1,9 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
-import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.service.ManagedPortfolio
-import com.portfoliohelper.service.PairingService
-import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.UpdateService
 import com.portfoliohelper.service.UpdateService.DownloadPhase
 import io.ktor.http.*
@@ -43,7 +41,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 span { +"Authorize New Device" }
                                 span(classes = "config-badge config-badge-live") { +"live" }
                             }
-                            span(classes = "config-field-description") { 
+                            span(classes = "config-field-description") {
                                 +"Pending pairing requests from Android devices will appear here."
                                 br()
                                 +"Enter the 4-digit PIN displayed on your phone to authorize sync."
@@ -65,7 +63,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                     +"Unlink All"
                                 }
                             }
-                            span(classes = "config-field-description") { 
+                            span(classes = "config-field-description") {
                                 +"Devices authorized to sync with this server."
                             }
                             div(classes = "paired-devices-list") {
@@ -88,9 +86,9 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 }
                             }
                             tbody {
-                                for (entry in PortfolioRegistry.entries) {
+                                for (entry in ManagedPortfolio.getAll()) {
                                     val virtualBalance =
-                                        getPortfolioConfValue(entry, "virtualBalance") == "true"
+                                        entry.getConfig("virtualBalance") == "true"
                                     tr {
                                         td { +entry.name }
                                         td {
@@ -98,14 +96,14 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                                 placeholder = "e.g. U1234567"
                                                 value = entry.getTwsAccount() ?: ""
                                                 attributes["data-config-key"] = "twsAccount"
-                                                attributes["data-portfolio-id"] = entry.id
+                                                attributes["data-portfolio-id"] = entry.slug
                                             }
                                         }
                                         td(classes = "portfolio-config-table-checkbox-col") {
                                             input(type = InputType.checkBox) {
                                                 checked = virtualBalance
                                                 attributes["data-config-key"] = "virtualBalance"
-                                                attributes["data-portfolio-id"] = entry.id
+                                                attributes["data-portfolio-id"] = entry.slug
                                             }
                                         }
                                     }
@@ -310,17 +308,6 @@ internal suspend fun ApplicationCall.renderConfigPage() {
         }
     }
 }
-
-private fun getPortfolioConfValue(entry: ManagedPortfolio, key: String): String? = runCatching {
-    val f = java.io.File(entry.portfolioConfigPath)
-    if (!f.exists()) return@runCatching null
-    f.readLines().asSequence()
-        .filter { '=' in it && !it.startsWith('#') }.firstNotNullOfOrNull {
-            val k = it.substringBefore('=').trim()
-            val v = it.substringAfter('=').trim()
-            if (k == key && v.isNotEmpty()) v else null
-        }
-}.getOrNull()
 
 private fun FlowContent.renderUpdatesSection() {
     val info = UpdateService.getInfo()

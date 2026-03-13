@@ -1,4 +1,5 @@
 import com.github.jk1.license.render.TextReportRenderer
+import org.gradle.api.tasks.bundling.Jar
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import org.panteleyev.jpackage.ImageType
 import java.net.HttpURLConnection
@@ -61,6 +62,9 @@ dependencies {
     // mDNS for Android Sync
     implementation("org.jmdns:jmdns:3.6.3")
 
+    // DB schema, table definitions, and initialization
+    implementation(project(":db-schema"))
+
     // TLS — Bouncy Castle for self-signed cert generation
     implementation("org.bouncycastle:bcpkix-jdk18on:1.83")
 
@@ -96,6 +100,30 @@ val generateVersionFile: TaskProvider<Task?>? = tasks.register("generateVersionF
 }
 tasks.named("compileKotlin") { dependsOn(generateVersionFile) }
 kotlin.sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/version")) }
+
+// Generate bundled app.db from DBBuilder
+val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
+    group = "build"
+    description = "Generates the bundled app.db SQLite database via DBBuilder"
+
+    dependsOn(":db-schema:jar")
+
+    val dbSchema = project(":db-schema")
+    classpath(
+        dbSchema.configurations.named("runtimeClasspath"),
+        dbSchema.tasks.named<Jar>("jar").map { it.archiveFile }
+    )
+    mainClass.set("com.portfoliohelper.service.db.DBBuilderKt")
+
+    val outFile = layout.buildDirectory.file("generated/db/data/app.db")
+    outputs.file(outFile)
+    inputs.files(dbSchema.tasks.named("jar"))
+    // Use argumentProviders so the Provider is resolved at execution time, not configuration time
+    argumentProviders.add(CommandLineArgumentProvider { listOf(outFile.get().asFile.absolutePath) })
+    doFirst { outFile.get().asFile.parentFile.mkdirs() }
+}
+sourceSets.main { resources.srcDir(layout.buildDirectory.dir("generated/db")) }
+tasks.named("processResources") { dependsOn(generateAppDb) }
 
 // Shadow JAR Configuration
 tasks {
@@ -214,15 +242,15 @@ tasks.register<Zip>("portableDistZip") {
     dependsOn(tasks.named("generateLicenseReport"))
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from(tasks.shadowJar) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from("docs") {
-        into("${project.name}")
+        into(project.name)
         include("RUNNING.md")
         rename("RUNNING.md", "README.md")
     }
@@ -245,15 +273,15 @@ tasks.register<Tar>("portableDistTar") {
     dependsOn(tasks.named("generateLicenseReport"))
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from(tasks.shadowJar) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from("docs") {
-        into("${project.name}")
+        into(project.name)
         include("RUNNING.md")
         rename("RUNNING.md", "README.md")
     }
@@ -273,11 +301,11 @@ tasks.register<Zip>("windowsDistZip") {
     dependsOn(tasks.named("createExe"), tasks.named("generateLicenseReport"))
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from(layout.buildDirectory.dir("launch4j")) {
-        into("${project.name}")
+        into(project.name)
         include("portfolio-helper.exe")
     }
 
@@ -286,7 +314,7 @@ tasks.register<Zip>("windowsDistZip") {
     }
 
     from("docs") {
-        into("${project.name}")
+        into(project.name)
         include("RUNNING.md")
         rename("RUNNING.md", "README.md")
     }

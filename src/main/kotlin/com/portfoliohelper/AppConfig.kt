@@ -1,5 +1,9 @@
 package com.portfoliohelper
 
+import com.portfoliohelper.service.db.GlobalSettingsTable
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.upsert
 import java.io.File
 import java.util.Properties
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -57,6 +61,10 @@ object AppConfig {
         KEY_UPDATE_CHECK_INTERVAL   to "86400"
     )
 
+    @Volatile private var dbReady = false
+
+    fun initDbMode() { dbReady = true }
+
     private val lock = ReentrantReadWriteLock()
     private var fileProps = Properties()
 
@@ -75,17 +83,40 @@ object AppConfig {
 
     fun get(key: String): String {
         ENV_MAP[key]?.let { envName -> System.getenv(envName)?.takeIf { it.isNotBlank() }?.let { return it } }
-        return lock.read { fileProps.getProperty(key) } ?: DEFAULTS[key] ?: ""
+        if (dbReady && key != KEY_DATA_DIR) {
+            transaction {
+                GlobalSettingsTable.selectAll()
+                    .where { GlobalSettingsTable.key eq key }
+                    .firstOrNull()?.get(GlobalSettingsTable.value)
+            }?.let { return it }
+        } else {
+            lock.read { fileProps.getProperty(key) }?.let { return it }
+        }
+        return DEFAULTS[key] ?: ""
     }
 
     fun save(updates: Map<String, String>) {
-        lock.write {
-            val f = saveFile
-            f.parentFile?.mkdirs()
-            val current = Properties().also { if (f.exists()) f.inputStream().use { s -> it.load(s) } }
-            updates.forEach { (k, v) -> if (v.isBlank()) current.remove(k) else current[k] = v }
-            f.outputStream().use { current.store(it, "Portfolio Helper app config") }
-            fileProps = current
+        val forFile = updates.filterKeys { it == KEY_DATA_DIR }
+        val forDb   = updates.filterKeys { it != KEY_DATA_DIR }
+        if (forFile.isNotEmpty()) {
+            lock.write {
+                val f = saveFile
+                f.parentFile?.mkdirs()
+                val current = Properties().also { if (f.exists()) f.inputStream().use { s -> it.load(s) } }
+                forFile.forEach { (k, v) -> if (v.isBlank()) current.remove(k) else current[k] = v }
+                f.outputStream().use { current.store(it, "Portfolio Helper app config") }
+                fileProps = current
+            }
+        }
+        if (forDb.isNotEmpty() && dbReady) {
+            transaction {
+                forDb.forEach { (k, v) ->
+                    GlobalSettingsTable.upsert {
+                        it[GlobalSettingsTable.key] = k
+                        it[GlobalSettingsTable.value] = v
+                    }
+                }
+            }
         }
     }
 

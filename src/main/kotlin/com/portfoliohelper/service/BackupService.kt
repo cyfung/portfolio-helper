@@ -4,10 +4,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.portfoliohelper.AppDirs
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -19,6 +19,14 @@ import java.util.zip.ZipOutputStream
 object BackupService {
     private val logger = LoggerFactory.getLogger(BackupService::class.java)
 
+    private fun portfolioCsvPath(p: ManagedPortfolio): Path =
+        if (p.slug == "main") AppDirs.dataDir.resolve("stocks.csv")
+        else AppDirs.dataDir.resolve("${p.slug}/stocks.csv")
+
+    private fun portfolioCashPath(p: ManagedPortfolio): Path =
+        if (p.slug == "main") AppDirs.dataDir.resolve("cash.txt")
+        else AppDirs.dataDir.resolve("${p.slug}/cash.txt")
+
     fun start(scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             performBackups()
@@ -27,7 +35,7 @@ object BackupService {
     }
 
     private fun performBackups() {
-        PortfolioRegistry.entries.forEach { backupPortfolio(it) }
+        ManagedPortfolio.getAll().forEach { backupPortfolio(it) }
     }
 
     fun backupNow(portfolio: ManagedPortfolio, prefix: String? = null, subfolder: String? = null) {
@@ -35,19 +43,17 @@ object BackupService {
     }
 
     private fun backupPortfolio(portfolio: ManagedPortfolio, prefix: String? = null, subfolder: String? = null) {
-        val dataDir = Paths.get(portfolio.csvPath).parent
-        val backupDir = dataDir.resolve(".backup").let { if (subfolder != null) it.resolve(subfolder) else it }
+        val csvFile  = portfolioCsvPath(portfolio)
+        val cashFile = portfolioCashPath(portfolio)
+        val backupDir = csvFile.parent.resolve(".backup").let { if (subfolder != null) it.resolve(subfolder) else it }
         Files.createDirectories(backupDir)
-
-        val csvFile  = Paths.get(portfolio.csvPath)
-        val cashFile = Paths.get(portfolio.cashPath)
         val backupCsv  = backupDir.resolve("stocks.csv")
         val backupCash = backupDir.resolve("cash.txt")
 
         val csvChanged  = contentDiffers(csvFile, backupCsv)
         val cashChanged = contentDiffers(cashFile, backupCash)
         if (!csvChanged && !cashChanged) {
-            logger.debug("No changes for '${portfolio.id}'${if (subfolder != null) " [$subfolder]" else ""}, backup skipped")
+            logger.debug("No changes for '${portfolio.slug}'${if (subfolder != null) " [$subfolder]" else ""}, backup skipped")
             return
         }
 
@@ -65,7 +71,7 @@ object BackupService {
         if (Files.exists(cashFile)) Files.copy(cashFile, backupCash, REPLACE_EXISTING)
         else                        Files.deleteIfExists(backupCash)
 
-        logger.info("Backup created for '${portfolio.id}'${if (subfolder != null) " [$subfolder]" else ""}: ${zipPath.fileName}")
+        logger.info("Backup created for '${portfolio.slug}'${if (subfolder != null) " [$subfolder]" else ""}: ${zipPath.fileName}")
     }
 
     private fun generateZipPath(backupDir: Path, date: String): Path {
@@ -97,7 +103,7 @@ object BackupService {
 
     /** Returns all backups grouped by subfolder. Key "default" = root .backup/ dir. */
     fun listAllBackups(portfolio: ManagedPortfolio): Map<String, List<String>> {
-        val baseDir = Paths.get(portfolio.csvPath).parent.resolve(".backup")
+        val baseDir = portfolioCsvPath(portfolio).parent.resolve(".backup")
         if (!Files.exists(baseDir)) return emptyMap()
         val result = linkedMapOf<String, List<String>>()
         val rootZips = listZipsIn(baseDir)
@@ -121,7 +127,7 @@ object BackupService {
     fun restoreBackup(portfolio: ManagedPortfolio, date: String, subfolder: String? = null) {
         require(date.matches(Regex("[a-zA-Z0-9_-]+"))) { "Invalid backup name: $date" }
         if (subfolder != null) require(subfolder.matches(Regex("[a-zA-Z0-9_-]+"))) { "Invalid subfolder: $subfolder" }
-        val baseDir = Paths.get(portfolio.csvPath).parent.resolve(".backup")
+        val baseDir = portfolioCsvPath(portfolio).parent.resolve(".backup")
         val backupDir = if (subfolder != null) baseDir.resolve(subfolder) else baseDir
         val zipPath = backupDir.resolve("$date.zip")
         require(Files.exists(zipPath)) { "Backup not found: $date" }
@@ -129,8 +135,8 @@ object BackupService {
             var entry = zis.nextEntry
             while (entry != null) {
                 val target = when (entry.name) {
-                    "stocks.csv" -> Paths.get(portfolio.csvPath)
-                    "cash.txt"   -> Paths.get(portfolio.cashPath)
+                    "stocks.csv" -> portfolioCsvPath(portfolio)
+                    "cash.txt"   -> portfolioCashPath(portfolio)
                     else         -> null
                 }
                 if (target != null) Files.copy(zis, target, REPLACE_EXISTING)
@@ -138,7 +144,7 @@ object BackupService {
                 entry = zis.nextEntry
             }
         }
-        logger.info("Restored '${portfolio.id}' from backup${if (subfolder != null) " [$subfolder]" else ""}: $date")
+        logger.info("Restored '${portfolio.slug}' from backup${if (subfolder != null) " [$subfolder]" else ""}: $date")
     }
 
     private fun scheduleDaily(scope: CoroutineScope) {

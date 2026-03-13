@@ -2,7 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.service.CurrencyConventions
 import com.portfoliohelper.service.IbkrMarginRateService
-import com.portfoliohelper.service.PortfolioRegistry
+import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.nav.NavData
 import com.portfoliohelper.service.nav.NavService
@@ -68,11 +68,11 @@ internal suspend fun ServerSSESession.handleSseStream() {
     val unregisterIbkr = IbkrMarginRateService.onUpdateWithReplay(ibkrCallback)
 
     val portfolioValueCallback: () -> Unit = {
-        for (p in PortfolioRegistry.entries) {
+        for (p in ManagedPortfolio.getAll()) {
             val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).totalValue
             val pvJson = buildString {
                 append("{\"type\":\"portfolio-value\",")
-                append("\"portfolioId\":\"${p.id}\",")
+                append("\"portfolioId\":\"${p.slug}\",")
                 append("\"value\":${"%.2f".format(pTotal)}")
                 append("}")
             }

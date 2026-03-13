@@ -34,7 +34,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             "USD" -> e.amount
             "P" -> {
                 val ref =
-                    com.portfoliohelper.service.PortfolioRegistry.get(e.portfolioRef ?: return null)
+                    ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
                         ?: return null
                 e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
             }
@@ -43,19 +43,9 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
         }
     }
 
-    // Load per-portfolio config (portfolio.conf); fall back to legacy rebal-target.txt
-    val portfolioConf: Map<String, String> = runCatching {
-        val f = java.io.File(entry.csvPath).resolveSibling("portfolio.conf")
-        if (f.exists()) f.readLines()
-            .filter { '=' in it && !it.startsWith('#') }
-            .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
-        else emptyMap()
-    }.getOrDefault(emptyMap())
-    val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull()
-        ?: runCatching {
-            val legacy = java.io.File(entry.csvPath).resolveSibling("rebal-target.txt")
-            if (legacy.exists()) legacy.readText().trim().toDoubleOrNull() else null
-        }.getOrNull() ?: 0.0
+    // Load per-portfolio config from SQLite (PortfolioCfgTable)
+    val portfolioConf: Map<String, String> = entry.getAllConfig()
+    val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
     val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
     val savedAllocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL"
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
@@ -83,7 +73,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 unsafe {
                     raw(
                         """
-                        var portfolioId = "${entry.id}";
+                        var portfolioId = "${entry.slug}";
                         var portfolioName = "${entry.name}";
                         var fxRates = ${
                             buildString {
@@ -230,10 +220,10 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 // Tab bar — always rendered
                 div(classes = "portfolio-tabs") {
                     for (p in allPortfolios) {
-                        val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
+                        val href = if (p.slug == "main") "/" else "/portfolio/${p.slug}"
                         a(
                             href = href,
-                            classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}"
+                            classes = "tab-link${if (p.slug == activePortfolioId) " active" else ""}"
                         ) { +p.name }
                     }
                     button(classes = "save-portfolio-btn") {

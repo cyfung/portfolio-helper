@@ -1,14 +1,13 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PairingService
-import com.portfoliohelper.service.PortfolioRegistry
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.util.pipeline.*
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVPrinter
 import org.slf4j.LoggerFactory
@@ -66,7 +65,7 @@ fun Route.configureSyncRoutes() {
      */
     get("/api/sync/positions.csv") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-        val entry = PortfolioRegistry.get(id = portfolioId)
+        val entry = ManagedPortfolio.getBySlug(portfolioId)
             ?: return@get call.respond(HttpStatusCode.NotFound)
 
         val sw = StringWriter()
@@ -77,7 +76,12 @@ fun Route.configureSyncRoutes() {
         CSVPrinter(sw, csvFormat).use { printer ->
             entry.getStocks().forEach { stock ->
                 val groupsStr = stock.groups.joinToString(";") { (mult, name) -> "$mult $name" }
-                printer.printRecord(stock.label, formatQty(stock.amount), stock.targetWeight ?: 0.0, groupsStr)
+                printer.printRecord(
+                    stock.label,
+                    formatQty(stock.amount),
+                    stock.targetWeight ?: 0.0,
+                    groupsStr
+                )
             }
         }
         call.respondText(sw.toString(), ContentType.Text.CSV)
@@ -88,7 +92,7 @@ fun Route.configureSyncRoutes() {
      */
     get("/api/sync/cash.csv") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-        val entry = PortfolioRegistry.get(id = portfolioId)
+        val entry = ManagedPortfolio.getBySlug(portfolioId)
             ?: return@get call.respond(HttpStatusCode.NotFound)
 
         val sw = StringWriter()

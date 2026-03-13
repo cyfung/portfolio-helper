@@ -1,0 +1,112 @@
+package com.portfoliohelper.service.db
+
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.slf4j.LoggerFactory
+import java.io.File
+
+// ---------------------------------------------------------------------------
+// Table definitions
+// ---------------------------------------------------------------------------
+
+/** One row per portfolio. `id` is the stable serial PK; `slug` is the URL-facing identifier. */
+object PortfoliosTable : Table("portfolios") {
+    val id   = integer("id").autoIncrement()
+    val slug = varchar("slug", 64).uniqueIndex()
+    override val primaryKey = PrimaryKey(id)
+}
+
+object PositionsTable : Table("positions") {
+    val portfolioId  = integer("portfolio_id")
+    val symbol       = varchar("symbol", 32)
+    val amount       = double("amount")
+    val targetWeight = double("target_weight").default(0.0)
+    val letf         = text("letf").default("")
+    val groups       = text("groups").default("")
+    override val primaryKey = PrimaryKey(portfolioId, symbol)
+}
+
+object CashTable : Table("cash") {
+    val id           = integer("id").autoIncrement()
+    val portfolioId  = integer("portfolio_id")
+    val label        = varchar("label", 128)
+    val currency     = varchar("currency", 16)
+    val marginFlag   = bool("margin_flag").default(false)
+    val amount       = double("amount")
+    val portfolioRef = varchar("portfolio_ref", 64).nullable()
+    override val primaryKey = PrimaryKey(id)
+}
+
+/** Key-value config per portfolio (rebalTarget, marginTarget, allocAddMode, etc.) */
+object PortfolioCfgTable : Table("portfolio_cfg") {
+    val portfolioId = integer("portfolio_id")
+    val cfgKey      = varchar("key", 64)
+    val cfgValue    = text("value")
+    override val primaryKey = PrimaryKey(portfolioId, cfgKey)
+}
+
+/**
+ * Paired Android devices. Schema is set up now for Phase 2 (AES-256-GCM auth).
+ * Currently only clientId / displayName / pairedAt / lastIp are used by PairingService.
+ */
+object PairedDevicesTable : Table("paired_devices") {
+    val serverAssignedId = varchar("server_assigned_id", 64)
+    val clientId         = varchar("client_id", 128)
+    val displayName      = varchar("display_name", 256)
+    val pairedAt         = long("paired_at")
+    val lastIp           = varchar("last_ip", 64)
+    val aesKey           = varchar("aes_key", 512).default("")
+    val useCount         = integer("use_count").default(0)
+    override val primaryKey = PrimaryKey(serverAssignedId)
+}
+
+/** Generic admin key-value store (master_secret, admin token hashes). Used in Phase 2. */
+object AdminTable : Table("admin") {
+    val adminKey   = varchar("key", 128)
+    val adminValue = text("value")
+    override val primaryKey = PrimaryKey(adminKey)
+}
+
+/** Generic global key-value blob store for app settings, backtest/MC settings, loan history, etc. */
+object GlobalSettingsTable : Table("global_settings") {
+    val key   = varchar("key", 128)
+    val value = text("value")
+    override val primaryKey = PrimaryKey(key)
+}
+
+/** One row per saved backtest portfolio — enables clean per-row CRUD. */
+object SavedBacktestPortfoliosTable : Table("saved_backtest_portfolios") {
+    val name    = varchar("name", 256)
+    val config  = text("config")
+    val savedAt = long("saved_at")
+    override val primaryKey = PrimaryKey(name)
+}
+
+// ---------------------------------------------------------------------------
+// Initialization
+// ---------------------------------------------------------------------------
+
+object AppDatabase {
+    private val logger = LoggerFactory.getLogger(AppDatabase::class.java)
+
+    internal val allTables = arrayOf(
+        PortfoliosTable,
+        PositionsTable,
+        CashTable,
+        PortfolioCfgTable,
+        PairedDevicesTable,
+        AdminTable,
+        GlobalSettingsTable,
+        SavedBacktestPortfoliosTable
+    )
+
+    fun init(dataDir: File) {
+        val dbPath = dataDir.resolve("app.db")
+        logger.info("Connecting to SQLite database at $dbPath")
+        Database.connect("jdbc:sqlite:${dbPath.absolutePath}", driver = "org.sqlite.JDBC")
+        transaction {
+            SchemaUtils.create(*allTables)
+        }
+        logger.info("Database schema ready at $dbPath")
+    }
+}
