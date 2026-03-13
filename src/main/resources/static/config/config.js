@@ -89,124 +89,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function refreshPairingUI() {
-    await Promise.all([loadPairedDevices(), loadPendingPairings()]);
+    await loadPairedDevices();
 }
 
-async function loadPairedDevices() {
-    const list = document.getElementById('paired-devices-list');
-    if (!list) return;
-
-    try {
-        const r = await fetch('/api/paired-devices');
-        const devices = await r.json();
-
-        if (devices.length === 0) {
-            list.innerHTML = '<p class="config-env-override-note">No devices paired.</p>';
-            return;
-        }
-
-        let html = '<table class="portfolio-config-table"><thead><tr><th>Device</th><th>Last IP</th><th>Paired At</th><th>Action</th></tr></thead><tbody>';
-        devices.forEach(d => {
-            const date = new Date(d.pairedAt).toLocaleString();
-            html += `<tr>
-                <td><strong>${d.name}</strong><br><small style="color:var(--text-tertiary)">${d.id}</small></td>
-                <td>${d.lastIp}</td>
-                <td>${date}</td>
-                <td><button class="config-text-link-btn" style="color:var(--negative)" onclick="unpairDevice('${d.id}')">Unlink</button></td>
-            </tr>`;
-        });
-        html += '</tbody></table>';
-        list.innerHTML = html;
-    } catch (err) {
-        list.innerHTML = '<p class="config-status-error">Failed to load devices.</p>';
-    }
-}
-
-async function loadPendingPairings() {
+function initPairing() {
     const container = document.getElementById('pairing-pin-display');
     if (!container) return;
 
-    try {
-        const r = await fetch('/api/pending-pairings');
-        const pending = await r.json();
+    // Auto-generate a PIN on page load so the user can immediately pair
+    generateAndShowPin(container);
 
-        if (pending.length === 0) {
-            container.innerHTML = '<p class="config-env-override-note">No pending pairing requests. Open the Android app to begin.</p>';
-            return;
+    container.addEventListener('click', async (e) => {
+        if (e.target.id === 'generate-pin-btn') {
+            generateAndShowPin(container);
         }
-
-        let html = '<div style="display:flex; flex-direction:column; gap:12.dp;">';
-        pending.forEach(p => {
-            html += `
-                <div class="pending-pairing-item" style="border:1px solid var(--border-color); padding:12px; border-radius:8px; margin-bottom:8px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <strong>${p.name}</strong> from ${p.ip}<br>
-                            <small style="color:var(--text-tertiary)">ID: ${p.id}</small>
-                        </div>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="text" placeholder="PIN" id="pin-${p.id}" style="width:60px; text-align:center;" maxlength="4">
-                            <button class="config-save-btn" onclick="authorizeDevice('${p.id}')">Authorize</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-        html += '</div>';
-        container.innerHTML = html;
-    } catch (err) {
-        container.innerHTML = '<p class="config-status-error">Failed to load pending requests.</p>';
-    }
+    });
 }
 
-window.authorizeDevice = async (deviceId) => {
-    const pinEl = document.getElementById(`pin-${deviceId}`);
-    const pin = pinEl ? pinEl.value.trim() : "";
-    if (pin.length !== 4) {
-        alert("Enter the 4-digit PIN displayed on the phone.");
-        return;
-    }
-
+async function generateAndShowPin(container) {
     try {
-        const r = await fetch(`/api/authorize-device?deviceId=${encodeURIComponent(deviceId)}&pin=${encodeURIComponent(pin)}`, { method: 'POST' });
-        if (r.ok) {
-            refreshPairingUI();
-        } else {
-            const msg = await r.text();
-            alert("Authorization failed: " + msg);
-        }
+        container.innerHTML = `<span class="config-env-override-note">Generating…</span>`;
+        const r = await fetch('/api/pairing/generate', { method: 'POST' });
+        const { pin } = await r.json();
+        container.innerHTML = `
+            <p class="pairing-pin-hint">Show this PIN on-screen. Enter it in the Android app to pair.</p>
+            <div class="pin-number-display">${pin}</div>
+            <p class="pairing-pin-hint">Expires in 5 minutes.</p>
+            <button class="config-restore-btn" id="generate-pin-btn" type="button">Generate New PIN</button>
+        `;
     } catch (err) {
-        alert("Error authorizing device");
+        container.innerHTML = `
+            <span class="config-env-override-note">Failed to generate PIN.</span>
+            <button class="config-restore-btn" id="generate-pin-btn" type="button">Retry</button>
+        `;
+        console.error('Failed to generate PIN', err);
     }
-};
-
-window.unpairDevice = async (id) => {
-    if (!confirm('Unlink this device? It will no longer be able to sync until re-paired.')) return;
-    try {
-        await fetch(`/api/unpair-device?deviceId=${encodeURIComponent(id)}`, { method: 'POST' });
-        refreshPairingUI();
-    } catch (err) {
-        alert('Unpairing failed');
-    }
-};
-
-function initPairing() {
-    const unpairAllBtn = document.getElementById('unpair-all-btn');
-    if (unpairAllBtn) {
-        unpairAllBtn.addEventListener('click', async () => {
-            if (!confirm('Unlink ALL devices?')) return;
-            try {
-                await fetch('/api/unpair-device', { method: 'POST' });
-                refreshPairingUI();
-            } catch (err) {
-                alert('Action failed');
-            }
-        });
-    }
-
-    refreshPairingUI();
-    // Poll for pending pairings every 5 seconds while on config page
-    setInterval(loadPendingPairings, 5000);
 }
 
 function showStatus(msg, type) {

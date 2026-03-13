@@ -28,6 +28,7 @@ dependencies {
     implementation("io.ktor:ktor-server-core:3.4.0")
     implementation("io.ktor:ktor-server-netty:3.4.0")
     implementation("io.ktor:ktor-server-html-builder:3.4.0")
+    implementation("io.ktor:ktor-server-sse:3.4.0")
 
     // Ktor HTTP Client for Yahoo Finance API
     implementation("io.ktor:ktor-client-core:3.4.0")
@@ -59,6 +60,12 @@ dependencies {
 
     // mDNS for Android Sync
     implementation("org.jmdns:jmdns:3.6.3")
+
+    // TLS — Bouncy Castle for self-signed cert generation
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.83")
+
+    // Native BoringSSL — replaces JDK TLS in Netty for fast HTTPS handshakes
+    implementation("io.netty:netty-tcnative-boringssl-static:2.0.75.Final")
 
     implementation(project(":tws-client"))
 }

@@ -98,8 +98,8 @@ class SyncRepository(
         val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
         val response = client.post("http://$host:$port/api/sync/pair") {
             parameter("pin", pin)
-            parameter("deviceId", deviceId)
-            parameter("deviceName", deviceName)
+            header("X-Device-ID", deviceId)
+            header("X-Device-Name", deviceName)
         }
         if (response.status != HttpStatusCode.OK) {
             val body = response.bodyAsText()

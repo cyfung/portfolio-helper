@@ -13,6 +13,10 @@ import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.sse.SSE
+import io.ktor.server.sse.heartbeat
+import io.ktor.server.sse.sse
+import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -21,9 +25,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVPrinter
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileWriter
-import java.net.InetAddress
+import kotlin.time.Duration.Companion.milliseconds
 
 private val backtestDir get() = AppDirs.dataDir.resolve(".backtest").toFile()
 
@@ -69,29 +74,23 @@ private fun normalizeCashKey(raw: String): String {
 }
 
 fun Application.configureRouting() {
+    val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
+    val httpPort  = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
+
+    install(SSE)
+
     routing {
-        
-        // Security Interceptor: Restrict non-sync routes to localhost
-        val localOnlyPlugin = createRouteScopedPlugin("LocalOnlyPlugin") {
-            onCall { call ->
-                val path = call.request.path()
-                if (path.startsWith("/api/sync/") || path.startsWith("/static/")) return@onCall
 
-                val remoteAddress = call.request.origin.remoteHost
-                val isAllowed = try {
-                    val inetAddress = InetAddress.getByName(remoteAddress)
-                    inetAddress.isLoopbackAddress || inetAddress.isSiteLocalAddress
-                } catch (_: Exception) {
-                    false
-                }
-
-                if (!isAllowed) {
-                    println("DEBUG Forbidden: $remoteAddress")
-                    call.respond(HttpStatusCode.Forbidden, "Access restricted to localhost")
-                }
-            }
-        }
-        install(localOnlyPlugin)
+        // HTTP -> HTTPS redirect disabled temporarily for performance testing.
+        // Re-enable by uncommenting the block below.
+        // intercept(ApplicationCallPipeline.Plugins) {
+        //     if (call.request.local.port == httpPort) {
+        //         val host = call.request.host()
+        //         val path = call.request.uri
+        //         call.respondRedirect("https://$host:$httpsPort$path", permanent = true)
+        //         return@intercept finish()
+        //     }
+        // }
 
         // Android Sync Endpoints
         configureSyncRoutes()
@@ -597,6 +596,13 @@ fun Application.configureRouting() {
         }
 
         // Device Management Endpoints (Localhost only)
+
+        // Generate a PIN to display in the server UI — user enters it on their Android device to pair
+        post("/api/pairing/generate") {
+            val pin = PairingService.generatePin()
+            call.respondText("{\"pin\":\"$pin\"}", ContentType.Application.Json)
+        }
+
         get("/api/paired-devices") {
             val clients = PairingService.getPairedClients()
             val json = buildJsonArray {
@@ -612,30 +618,7 @@ fun Application.configureRouting() {
             call.respondText(json.toString(), ContentType.Application.Json)
         }
 
-        get("/api/pending-pairings") {
-            val pending = PairingService.getPendingRequests()
-            val json = buildJsonArray {
-                pending.forEach { p ->
-                    add(buildJsonObject {
-                        put("id", p.deviceId)
-                        put("name", p.deviceName)
-                        put("timestamp", p.timestamp)
-                        put("ip", p.ip)
-                    })
-                }
-            }
-            call.respondText(json.toString(), ContentType.Application.Json)
-        }
 
-        post("/api/authorize-device") {
-            val deviceId = call.request.queryParameters["deviceId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val pin = call.request.queryParameters["pin"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-            if (PairingService.authorizeDevice(deviceId, pin)) {
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
-            } else {
-                call.respond(HttpStatusCode.Unauthorized, "Invalid PIN or request expired")
-            }
-        }
 
         post("/api/unpair-device") {
             val deviceId = call.request.queryParameters["deviceId"]
@@ -645,7 +628,24 @@ fun Application.configureRouting() {
         }
 
         // Server-Sent Events (SSE) endpoint for streaming price updates
-        get("/api/prices/stream") { call.handleSseStream() }
+        sse("/api/prices/stream") {
+            heartbeat {
+                period = 10.milliseconds
+                event = ServerSentEvent("heartbeat")
+            }
+            LoggerFactory.getLogger(this::class.java).warn("sse start")
+//            try {
+//                repeat(100) {
+//                    delay(1000)
+//                    send(ServerSentEvent("prices", "abc"))
+//                }
+//            } finally {
+//                LoggerFactory.getLogger(this::class.java).warn("sse bye?")
+//            }
+            try { handleSseStream() } finally {
+                LoggerFactory.getLogger(this::class.java).warn("sse bye?")
+            }
+        }
 
         // Trigger an immediate backup for a portfolio (called before opening the restore UI or virtual rebalance)
         post("/api/backup/trigger") {

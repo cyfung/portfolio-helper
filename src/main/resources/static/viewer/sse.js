@@ -31,6 +31,7 @@ function initSseConnection() {
     eventSource.onmessage = (event) => {
         sseLastActivity = Date.now();
         try {
+            if(event.data == 'heartbeat') return;
             const data = JSON.parse(event.data);
 
             if (data.type === 'reload') {
@@ -67,6 +68,16 @@ function initSseConnection() {
         console.error('SSE connection error:', error);
         setSseStatus(false);
     };
+
+    const closeSSE = () => {
+        if (eventSource) {
+            eventSource.close();
+        }
+    };
+
+    // Use both for maximum coverage
+    window.addEventListener('pagehide', closeSSE);
+    window.addEventListener('beforeunload', closeSSE);
 
     // Reload page if SSE has been broken for 5 minutes
     setInterval(() => {

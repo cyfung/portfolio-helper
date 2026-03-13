@@ -1,20 +1,21 @@
 package com.portfoliohelper.service
 
 import org.slf4j.LoggerFactory
-import javax.jmdns.JmmDNS
+import javax.jmdns.JmDNS
 import javax.jmdns.ServiceInfo
 
 object SyncDiscoveryService {
     private val logger = LoggerFactory.getLogger(SyncDiscoveryService::class.java)
-    private var jmmdns: JmmDNS? = null
+    private var jmdns: JmDNS? = null
 
     fun start(port: Int) {
         try {
-            // Force IPv4 to avoid JmDNS issues on Windows (SocketException: setsockopt)
+            // Force IPv4 to avoid JmDNS issues on Windows (SocketException: setsockopt at setInterface6)
             System.setProperty("java.net.preferIPv4Stack", "true")
             
-            // Use Multi-interface JmDNS for better reliability on Windows
-            jmmdns = JmmDNS.Factory.getInstance()
+            // JmDNS.create() with no arguments is the most reliable way on Windows as it handles 
+            // multi-homed interface selection and prevents setsockopt errors.
+            jmdns = JmDNS.create()
             
             val serviceInfo = ServiceInfo.create(
                 "_ibviewer._tcp.local.",
@@ -24,21 +25,21 @@ object SyncDiscoveryService {
                 mapOf("path" to "/")
             )
             
-            jmmdns?.registerService(serviceInfo)
-            logger.info("Registered mDNS service on all interfaces: _ibviewer._tcp.local. on port $port")
+            jmdns?.registerService(serviceInfo)
+            logger.info("Registered mDNS service: _ibviewer._tcp.local. on port $port")
         } catch (e: Exception) {
-            logger.error("Failed to start mDNS discovery service", e)
+            logger.error("Failed to start mDNS discovery service: ${e.message}")
         }
     }
 
     fun stop() {
         try {
-            jmmdns?.unregisterAllServices()
-            jmmdns?.close()
+            jmdns?.unregisterAllServices()
+            jmdns?.close()
         } catch (e: Exception) {
             // Ignore closure errors
         }
-        jmmdns = null
+        jmdns = null
         logger.info("Stopped mDNS discovery service")
     }
 }

@@ -231,8 +231,13 @@ fun main() {
     // ---------------------------------------------------------------
     // 10. Shutdown hook
     // ---------------------------------------------------------------
-    val port = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8080
+    val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
+    val httpPort  = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
     var stopServer: () -> Unit = {}
+
+    // Load or generate TLS certificate — no hostname binding, Android trusts by fingerprint
+    val (keyStore, certFingerprint) = CertificateManager.loadOrGenerate(dataDir.toFile())
+    logger.info("TLS fingerprint (show in settings): $certFingerprint")
 
     Runtime.getRuntime().addShutdownHook(Thread {
         logger.info("Shutting down application (shutdown hook)...")
@@ -245,7 +250,7 @@ fun main() {
         logger.info("Cleanup completed")
     })
 
-    val url = "http://localhost:$port"
+    val url = "https://localhost:$httpsPort"
 
     // ---------------------------------------------------------------
     // 11. System tray
@@ -255,21 +260,42 @@ fun main() {
     // ---------------------------------------------------------------
     // 12. Start web server
     // ---------------------------------------------------------------
-    logger.info("Starting web server on port $port...")
+    logger.info("Starting HTTPS server on port $httpsPort, HTTP redirect on port $httpPort...")
     try {
-        val server = embeddedServer(Netty, port = port, host = AppConfig.bindHost) {
+        val server = embeddedServer(Netty, configure = {
+            // Increase worker threads so long-lived SSE connections don't starve
+            // normal page/API requests. Default is 2×CPU which is too small.
+            workerGroupSize = 32
+            callGroupSize  = 32
+
+            // HTTPS — all real traffic
+            sslConnector(
+                keyStore = keyStore,
+                keyAlias = "ibviewer",
+                keyStorePassword = { charArrayOf() },
+                privateKeyPassword = { charArrayOf() }
+            ) {
+                port = httpsPort
+                host = AppConfig.bindHost
+            }
+            // HTTP — redirect to HTTPS only, no data served
+            connector {
+                port = httpPort
+                host = AppConfig.bindHost
+            }
+        }) {
             configureRouting()
         }.start(wait = false)
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
 
-        // Start mDNS discovery for Android sync
-        SyncDiscoveryService.start(port)
+        // Advertise HTTPS port for Android mDNS discovery
+        SyncDiscoveryService.start(httpsPort)
     } catch (e: Exception) {
         logger.error("Failed to start web server: ${e.message}", e)
         exitProcess(1)
     }
 
-    logger.info("Application ready. Access at http://localhost:$port (press Ctrl+C or use tray menu to exit)")
+    logger.info("Application ready. Access at https://localhost:$httpsPort (press Ctrl+C or use tray menu to exit)")
 
     runBlocking {
         delay(1.seconds)

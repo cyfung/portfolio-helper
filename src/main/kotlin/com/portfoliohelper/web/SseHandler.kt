@@ -8,25 +8,14 @@ import com.portfoliohelper.service.nav.NavData
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.service.yahoo.YahooQuote
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.response.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.CoroutineScope
+import io.ktor.server.sse.*
+import io.ktor.sse.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
-internal suspend fun ApplicationCall.handleSseStream() {
-    val scope = CoroutineScope(coroutineContext)
-    response.cacheControl(CacheControl.NoCache(null))
-    response.headers.append(HttpHeaders.ContentType, "text/event-stream")
-    response.headers.append(HttpHeaders.CacheControl, "no-cache")
-    response.headers.append(HttpHeaders.Connection, "keep-alive")
-
+internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
 
-    // Register callback for price updates; replay cached quotes immediately so
-    // clients that connect after the first fetch don't wait for the next poll cycle
     val callback: (String, YahooQuote) -> Unit = { symbol, quote ->
         if (quote.regularMarketPrice != null) {
             val json = buildString {
@@ -39,14 +28,11 @@ internal suspend fun ApplicationCall.handleSseStream() {
                 append("\"timestamp\":${quote.lastUpdateTime}")
                 append("}")
             }
-            channel.trySend("data: $json\n\n")
+            channel.trySend(json)
         }
     }
-
     val unregisterPrice = YahooMarketDataService.onUpdateWithReplay(callback)
 
-    // Register callback for NAV updates; replay cached NAV immediately so
-    // clients that connect after a slow NAV fetch don't miss it until next poll
     val navCallback: (String, NavData) -> Unit = { symbol, navData ->
         val json = buildString {
             append("{")
@@ -56,9 +42,8 @@ internal suspend fun ApplicationCall.handleSseStream() {
             append("\"timestamp\":${navData.lastFetchTime}")
             append("}")
         }
-        channel.trySend("data: $json\n\n")
+        channel.trySend(json)
     }
-
     val unregisterNav = NavService.onUpdateWithReplay(navCallback)
 
     val ibkrCallback: () -> Unit = {
@@ -69,16 +54,19 @@ internal suspend fun ApplicationCall.handleSseStream() {
                     if (t.upTo != null) "{\"upTo\":${t.upTo},\"rate\":${t.rate}}"
                     else "{\"upTo\":null,\"rate\":${t.rate}}"
                 }
-                "{\"currency\":\"$ccy\",\"baseRate\":${r.baseRate},\"days\":${CurrencyConventions.getDaysInYear(ccy)},\"tiers\":$tiers}"
+                "{\"currency\":\"$ccy\",\"baseRate\":${r.baseRate},\"days\":${
+                    CurrencyConventions.getDaysInYear(
+                        ccy
+                    )
+                },\"tiers\":$tiers}"
             }
             append(entries.joinToString(","))
             append("],\"lastFetch\":${IbkrMarginRateService.getLastFetchMillis()}}")
         }
-        channel.trySend("data: $rates\n\n")
+        channel.trySend(rates)
     }
     val unregisterIbkr = IbkrMarginRateService.onUpdateWithReplay(ibkrCallback)
 
-    // Register callback to emit each portfolio's total value after every price poll batch
     val portfolioValueCallback: () -> Unit = {
         for (p in PortfolioRegistry.entries) {
             val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).totalValue
@@ -88,33 +76,22 @@ internal suspend fun ApplicationCall.handleSseStream() {
                 append("\"value\":${"%.2f".format(pTotal)}")
                 append("}")
             }
-            channel.trySend("data: $pvJson\n\n")
+            channel.trySend(pvJson)
         }
     }
     val unregisterPortfolioValue = YahooMarketDataService.onBatchComplete(portfolioValueCallback)
-    portfolioValueCallback()  // replay initial values on connect
 
-    // Listen for portfolio reload events
-    val collectJob = scope.launch {
+    launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
             val json = "{\"type\":\"reload\",\"timestamp\":${it.timestamp}}"
-            channel.send("data: $json\n\n")
+            channel.trySend(json)
         }
     }
-
-    // Stream updates to client
     try {
-        respondBytesWriter(contentType = ContentType.Text.EventStream) {
-            writeFully(":keepalive\n\n".toByteArray(Charsets.UTF_8))
-            flush()
-
-            for (message in channel) {
-                writeFully(message.toByteArray(Charsets.UTF_8))
-                flush()
-            }
+        for (json in channel) {
+            send(ServerSentEvent(json))
         }
     } finally {
-        collectJob.cancel()
         unregisterPrice()
         unregisterNav()
         unregisterIbkr()

@@ -17,35 +17,48 @@ import java.io.StringWriter
 private val logger = LoggerFactory.getLogger("SyncRoutes")
 
 fun Route.configureSyncRoutes() {
-    
-    // Security Interceptor for /api/sync
+
+    // Security interceptor for /api/sync — all routes except /pair require a paired device
     intercept(ApplicationCallPipeline.Plugins) {
         val path = call.request.path()
         if (!path.startsWith("/api/sync/")) return@intercept
-
-        // "Announce" is the only sync endpoint allowed without a paired ID
-        if (path == "/api/sync/announce") return@intercept
+        if (path == "/api/sync/pair") return@intercept
 
         val deviceId = call.request.headers["X-Device-ID"]
         if (deviceId == null || !PairingService.isAuthorized(deviceId)) {
-            logger.warn("Unauthorized sync access attempt to $path. Device ID: $deviceId")
+            logger.warn("Unauthorized sync access to $path. Device-ID: $deviceId")
             call.respond(HttpStatusCode.Unauthorized, "Device not paired")
             return@intercept finish()
         }
     }
 
     /**
-     * Called by Android device to initiate pairing.
-     * Android generates a PIN, displays it to user, and sends it here.
+     * Pairing endpoint.
+     * Client sends: POST /api/sync/pair?pin=1234
+     * Headers: X-Device-ID (unique device identifier), X-Device-Name (human-readable, optional)
+     *
+     * Flow:
+     *   1. Server already displayed the PIN in its own UI (via /api/pairing/generate).
+     *   2. User reads the PIN on the server screen and types it into the client app.
+     *   3. Client POSTs here — if PIN matches, device is immediately authorized.
      */
-    post("/api/sync/announce") {
-        val deviceId = call.request.queryParameters["deviceId"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing Device ID")
-        val deviceName = call.request.queryParameters["deviceName"] ?: "Android Device"
-        val pin = call.request.queryParameters["pin"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing PIN")
-        val clientAddress = call.request.origin.remoteHost
-        
-        PairingService.addPendingPairing(deviceId, deviceName, pin, clientAddress)
-        call.respond(HttpStatusCode.Accepted, "Announcement received. Please authorize on server.")
+    post("/api/sync/pair") {
+        val pin = call.request.queryParameters["pin"]
+            ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing PIN")
+
+        val deviceId = call.request.headers["X-Device-ID"]
+            ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing X-Device-ID header")
+
+        val deviceName = call.request.headers["X-Device-Name"] ?: deviceId
+        val ip = call.request.origin.remoteHost
+
+        logger.info("Pairing attempt from '$deviceName' ($ip) with PIN $pin")
+
+        if (PairingService.verifyAndPair(pin, deviceId, deviceName, ip)) {
+            call.respond(HttpStatusCode.OK, "Paired successfully")
+        } else {
+            call.respond(HttpStatusCode.Unauthorized, "Invalid or expired PIN")
+        }
     }
 
     /**
@@ -53,13 +66,14 @@ fun Route.configureSyncRoutes() {
      */
     get("/api/sync/positions.csv") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-        val entry = PortfolioRegistry.get(id = portfolioId) ?: return@get call.respond(HttpStatusCode.NotFound)
-        
+        val entry = PortfolioRegistry.get(id = portfolioId)
+            ?: return@get call.respond(HttpStatusCode.NotFound)
+
         val sw = StringWriter()
         val csvFormat = CSVFormat.DEFAULT.builder()
             .setHeader("symbol", "quantity", "targetWeight", "groups")
             .build()
-            
+
         CSVPrinter(sw, csvFormat).use { printer ->
             entry.getStocks().forEach { stock ->
                 val groupsStr = stock.groups.joinToString(";") { (mult, name) -> "$mult $name" }
@@ -74,13 +88,14 @@ fun Route.configureSyncRoutes() {
      */
     get("/api/sync/cash.csv") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-        val entry = PortfolioRegistry.get(id = portfolioId) ?: return@get call.respond(HttpStatusCode.NotFound)
-        
+        val entry = PortfolioRegistry.get(id = portfolioId)
+            ?: return@get call.respond(HttpStatusCode.NotFound)
+
         val sw = StringWriter()
         val csvFormat = CSVFormat.DEFAULT.builder()
             .setHeader("label", "currency", "amount", "isMargin")
             .build()
-            
+
         CSVPrinter(sw, csvFormat).use { printer ->
             entry.getCash().forEach { cash ->
                 printer.printRecord(cash.label, cash.currency, cash.amount, cash.marginFlag)
