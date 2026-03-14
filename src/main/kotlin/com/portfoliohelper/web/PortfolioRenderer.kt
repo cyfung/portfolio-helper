@@ -137,8 +137,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         button(classes = "restore-backup-btn") {
                             attributes["id"] = "restore-backup-btn"
                             attributes["type"] = "button"
-                            attributes["title"] = "Restore from a previous backup"
-                            span(classes = "toggle-label") { +"Restore" }
+                            attributes["title"] = "Backup and restore portfolio"
+                            span(classes = "toggle-label") { +"Backups" }
+                        }
+                        input(type = InputType.file) {
+                            id = "import-file-input"
+                            attributes["accept"] = ".csv,.txt,.zip,.json"
+                            style = "display:none"
                         }
 
                         button(classes = "save-btn") {

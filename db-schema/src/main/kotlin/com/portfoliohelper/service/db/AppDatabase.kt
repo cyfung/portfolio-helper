@@ -76,10 +76,20 @@ object GlobalSettingsTable : Table("global_settings") {
 
 /** One row per saved backtest portfolio — enables clean per-row CRUD. */
 object SavedBacktestPortfoliosTable : Table("saved_backtest_portfolios") {
-    val name    = varchar("name", 256)
-    val config  = text("config")
-    val savedAt = long("saved_at")
+    val name      = varchar("name", 256)
+    val config    = text("config")
+    val createdAt = long("created_at")
     override val primaryKey = PrimaryKey(name)
+}
+
+/** One row per portfolio backup snapshot stored as JSON. */
+object PortfolioBackupsTable : Table("portfolio_backups") {
+    val id          = integer("id").autoIncrement()
+    val portfolioId = integer("portfolio_id")
+    val createdAt   = long("created_at")         // Unix millis
+    val label       = varchar("label", 128).default("")   // "" = daily; "rebalance" etc = labelled tab
+    val data        = text("data")               // JSON blob
+    override val primaryKey = PrimaryKey(id)
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +107,8 @@ object AppDatabase {
         PairedDevicesTable,
         AdminTable,
         GlobalSettingsTable,
-        SavedBacktestPortfoliosTable
+        SavedBacktestPortfoliosTable,
+        PortfolioBackupsTable
     )
 
     fun init(dataDir: File) {

@@ -7,9 +7,13 @@ import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.GlobalSettingsTable
 import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
+import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.tws.PortfolioSnapshot
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
+import io.ktor.http.content.streamProvider
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
 import io.ktor.server.request.*
@@ -147,7 +151,7 @@ fun Application.configureRouting() {
         get("/api/backtest/savedPortfolios") {
             val rows = transaction {
                 SavedBacktestPortfoliosTable.selectAll()
-                    .orderBy(SavedBacktestPortfoliosTable.savedAt)
+                    .orderBy(SavedBacktestPortfoliosTable.createdAt)
                     .map { buildJsonObject {
                         put("name", it[SavedBacktestPortfoliosTable.name])
                         put("config", Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config]))
@@ -175,7 +179,7 @@ fun Application.configureRouting() {
                 SavedBacktestPortfoliosTable.insert {
                     it[SavedBacktestPortfoliosTable.name] = finalName
                     it[SavedBacktestPortfoliosTable.config] = config.toString()
-                    it[SavedBacktestPortfoliosTable.savedAt] = System.currentTimeMillis()
+                    it[SavedBacktestPortfoliosTable.createdAt] = System.currentTimeMillis()
                 }
                 buildJsonObject { put("name", finalName); put("config", config) }
             }
@@ -654,54 +658,135 @@ fun Application.configureRouting() {
             }
         }
 
-        // Trigger an immediate backup for a portfolio (called before opening the restore UI or virtual rebalance)
+        // Trigger an immediate DB backup for a portfolio
         post("/api/backup/trigger") {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
             val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
-            val prefix = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
-            val subfolder = call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
-            BackupService.backupNow(portfolioEntry, prefix, subfolder)
+            val label = call.request.queryParameters["label"]?.takeIf { it.isNotBlank() } ?: ""
+            BackupService.saveToDb(portfolioEntry, label)
             call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
         }
 
-        // List available backups grouped by subfolder ("default" = root .backup/ dir)
-        get("/api/backup/list") {
+        // List DB backups for a portfolio — [{id, savedAt, label}, ...] newest first
+        get("/api/backup/list-db") {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId) ?: return@get call.respond(
-                HttpStatusCode.NotFound
-            )
-            val all = BackupService.listAllBackups(portfolioEntry)
-            val json = buildString {
-                append("{")
-                all.entries.forEachIndexed { i, (key, dates) ->
-                    if (i > 0) append(",")
-                    append("\"$key\":[${dates.joinToString(",") { "\"$it\"" }}]")
-                }
-                append("}")
-            }
+            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val entries = BackupService.listDbBackups(portfolioEntry)
+            val json = "[" + entries.joinToString(",") {
+                "{\"id\":${it.id},\"createdAt\":${it.createdAt},\"label\":\"${it.label}\"}"
+            } + "]"
             call.respondText(json, ContentType.Application.Json)
         }
 
-        // Restore a portfolio from a dated backup ZIP (optional subfolder param)
-        post("/api/backup/restore") {
+        // Restore a portfolio from a DB backup row
+        post("/api/backup/restore-db") {
             try {
                 val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry =
-                    ManagedPortfolio.getBySlug(portfolioId) ?: return@post call.respond(
-                        HttpStatusCode.NotFound
-                    )
-                val date = call.request.queryParameters["date"] ?: return@post call.respond(
-                    HttpStatusCode.BadRequest,
-                    "Missing date parameter"
-                )
-                val subfolder =
-                    call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
-                BackupService.restoreBackup(portfolioEntry, date, subfolder)
+                val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                val id = call.request.queryParameters["id"]?.toIntOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                BackupService.restoreFromDb(portfolioEntry, id)
+                PortfolioUpdateBroadcaster.broadcastReload()
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
                     "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        // Export portfolio as JSON download (includes snapshotUsd for P entries)
+        get("/api/backup/export-json") {
+            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val json = BackupService.exportJson(portfolioEntry) { e ->
+                when (e.currency) {
+                    "USD" -> e.amount
+                    "P"   -> {
+                        val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
+                            ?: return@exportJson null
+                        e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
+                    }
+                    else  -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+                        ?.regularMarketPrice?.let { e.amount * it }
+                }
+            }
+            val filename = "backup-${portfolioEntry.slug}.json"
+            call.response.headers.append(
+                HttpHeaders.ContentDisposition,
+                "attachment; filename=\"$filename\""
+            )
+            call.respondText(json, ContentType.Application.Json)
+        }
+
+        // Import CSV / TXT / ZIP / JSON file — validates and returns parsed data for edit-mode population
+        post("/api/backup/import-file") {
+            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+            ManagedPortfolio.getBySlug(portfolioId)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            try {
+                val multipart = call.receiveMultipart()
+                var bytes: ByteArray? = null
+                var filename = "upload"
+                multipart.forEachPart { part ->
+                    if (part is PartData.FileItem && part.name == "file") {
+                        filename = part.originalFileName ?: "upload"
+                        bytes = part.streamProvider().readBytes()
+                    }
+                    part.dispose()
+                }
+                val fileBytes = bytes
+                    ?: return@post call.respondText(
+                        "{\"error\":\"No file uploaded\"}",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest
+                    )
+                val result = BackupService.parseImportFile(fileBytes, filename)
+                if (result.error != null) {
+                    call.respondText(
+                        "{\"error\":\"${result.error.replace("\"", "\\\"")}\"}",
+                        ContentType.Application.Json
+                    )
+                } else {
+                    val json = buildString {
+                        append("{")
+                        var first = true
+                        if (result.stocks != null) {
+                            first = false
+                            append("\"stocks\":[")
+                            result.stocks.forEachIndexed { i, s ->
+                                if (i > 0) append(",")
+                                val sym = (s["symbol"] as String).replace("\"", "\\\"")
+                                val letf = (s["letf"] as String).replace("\"", "\\\"")
+                                val grp = (s["groups"] as String).replace("\"", "\\\"")
+                                append("{\"symbol\":\"$sym\",\"amount\":${s["amount"]},\"targetWeight\":${s["targetWeight"]},\"letf\":\"$letf\",\"groups\":\"$grp\"}")
+                            }
+                            append("]")
+                        }
+                        if (result.cashKeys != null) {
+                            if (!first) append(",")
+                            append("\"cash\":[")
+                            result.cashKeys.forEachIndexed { i, c ->
+                                if (i > 0) append(",")
+                                val k = (c["key"] ?: "").replace("\"", "\\\"")
+                                val v = (c["value"] ?: "").replace("\"", "\\\"")
+                                append("{\"key\":\"$k\",\"value\":\"$v\"}")
+                            }
+                            append("]")
+                        }
+                        append("}")
+                    }
+                    call.respondText(json, ContentType.Application.Json)
+                }
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
                     ContentType.Application.Json,
                     HttpStatusCode.InternalServerError
                 )
