@@ -57,13 +57,6 @@ object PairedDevicesTable : Table("paired_devices") {
     override val primaryKey = PrimaryKey(serverAssignedId)
 }
 
-/** Generic admin key-value store (master_secret, admin token hashes). Used in Phase 2. */
-object AdminTable : Table("admin") {
-    val adminKey = varchar("key", 128)
-    val adminValue = text("value")
-    override val primaryKey = PrimaryKey(adminKey)
-}
-
 /** Generic global key-value blob store for app settings, backtest/MC settings, loan history, etc. */
 object GlobalSettingsTable : Table("global_settings") {
     val key = varchar("key", 128)
@@ -100,7 +93,6 @@ object AppDatabase {
         CashTable,
         PortfolioCfgTable,
         PairedDevicesTable,
-        AdminTable,
         GlobalSettingsTable,
         SavedBacktestPortfoliosTable,
         PortfolioBackupsTable
