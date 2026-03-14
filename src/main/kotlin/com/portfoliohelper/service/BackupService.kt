@@ -105,6 +105,24 @@ object BackupService {
         logger.info("DB backup saved for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}")
     }
 
+    fun deleteFromDb(portfolio: ManagedPortfolio, backupId: Int) {
+        transaction {
+            PortfolioBackupsTable.deleteWhere {
+                (PortfolioBackupsTable.id eq backupId) and
+                        (PortfolioBackupsTable.portfolioId eq portfolio.serialId)
+            }
+        }
+        logger.info("Deleted DB backup $backupId for '${portfolio.slug}'")
+    }
+
+    fun deleteAllFromDb(portfolio: ManagedPortfolio) {
+        transaction {
+            PortfolioBackupsTable.deleteWhere { PortfolioBackupsTable.portfolioId eq portfolio.serialId }
+        }
+        lastSavedHash.remove(portfolio.serialId)
+        logger.info("Deleted all DB backups for '${portfolio.slug}'")
+    }
+
     fun listDbBackups(portfolio: ManagedPortfolio): List<DbBackupEntry> = transaction {
         PortfolioBackupsTable.selectAll()
             .where { PortfolioBackupsTable.portfolioId eq portfolio.serialId }

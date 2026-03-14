@@ -40,10 +40,32 @@ function initBackupPanel() {
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-modal', 'true');
 
+        const headerEl = document.createElement('div');
+        headerEl.className = 'backup-modal-header';
+
         const titleEl = document.createElement('p');
         titleEl.className = 'backup-modal-title';
         titleEl.textContent = 'Backups';
-        modal.appendChild(titleEl);
+
+        const removeAllBtn = document.createElement('button');
+        removeAllBtn.className = 'backup-modal-remove-all';
+        removeAllBtn.textContent = 'Remove All';
+        removeAllBtn.hidden = entries.length === 0;
+        removeAllBtn.addEventListener('click', async () => {
+            const confirmed = await window.showConfirmOverlay('Delete all backups for this portfolio? This cannot be undone.', 'Delete All');
+            if (!confirmed) return;
+            removeAllBtn.disabled = true;
+            try {
+                await fetch('/api/backup/delete-all?portfolio=' + portfolioId, { method: 'DELETE' });
+                document.body.removeChild(overlay);
+            } catch (_) {
+                removeAllBtn.disabled = false;
+            }
+        });
+
+        headerEl.appendChild(titleEl);
+        headerEl.appendChild(removeAllBtn);
+        modal.appendChild(headerEl);
 
         if (entries.length === 0) {
             const empty = document.createElement('p');
@@ -80,8 +102,10 @@ function initBackupPanel() {
                 tabEntries.forEach(entry => {
                     const item = document.createElement('li');
                     item.className = 'backup-modal-item';
+
                     const label = document.createElement('span');
                     label.textContent = formatSavedAt(entry.createdAt);
+
                     const restoreBtn = document.createElement('button');
                     restoreBtn.textContent = 'Restore';
                     restoreBtn.addEventListener('click', async () => {
@@ -106,8 +130,31 @@ function initBackupPanel() {
                             reset();
                         }
                     });
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'backup-modal-item-del';
+                    delBtn.textContent = '✕';
+                    delBtn.title = 'Delete this backup';
+                    delBtn.addEventListener('click', async () => {
+                        delBtn.disabled = true;
+                        try {
+                            await fetch(
+                                '/api/backup/delete-db?portfolio=' + portfolioId + '&id=' + entry.id,
+                                { method: 'DELETE' }
+                            );
+                            item.remove();
+                        } catch (_) {
+                            delBtn.disabled = false;
+                        }
+                    });
+
+                    const actions = document.createElement('div');
+                    actions.className = 'backup-modal-item-actions';
+                    actions.appendChild(restoreBtn);
+                    actions.appendChild(delBtn);
+
                     item.appendChild(label);
-                    item.appendChild(restoreBtn);
+                    item.appendChild(actions);
                     list.appendChild(item);
                 });
                 panel.appendChild(list);
@@ -123,14 +170,14 @@ function initBackupPanel() {
         footer.className = 'backup-modal-footer';
 
         const importBtn = document.createElement('button');
-        importBtn.className = 'backup-modal-import';
+        importBtn.className = 'backup-modal-import btn-outline-accent';
         importBtn.textContent = 'Import';
         importBtn.addEventListener('click', () => {
             document.getElementById('import-file-input')?.click();
         });
 
         const exportBtn = document.createElement('button');
-        exportBtn.className = 'backup-modal-export';
+        exportBtn.className = 'backup-modal-export btn-outline-accent';
         exportBtn.textContent = 'Export';
         exportBtn.addEventListener('click', async () => {
             exportBtn.disabled = true;

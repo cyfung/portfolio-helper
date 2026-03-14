@@ -88,7 +88,7 @@ kotlin {
 // No need for explicit kotlinOptions.jvmTarget when using toolchains
 
 // Generate AppVersion.kt so the version constant is always in sync with build.gradle.kts
-val generateVersionFile: TaskProvider<Task?>? = tasks.register("generateVersionFile") {
+val generateVersionFile: TaskProvider<Task?> = tasks.register("generateVersionFile") {
     val outputDir = layout.buildDirectory.dir("generated/version")
     outputs.dir(outputDir)
     inputs.property("version", version)

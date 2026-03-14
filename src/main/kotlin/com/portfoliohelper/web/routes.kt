@@ -684,6 +684,26 @@ fun Application.configureRouting() {
             }
         }
 
+        // Delete a single DB backup by id
+        delete("/api/backup/delete-db") {
+            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+                ?: return@delete call.respond(HttpStatusCode.NotFound)
+            val id = call.request.queryParameters["id"]?.toIntOrNull()
+                ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            BackupService.deleteFromDb(portfolioEntry, id)
+            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+        }
+
+        // Delete all DB backups for a portfolio
+        delete("/api/backup/delete-all") {
+            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+                ?: return@delete call.respond(HttpStatusCode.NotFound)
+            BackupService.deleteAllFromDb(portfolioEntry)
+            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+        }
+
         // Export portfolio as JSON download (includes snapshotUsd for P entries)
         get("/api/backup/export-json") {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"

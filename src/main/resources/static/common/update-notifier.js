@@ -3,17 +3,16 @@
 
     // ── Custom confirm overlay (replaces native confirm()) ────────────────────
     // Styles live in styles.css under "Custom Confirm Overlay"
-    function showConfirmOverlay(message) {
+    function showConfirmOverlay(message, confirmText = 'Confirm') {
         return new Promise((resolve) => {
             const backdrop = document.createElement('div');
             backdrop.id = 'confirm-overlay-backdrop';
             backdrop.innerHTML = `
                 <div id="confirm-overlay-box">
-                    <div id="confirm-overlay-icon">⚡</div>
                     <p id="confirm-overlay-message">${message}</p>
                     <div id="confirm-overlay-actions">
                         <button class="confirm-overlay-btn" id="confirm-overlay-cancel">Cancel</button>
-                        <button class="confirm-overlay-btn" id="confirm-overlay-ok">Apply &amp; Restart</button>
+                        <button class="confirm-overlay-btn" id="confirm-overlay-ok">${confirmText}</button>
                     </div>
                 </div>
             `;
@@ -33,6 +32,7 @@
             });
         });
     }
+    window.showConfirmOverlay = showConfirmOverlay;
     // ─────────────────────────────────────────────────────────────────────────
 
     function attemptReconnect() {
@@ -96,7 +96,7 @@
         const readyTag = document.getElementById('header-update-ready');
         if (readyTag) {
             readyTag.addEventListener('click', async () => {
-                const confirmed = await showConfirmOverlay('Apply update and restart the app?');
+                const confirmed = await showConfirmOverlay('Apply update and restart the app?', 'Apply & Restart');
                 if (!confirmed) return;
                 readyTag.style.pointerEvents = 'none';
                 readyTag.textContent = 'Restarting…';
