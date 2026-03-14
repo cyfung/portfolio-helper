@@ -1,8 +1,5 @@
 package com.portfoliohelper
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -24,8 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -52,22 +47,9 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onCreate started")
         enableEdgeToEdge()
         
-        requestNotificationPermission()
-        
         setContent {
             PortfolioHelperTheme {
                 PortfolioHelperApp(vm)
-            }
-        }
-    }
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                Log.d("MainActivity", "Requesting POST_NOTIFICATIONS permission")
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
-            } else {
-                Log.d("MainActivity", "POST_NOTIFICATIONS permission already granted")
             }
         }
     }
