@@ -138,6 +138,12 @@ class ManagedPortfolio(
         fun hasMultiple(): Boolean = transaction {
             PortfoliosTable.selectAll().count() > 1
         }
+
+        /** Insert a new portfolio row. Returns the new instance. Caller must ensure slug is unique. */
+        fun create(slug: String): ManagedPortfolio = transaction {
+            val newId = PortfoliosTable.insert { it[PortfoliosTable.slug] = slug } get PortfoliosTable.id
+            ManagedPortfolio(newId, slug)
+        }
     }
 }
 

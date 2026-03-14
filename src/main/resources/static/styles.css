@@ -867,6 +867,23 @@ h1 {
     text-align: center;
 }
 
+.add-portfolio-form {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-lg);
+}
+
+.add-portfolio-form input[type="text"] {
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    width: 200px;
+}
+
 .management-table {
     width: 100%;
     border-collapse: collapse;

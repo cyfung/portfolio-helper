@@ -91,6 +91,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                                 value = entry.getTwsAccount() ?: ""
                                                 attributes["data-config-key"] = "twsAccount"
                                                 attributes["data-portfolio-id"] = entry.slug
+                                                attributes["autocomplete"] = "off"
                                             }
                                         }
                                         td(classes = "portfolio-config-table-checkbox-col") {
@@ -102,6 +103,23 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // Add Portfolio form
+                        div(classes = "add-portfolio-form") {
+                            input(type = InputType.text) {
+                                id = "new-portfolio-name"
+                                placeholder = "New portfolio name"
+                                attributes["maxlength"] = "64"
+                            }
+                            button(classes = "config-restore-btn") {
+                                id = "add-portfolio-btn"
+                                attributes["type"] = "button"
+                                +"Add Portfolio"
+                            }
+                            span(classes = "config-env-override-note") {
+                                id = "add-portfolio-status"
                             }
                         }
 

@@ -658,6 +658,34 @@ fun Application.configureRouting() {
             }
         }
 
+        // Create a new portfolio
+        post("/api/portfolio/create") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+                val name = json["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+                if (name.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
+                val slug = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                if (slug.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
+                if (ManagedPortfolio.getBySlug(slug) != null) {
+                    return@post call.respondText(
+                        "{\"status\":\"error\",\"message\":\"A portfolio named '${slug}' already exists.\"}",
+                        ContentType.Application.Json, HttpStatusCode.Conflict
+                    )
+                }
+                val portfolio = ManagedPortfolio.create(slug)
+                call.respondText(
+                    "{\"status\":\"ok\",\"slug\":\"${portfolio.slug}\"}",
+                    ContentType.Application.Json
+                )
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
         // Global app config save
         post("/api/config/save") {
             try {

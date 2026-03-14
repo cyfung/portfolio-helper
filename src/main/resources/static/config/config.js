@@ -70,6 +70,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    const addPortfolioBtn = document.getElementById('add-portfolio-btn');
+    if (addPortfolioBtn) {
+        addPortfolioBtn.addEventListener('click', async () => {
+            const nameInput = document.getElementById('new-portfolio-name');
+            const statusEl = document.getElementById('add-portfolio-status');
+            const name = nameInput.value.trim();
+            if (!name) { statusEl.textContent = 'Enter a portfolio name.'; return; }
+            addPortfolioBtn.disabled = true;
+            statusEl.textContent = '';
+            try {
+                const r = await fetch('/api/portfolio/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    statusEl.textContent = data.message || 'Failed to create portfolio.';
+                    addPortfolioBtn.disabled = false;
+                } else {
+                    location.reload();
+                }
+            } catch (err) {
+                statusEl.textContent = 'Error: ' + err.message;
+                addPortfolioBtn.disabled = false;
+            }
+        });
+    }
+
     document.getElementById('config-restore-btn').addEventListener('click', () => {
         // Reset global inputs to defaults
         document.querySelectorAll('[data-config-key]:not([data-portfolio-id])').forEach(el => {
