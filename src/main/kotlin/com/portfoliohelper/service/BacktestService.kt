@@ -152,7 +152,8 @@ object BacktestService {
 
 
     internal fun getResourceFiles(path: String): List<String> {
-        val url = object {}.javaClass.classLoader.getResource(path) ?: return emptyList()
+        val url = object {}.javaClass.classLoader.getResource(path)
+        if (url == null) return emptyList()
         val uri = url.toURI()
         val dirPath: Path = if (uri.scheme == "jar") {
             val fs = try {
@@ -209,7 +210,7 @@ object BacktestService {
 
         // Tier 1 — local file
         if (localFiles.isNotEmpty()) {
-            val extended = tryExtendAndValidate(ticker, upperTicker, localFiles, simPattern, neededFromDate, today)
+            val extended = tryExtendAndValidate(ticker, upperTicker, localFiles, simPattern, today)
             if (extended != null) return extended
             localFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
@@ -218,7 +219,7 @@ object BacktestService {
         // Tier 2 — resource file
         val resourceFiles = copyFromResources(simPattern)
         if (resourceFiles.isNotEmpty()) {
-            val extended = tryExtendAndValidate(ticker, upperTicker, resourceFiles, simPattern, neededFromDate, today)
+            val extended = tryExtendAndValidate(ticker, upperTicker, resourceFiles, simPattern, today)
             if (extended != null) return extended
             resourceFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, rebuilding from scratch")
@@ -238,27 +239,47 @@ object BacktestService {
      * Attempts to extend [files] with Yahoo data and validate sanity checks.
      * Returns the extended series on success, or null if extension/validation fails
      * (caller is responsible for deleting the files in that case).
+     *
+     * Two fetches are performed:
+     *   Fetch 1 — early gap probe: 30 days before our data starts.
+     *             If Yahoo returns any date < firstDate, our file is missing data → return null.
+     *   Fetch 2 — overlap + extension: 10 days before lastKnownDate through today.
+     *             Provides the overlap window for Check A and the new data for chainExtend.
      */
     private fun tryExtendAndValidate(
         ticker: String,
         upperTicker: String,
         files: List<File>,
         simPattern: Regex,
-        neededFromDate: LocalDate,
         today: LocalDate
     ): Map<LocalDate, Double>? {
         val file = files.first()
         logger.info("Loading SIM file for $upperTicker: ${file.name}")
         val existing = readSimCsv(file)
+        val firstDate = existing.keys.minOrNull()
+            ?: LocalDate.parse(simPattern.find(file.name)!!.groupValues[1])
         val lastKnownDate = existing.keys.maxOrNull()
             ?: LocalDate.parse(simPattern.find(file.name)!!.groupValues[1])
 
         if (lastKnownDate >= today) return existing  // data already up to date
 
+        // Fetch 1: probe 30 days before our data starts — check for missing early history
+        val earlyProbe = try {
+            YahooHistoricalFetcher.fetchAdjustedClose(ticker, firstDate.minusDays(30), firstDate)
+        } catch (e: Exception) {
+            logger.warn("$upperTicker early probe fetch failed: ${e.message}")
+            emptyMap()
+        }
+        if (earlyProbe.keys.any { it < firstDate }) {
+            logger.warn("$upperTicker sanity B failed: Yahoo has data before $firstDate (earliest: ${earlyProbe.keys.min()})")
+            return null
+        }
+
+        // Fetch 2: 10-day overlap window + extension to today
         logger.info("Extending $upperTicker SIM from $lastKnownDate to $today via Yahoo")
         return try {
-            val yahoo = YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate, today)
-            if (!passesSanityChecks(existing, yahoo, lastKnownDate, neededFromDate, upperTicker)) return null
+            val yahoo = YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate.minusDays(10), today)
+            if (!passesSanityCheckA(existing, yahoo, lastKnownDate, upperTicker)) return null
             val extended = chainExtend(existing, yahoo, lastKnownDate)
             val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
             writeSimCsv(newFile, extended)
@@ -271,27 +292,15 @@ object BacktestService {
     }
 
     /**
-     * Sanity-checks an existing SIM series against freshly-fetched Yahoo data.
-     *
      * Check A (tail consistency): over the overlap window (yahoo dates <= lastKnownDate),
      * if >= 2 dates overlap, compares the cumulative return ratio; fails if divergence > 0.5%.
-     *
-     * Check B (history start): fails if the existing series starts more than 7 days after neededFromDate.
      */
-    private fun passesSanityChecks(
+    private fun passesSanityCheckA(
         existing: Map<LocalDate, Double>,
         yahoo: Map<LocalDate, Double>,
         lastKnownDate: LocalDate,
-        neededFromDate: LocalDate,
         label: String
     ): Boolean {
-        // Check B — history start
-        val firstDate = existing.keys.minOrNull()
-        if (firstDate != null && firstDate > neededFromDate.plusDays(7)) {
-            logger.warn("$label sanity B failed: history starts $firstDate, needed from $neededFromDate")
-            return false
-        }
-        // Check A — tail consistency
         val overlap = yahoo.keys.filter { it <= lastKnownDate }.sorted()
         if (overlap.size >= 2) {
             val first = overlap.first(); val last = overlap.last()
@@ -310,10 +319,10 @@ object BacktestService {
     }
 
     private fun copyFromResources(simPattern: Regex): List<File> {
-        val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
+        val allResourceFiles = getResourceFiles("data/.ticker")
+        val resourcesFile = allResourceFiles.firstOrNull {
             simPattern.matches(it)
         } ?: return emptyList()
-        logger.info("ticker {} found in resource", resourcesFile)
         val cl = object {}::class.java.classLoader
         cl.getResourceAsStream("data/.ticker/$resourcesFile")
             ?.use { Files.copy(it, tickerDir.toPath().resolve(resourcesFile)) }
