@@ -42,9 +42,9 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 span(classes = "config-badge config-badge-live") { +"live" }
                             }
                             span(classes = "config-field-description") {
-                                +"Pending pairing requests from Android devices will appear here."
+                                +"Show this PIN on your screen and enter it in the Android app. "
                                 br()
-                                +"Enter the 4-digit PIN displayed on your phone to authorize sync."
+                                +"Expires in 5 minutes."
                             }
                             div(classes = "pairing-pin-container") {
                                 id = "pairing-pin-display"
@@ -53,24 +53,11 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        div(classes = "config-field") {
-                            div(classes = "config-field-label-row") {
-                                span { +"Paired Devices" }
-                                button(classes = "config-text-link-btn", type = ButtonType.button) {
-                                    id = "unpair-all-btn"
-                                    +"Unlink All"
-                                }
-                            }
-                            span(classes = "config-field-description") {
-                                +"Devices authorized to sync with this server."
-                            }
-                            div(classes = "paired-devices-list") {
-                                id = "paired-devices-list"
-                                // Populated by JS
-                                p(classes = "config-env-override-note") { +"Loading devices..." }
-                            }
+                        div(classes = "paired-devices-list") {
+                            id = "paired-devices-list"
+                            // Populated by JS
+                            p(classes = "config-env-override-note") { +"Loading devices..." }
                         }
-
                     }
 
                     // Trusted Browsers

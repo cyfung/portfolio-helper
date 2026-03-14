@@ -659,6 +659,27 @@ h1 {
     cursor: not-allowed;
 }
 
+.pairing-pin-container {
+    display: flex;
+    justify-content: flex-end;
+    grid-row: 1/5;
+}
+
+.pin-display-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--spacing-md);
+}
+
+.pin-number-display {
+    font-size: 1.8rem;
+    font-family: var(--font-family-mono);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.25em;
+    color: var(--color-text-primary);
+}
+
 .config-env-override-note {
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);

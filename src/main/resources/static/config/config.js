@@ -186,7 +186,7 @@ async function loadPairedDevices() {
             </tr>`;
         }).join('');
         container.innerHTML = `<table class="management-table">
-            <thead><tr><th>Device</th><th>Last IP</th><th>Paired</th><th></th></tr></thead>
+            <thead><tr><th>Paired Device</th><th>Last IP</th><th>Paired</th><th></th></tr></thead>
             <tbody>${rows}</tbody>
         </table>`;
         container.querySelectorAll('.management-table-remove-btn[data-id]').forEach(btn => {
@@ -214,10 +214,10 @@ async function generateAndShowPin(container) {
         const r = await fetch('/api/pairing/generate', { method: 'POST' });
         const { pin } = await r.json();
         container.innerHTML = `
-            <p class="pairing-pin-hint">Show this PIN on-screen. Enter it in the Android app to pair.</p>
-            <div class="pin-number-display">${pin}</div>
-            <p class="pairing-pin-hint">Expires in 5 minutes.</p>
-            <button class="config-restore-btn" id="generate-pin-btn" type="button">Generate New PIN</button>
+            <div class="pin-display-group">
+                <div class="pin-number-display">${pin}</div>
+                <button class="config-restore-btn" id="generate-pin-btn" type="button">Generate New PIN</button>
+            </div>
         `;
     } catch (err) {
         container.innerHTML = `
