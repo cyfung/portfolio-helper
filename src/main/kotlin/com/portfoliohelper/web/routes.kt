@@ -1,7 +1,6 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
-import com.portfoliohelper.service.MarketDataCoordinator
 import com.portfoliohelper.service.*
 import com.portfoliohelper.service.UpdateService.toJson
 import com.portfoliohelper.service.db.CashTable
@@ -12,8 +11,7 @@ import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.tws.PortfolioSnapshot
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
-import io.ktor.http.content.PartData
-import io.ktor.http.content.forEachPart
+import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
 import io.ktor.server.request.*
@@ -21,19 +19,13 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.sse.*
-import io.ktor.utils.io.readByteArray
-import io.ktor.utils.io.toByteArray
+import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.batchInsert
-import org.jetbrains.exposed.sql.deleteWhere
-import org.jetbrains.exposed.sql.insert
-import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.upsert
-import org.slf4j.LoggerFactory
 import kotlin.time.Duration.Companion.milliseconds
 
 @Serializable

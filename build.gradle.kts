@@ -106,19 +106,19 @@ val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
     group = "build"
     description = "Generates the bundled app.db SQLite database via DBBuilder"
 
-    dependsOn(":db-schema:jar")
-
     val dbSchema = project(":db-schema")
+    val dbJarTask = dbSchema.tasks.named<Jar>("jar")
+
+    // classpath is @Classpath-annotated on JavaExec — both entries are tracked as inputs,
+    // and the Provider<RegularFile> from dbJarTask implicitly adds a task dependency on :db-schema:jar.
     classpath(
         dbSchema.configurations.named("runtimeClasspath"),
-        dbSchema.tasks.named<Jar>("jar").map { it.archiveFile }
+        dbJarTask.map { it.archiveFile }
     )
     mainClass.set("com.portfoliohelper.service.db.DBBuilderKt")
 
     val outFile = layout.buildDirectory.file("generated/db/data/app.db")
     outputs.file(outFile)
-    inputs.files(dbSchema.tasks.named("jar"))
-    // Use argumentProviders so the Provider is resolved at execution time, not configuration time
     argumentProviders.add(CommandLineArgumentProvider { listOf(outFile.get().asFile.absolutePath) })
     doFirst { outFile.get().asFile.parentFile.mkdirs() }
 }
