@@ -164,8 +164,10 @@ class MarginCheckWorker(
         // 6. Compute margin USD
         var marginUsd = 0.0
         for (e in cashEntries) {
-            val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency]!!
-            marginUsd += e.amount * rate
+            if (e.isMargin) {
+                val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency]!!
+                marginUsd += e.amount * rate
+            }
         }
 
         val totals = PortfolioCalculator.computeTotals(positions, prices, marginUsd)
