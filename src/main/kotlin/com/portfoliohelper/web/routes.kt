@@ -681,6 +681,14 @@ fun Application.configureRouting() {
             call.respondText("{\"pin\":\"$pin\"}", ContentType.Application.Json)
         }
 
+        // Check whether a previously generated PIN is still active, was used, or has expired
+        get("/api/pairing/status") {
+            val pin = call.request.queryParameters["pin"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing pin parameter")
+            val status = PairingService.getPinStatus(pin)
+            call.respondText("{\"status\":\"${status.name.lowercase()}\"}", ContentType.Application.Json)
+        }
+
         // Server-Sent Events (SSE) endpoint for streaming price updates
         sse("/api/prices/stream") {
             heartbeat {

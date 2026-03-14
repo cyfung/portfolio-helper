@@ -208,7 +208,17 @@ async function loadPairedDevices() {
     }
 }
 
+let _pinPollTimer = null;
+
+function stopPinPoll() {
+    if (_pinPollTimer) {
+        clearInterval(_pinPollTimer);
+        _pinPollTimer = null;
+    }
+}
+
 async function generateAndShowPin(container) {
+    stopPinPoll();
     try {
         container.innerHTML = `<span class="config-env-override-note">Generating…</span>`;
         const r = await fetch('/api/pairing/generate', { method: 'POST' });
@@ -219,6 +229,17 @@ async function generateAndShowPin(container) {
                 <button class="config-restore-btn" id="generate-pin-btn" type="button">Generate New PIN</button>
             </div>
         `;
+
+        _pinPollTimer = setInterval(async () => {
+            try {
+                const sr = await fetch(`/api/pairing/status?pin=${encodeURIComponent(pin)}`);
+                const { status } = await sr.json();
+                if (status === 'active') return;
+                stopPinPoll();
+                if (status === 'used') await loadPairedDevices();
+                container.innerHTML = `<button class="config-restore-btn" id="generate-pin-btn">Generate Pairing Code</button>`;
+            } catch (_) {}
+        }, 3000);
     } catch (err) {
         container.innerHTML = `
             <span class="config-env-override-note">Failed to generate PIN.</span>

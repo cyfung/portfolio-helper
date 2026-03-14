@@ -34,6 +34,8 @@ sealed class PairingResult {
     object Invalid : PairingResult()
 }
 
+enum class PinStatus { ACTIVE, USED, EXPIRED, UNKNOWN }
+
 object PairingService {
     private val logger = LoggerFactory.getLogger(PairingService::class.java)
 
@@ -43,8 +45,11 @@ object PairingService {
     // Per-PIN attempt counter
     private val pinAttempts = ConcurrentHashMap<String, AtomicInteger>()
 
-    // Last 3 burned/expired PINs — synchronized on itself
+    // Last 3 expired PINs (time-expired or rate-burned) — synchronized on itself
     private val recentlyExpiredPins = mutableListOf<String>()
+
+    // Last 3 successfully-consumed PINs — synchronized on itself
+    private val recentlyUsedPins = mutableListOf<String>()
 
     // Maps serverAssignedId -> PairedClient
     private val pairedClients = ConcurrentHashMap<String, PairedClient>()
@@ -69,13 +74,30 @@ object PairingService {
         return pin
     }
 
-    private fun burnPin(pin: String) {
+    private fun burnPin(pin: String, used: Boolean = false) {
         pendingPins.remove(pin)
         pinAttempts.remove(pin)
-        synchronized(recentlyExpiredPins) {
-            recentlyExpiredPins.add(0, pin)
-            while (recentlyExpiredPins.size > 3) recentlyExpiredPins.removeLast()
+        if (used) {
+            synchronized(recentlyUsedPins) {
+                recentlyUsedPins.add(0, pin)
+                while (recentlyUsedPins.size > 3) recentlyUsedPins.removeLast()
+            }
+        } else {
+            synchronized(recentlyExpiredPins) {
+                recentlyExpiredPins.add(0, pin)
+                while (recentlyExpiredPins.size > 3) recentlyExpiredPins.removeLast()
+            }
         }
+    }
+
+    fun getPinStatus(pin: String): PinStatus {
+        pendingPins.entries.removeIf { System.currentTimeMillis() > it.value }
+        if (pendingPins.containsKey(pin)) return PinStatus.ACTIVE
+        val wasUsed = synchronized(recentlyUsedPins) { pin in recentlyUsedPins }
+        if (wasUsed) return PinStatus.USED
+        val wasExpired = synchronized(recentlyExpiredPins) { pin in recentlyExpiredPins }
+        if (wasExpired) return PinStatus.EXPIRED
+        return PinStatus.UNKNOWN
     }
 
     fun isBlocked(ip: String): Boolean =
@@ -120,7 +142,7 @@ object PairingService {
         }
 
         // Valid PIN — consume it
-        burnPin(pin)
+        burnPin(pin, used = true)
 
         val serverAssignedId = UUID.randomUUID().toString()
         val aesKey = AesGcm.generateKey()
