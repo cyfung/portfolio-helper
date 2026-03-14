@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', async () => {
             const slug = btn.dataset.slug;
             const row = btn.closest('tr');
-            const name = row.querySelector('.portfolio-name-display').textContent;
+            const name = row.querySelector('.portfolio-name-input').value;
             const confirmed = await window.showConfirmOverlay(
                 `Remove portfolio "${name}"? All positions, cash, and config will be deleted.`,
                 'Remove'
