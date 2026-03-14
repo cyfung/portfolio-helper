@@ -38,16 +38,19 @@ class MarginCheckWorker(
     companion object {
         const val WORK_NAME = "margin_check"
         const val CHANNEL_ID = "margin_alerts"
-        const val NOTIF_ID_LOWER = 1001
-        const val NOTIF_ID_UPPER = 1002
+        const val NOTIF_ID_ALERT = 1001
         const val NOTIF_ID_ERROR = 1003
         private const val TAG = "MarginCheckWorker"
 
         fun schedule(context: Context, settings: MarginAlertSettings) {
             Log.d(TAG, "Scheduling worker. Enabled: ${settings.enabled}, Interval: ${settings.checkIntervalMinutes}")
             val wm = WorkManager.getInstance(context)
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
             if (!settings.enabled) {
                 wm.cancelUniqueWork(WORK_NAME)
+                nm.cancel(NOTIF_ID_ALERT)
+                nm.cancel(NOTIF_ID_ERROR)
                 return
             }
             val request = PeriodicWorkRequestBuilder<MarginCheckWorker>(
@@ -178,16 +181,18 @@ class MarginCheckWorker(
 
         if (marginPct < lowerPct) {
             notify(
-                NOTIF_ID_LOWER,
+                NOTIF_ID_ALERT,
                 "⚠️ Margin Low",
                 "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, lowerPct)
             )
         } else if (marginPct > upperPct) {
             notify(
-                NOTIF_ID_UPPER,
+                NOTIF_ID_ALERT,
                 "⚠️ Margin High",
                 "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, upperPct)
             )
+        } else {
+            nm.cancel(NOTIF_ID_ALERT)
         }
 
         return Result.success()
