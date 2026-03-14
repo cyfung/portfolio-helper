@@ -2,6 +2,7 @@ package com.ibviewer.data.repository
 
 import androidx.room.*
 import com.ibviewer.data.model.CashEntry
+import com.ibviewer.data.model.MarketPrice
 import com.ibviewer.data.model.Position
 import kotlinx.coroutines.flow.Flow
 
@@ -51,14 +52,32 @@ interface CashDao {
     suspend fun deleteAll()
 }
 
+// ── Market Price DAO ─────────────────────────────────────────────────────────
+
+@Dao
+interface MarketPriceDao {
+    @Query("SELECT * FROM market_prices WHERE symbol = :symbol LIMIT 1")
+    suspend fun get(symbol: String): MarketPrice?
+
+    @Query("SELECT * FROM market_prices")
+    suspend fun getAll(): List<MarketPrice>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(price: MarketPrice)
+
+    @Query("DELETE FROM market_prices")
+    suspend fun deleteAll()
+}
+
 // ── Database ──────────────────────────────────────────────────────────────────
 
 @Database(
-    entities = [Position::class, CashEntry::class],
-    version = 2,
+    entities = [Position::class, CashEntry::class, MarketPrice::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun positionDao(): PositionDao
     abstract fun cashDao(): CashDao
+    abstract fun marketPriceDao(): MarketPriceDao
 }

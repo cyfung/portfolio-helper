@@ -38,6 +38,16 @@ data class CashEntry(
     val isMargin: Boolean = false
 )
 
+// ── Market Price (cached for offline fallback) ───────────────────────────────
+
+@Entity(tableName = "market_prices")
+data class MarketPrice(
+    @PrimaryKey val symbol: String,
+    val price: Double,
+    val previousClose: Double?,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 // ── Margin alert settings ─────────────────────────────────────────────────────
 
 data class MarginAlertSettings(

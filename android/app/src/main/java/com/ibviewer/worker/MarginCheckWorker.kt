@@ -21,6 +21,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.ibviewer.IbViewerApp
 import com.ibviewer.data.model.MarginAlertSettings
+import com.ibviewer.data.model.MarketPrice
 import com.ibviewer.data.repository.PortfolioCalculator
 import com.ibviewer.data.repository.PrefsKeys
 import com.ibviewer.data.repository.YahooFinanceClient
@@ -95,24 +96,31 @@ class MarginCheckWorker(
         val cashEntries = app.database.cashDao().getAll()
         
         if (positions.isEmpty() && cashEntries.isEmpty()) {
-            Log.d(TAG, "No data found in database. Success (nothing to check).")
+            Log.d(TAG, "No data found in database. Success.")
             return Result.success()
         }
 
-        // 3. Fetch current market prices & update cache
+        // 3. Fetch/Persist Market Prices
         val symbols = positions.map { it.symbol }.distinct()
         val prices = symbols.associateWith { symbol ->
             try {
                 val quote = YahooFinanceClient.fetchQuote(symbol)
-                YahooMarketDataService.updateCache(symbol, quote) // Save to cache
+                // Persist to database for long-term fallback
+                app.database.marketPriceDao().upsert(
+                    MarketPrice(symbol, quote.regularMarketPrice ?: 0.0, quote.previousClose)
+                )
+                YahooMarketDataService.updateCache(symbol, quote)
                 quote
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch quote for $symbol", e)
-                YahooMarketDataService.getQuote(symbol) // Fallback to memory cache
+                // Try database fallback
+                app.database.marketPriceDao().get(symbol)?.let { dbCached ->
+                    com.ibviewer.data.repository.YahooQuote(symbol, dbCached.price, dbCached.previousClose)
+                }
             }
         }.filterValues { it != null }.mapValues { it.value!! }
 
-        // 4. Fetch FX rates & update cache
+        // 4. Fetch/Persist FX rates
         val fxRates = mutableMapOf<String, Double>()
         val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
         for (ccy in currencies) {
@@ -121,14 +129,14 @@ class MarginCheckWorker(
                 val quote = YahooFinanceClient.fetchQuote(pair)
                 val rate = quote.regularMarketPrice ?: quote.previousClose
                 if (rate != null) {
-                    YahooMarketDataService.updateCache(pair, quote) // Save to cache
+                    app.database.marketPriceDao().upsert(MarketPrice(pair, rate, null))
+                    YahooMarketDataService.updateCache(pair, quote)
                     fxRates[ccy] = rate
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch FX rate for $ccy", e)
-                YahooMarketDataService.getQuote(pair)?.let { cached ->
-                    val rate = cached.regularMarketPrice ?: cached.previousClose
-                    if (rate != null) fxRates[ccy] = rate
+                app.database.marketPriceDao().get(pair)?.let { dbCached ->
+                    fxRates[ccy] = dbCached.price
                 }
             }
         }
@@ -144,13 +152,12 @@ class MarginCheckWorker(
             notify(
                 NOTIF_ID_ERROR,
                 "⚠️ Margin Check Error",
-                "Could not fetch data for: $missing. Margin alert may be inaccurate."
+                "Missing data for: $missing. Check internet or server sync."
             )
-            // If essential data is missing, we don't proceed with margin calculation to avoid false alarms
-            return Result.success() 
+            return Result.success()
         }
 
-        // Clear previous error if any
+        // Clear error if data is now ready
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(NOTIF_ID_ERROR)
 
@@ -199,12 +206,8 @@ class MarginCheckWorker(
 
     private fun notify(id: Int, title: String, body: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                Log.e(TAG, "POST_NOTIFICATIONS permission not granted.")
-                return
-            }
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         }
-
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
@@ -214,6 +217,29 @@ class MarginCheckWorker(
             .setAutoCancel(true)
             .build()
         nm.notify(id, notif)
-        Log.d(TAG, "Notification posted: $title")
+    }
+}
+
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        WorkManager.getInstance(context).enqueue(
+            OneTimeWorkRequestBuilder<ReScheduleWorker>().build()
+        )
+    }
+}
+
+class ReScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
+    override suspend fun doWork(): Result {
+        val prefs = applicationContext.dataStore.data.first()
+        val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
+        val interval = prefs[PrefsKeys.MARGIN_ALERT_INTERVAL] ?: 15
+        val lower = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
+        val upper = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
+        MarginCheckWorker.schedule(
+            applicationContext,
+            MarginAlertSettings(enabled, lower, upper, interval)
+        )
+        return Result.success()
     }
 }
