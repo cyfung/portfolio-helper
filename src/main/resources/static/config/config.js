@@ -99,32 +99,46 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.querySelectorAll('.portfolio-rename-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const slug = btn.dataset.slug;
-            const row = btn.closest('tr');
-            const nameDisplay = row.querySelector('.portfolio-name-display');
-            const newName = prompt('Rename portfolio:', nameDisplay.textContent);
-            if (newName === null || newName.trim() === '') return;
-            btn.disabled = true;
+    document.querySelectorAll('.portfolio-name-input').forEach(input => {
+        const confirmBtn = input.closest('.portfolio-name-input-row').querySelector('.portfolio-rename-confirm-btn');
+        const errorEl = input.closest('.portfolio-name-cell').querySelector('.portfolio-rename-error');
+
+        input.addEventListener('input', () => {
+            const changed = input.value.trim() !== input.dataset.originalName;
+            confirmBtn.hidden = !changed;
+            errorEl.hidden = true;
+            errorEl.textContent = '';
+        });
+
+        async function applyRename() {
+            const slug = input.dataset.slug;
+            const newName = input.value.trim();
+            if (!newName || newName === input.dataset.originalName) return;
+            confirmBtn.disabled = true;
+            errorEl.hidden = true;
             try {
                 const r = await fetch(`/api/portfolio/rename?portfolio=${encodeURIComponent(slug)}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: newName.trim() })
+                    body: JSON.stringify({ name: newName })
                 });
                 const data = await r.json();
                 if (!r.ok) {
-                    alert(data.message || 'Rename failed.');
-                    btn.disabled = false;
+                    errorEl.textContent = data.message || 'Rename failed.';
+                    errorEl.hidden = false;
+                    confirmBtn.disabled = false;
                 } else {
                     location.reload();
                 }
             } catch (err) {
-                alert('Error: ' + err.message);
-                btn.disabled = false;
+                errorEl.textContent = 'Error: ' + err.message;
+                errorEl.hidden = false;
+                confirmBtn.disabled = false;
             }
-        });
+        }
+
+        confirmBtn.addEventListener('click', applyRename);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') applyRename(); });
     });
 
     document.querySelectorAll('.portfolio-remove-btn').forEach(btn => {

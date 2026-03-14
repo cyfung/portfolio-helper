@@ -873,6 +873,53 @@ h1 {
     gap: var(--spacing-sm);
 }
 
+.portfolio-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.portfolio-name-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.portfolio-name-input {
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    width: 120px;
+}
+
+.portfolio-name-input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+.portfolio-rename-confirm-btn {
+    padding: 2px 8px;
+    border: 1px solid var(--color-accent-primary);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-accent-primary);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.portfolio-rename-confirm-btn:hover { background: var(--color-accent-primary); color: var(--color-text-inverse); }
+.portfolio-rename-confirm-btn:disabled { opacity: 0.5; cursor: default; }
+
+.portfolio-rename-error {
+    font-size: var(--font-size-xs);
+    color: var(--color-error, #e05252);
+}
+
 .add-portfolio-form {
     display: flex;
     align-items: center;

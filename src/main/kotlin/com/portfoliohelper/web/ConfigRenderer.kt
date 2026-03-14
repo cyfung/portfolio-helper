@@ -89,7 +89,28 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                     tr {
                                         attributes["data-portfolio-slug"] = entry.slug
                                         td {
-                                            span(classes = "portfolio-name-display") { +entry.name }
+                                            div(classes = "portfolio-name-cell") {
+                                                div(classes = "portfolio-name-input-row") {
+                                                    input(type = InputType.text) {
+                                                        classes = setOf("portfolio-name-input")
+                                                        value = entry.name
+                                                        attributes["data-original-name"] = entry.name
+                                                        attributes["data-slug"] = entry.slug
+                                                        attributes["autocomplete"] = "off"
+                                                        attributes["maxlength"] = "64"
+                                                    }
+                                                    button(classes = "portfolio-rename-confirm-btn") {
+                                                        attributes["type"] = "button"
+                                                        attributes["data-slug"] = entry.slug
+                                                        attributes["hidden"] = "hidden"
+                                                        attributes["title"] = "Apply rename"
+                                                        +"✓"
+                                                    }
+                                                }
+                                                span(classes = "portfolio-rename-error") {
+                                                    attributes["hidden"] = "hidden"
+                                                }
+                                            }
                                         }
                                         td {
                                             input(type = InputType.text) {
@@ -108,17 +129,14 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                             }
                                         }
                                         td(classes = "portfolio-config-table-actions-col") {
-                                            button(classes = "management-table-remove-btn portfolio-rename-btn") {
+                                            button(classes = "management-table-remove-btn portfolio-remove-btn") {
                                                 attributes["type"] = "button"
                                                 attributes["data-slug"] = entry.slug
-                                                +"Rename"
-                                            }
-                                            if (entry.serialId != firstSerialId) {
-                                                button(classes = "management-table-remove-btn portfolio-remove-btn") {
-                                                    attributes["type"] = "button"
-                                                    attributes["data-slug"] = entry.slug
-                                                    +"Remove"
+                                                if (entry.serialId == firstSerialId) {
+                                                    disabled = true
+                                                    style = "visibility: hidden"
                                                 }
+                                                +"Remove"
                                             }
                                         }
                                     }
