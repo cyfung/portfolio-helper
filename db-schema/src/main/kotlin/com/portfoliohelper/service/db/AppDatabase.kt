@@ -57,6 +57,15 @@ object PairedDevicesTable : Table("paired_devices") {
     override val primaryKey = PrimaryKey(serverAssignedId)
 }
 
+/** Persistent browser sessions for the admin UI. */
+object AdminSessionsTable : Table("admin_sessions") {
+    val token = varchar("token", 64)
+    val createdAt = long("created_at")
+    val ip = varchar("ip", 64).default("")
+    val userAgent = varchar("user_agent", 512).default("")
+    override val primaryKey = PrimaryKey(token)
+}
+
 /** Generic global key-value blob store for app settings, backtest/MC settings, loan history, etc. */
 object GlobalSettingsTable : Table("global_settings") {
     val key = varchar("key", 128)
@@ -93,6 +102,7 @@ object AppDatabase {
         CashTable,
         PortfolioCfgTable,
         PairedDevicesTable,
+        AdminSessionsTable,
         GlobalSettingsTable,
         SavedBacktestPortfoliosTable,
         PortfolioBackupsTable

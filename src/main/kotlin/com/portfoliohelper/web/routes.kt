@@ -9,11 +9,11 @@ import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.tws.PortfolioSnapshot
-import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
+import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -21,7 +21,6 @@ import io.ktor.server.sse.*
 import io.ktor.sse.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -32,9 +31,17 @@ private fun loadBacktestSettings(settingsKey: String): String = transaction {
     fun get(k: String) = GlobalSettingsTable.selectAll()
         .where { GlobalSettingsTable.key eq k }
         .firstOrNull()?.get(GlobalSettingsTable.value)
-    val settings = get(settingsKey)?.let { Json.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap())
-    val portfolios = get("backtest.portfolios")?.let { Json.parseToJsonElement(it) } ?: JsonArray(emptyList())
-    buildJsonObject { settings.forEach { (k, v) -> put(k, v) }; put("portfolios", portfolios) }.toString()
+
+    val settings =
+        get(settingsKey)?.let { Json.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap())
+    val portfolios =
+        get("backtest.portfolios")?.let { Json.parseToJsonElement(it) } ?: JsonArray(emptyList())
+    buildJsonObject {
+        settings.forEach { (k, v) -> put(k, v) }; put(
+        "portfolios",
+        portfolios
+    )
+    }.toString()
 }
 
 private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transaction {
@@ -42,7 +49,10 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
         it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
     }
     upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
-    upsert(settingsKey, buildJsonObject { json.forEach { (k, v) -> if (k != "portfolios") put(k, v) } }.toString())
+    upsert(
+        settingsKey,
+        buildJsonObject { json.forEach { (k, v) -> if (k != "portfolios") put(k, v) } }.toString()
+    )
 }
 
 private val cashKeyKnownFlags = setOf("M")
@@ -98,7 +108,45 @@ fun Application.configureRouting() {
         }
     }
 
-    // Load persisted paired devices from DB so they survive server restarts
+    intercept(ApplicationCallPipeline.Plugins) {
+        val path = call.request.path()
+        val exempt = path == "/admin" ||
+                path == "/api/admin/login" ||
+                path.startsWith("/api/sync/") ||
+                path.startsWith("/static/")
+        if (exempt) return@intercept
+
+        // First-run: no sessions exist yet — auto-claim for this browser
+        if (!AdminService.hasAnySessions()) {
+            val ip = call.request.origin.remoteHost
+            val ua = call.request.headers[HttpHeaders.UserAgent] ?: ""
+            val token = AdminService.tryClaimFirstSession(ip, ua)
+            if (token != null) {
+                call.response.cookies.append(
+                    Cookie(
+                        name = AdminService.SESSION_COOKIE, value = token,
+                        httpOnly = true, secure = true, path = "/",
+                        maxAge = 10 * 365 * 24 * 60 * 60
+                    )
+                )
+                return@intercept  // allow through with new cookie
+            }
+            // Another thread/browser beat us — fall through to normal cookie check
+        }
+
+        val token = call.request.cookies[AdminService.SESSION_COOKIE]
+        if (token == null || !AdminService.validateSession(token)) {
+            if (call.request.headers[HttpHeaders.Accept]?.contains("text/html") == true) {
+                call.respondRedirect("/admin")
+            } else {
+                call.respond(HttpStatusCode.Unauthorized, "Session required")
+            }
+            return@intercept finish()
+        }
+    }
+
+    // Load persisted state from DB so it survives server restarts
+    AdminService.loadSessionState()
     PairingService.loadFromDb()
 
     routing {
@@ -139,27 +187,40 @@ fun Application.configureRouting() {
         }
 
         get("/api/backtest/settings") {
-            call.respondText(loadBacktestSettings("backtest.settings"), ContentType.Application.Json)
+            call.respondText(
+                loadBacktestSettings("backtest.settings"),
+                ContentType.Application.Json
+            )
         }
 
         get("/api/montecarlo/settings") {
-            call.respondText(loadBacktestSettings("backtest.mc-settings"), ContentType.Application.Json)
+            call.respondText(
+                loadBacktestSettings("backtest.mc-settings"),
+                ContentType.Application.Json
+            )
         }
 
         get("/api/backtest/savedPortfolios") {
             val rows = transaction {
                 SavedBacktestPortfoliosTable.selectAll()
                     .orderBy(SavedBacktestPortfoliosTable.createdAt)
-                    .map { buildJsonObject {
-                        put("name", it[SavedBacktestPortfoliosTable.name])
-                        put("config", Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config]))
-                    } }
+                    .map {
+                        buildJsonObject {
+                            put("name", it[SavedBacktestPortfoliosTable.name])
+                            put(
+                                "config",
+                                Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config])
+                            )
+                        }
+                    }
             }
             call.respondText(JsonArray(rows).toString(), ContentType.Application.Json)
         }
 
         delete("/api/backtest/savedPortfolios") {
-            val name = call.request.queryParameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val name = call.request.queryParameters["name"] ?: return@delete call.respond(
+                HttpStatusCode.BadRequest
+            )
             transaction { SavedBacktestPortfoliosTable.deleteWhere { SavedBacktestPortfoliosTable.name eq name } }
             call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
         }
@@ -167,13 +228,18 @@ fun Application.configureRouting() {
         post("/api/backtest/savedPortfolios") {
             val body = call.receiveText()
             val entry = Json.parseToJsonElement(body).jsonObject
-            val name = entry["name"]?.jsonPrimitive?.contentOrNull ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val name = entry["name"]?.jsonPrimitive?.contentOrNull ?: return@post call.respond(
+                HttpStatusCode.BadRequest
+            )
             val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
             val saved = transaction {
                 val takenNames = SavedBacktestPortfoliosTable.selectAll()
                     .map { it[SavedBacktestPortfoliosTable.name] }.toSet()
-                var finalName = name; var counter = 2
-                while (finalName in takenNames) { finalName = "$name ($counter)"; counter++ }
+                var finalName = name;
+                var counter = 2
+                while (finalName in takenNames) {
+                    finalName = "$name ($counter)"; counter++
+                }
                 SavedBacktestPortfoliosTable.insert {
                     it[SavedBacktestPortfoliosTable.name] = finalName
                     it[SavedBacktestPortfoliosTable.config] = config.toString()
@@ -199,7 +265,7 @@ fun Application.configureRouting() {
                     val pObj = pel.jsonObject
                     PortfolioConfig(
                         label = pObj["label"]?.jsonPrimitive?.contentOrNull
-                        ?: "Portfolio",
+                            ?: "Portfolio",
                         tickers = pObj["tickers"]?.jsonArray?.map { el ->
                             val obj = el.jsonObject
                             TickerWeight(
@@ -310,7 +376,7 @@ fun Application.configureRouting() {
                     val pObj = pel.jsonObject
                     PortfolioConfig(
                         label = pObj["label"]?.jsonPrimitive?.contentOrNull
-                        ?: "Portfolio",
+                            ?: "Portfolio",
                         tickers = pObj["tickers"]?.jsonArray?.map { el ->
                             val obj = el.jsonObject
                             TickerWeight(
@@ -529,9 +595,11 @@ fun Application.configureRouting() {
                     val existing = GlobalSettingsTable.selectAll()
                         .where { GlobalSettingsTable.key eq "loan.history" }
                         .firstOrNull()?.get(GlobalSettingsTable.value)
-                        ?.let { raw -> Json.parseToJsonElement(raw).jsonArray
-                            .filter { el -> el is JsonObject && loanEntryKey(el.jsonObject) != newKey }
-                            .toMutableList() }
+                        ?.let { raw ->
+                            Json.parseToJsonElement(raw).jsonArray
+                                .filter { el -> el is JsonObject && loanEntryKey(el.jsonObject) != newKey }
+                                .toMutableList()
+                        }
                         ?: mutableListOf<JsonElement>()
                     existing.add(0, newEntry)
                     GlobalSettingsTable.upsert {
@@ -693,12 +761,14 @@ fun Application.configureRouting() {
             val json = BackupService.exportJson(portfolioEntry) { e ->
                 when (e.currency) {
                     "USD" -> e.amount
-                    "P"   -> {
-                        val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
-                            ?: return@exportJson null
+                    "P" -> {
+                        val ref =
+                            ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
+                                ?: return@exportJson null
                         e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
                     }
-                    else  -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+
+                    else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
                         ?.regularMarketPrice?.let { e.amount * it }
                 }
             }

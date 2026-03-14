@@ -9,9 +9,9 @@ import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import org.slf4j.LoggerFactory
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.*
+import java.util.concurrent.*
+import java.util.concurrent.atomic.*
 
 data class PairedClient(
     val serverAssignedId: String,
@@ -28,11 +28,23 @@ data class PairingResponse(
     val aesKey: String
 )
 
+sealed class PairingResult {
+    data class Success(val response: PairingResponse) : PairingResult()
+    object Expired : PairingResult()
+    object Invalid : PairingResult()
+}
+
 object PairingService {
     private val logger = LoggerFactory.getLogger(PairingService::class.java)
 
     // Maps PIN -> expiry timestamp
     private val pendingPins = ConcurrentHashMap<String, Long>()
+
+    // Per-PIN attempt counter
+    private val pinAttempts = ConcurrentHashMap<String, AtomicInteger>()
+
+    // Last 3 burned/expired PINs — synchronized on itself
+    private val recentlyExpiredPins = mutableListOf<String>()
 
     // Maps serverAssignedId -> PairedClient
     private val pairedClients = ConcurrentHashMap<String, PairedClient>()
@@ -43,7 +55,8 @@ object PairingService {
     // Rate limiting: maps IP -> blocked-until timestamp
     private val blockedUntil = ConcurrentHashMap<String, Long>()
 
-    private const val PIN_EXPIRY_MS = 300_000L    // 5 minutes
+    private const val PIN_EXPIRY_MS = 300_000L           // 5 minutes
+    private const val MAX_PIN_ATTEMPTS = 5
     private const val MAX_FAILURES = 5
     private const val BLOCK_DURATION_MS = 15 * 60 * 1000L  // 15 minutes
 
@@ -54,6 +67,15 @@ object PairingService {
         pendingPins.entries.removeIf { System.currentTimeMillis() > it.value }
         logger.info("Generated new pairing PIN: $pin")
         return pin
+    }
+
+    private fun burnPin(pin: String) {
+        pendingPins.remove(pin)
+        pinAttempts.remove(pin)
+        synchronized(recentlyExpiredPins) {
+            recentlyExpiredPins.add(0, pin)
+            while (recentlyExpiredPins.size > 3) recentlyExpiredPins.removeLast()
+        }
     }
 
     fun isBlocked(ip: String): Boolean =
@@ -72,13 +94,33 @@ object PairingService {
         blockedUntil.remove(ip)
     }
 
-    fun verifyAndPair(pin: String, clientId: String, deviceName: String, ip: String): PairingResponse? {
+    fun verifyAndPair(
+        pin: String,
+        clientId: String,
+        deviceName: String,
+        ip: String
+    ): PairingResult {
         val expiry = pendingPins[pin]
-        if (expiry == null || System.currentTimeMillis() > expiry) {
-            logger.warn("Pairing failed for device '$deviceName' ($ip) — invalid or expired PIN: $pin")
-            return null
+        if (expiry == null) {
+            val wasExpired = synchronized(recentlyExpiredPins) { pin in recentlyExpiredPins }
+            if (wasExpired) {
+                logger.warn("Pairing attempt from '$deviceName' ($ip) with already-expired PIN")
+                return PairingResult.Expired
+            }
+            // Unknown PIN — count attempts so repeated guessing of the same bad PIN gets burned
+            val attempts = pinAttempts.computeIfAbsent(pin) { AtomicInteger(0) }.incrementAndGet()
+            if (attempts >= MAX_PIN_ATTEMPTS) burnPin(pin)
+            logger.warn("Pairing failed for device '$deviceName' ($ip) — invalid PIN")
+            return PairingResult.Invalid
         }
-        pendingPins.remove(pin)
+        if (System.currentTimeMillis() > expiry) {
+            burnPin(pin)
+            logger.warn("Pairing failed for device '$deviceName' ($ip) — PIN expired")
+            return PairingResult.Expired
+        }
+
+        // Valid PIN — consume it
+        burnPin(pin)
 
         val serverAssignedId = UUID.randomUUID().toString()
         val aesKey = AesGcm.generateKey()
@@ -106,7 +148,12 @@ object PairingService {
         }
 
         logger.info("Device '$deviceName' ($ip) paired successfully as $serverAssignedId")
-        return PairingResponse(serverAssignedId = serverAssignedId, aesKey = aesKey)
+        return PairingResult.Success(
+            PairingResponse(
+                serverAssignedId = serverAssignedId,
+                aesKey = aesKey
+            )
+        )
     }
 
     fun isAuthorized(serverAssignedId: String): Boolean =

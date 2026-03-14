@@ -1,10 +1,10 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.service.AdminService
+import com.portfoliohelper.service.CodeResult
 import com.portfoliohelper.service.PairingService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
-import io.ktor.server.application.*
 import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -16,31 +16,17 @@ import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("AdminRoutes")
 
-private const val ADMIN_COOKIE = "admin_session"
-
 @Serializable
 private data class AdminLoginRequest(val passcode: String)
 
 fun Route.configureAdminRoutes() {
 
-    // Auth interceptor for all /api/paired-devices and /api/unpair
-    intercept(ApplicationCallPipeline.Plugins) {
-        val path = call.request.path()
-        if (path != "/api/paired-devices" && path != "/api/unpair") return@intercept
-
-        val token = call.request.cookies[ADMIN_COOKIE]
-        if (token == null || !AdminService.validateSession(token)) {
-            call.respond(HttpStatusCode.Unauthorized, "Admin session required")
-            return@intercept finish()
-        }
-    }
-
-    /** Admin login page */
+    /** Admin login page — no code embedded; user generates on demand */
     get("/admin") {
         call.respondText(adminLoginPage(), ContentType.Text.Html)
     }
 
-    /** Admin login API — verifies passcode, sets session cookie */
+    /** Admin login API — verifies one-time code, sets session cookie */
     post("/api/admin/login") {
         val body = try {
             call.receiveText().let { appJson.decodeFromString<AdminLoginRequest>(it) }
@@ -49,23 +35,46 @@ fun Route.configureAdminRoutes() {
             return@post
         }
 
-        if (AdminService.verifyPasscode(body.passcode)) {
-            val token = AdminService.createSession()
-            call.response.cookies.append(
-                Cookie(
-                    name = ADMIN_COOKIE,
-                    value = token,
-                    httpOnly = true,
-                    secure = true,
-                    path = "/",
-                    maxAge = 8 * 60 * 60 // 8 hours
-                )
+        val ip = call.request.origin.remoteHost
+        if (AdminService.isBlocked(ip)) {
+            logger.warn("Admin login attempt blocked for IP $ip (rate limited)")
+            call.respond(
+                HttpStatusCode.TooManyRequests,
+                "Too many failed attempts. Try again later."
             )
-            logger.info("Admin login successful from ${call.request.origin.remoteHost}")
-            call.respond(HttpStatusCode.OK, "Login successful")
-        } else {
-            logger.warn("Admin login failed from ${call.request.origin.remoteHost}")
-            call.respond(HttpStatusCode.Unauthorized, "Invalid passcode")
+            return@post
+        }
+
+        when (AdminService.verifyAndConsume(body.passcode)) {
+            is CodeResult.Success -> {
+                AdminService.recordSuccess(ip)
+                val userAgent = call.request.headers[HttpHeaders.UserAgent] ?: ""
+                val token = AdminService.createSession(ip, userAgent)
+                call.response.cookies.append(
+                    Cookie(
+                        name = AdminService.SESSION_COOKIE,
+                        value = token,
+                        httpOnly = true,
+                        secure = true,
+                        path = "/",
+                        maxAge = 10 * 365 * 24 * 60 * 60
+                    )
+                )
+                logger.info("Admin login successful from $ip")
+                call.respond(HttpStatusCode.OK, "Login successful")
+            }
+
+            is CodeResult.Expired -> {
+                AdminService.recordFailure(ip)
+                logger.warn("Admin login with expired code from $ip")
+                call.respond(HttpStatusCode.Gone, "Code has expired. Generate a new one.")
+            }
+
+            is CodeResult.Invalid -> {
+                AdminService.recordFailure(ip)
+                logger.warn("Admin login failed from $ip")
+                call.respond(HttpStatusCode.Unauthorized, "Invalid code.")
+            }
         }
     }
 
@@ -81,8 +90,10 @@ fun Route.configureAdminRoutes() {
             }
         }
         call.respondText(
-            appJson.encodeToString(kotlinx.serialization.json.JsonArray.serializer(),
-                kotlinx.serialization.json.JsonArray(devices)),
+            appJson.encodeToString(
+                kotlinx.serialization.json.JsonArray.serializer(),
+                kotlinx.serialization.json.JsonArray(devices)
+            ),
             ContentType.Application.Json
         )
     }
@@ -118,15 +129,16 @@ private fun adminLoginPage(): String = """
            background: #e94560; color: #fff; font-size: 1rem; cursor: pointer; }
   button:hover { background: #c73652; }
   #msg { margin-top: .8rem; font-size: .9rem; color: #f87171; min-height: 1.2em; }
+  #msg.ok { color: #4ade80; }
   .hint { font-size: .8rem; color: #888; margin: 0 0 1rem; }
 </style>
 </head>
 <body>
 <div class="card">
   <h1>Admin Login</h1>
-  <p class="hint">Paste the passcode from the system tray "Copy Admin Code" menu item.</p>
-  <input type="password" id="code" placeholder="Admin passcode" autocomplete="off">
-  <button onclick="login()">Login</button>
+  <p class="hint">Use "Copy Admin Code" from the system tray menu, then paste it below.</p>
+  <input type="password" id="code" placeholder="Paste code here" autocomplete="off">
+  <button onclick="login()">Authorize this Browser</button>
   <div id="msg"></div>
 </div>
 <script>
@@ -134,15 +146,22 @@ async function login() {
   const code = document.getElementById('code').value.trim();
   const msg = document.getElementById('msg');
   msg.textContent = '';
+  msg.className = '';
   const r = await fetch('/api/admin/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ passcode: code })
   });
   if (r.ok) {
-    window.location.href = '/admin/devices';
+    msg.textContent = 'Authorized. Redirecting…';
+    msg.className = 'ok';
+    window.location.href = '/';
+  } else if (r.status === 410) {
+    msg.textContent = 'This code has expired. Generate a new one.';
+  } else if (r.status === 429) {
+    msg.textContent = 'Too many failed attempts. Try again later.';
   } else {
-    msg.textContent = await r.text();
+    msg.textContent = 'Invalid code.';
   }
 }
 document.getElementById('code').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });

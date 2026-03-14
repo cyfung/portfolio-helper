@@ -42,7 +42,10 @@ fun Route.configureSyncRoutes() {
 
         if (PairingService.isBlocked(ip)) {
             logger.warn("Pairing attempt blocked for IP $ip (rate limited)")
-            call.respond(HttpStatusCode.TooManyRequests, "Too many failed attempts. Try again in 15 minutes.")
+            call.respond(
+                HttpStatusCode.TooManyRequests,
+                "Too many failed attempts. Try again in 15 minutes."
+            )
             return@post
         }
 
@@ -56,13 +59,24 @@ fun Route.configureSyncRoutes() {
 
         logger.info("Pairing attempt from '$deviceName' ($ip) with PIN $pin")
 
-        val response = PairingService.verifyAndPair(pin, clientId, deviceName, ip)
-        if (response != null) {
-            PairingService.recordSuccess(ip)
-            call.respond(HttpStatusCode.OK, appJson.encodeToString(PairingResponse.serializer(), response))
-        } else {
-            PairingService.recordFailure(ip)
-            call.respond(HttpStatusCode.Unauthorized, "Invalid or expired PIN")
+        when (val result = PairingService.verifyAndPair(pin, clientId, deviceName, ip)) {
+            is PairingResult.Success -> {
+                PairingService.recordSuccess(ip)
+                call.respond(
+                    HttpStatusCode.OK,
+                    appJson.encodeToString(PairingResponse.serializer(), result.response)
+                )
+            }
+
+            is PairingResult.Expired -> {
+                PairingService.recordFailure(ip)
+                call.respond(HttpStatusCode.Gone, "PIN expired. Generate a new one.")
+            }
+
+            is PairingResult.Invalid -> {
+                PairingService.recordFailure(ip)
+                call.respond(HttpStatusCode.Unauthorized, "Invalid PIN.")
+            }
         }
     }
 
@@ -79,18 +93,25 @@ fun Route.configureSyncRoutes() {
 
         val deviceId = call.request.headers["X-Device-ID"]!!
         val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
-            ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
+            ?: return@get call.respond(
+                HttpStatusCode.Unauthorized,
+                "Device not found or key expired"
+            )
 
         val json = BackupService.exportJson(entry) { e ->
             when (e.currency) {
                 "USD" -> e.amount
-                "P"   -> {
+                "P" -> {
                     val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
                         ?: return@exportJson null
                     e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
                 }
-                else  -> YahooMarketDataService.getQuote("${e.currency}USD=X")
-                    ?.let { q -> (q.regularMarketPrice ?: q.previousClose ?: return@exportJson null) * e.amount }
+
+                else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+                    ?.let { q ->
+                        (q.regularMarketPrice ?: q.previousClose
+                        ?: return@exportJson null) * e.amount
+                    }
             }
         }
 

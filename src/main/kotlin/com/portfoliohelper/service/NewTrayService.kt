@@ -118,9 +118,9 @@ object NewTrayService {
 
         copyAdminCodeItem.addActionListener {
             try {
-                val code = AdminService.getPasscode()
+                val code = AdminService.getCurrentOrGenerate()
                 Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(code), null)
-                logger.info("Admin passcode copied to clipboard")
+                logger.info("Admin code copied to clipboard")
             } catch (e: Exception) {
                 logger.warn("Failed to copy admin code to clipboard: ${e.message}")
             }

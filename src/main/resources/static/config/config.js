@@ -95,13 +95,9 @@ function initPairing() {
     const container = document.getElementById('pairing-pin-display');
     if (!container) return;
 
-    // Auto-generate a PIN on page load so the user can immediately pair
-    generateAndShowPin(container);
-
+    container.innerHTML = `<button class="config-restore-btn" id="generate-pin-btn">Generate Pairing Code</button>`;
     container.addEventListener('click', async (e) => {
-        if (e.target.id === 'generate-pin-btn') {
-            generateAndShowPin(container);
-        }
+        if (e.target.id === 'generate-pin-btn') generateAndShowPin(container);
     });
 }
 
