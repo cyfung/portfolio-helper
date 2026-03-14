@@ -1,9 +1,7 @@
 package com.portfoliohelper.web
 
-import com.portfoliohelper.service.AesGcm
-import com.portfoliohelper.service.ManagedPortfolio
-import com.portfoliohelper.service.PairingResponse
-import com.portfoliohelper.service.PairingService
+import com.portfoliohelper.service.*
+import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -70,7 +68,8 @@ fun Route.configureSyncRoutes() {
 
     /**
      * Consolidated data sync endpoint.
-     * Returns AES-256-GCM encrypted JSON containing positions + cash.
+     * Returns AES-256-GCM encrypted BackupRoot JSON (same format as /api/backup/export-json).
+     * P-type cash entries include snapshotUsd resolved at request time.
      * Response: application/octet-stream bytes (12-byte IV + ciphertext + 16-byte GCM tag)
      */
     get("/api/sync/data") {
@@ -82,29 +81,20 @@ fun Route.configureSyncRoutes() {
         val aesKey = PairingService.getAesKey(deviceId)
             ?: return@get call.respond(HttpStatusCode.Unauthorized, "AES key not found")
 
-        val positions = entry.getStocks().map { stock ->
-            val groupsStr = stock.groups.joinToString(";") { (mult, name) -> "$mult $name" }
-            PositionDto(
-                symbol = stock.label,
-                quantity = stock.amount,
-                targetWeight = stock.targetWeight ?: 0.0,
-                groups = groupsStr
-            )
+        val json = BackupService.exportJson(entry) { e ->
+            when (e.currency) {
+                "USD" -> e.amount
+                "P"   -> {
+                    val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
+                        ?: return@exportJson null
+                    e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
+                }
+                else  -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+                    ?.let { q -> (q.regularMarketPrice ?: q.previousClose ?: return@exportJson null) * e.amount }
+            }
         }
 
-        val cash = entry.getCash().map { c ->
-            CashDto(
-                label = c.label,
-                currency = c.currency,
-                amount = c.amount,
-                isMargin = c.marginFlag
-            )
-        }
-
-        val syncData = SyncData(positions = positions, cash = cash)
-        val json = appJson.encodeToString(SyncData.serializer(), syncData)
         val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey)
-
         call.respondBytes(encrypted, ContentType.Application.OctetStream)
     }
 }

@@ -215,10 +215,10 @@ class SyncRepository(
 
             val encryptedBytes = response.readBytes()
             val jsonBytes = AesGcm.decrypt(encryptedBytes, aesKey)
-            val syncData = Json.decodeFromString<SyncData>(jsonBytes.toString(Charsets.UTF_8))
+            val root = Json.decodeFromString<BackupRoot>(jsonBytes.toString(Charsets.UTF_8))
 
-            parseAndSave(syncData)
-            Log.i("SyncRepository", "Sync successful: ${syncData.positions.size} positions, ${syncData.cash.size} cash entries")
+            parseAndSave(root)
+            Log.i("SyncRepository", "Sync successful: ${root.stocks.size} positions, ${root.cash.size} cash entries")
 
             settings.saveSyncServerInfo(serverInfo.copy(host = host, port = port))
         } catch (e: Exception) {
@@ -237,23 +237,35 @@ class SyncRepository(
         }?.find { it.serviceName == name }
     }
 
-    private suspend fun parseAndSave(syncData: SyncData) {
-        val positions = syncData.positions.map { dto ->
+    private suspend fun parseAndSave(root: BackupRoot) {
+        val positions = root.stocks.map { s ->
             Position(
-                symbol = dto.symbol,
-                quantity = dto.quantity,
-                targetWeight = dto.targetWeight,
-                groups = dto.groups
+                symbol = s.symbol,
+                quantity = s.amount,
+                targetWeight = s.targetWeight,
+                groups = s.groups
             )
         }
 
-        val cashEntries = syncData.cash.map { dto ->
-            CashEntry(
-                label = dto.label,
-                currency = dto.currency,
-                amount = dto.amount,
-                isMargin = dto.isMargin
-            )
+        val cashEntries = root.cash.mapNotNull { c ->
+            when {
+                c.currency == "P" -> {
+                    // Use snapshotUsd if present; skip entry if not resolvable
+                    val usd = c.snapshotUsd ?: return@mapNotNull null
+                    CashEntry(
+                        label = c.label,
+                        currency = "USD",
+                        amount = usd,
+                        isMargin = c.marginFlag
+                    )
+                }
+                else -> CashEntry(
+                    label = c.label,
+                    currency = c.currency,
+                    amount = c.amount,
+                    isMargin = c.marginFlag
+                )
+            }
         }
 
         db.withTransaction {
@@ -268,25 +280,31 @@ class SyncRepository(
     class UnauthorizedException : Exception("Device not paired or authentication failed")
 }
 
-// Minimal local SyncData model for JSON parsing on Android
+// BackupRoot models — mirror of server BackupService data classes
 @kotlinx.serialization.Serializable
-private data class SyncData(
-    val positions: List<PositionDto>,
-    val cash: List<CashDto>
+private data class BackupRoot(
+    val version: Int = 1,
+    val portfolioSlug: String,
+    val stocks: List<BackupStock>,
+    val cash: List<BackupCash>
 )
 
 @kotlinx.serialization.Serializable
-private data class PositionDto(
+private data class BackupStock(
     val symbol: String,
-    val quantity: Double,
-    val targetWeight: Double,
-    val groups: String
+    val amount: Double,
+    val targetWeight: Double = 0.0,
+    val letf: String = "",
+    val groups: String = ""
 )
 
 @kotlinx.serialization.Serializable
-private data class CashDto(
+private data class BackupCash(
+    val key: String,
     val label: String,
     val currency: String,
+    val marginFlag: Boolean,
     val amount: Double,
-    val isMargin: Boolean
+    val portfolioRef: String? = null,
+    val snapshotUsd: Double? = null
 )
