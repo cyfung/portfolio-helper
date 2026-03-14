@@ -643,23 +643,10 @@ fun Application.configureRouting() {
         // Server-Sent Events (SSE) endpoint for streaming price updates
         sse("/api/prices/stream") {
             heartbeat {
-                period = 10.milliseconds
+                period = 100.milliseconds
                 event = ServerSentEvent("heartbeat")
             }
-            LoggerFactory.getLogger(this::class.java).warn("sse start")
-//            try {
-//                repeat(100) {
-//                    delay(1000)
-//                    send(ServerSentEvent("prices", "abc"))
-//                }
-//            } finally {
-//                LoggerFactory.getLogger(this::class.java).warn("sse bye?")
-//            }
-            try {
-                handleSseStream()
-            } finally {
-                LoggerFactory.getLogger(this::class.java).warn("sse bye?")
-            }
+            handleSseStream()
         }
 
         // Trigger an immediate DB backup for a portfolio
