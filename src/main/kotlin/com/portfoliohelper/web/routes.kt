@@ -85,6 +85,7 @@ private fun parseCashEntryFromKeyValue(
     }
 }
 
+@OptIn(DelicateCoroutinesApi::class)
 fun Application.configureRouting() {
     val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
     val httpPort = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080

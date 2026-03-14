@@ -1,9 +1,10 @@
+import com.github.jk1.license.render.ReportRenderer
 import com.github.jk1.license.render.TextReportRenderer
 import org.gradle.api.tasks.bundling.Jar
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import org.panteleyev.jpackage.ImageType
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import java.net.URLEncoder
 import java.util.Properties
 
@@ -340,7 +341,7 @@ tasks.register<Zip>("jpackageDistZip") {
 
 // License report configuration
 licenseReport {
-    renderers = arrayOf(
+    renderers = arrayOf<ReportRenderer>(
         TextReportRenderer("THIRD_PARTY_NOTICES.txt"),
         InventoryHtmlReportRenderer("index.html", "Third Party Licenses")
     )
@@ -377,7 +378,7 @@ tasks.register("githubRelease") {
         // Step 1: Create release
         println("Creating GitHub release $tagName on $repo...")
         val releasePayload = """{"tag_name":"$tagName","name":"Portfolio Helper $tagName","body":"${releaseBody.escapeJson()}","draft":false,"prerelease":false}"""
-        val releaseConn = URL("https://api.github.com/repos/$repo/releases").openConnection() as HttpURLConnection
+        val releaseConn = URI("https://api.github.com/repos/$repo/releases").toURL().openConnection() as HttpURLConnection
         releaseConn.requestMethod = "POST"
         releaseConn.setRequestProperty("Authorization", "Bearer $token")
         releaseConn.setRequestProperty("Content-Type", "application/json")
@@ -410,7 +411,7 @@ tasks.register("githubRelease") {
         for ((file, contentType, uploadName) in artifacts) {
             if (!file.exists()) error("Artifact not found: ${file.absolutePath}")
             println("Uploading $uploadName (${"%.1f".format(file.length() / 1024.0 / 1024.0)} MB)...")
-            val uploadUrl = URL("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}")
+            val uploadUrl = URI("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}").toURL()
             val uploadConn = uploadUrl.openConnection() as HttpURLConnection
             uploadConn.requestMethod = "POST"
             uploadConn.setRequestProperty("Authorization", "Bearer $token")
