@@ -1,7 +1,7 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.*
-import com.portfoliohelper.service.db.AppDatabase
+import org.jetbrains.exposed.sql.Database
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.service.MarketDataCoordinator
@@ -22,12 +22,11 @@ fun main() {
     val logger = LoggerFactory.getLogger("Application")
 
     // ---------------------------------------------------------------
-    // 0. Resolve data directory (env > config file > OS default)
+    // 0. Resolve data directory (env > OS default)
     // ---------------------------------------------------------------
     AppDirs.dataDir = System.getenv("PORTFOLIO_HELPER_DATA_DIR")
         ?.takeIf { it.isNotBlank() }
         ?.let { Paths.get(it) }
-        ?: AppConfig.get(AppConfig.KEY_DATA_DIR).takeIf { it.isNotBlank() }?.let { Paths.get(it) }
         ?: AppDirs.osDefaultDataDir
     logger.info("Active data directory: ${AppDirs.dataDir.toAbsolutePath()}")
 
@@ -38,15 +37,22 @@ fun main() {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     // Seed bundled app.db from resources if no database exists yet.
+    // Note: 0-byte file can occur if app.db is deleted while the program is running —
+    // Database.connect() will have already created an empty placeholder at that path.
     Files.createDirectories(dataDir)
     val dbFile = dataDir.resolve("app.db")
-    if (!Files.exists(dbFile)) {
+    logger.info("DB file: ${dbFile.toAbsolutePath()} (exists=${Files.exists(dbFile)}, size=${if (Files.exists(dbFile)) Files.size(dbFile) else -1})")
+    if (!Files.exists(dbFile) || Files.size(dbFile) == 0L) {
+        logger.info("Seeding bundled app.db...")
         val cl = object {}::class.java.classLoader
-        cl.getResourceAsStream("data/app.db")!!.use { Files.copy(it, dbFile) }
+        cl.getResourceAsStream("data/app.db")!!.use { Files.copy(it, dbFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING) }
+        logger.info("Seeded app.db (size=${Files.size(dbFile)})")
+    } else {
+        logger.info("Using existing app.db (size=${Files.size(dbFile)})")
     }
 
-    AppDatabase.init(dataDir.toFile())
-    AppConfig.initDbMode()
+    Database.connect("jdbc:sqlite:${dbFile.toAbsolutePath()}", driver = "org.sqlite.JDBC")
+    logger.info("Connected to database at $dbFile")
 
     val allPortfolios = ManagedPortfolio.getAll()
     logger.info("Loaded ${allPortfolios.size} portfolio(s): ${allPortfolios.map { it.slug }}")
@@ -60,8 +66,7 @@ fun main() {
     // ---------------------------------------------------------------
     // 3–5. Initialize Yahoo Finance + NAV service
     // ---------------------------------------------------------------
-    MarketDataCoordinator.updateIntervalSeconds =
-        System.getenv("PRICE_UPDATE_INTERVAL")?.toLongOrNull() ?: 60L
+    MarketDataCoordinator.updateIntervalSeconds = 60L
 
     try {
         logger.info("Initializing Yahoo Finance market data service...")
@@ -129,12 +134,12 @@ fun main() {
                 privateKeyPassword = { charArrayOf() }
             ) {
                 port = httpsPort
-                host = AppConfig.bindHost
+                host = "0.0.0.0"
                 enableHttp2 = false
             }
             connector {
                 port = httpPort
-                host = AppConfig.bindHost
+                host = "0.0.0.0"
             }
         }) {
             configureRouting()

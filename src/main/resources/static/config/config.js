@@ -1,7 +1,6 @@
-const RESTART_KEYS = new Set(['bindHost', 'navUpdateInterval', 'dataDir']);
+const RESTART_KEYS = new Set(['navUpdateInterval']);
 
 const GLOBAL_DEFAULTS = {
-    bindHost: 'localhost',
     openBrowser: 'true',
     dataDir: '',
     navUpdateInterval: '',

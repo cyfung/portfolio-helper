@@ -158,48 +158,6 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 
                     // Server
                     renderConfigSection("Server") {
-                        val bindHostEnvOverridden =
-                            AppConfig.isEnvOverridden(AppConfig.KEY_BIND_HOST)
-                        renderConfigField(
-                            label = "Bind Host",
-                            description = "Network interface to listen on. Use 0.0.0.0 for LAN access.",
-                            inputId = "bind-host",
-                            badge = "restart"
-                        ) {
-                            input(type = InputType.text) {
-                                id = "bind-host"
-                                placeholder = "localhost"
-                                value = AppConfig.get(AppConfig.KEY_BIND_HOST)
-                                disabled = bindHostEnvOverridden
-                                attributes["data-config-key"] = AppConfig.KEY_BIND_HOST
-                            }
-                            if (bindHostEnvOverridden) {
-                                span(classes = "config-env-override-note") {
-                                    +"Set by PORTFOLIO_HELPER_BIND_HOST env var"
-                                }
-                            }
-                        }
-
-                        renderReadOnlyField(
-                            label = "Active Data Directory",
-                            description = "Currently active data directory (read-only — change below, restart to apply)",
-                            value = AppDirs.dataDir.toAbsolutePath().toString()
-                        )
-
-                        renderConfigField(
-                            label = "Data Directory",
-                            description = "Path to the data directory. Leave blank to use the OS default. Takes effect on restart.",
-                            inputId = "data-dir",
-                            badge = "restart"
-                        ) {
-                            input(type = InputType.text) {
-                                id = "data-dir"
-                                placeholder = AppDirs.osDefaultDataDir.toAbsolutePath().toString()
-                                value = AppConfig.getRaw(AppConfig.KEY_DATA_DIR) ?: ""
-                                attributes["data-config-key"] = AppConfig.KEY_DATA_DIR
-                            }
-                        }
-
                         renderConfigField(
                             label = "Open Browser on Start",
                             description = "Automatically open the browser when the app starts.",
@@ -258,7 +216,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             input(type = InputType.number) {
                                 id = "nav-update-interval"
                                 placeholder = "trading-day schedule"
-                                value = AppConfig.getRaw(AppConfig.KEY_NAV_UPDATE_INTERVAL) ?: ""
+                                value = AppConfig.get(AppConfig.KEY_NAV_UPDATE_INTERVAL)
                                 disabled = navEnvOverridden
                                 attributes["data-config-key"] = AppConfig.KEY_NAV_UPDATE_INTERVAL
                                 attributes["min"] = "10"
@@ -279,7 +237,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             input(type = InputType.number) {
                                 id = "ibkr-rate-interval"
                                 placeholder = "3600"
-                                value = AppConfig.getRaw(AppConfig.KEY_IBKR_RATE_INTERVAL) ?: ""
+                                value = AppConfig.get(AppConfig.KEY_IBKR_RATE_INTERVAL)
                                 attributes["data-config-key"] = AppConfig.KEY_IBKR_RATE_INTERVAL
                                 attributes["min"] = "60"
                             }
@@ -381,7 +339,7 @@ private fun FlowContent.renderUpdatesSection() {
             input(type = InputType.number) {
                 id = "update-check-interval"
                 placeholder = "86400"
-                value = AppConfig.getRaw(AppConfig.KEY_UPDATE_CHECK_INTERVAL) ?: ""
+                value = AppConfig.get(AppConfig.KEY_UPDATE_CHECK_INTERVAL)
                 attributes["data-config-key"] = AppConfig.KEY_UPDATE_CHECK_INTERVAL
                 attributes["min"] = "60"
             }

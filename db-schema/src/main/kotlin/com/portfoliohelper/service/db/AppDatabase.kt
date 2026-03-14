@@ -2,8 +2,6 @@ package com.portfoliohelper.service.db
 
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.slf4j.LoggerFactory
-import java.io.File
 
 // ---------------------------------------------------------------------------
 // Table definitions
@@ -97,8 +95,6 @@ object PortfolioBackupsTable : Table("portfolio_backups") {
 // ---------------------------------------------------------------------------
 
 object AppDatabase {
-    private val logger = LoggerFactory.getLogger(AppDatabase::class.java)
-
     internal val allTables = arrayOf(
         PortfoliosTable,
         PositionsTable,
@@ -110,14 +106,4 @@ object AppDatabase {
         SavedBacktestPortfoliosTable,
         PortfolioBackupsTable
     )
-
-    fun init(dataDir: File) {
-        val dbPath = dataDir.resolve("app.db")
-        logger.info("Connecting to SQLite database at $dbPath")
-        Database.connect("jdbc:sqlite:${dbPath.absolutePath}", driver = "org.sqlite.JDBC")
-        transaction {
-            SchemaUtils.create(*allTables)
-        }
-        logger.info("Database schema ready at $dbPath")
-    }
 }

@@ -73,6 +73,8 @@ dependencies {
     implementation("io.netty:netty-tcnative-boringssl-static:2.0.75.Final")
 
     implementation(project(":tws-client"))
+    testImplementation(kotlin("test"))
+    testImplementation(project(":db-schema"))
 }
 
 application {
