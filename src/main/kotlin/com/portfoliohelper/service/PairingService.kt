@@ -7,6 +7,7 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 import org.slf4j.LoggerFactory
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -111,8 +112,33 @@ object PairingService {
     fun isAuthorized(serverAssignedId: String): Boolean =
         pairedClients.containsKey(serverAssignedId)
 
-    fun getAesKey(serverAssignedId: String): String? =
-        pairedClients[serverAssignedId]?.aesKey
+    /**
+     * In a single transaction: reads aesKey + useCount, increments (or deletes if > 2000), and returns
+     * both values for immediate use. The nonce is persisted before being returned, guaranteeing
+     * no repeat even after a reboot. Returns null if the device is not found.
+     */
+    fun acquireEncryptionNonce(serverAssignedId: String): Pair<String, Int>? {
+        val result = transaction {
+            val row = PairedDevicesTable.selectAll()
+                .where { PairedDevicesTable.serverAssignedId eq serverAssignedId }
+                .singleOrNull() ?: return@transaction null
+            val aesKey = row[PairedDevicesTable.aesKey]
+            val next = row[PairedDevicesTable.useCount] + 1
+            if (next > 2000) {
+                PairedDevicesTable.deleteWhere { PairedDevicesTable.serverAssignedId eq serverAssignedId }
+            } else {
+                PairedDevicesTable.update({ PairedDevicesTable.serverAssignedId eq serverAssignedId }) {
+                    it[useCount] = next
+                }
+            }
+            aesKey to next
+        }
+        if (result != null && result.second > 2000) {
+            pairedClients.remove(serverAssignedId)
+            logger.warn("Device $serverAssignedId retired after exceeding max use count")
+        }
+        return result
+    }
 
     fun getPairedClients(): List<PairedClient> = pairedClients.values.toList()
 

@@ -78,8 +78,8 @@ fun Route.configureSyncRoutes() {
             ?: return@get call.respond(HttpStatusCode.NotFound)
 
         val deviceId = call.request.headers["X-Device-ID"]!!
-        val aesKey = PairingService.getAesKey(deviceId)
-            ?: return@get call.respond(HttpStatusCode.Unauthorized, "AES key not found")
+        val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
 
         val json = BackupService.exportJson(entry) { e ->
             when (e.currency) {
@@ -94,7 +94,7 @@ fun Route.configureSyncRoutes() {
             }
         }
 
-        val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey)
+        val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey, nonce)
         call.respondBytes(encrypted, ContentType.Application.OctetStream)
     }
 }

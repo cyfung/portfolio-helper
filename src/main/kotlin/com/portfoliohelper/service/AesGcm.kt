@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import java.nio.ByteBuffer
 import java.security.SecureRandom
 import java.util.Base64
 import javax.crypto.Cipher
@@ -14,6 +15,19 @@ object AesGcm {
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
         val ciphertext = cipher.doFinal(plaintext)
         return iv + ciphertext  // 12-byte IV + ciphertext (includes 16-byte GCM tag)
+    }
+
+    /**
+     * Encrypts using a counter-based nonce: 8 zero bytes + counter as big-endian Int (4 bytes).
+     * The counter must be monotonically increasing and persisted across restarts to guarantee uniqueness.
+     */
+    fun encrypt(plaintext: ByteArray, keyBase64: String, counter: Int): ByteArray {
+        val key = SecretKeySpec(Base64.getDecoder().decode(keyBase64), "AES")
+        val iv = ByteBuffer.allocate(12).also { it.putInt(8, counter) }.array()
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
+        val ciphertext = cipher.doFinal(plaintext)
+        return iv + ciphertext
     }
 
     fun decrypt(data: ByteArray, keyBase64: String): ByteArray {
