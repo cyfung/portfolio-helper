@@ -131,16 +131,10 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             if (isHtml) td.innerHTML = html; else td.textContent = html;
             tr.appendChild(td);
         };
-        const dayPct = g.prevMktVal > 0 ? (mktValChg / g.prevMktVal) * 100 : null;
-        const dayPctText = (isZeroChg || dayPct === null) ? '—' : (dayPct >= 0 ? '+' : '') + dayPct.toFixed(2) + '%';
-
-        const isNeutral = dayPct !== null && Math.abs(dayPct) < 0.1;
-        const dayPctColorClass = (isZeroChg || dayPct === null) ? 'neutral'
-            : isNeutral ? 'neutral'
-            : dayPct > 0 ? 'positive' : 'negative';
-        const dayPctHtml = (isZeroChg || dayPct === null)
-            ? ''
-            : `<span class="mark-day-pct ${dayPctColorClass}">${dayPct >= 0 ? '+' : '−'}${Math.abs(dayPct).toFixed(2)}%</span>`;
+        const dayPct = g.prevMktVal > 0 ? (mktValChg / g.prevMktVal) * 100 : 0;
+        const isNeutral = Math.abs(dayPct) < 0.1;
+        const dayPctColorClass = isNeutral ? 'neutral' : dayPct > 0 ? 'positive' : 'negative';
+        const dayPctHtml = `<span class="mark-day-pct ${dayPctColorClass}">${dayPct >= 0 ? '+' : '−'}${Math.abs(dayPct).toFixed(2)}%</span>`;
 
         mk(name, '');
         mk(dayPctHtml, 'col-num col-market-data', true);

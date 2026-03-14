@@ -50,23 +50,18 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
 
         const changeCell = document.getElementById('day-change-' + symbol);
         if (changeCell) {
-            changeCell.textContent = isZeroChange ? '—' : (changeDollars >= 0 ? '+' : '-') + '$' + Math.abs(changeDollars).toFixed(2);
+            changeCell.textContent = (changeDollars >= 0 ? '+' : '-') + '$' + Math.abs(changeDollars).toFixed(2);
             applyChangeClasses(changeCell, changeDollars, isZeroChange, isMarketClosed);
         }
 
         const pctSpan = document.getElementById('day-percent-' + symbol);
         if (pctSpan) {
-            if (isZeroChange) {
-                pctSpan.textContent = '';
-                pctSpan.className = 'mark-day-pct';
-            } else {
-                const sign = changePercent >= 0 ? '+' : '−';
-                pctSpan.textContent = sign + Math.abs(changePercent).toFixed(2) + '%';
-                const isNeutral = Math.abs(changePercent) < 0.1;
-                const colorClass = isNeutral ? 'neutral' : changePercent > 0 ? 'positive' : 'negative';
-                const staleClass = isMarketClosed ? ' after-hours' : '';
-                pctSpan.className = 'mark-day-pct ' + colorClass + staleClass;
-            }
+            const sign = changePercent >= 0 ? '+' : '−';
+            pctSpan.textContent = sign + Math.abs(changePercent).toFixed(2) + '%';
+            const isNeutral = Math.abs(changePercent) < 0.1;
+            const colorClass = isNeutral ? 'neutral' : changePercent > 0 ? 'positive' : 'negative';
+            const staleClass = isMarketClosed ? ' after-hours' : '';
+            pctSpan.className = 'mark-day-pct ' + colorClass + staleClass;
         }
 
         if (amountCell) {
@@ -74,7 +69,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
             const positionChange = changeDollars * amount;
             const positionChangeCell = document.getElementById('position-change-' + symbol);
             if (positionChangeCell) {
-                positionChangeCell.textContent = isZeroChange ? '—' : formatSignedCurrency(positionChange);
+                positionChangeCell.textContent = formatSignedCurrency(positionChange);
                 applyChangeClasses(positionChangeCell, positionChange, isZeroChange, isMarketClosed);
             }
         }

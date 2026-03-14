@@ -19,21 +19,76 @@ import com.portfoliohelper.ui.theme.ext
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.log10
+import kotlin.math.roundToInt
 
 // ── Number formatting ─────────────────────────────────────────────────────────
 
-private val currFmt = NumberFormat.getCurrencyInstance(Locale.US)
+fun formatCurrency(v: Double): String = formatSmart(v, showCurrency = true)
 
-fun formatCurrency(v: Double): String = currFmt.format(v)
-
-fun formatSignedCurrency(v: Double): String =
-    if (v >= 0) "+${currFmt.format(v)}" else "-${currFmt.format(abs(v))}"
+fun formatSignedCurrency(v: Double): String = formatSmart(v, showCurrency = true, showSign = true)
 
 fun formatPct(v: Double, decimals: Int = 2): String =
     "%.${decimals}f%%".format(v)
 
 fun formatSignedPct(v: Double, decimals: Int = 2): String =
     "%+.${decimals}f%%".format(v)
+
+/**
+ * Smart formatting:
+ * - Max 5 significant figures
+ * - Up to 2 decimal places
+ * - Suffixes: K, M, B
+ * - Optional USD symbol ($)
+ * - Optional leading sign (+/-)
+ *
+ * Examples: 0.01, 11.11, 235.67, 1,234, 11.24K
+ */
+fun formatSmart(
+    value: Double,
+    showCurrency: Boolean = false,
+    showSign: Boolean = false
+): String {
+    if (value == 0.0) {
+        val base = if (showCurrency) "$0.00" else "0.00"
+        return if (showSign) "+$base" else base
+    }
+
+    val absVal = abs(value)
+    val (scaledValue, suffix) = when {
+        absVal >= 1_000_000_000 -> (absVal / 1_000_000_000.0) to "B"
+        absVal >= 1_000_000 -> (absVal / 1_000_000.0) to "M"
+        absVal >= 10_000 -> (absVal / 1_000.0) to "K"
+        else -> absVal to ""
+    }
+
+    // Determine decimals to respect max 5 sig figs (max 2 decimals total)
+    val log = log10(scaledValue).toInt().coerceAtLeast(0)
+    val digitsBeforeDecimal = log + 1
+    var decimals = (5 - digitsBeforeDecimal).coerceIn(0, 2)
+
+    // Handle the "1,234" case: no decimals for whole numbers >= 1000
+    if (abs(scaledValue - scaledValue.roundToInt()) < 0.000001) {
+        if (scaledValue >= 1000 || suffix != "") {
+            decimals = 0
+        }
+    }
+
+    val formattedNum = if (suffix == "") {
+        val nf = NumberFormat.getNumberInstance(Locale.US)
+        nf.minimumFractionDigits = if (absVal >= 1000 && absVal == absVal.roundToInt().toDouble()) 0 else 2
+        nf.maximumFractionDigits = decimals
+        nf.format(absVal)
+    } else {
+        val numPart = "%.${decimals}f".format(Locale.US, scaledValue).trimEnd('0').trimEnd('.')
+        "$numPart$suffix"
+    }
+
+    val signStr = if (value < 0) "-" else if (showSign) "+" else ""
+    val currencyStr = if (showCurrency) "$" else ""
+
+    return "$signStr$currencyStr$formattedNum"
+}
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 
@@ -145,7 +200,7 @@ fun DayPctPill(pct: Double, isStale: Boolean = false) {
         else     -> ext.negative
     }
     val alpha  = if (isStale) 0.55f else 1f
-    val text   = if (isZero) "—" else formatSignedPct(pct)
+    val text   = formatSignedPct(pct)
     Box(
         modifier = Modifier
             .background(
