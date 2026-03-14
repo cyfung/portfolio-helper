@@ -126,7 +126,8 @@ fun Application.configureRouting() {
                     Cookie(
                         name = AdminService.SESSION_COOKIE, value = token,
                         httpOnly = true, secure = true, path = "/",
-                        maxAge = 10 * 365 * 24 * 60 * 60
+                        maxAge = 10 * 365 * 24 * 60 * 60,
+                        extensions = mapOf("SameSite" to "Strict")
                     )
                 )
                 return@intercept  // allow through with new cookie

@@ -57,7 +57,8 @@ fun Route.configureAdminRoutes() {
                         httpOnly = true,
                         secure = true,
                         path = "/",
-                        maxAge = 10 * 365 * 24 * 60 * 60
+                        maxAge = 10 * 365 * 24 * 60 * 60,
+                        extensions = mapOf("SameSite" to "Strict")
                     )
                 )
                 logger.info("Admin login successful from $ip")
