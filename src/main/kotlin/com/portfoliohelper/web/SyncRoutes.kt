@@ -1,17 +1,17 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.AesGcm
 import com.portfoliohelper.service.ManagedPortfolio
+import com.portfoliohelper.service.PairingResponse
 import com.portfoliohelper.service.PairingService
+import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import org.apache.commons.csv.CSVFormat
-import org.apache.commons.csv.CSVPrinter
 import org.slf4j.LoggerFactory
-import java.io.StringWriter
 
 private val logger = LoggerFactory.getLogger("SyncRoutes")
 
@@ -33,78 +33,78 @@ fun Route.configureSyncRoutes() {
 
     /**
      * Pairing endpoint.
-     * Client sends: POST /api/sync/pair?pin=1234
+     * Client sends: POST /api/sync/pair?pin=123456
      * Headers: X-Device-ID (unique device identifier), X-Device-Name (human-readable, optional)
      *
-     * Flow:
-     *   1. Server already displayed the PIN in its own UI (via /api/pairing/generate).
-     *   2. User reads the PIN on the server screen and types it into the client app.
-     *   3. Client POSTs here — if PIN matches, device is immediately authorized.
+     * On success: returns JSON with serverAssignedId + aesKey.
+     * Rate-limited: IP blocked for 15 minutes after 5 failed attempts.
      */
     post("/api/sync/pair") {
+        val ip = call.request.origin.remoteHost
+
+        if (PairingService.isBlocked(ip)) {
+            logger.warn("Pairing attempt blocked for IP $ip (rate limited)")
+            call.respond(HttpStatusCode.TooManyRequests, "Too many failed attempts. Try again in 15 minutes.")
+            return@post
+        }
+
         val pin = call.request.queryParameters["pin"]
             ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing PIN")
 
-        val deviceId = call.request.headers["X-Device-ID"]
+        val clientId = call.request.headers["X-Device-ID"]
             ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing X-Device-ID header")
 
-        val deviceName = call.request.headers["X-Device-Name"] ?: deviceId
-        val ip = call.request.origin.remoteHost
+        val deviceName = call.request.headers["X-Device-Name"] ?: clientId
 
         logger.info("Pairing attempt from '$deviceName' ($ip) with PIN $pin")
 
-        if (PairingService.verifyAndPair(pin, deviceId, deviceName, ip)) {
-            call.respond(HttpStatusCode.OK, "Paired successfully")
+        val response = PairingService.verifyAndPair(pin, clientId, deviceName, ip)
+        if (response != null) {
+            PairingService.recordSuccess(ip)
+            call.respond(HttpStatusCode.OK, appJson.encodeToString(PairingResponse.serializer(), response))
         } else {
+            PairingService.recordFailure(ip)
             call.respond(HttpStatusCode.Unauthorized, "Invalid or expired PIN")
         }
     }
 
     /**
-     * Data Sync: Positions
+     * Consolidated data sync endpoint.
+     * Returns AES-256-GCM encrypted JSON containing positions + cash.
+     * Response: application/octet-stream bytes (12-byte IV + ciphertext + 16-byte GCM tag)
      */
-    get("/api/sync/positions.csv") {
+    get("/api/sync/data") {
         val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
         val entry = ManagedPortfolio.getBySlug(portfolioId)
             ?: return@get call.respond(HttpStatusCode.NotFound)
 
-        val sw = StringWriter()
-        val csvFormat = CSVFormat.DEFAULT.builder()
-            .setHeader("symbol", "quantity", "targetWeight", "groups")
-            .build()
+        val deviceId = call.request.headers["X-Device-ID"]!!
+        val aesKey = PairingService.getAesKey(deviceId)
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, "AES key not found")
 
-        CSVPrinter(sw, csvFormat).use { printer ->
-            entry.getStocks().forEach { stock ->
-                val groupsStr = stock.groups.joinToString(";") { (mult, name) -> "$mult $name" }
-                printer.printRecord(
-                    stock.label,
-                    formatQty(stock.amount),
-                    stock.targetWeight ?: 0.0,
-                    groupsStr
-                )
-            }
+        val positions = entry.getStocks().map { stock ->
+            val groupsStr = stock.groups.joinToString(";") { (mult, name) -> "$mult $name" }
+            PositionDto(
+                symbol = stock.label,
+                quantity = stock.amount,
+                targetWeight = stock.targetWeight ?: 0.0,
+                groups = groupsStr
+            )
         }
-        call.respondText(sw.toString(), ContentType.Text.CSV)
-    }
 
-    /**
-     * Data Sync: Cash
-     */
-    get("/api/sync/cash.csv") {
-        val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-        val entry = ManagedPortfolio.getBySlug(portfolioId)
-            ?: return@get call.respond(HttpStatusCode.NotFound)
-
-        val sw = StringWriter()
-        val csvFormat = CSVFormat.DEFAULT.builder()
-            .setHeader("label", "currency", "amount", "isMargin")
-            .build()
-
-        CSVPrinter(sw, csvFormat).use { printer ->
-            entry.getCash().forEach { cash ->
-                printer.printRecord(cash.label, cash.currency, cash.amount, cash.marginFlag)
-            }
+        val cash = entry.getCash().map { c ->
+            CashDto(
+                label = c.label,
+                currency = c.currency,
+                amount = c.amount,
+                isMargin = c.marginFlag
+            )
         }
-        call.respondText(sw.toString(), ContentType.Text.CSV)
+
+        val syncData = SyncData(positions = positions, cash = cash)
+        val json = appJson.encodeToString(SyncData.serializer(), syncData)
+        val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey)
+
+        call.respondBytes(encrypted, ContentType.Application.OctetStream)
     }
 }

@@ -28,9 +28,6 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import kotlin.time.Duration.Companion.milliseconds
 
-@Serializable
-data class PairedDeviceDto(val id: String, val name: String, val pairedAt: Long, val lastIp: String)
-
 private fun loadBacktestSettings(settingsKey: String): String = transaction {
     fun get(k: String) = GlobalSettingsTable.selectAll()
         .where { GlobalSettingsTable.key eq k }
@@ -101,10 +98,16 @@ fun Application.configureRouting() {
         }
     }
 
+    // Load persisted paired devices from DB so they survive server restarts
+    PairingService.loadFromDb()
+
     routing {
 
         // Android Sync Endpoints
         configureSyncRoutes()
+
+        // Admin Endpoints
+        configureAdminRoutes()
 
         get("/") {
             val all = ManagedPortfolio.getAll()
@@ -604,33 +607,10 @@ fun Application.configureRouting() {
             }
         }
 
-        // Device Management Endpoints (Localhost only)
-
         // Generate a PIN to display in the server UI — user enters it on their Android device to pair
         post("/api/pairing/generate") {
             val pin = PairingService.generatePin()
             call.respondText("{\"pin\":\"$pin\"}", ContentType.Application.Json)
-        }
-
-        get("/api/paired-devices") {
-            val dtos = PairingService.getPairedClients().map { client ->
-                PairedDeviceDto(
-                    id = client.id,
-                    name = client.name,
-                    pairedAt = client.pairedAt,
-                    lastIp = client.lastIp
-                )
-            }
-            call.respondText(appJson.encodeToString(dtos), ContentType.Application.Json)
-        }
-
-
-
-        post("/api/unpair-device") {
-            val deviceId = call.request.queryParameters["deviceId"]
-            if (deviceId != null) PairingService.unpairClient(deviceId)
-            else PairingService.unpairAll()
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
         }
 
         // Server-Sent Events (SSE) endpoint for streaming price updates

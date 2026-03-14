@@ -252,10 +252,10 @@ fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfirm: (Stri
         title = { Text("Pair with $serverName") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Enter the 4-digit PIN displayed on your computer screen.")
+                Text("Enter the 6-digit PIN displayed on your computer screen.")
                 OutlinedTextField(
                     value = pin,
-                    onValueChange = { if (it.length <= 4) pin = it.filter { c -> c.isDigit() } },
+                    onValueChange = { if (it.length <= 6) pin = it.filter { c -> c.isDigit() } },
                     label = { Text("PIN") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -265,8 +265,8 @@ fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfirm: (Stri
         },
         confirmButton = {
             TextButton(
-                onClick = { if (pin.length == 4) onConfirm(pin) },
-                enabled = pin.length == 4
+                onClick = { if (pin.length == 6) onConfirm(pin) },
+                enabled = pin.length == 6
             ) {
                 Text("Pair")
             }

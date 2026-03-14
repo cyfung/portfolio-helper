@@ -23,6 +23,9 @@ object PrefsKeys {
     val SYNC_SERVER_PORT        = intPreferencesKey("sync_server_port")
     val SYNC_SERVER_NAME        = stringPreferencesKey("sync_server_name")
     val DEVICE_ID               = stringPreferencesKey("device_id")
+    val SERVER_ASSIGNED_ID      = stringPreferencesKey("server_assigned_id")
+    val AES_KEY                 = stringPreferencesKey("aes_key")
+    val TLS_FINGERPRINT         = stringPreferencesKey("tls_fingerprint")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -79,6 +82,27 @@ class SettingsRepository(private val context: Context) {
             prefs[PrefsKeys.MARGIN_ALERT_INTERVAL]  = s.checkIntervalMinutes
         }
     }
+
+    suspend fun saveServerAssignedId(id: String) {
+        context.dataStore.edit { it[PrefsKeys.SERVER_ASSIGNED_ID] = id }
+    }
+
+    suspend fun getServerAssignedId(): String? =
+        context.dataStore.data.first()[PrefsKeys.SERVER_ASSIGNED_ID]
+
+    suspend fun saveAesKey(key: String) {
+        context.dataStore.edit { it[PrefsKeys.AES_KEY] = key }
+    }
+
+    suspend fun getAesKey(): String? =
+        context.dataStore.data.first()[PrefsKeys.AES_KEY]
+
+    suspend fun saveTlsFingerprint(fingerprint: String) {
+        context.dataStore.edit { it[PrefsKeys.TLS_FINGERPRINT] = fingerprint }
+    }
+
+    suspend fun getTlsFingerprint(): String? =
+        context.dataStore.data.first()[PrefsKeys.TLS_FINGERPRINT]
 
 }
 

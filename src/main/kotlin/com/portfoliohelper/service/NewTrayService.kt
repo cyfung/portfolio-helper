@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.ImageIcon
@@ -78,10 +79,12 @@ object NewTrayService {
         val openItem = MenuItem("Open")
         val openDirItem = MenuItem("Open Data Directory")
         val checkUpdateItem = MenuItem("Check for Updates")
+        val copyAdminCodeItem = MenuItem("Copy Admin Code")
         val exitItem = MenuItem("Exit")
         popup.add(openItem)
         popup.add(openDirItem)
         popup.add(checkUpdateItem)
+        popup.add(copyAdminCodeItem)
         popup.addSeparator()
         popup.add(exitItem)
 
@@ -111,6 +114,16 @@ object NewTrayService {
         checkUpdateItem.addActionListener {
             scope.launch { UpdateService.checkForUpdate() }
             BrowserService.openBrowser("$url/config")
+        }
+
+        copyAdminCodeItem.addActionListener {
+            try {
+                val code = AdminService.getPasscode()
+                Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(code), null)
+                logger.info("Admin passcode copied to clipboard")
+            } catch (e: Exception) {
+                logger.warn("Failed to copy admin code to clipboard: ${e.message}")
+            }
         }
 
         exitItem.addActionListener {

@@ -19,7 +19,15 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.firstOrNull
-import java.net.InetAddress
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSession
+import javax.net.ssl.X509TrustManager
 
 class SyncRepository(
     private val context: Context,
@@ -30,12 +38,27 @@ class SyncRepository(
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private var multicastLock: WifiManager.MulticastLock? = null
 
-    private val client = HttpClient(OkHttp)
     private val SERVICE_TYPE = "_ibviewer._tcp"
+
+    /** Build an HttpClient that trusts only the cert matching [fingerprint], or any cert if null. */
+    private fun httpsClient(fingerprint: String?): HttpClient {
+        val trustManager = FingerprintTrustManager(fingerprint)
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf<X509TrustManager>(trustManager), SecureRandom())
+        }
+        return HttpClient(OkHttp) {
+            engine {
+                preconfigured = OkHttpClient.Builder()
+                    .sslSocketFactory(sslContext.socketFactory, trustManager)
+                    .hostnameVerifier { _: String, _: SSLSession -> true }
+                    .build()
+            }
+        }
+    }
 
     fun discoverServers(): Flow<List<NsdServiceInfo>> = callbackFlow {
         val servers = mutableMapOf<String, NsdServiceInfo>()
-        
+
         Log.d("SyncRepository", "Starting discovery for $SERVICE_TYPE")
 
         if (multicastLock == null) {
@@ -81,8 +104,8 @@ class SyncRepository(
         }
 
         nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        
-        awaitClose { 
+
+        awaitClose {
             Log.d("SyncRepository", "Stopping discovery")
             try {
                 nsdManager.stopServiceDiscovery(discoveryListener)
@@ -93,17 +116,68 @@ class SyncRepository(
         }
     }
 
+    /**
+     * Pair with the server over HTTPS (accept-any cert on first contact to capture fingerprint).
+     * On success, stores serverAssignedId, aesKey, and TLS fingerprint in settings.
+     */
     suspend fun pair(host: String, port: Int, pin: String) {
-        val deviceId = settings.getDeviceId()
+        val clientId = settings.getDeviceId()
         val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
-        val response = client.post("http://$host:$port/api/sync/pair") {
-            parameter("pin", pin)
-            header("X-Device-ID", deviceId)
-            header("X-Device-Name", deviceName)
-        }
-        if (response.status != HttpStatusCode.OK) {
+
+        // Accept any cert during pairing — we'll pin the fingerprint immediately after
+        val client = httpsClient(fingerprint = null)
+        try {
+            var capturedFingerprint: String? = null
+
+            // Use accept-any client to capture the cert fingerprint on first connection
+            val pairClient = HttpClient(OkHttp) {
+                engine {
+                    val captureTrustManager = object : X509TrustManager {
+                        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+                        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                            if (chain.isNotEmpty()) {
+                                capturedFingerprint = FingerprintTrustManager.fingerprintOf(chain[0])
+                                Log.d("SyncRepository", "Captured TLS fingerprint: $capturedFingerprint")
+                            }
+                        }
+                    }
+                    val sslCtx = SSLContext.getInstance("TLS").apply {
+                        init(null, arrayOf<X509TrustManager>(captureTrustManager), SecureRandom())
+                    }
+                    preconfigured = OkHttpClient.Builder()
+                        .sslSocketFactory(sslCtx.socketFactory, captureTrustManager)
+                        .hostnameVerifier { _: String, _: SSLSession -> true }
+                        .build()
+                }
+            }
+
+            val response = pairClient.post("https://$host:$port/api/sync/pair") {
+                parameter("pin", pin)
+                header("X-Device-ID", clientId)
+                header("X-Device-Name", deviceName)
+            }
+
+            if (response.status != HttpStatusCode.OK) {
+                val body = response.bodyAsText()
+                throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+            }
+
             val body = response.bodyAsText()
-            throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+            val json = Json.parseToJsonElement(body).jsonObject
+            val serverAssignedId = json["serverAssignedId"]?.jsonPrimitive?.content
+                ?: throw Exception("Missing serverAssignedId in response")
+            val aesKey = json["aesKey"]?.jsonPrimitive?.content
+                ?: throw Exception("Missing aesKey in response")
+
+            settings.saveServerAssignedId(serverAssignedId)
+            settings.saveAesKey(aesKey)
+            capturedFingerprint?.let { settings.saveTlsFingerprint(it) }
+
+            Log.i("SyncRepository", "Paired successfully. serverAssignedId=$serverAssignedId, fingerprint=$capturedFingerprint")
+            pairClient.close()
+        } finally {
+            client.close()
         }
     }
 
@@ -112,43 +186,48 @@ class SyncRepository(
             Log.w("SyncRepository", "Sync skipped: No paired server")
             return
         }
-        
+
         Log.d("SyncRepository", "Starting sync with ${serverInfo.name}")
-        
-        // Re-discover to get latest IP if it changed
+
         val resolved = findServer(serverInfo.name)
         val host = resolved?.host?.hostAddress ?: serverInfo.host
         val port = resolved?.port ?: serverInfo.port
-        
+
         if (host.isEmpty()) {
             Log.e("SyncRepository", "Sync failed: Host unknown")
             throw Exception("Could not find server IP. Ensure you are on the same WiFi.")
         }
 
-        val deviceId = settings.getDeviceId()
-        val baseUrl = "http://$host:$port/api/sync"
-        Log.d("SyncRepository", "Syncing from $baseUrl")
+        val serverAssignedId = settings.getServerAssignedId()
+            ?: throw UnauthorizedException()
+        val aesKey = settings.getAesKey()
+            ?: throw UnauthorizedException()
+        val fingerprint = settings.getTlsFingerprint()
 
+        val client = httpsClient(fingerprint)
         try {
-            val positionsCsv = client.get("$baseUrl/positions.csv") {
-                header("X-Device-ID", deviceId)
-            }.bodyAsText()
-            if (positionsCsv.contains("Device not paired")) throw UnauthorizedException()
-            
-            val cashCsv = client.get("$baseUrl/cash.csv") {
-                header("X-Device-ID", deviceId)
-            }.bodyAsText()
-            if (cashCsv.contains("Device not paired")) throw UnauthorizedException()
+            val response = client.get("https://$host:$port/api/sync/data") {
+                header("X-Device-ID", serverAssignedId)
+            }
 
-            parseAndSave(positionsCsv, cashCsv)
-            Log.i("SyncRepository", "Sync successful")
-            
+            if (response.status == HttpStatusCode.Unauthorized) throw UnauthorizedException()
+            if (!response.status.isSuccess()) throw Exception("Sync failed: ${response.status}")
+
+            val encryptedBytes = response.readBytes()
+            val jsonBytes = AesGcm.decrypt(encryptedBytes, aesKey)
+            val syncData = Json.decodeFromString<SyncData>(jsonBytes.toString(Charsets.UTF_8))
+
+            parseAndSave(syncData)
+            Log.i("SyncRepository", "Sync successful: ${syncData.positions.size} positions, ${syncData.cash.size} cash entries")
+
             settings.saveSyncServerInfo(serverInfo.copy(host = host, port = port))
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (e is UnauthorizedException) throw e
             Log.e("SyncRepository", "Sync failed: ${e.message}", e)
             throw Exception("Connection failed: ${e.message}")
+        } finally {
+            client.close()
         }
     }
 
@@ -158,41 +237,29 @@ class SyncRepository(
         }?.find { it.serviceName == name }
     }
 
-    private suspend fun parseAndSave(positionsCsv: String, cashCsv: String) {
-        val positions = positionsCsv.lineSequence()
-            .drop(1) // header
-            .filter { it.isNotBlank() }
-            .mapNotNull { line ->
-                try {
-                    val parts = line.split(",")
-                    Position(
-                        symbol = parts[0].trim(),
-                        quantity = parts[1].trim().toDouble(),
-                        targetWeight = parts.getOrNull(2)?.trim()?.toDoubleOrNull() ?: 0.0,
-                        groups = parts.getOrNull(3)?.trim() ?: ""
-                    )
-                } catch (e: Exception) { null }
-            }.toList()
+    private suspend fun parseAndSave(syncData: SyncData) {
+        val positions = syncData.positions.map { dto ->
+            Position(
+                symbol = dto.symbol,
+                quantity = dto.quantity,
+                targetWeight = dto.targetWeight,
+                groups = dto.groups
+            )
+        }
 
-        val cashEntries = cashCsv.lineSequence()
-            .drop(1) // header
-            .filter { it.isNotBlank() }
-            .mapNotNull { line ->
-                try {
-                    val parts = line.split(",")
-                    CashEntry(
-                        label = parts[0].trim(),
-                        currency = parts[1].trim(),
-                        amount = parts[2].trim().toDouble(),
-                        isMargin = parts.getOrNull(3)?.trim()?.toBoolean() ?: false
-                    )
-                } catch (e: Exception) { null }
-            }.toList()
+        val cashEntries = syncData.cash.map { dto ->
+            CashEntry(
+                label = dto.label,
+                currency = dto.currency,
+                amount = dto.amount,
+                isMargin = dto.isMargin
+            )
+        }
 
         db.withTransaction {
             db.positionDao().hardDeleteAll()
             positions.forEach { db.positionDao().upsert(it) }
-            
+
             db.cashDao().deleteAll()
             cashEntries.forEach { db.cashDao().upsert(it) }
         }
@@ -200,3 +267,26 @@ class SyncRepository(
 
     class UnauthorizedException : Exception("Device not paired or authentication failed")
 }
+
+// Minimal local SyncData model for JSON parsing on Android
+@kotlinx.serialization.Serializable
+private data class SyncData(
+    val positions: List<PositionDto>,
+    val cash: List<CashDto>
+)
+
+@kotlinx.serialization.Serializable
+private data class PositionDto(
+    val symbol: String,
+    val quantity: Double,
+    val targetWeight: Double,
+    val groups: String
+)
+
+@kotlinx.serialization.Serializable
+private data class CashDto(
+    val label: String,
+    val currency: String,
+    val amount: Double,
+    val isMargin: Boolean
+)
