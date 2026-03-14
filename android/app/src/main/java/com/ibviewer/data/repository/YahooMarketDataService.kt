@@ -19,8 +19,7 @@ object YahooMarketDataService {
                 symbols.forEach { symbol ->
                     try {
                         val quote = YahooFinanceClient.fetchQuote(symbol)
-                        cache[symbol] = quote
-                        onUpdateCallback?.invoke(symbol, quote)
+                        updateCache(symbol, quote)
                         Log.d(TAG, "Updated $symbol: ${quote.regularMarketPrice}")
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to fetch $symbol", e)
@@ -37,6 +36,11 @@ object YahooMarketDataService {
 
     fun setOnUpdateListener(callback: (String, YahooQuote) -> Unit) {
         onUpdateCallback = callback
+    }
+
+    fun updateCache(symbol: String, quote: YahooQuote) {
+        cache[symbol] = quote
+        onUpdateCallback?.invoke(symbol, quote)
     }
 
     fun getQuote(symbol: String): YahooQuote? = cache[symbol]

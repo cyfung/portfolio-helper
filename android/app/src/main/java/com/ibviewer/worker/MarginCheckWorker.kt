@@ -24,6 +24,7 @@ import com.ibviewer.data.model.MarginAlertSettings
 import com.ibviewer.data.repository.PortfolioCalculator
 import com.ibviewer.data.repository.PrefsKeys
 import com.ibviewer.data.repository.YahooFinanceClient
+import com.ibviewer.data.repository.YahooMarketDataService
 import com.ibviewer.data.repository.dataStore
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
@@ -38,6 +39,7 @@ class MarginCheckWorker(
         const val CHANNEL_ID = "margin_alerts"
         const val NOTIF_ID_LOWER = 1001
         const val NOTIF_ID_UPPER = 1002
+        const val NOTIF_ID_ERROR = 1003
         private const val TAG = "MarginCheckWorker"
 
         fun schedule(context: Context, settings: MarginAlertSettings) {
@@ -69,68 +71,93 @@ class MarginCheckWorker(
 
     override suspend fun doWork(): Result {
         Log.d(TAG, "Worker execution started")
+        val app = context.applicationContext as IbViewerApp
         val prefs = context.dataStore.data.first()
 
         // Read alert settings
         val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
-        Log.d(TAG, "Alerts enabled: $enabled")
         if (!enabled) return Result.success()
+
+        // 1. Background Sync: Attempt to get latest positions from the server
+        try {
+            Log.d(TAG, "Attempting background sync with portfolio server...")
+            app.syncRepo.sync()
+            Log.i(TAG, "Background sync successful")
+        } catch (e: Exception) {
+            Log.w(TAG, "Background sync failed: ${e.message}. Falling back to cached database data.")
+        }
 
         val lowerPct = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
         val upperPct = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
-        Log.d(TAG, "Thresholds: lower=$lowerPct, upper=$upperPct")
 
-        // Read portfolio data from DB
-        val app = context.applicationContext as IbViewerApp
+        // 2. Read portfolio data from DB
         val positions = app.database.positionDao().getAll()
         val cashEntries = app.database.cashDao().getAll()
         
         if (positions.isEmpty() && cashEntries.isEmpty()) {
-            Log.d(TAG, "No data to check. Success.")
+            Log.d(TAG, "No data found in database. Success (nothing to check).")
             return Result.success()
         }
-        
-        Log.d(TAG, "Positions count: ${positions.size}, Cash entries count: ${cashEntries.size}")
 
-        // Fetch current prices
+        // 3. Fetch current market prices & update cache
         val symbols = positions.map { it.symbol }.distinct()
         val prices = symbols.associateWith { symbol ->
             try {
-                YahooFinanceClient.fetchQuote(symbol)
+                val quote = YahooFinanceClient.fetchQuote(symbol)
+                YahooMarketDataService.updateCache(symbol, quote) // Save to cache
+                quote
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch quote for $symbol", e)
-                null
+                YahooMarketDataService.getQuote(symbol) // Fallback to memory cache
             }
         }.filterValues { it != null }.mapValues { it.value!! }
-        
-        // Safety check: if we have positions but couldn't fetch ANY prices, abort to avoid 100% margin false alerts
-        if (symbols.isNotEmpty() && prices.isEmpty()) {
-            Log.w(TAG, "Could not fetch any prices. Aborting to avoid false alert.")
-            return Result.retry() // Retry later when network might be better
-        }
 
-        Log.d(TAG, "Prices fetched for: ${prices.keys}")
-
-        // Fetch FX rates
+        // 4. Fetch FX rates & update cache
         val fxRates = mutableMapOf<String, Double>()
         val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
         for (ccy in currencies) {
+            val pair = "${ccy}USD=X"
             try {
-                val quote = YahooFinanceClient.fetchQuote("${ccy}USD=X")
+                val quote = YahooFinanceClient.fetchQuote(pair)
                 val rate = quote.regularMarketPrice ?: quote.previousClose
                 if (rate != null) {
+                    YahooMarketDataService.updateCache(pair, quote) // Save to cache
                     fxRates[ccy] = rate
-                    Log.d(TAG, "FX Rate for $ccy: $rate")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch FX rate for $ccy", e)
+                YahooMarketDataService.getQuote(pair)?.let { cached ->
+                    val rate = cached.regularMarketPrice ?: cached.previousClose
+                    if (rate != null) fxRates[ccy] = rate
+                }
             }
         }
 
-        // Compute margin USD
+        // 5. Data Readiness Check
+        val missingSymbols = symbols.filter { it !in prices }
+        val missingCurrencies = currencies.filter { it !in fxRates }
+        
+        if (missingSymbols.isNotEmpty() || missingCurrencies.isNotEmpty()) {
+            val missing = (missingSymbols + missingCurrencies).joinToString(", ")
+            Log.w(TAG, "Data missing for: $missing. Showing error alert.")
+            ensureChannel()
+            notify(
+                NOTIF_ID_ERROR,
+                "⚠️ Margin Check Error",
+                "Could not fetch data for: $missing. Margin alert may be inaccurate."
+            )
+            // If essential data is missing, we don't proceed with margin calculation to avoid false alarms
+            return Result.success() 
+        }
+
+        // Clear previous error if any
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(NOTIF_ID_ERROR)
+
+        // 6. Compute margin USD
         var marginUsd = 0.0
         for (e in cashEntries) {
-            val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency] ?: continue
+            val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency]!!
             marginUsd += e.amount * rate
         }
 
@@ -141,21 +168,17 @@ class MarginCheckWorker(
         ensureChannel()
 
         if (marginPct < lowerPct) {
-            Log.i(TAG, "Triggering LOW margin alert: $marginPct < $lowerPct")
             notify(
                 NOTIF_ID_LOWER,
                 "⚠️ Margin Low",
                 "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, lowerPct)
             )
         } else if (marginPct > upperPct) {
-            Log.i(TAG, "Triggering HIGH margin alert: $marginPct > $upperPct")
             notify(
                 NOTIF_ID_UPPER,
                 "⚠️ Margin High",
                 "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, upperPct)
             )
-        } else {
-            Log.d(TAG, "Margin within healthy range: $marginPct")
         }
 
         return Result.success()
@@ -164,14 +187,12 @@ class MarginCheckWorker(
     private fun ensureChannel() {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-            Log.d(TAG, "Creating notification channel")
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
                     "Margin Alerts",
                     NotificationManager.IMPORTANCE_HIGH
-                )
-                    .apply { description = "Alerts when margin % crosses configured thresholds" }
+                ).apply { description = "Alerts when margin % crosses configured thresholds" }
             )
         }
     }
@@ -179,7 +200,7 @@ class MarginCheckWorker(
     private fun notify(id: Int, title: String, body: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                Log.e(TAG, "POST_NOTIFICATIONS permission not granted. Cannot show notification.")
+                Log.e(TAG, "POST_NOTIFICATIONS permission not granted.")
                 return
             }
         }
@@ -194,30 +215,5 @@ class MarginCheckWorker(
             .build()
         nm.notify(id, notif)
         Log.d(TAG, "Notification posted: $title")
-    }
-}
-
-// Re-schedule worker after device reboot
-class BootReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        WorkManager.getInstance(context).enqueue(
-            OneTimeWorkRequestBuilder<ReScheduleWorker>().build()
-        )
-    }
-}
-
-class ReScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
-    override suspend fun doWork(): Result {
-        val prefs = applicationContext.dataStore.data.first()
-        val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
-        val interval = prefs[PrefsKeys.MARGIN_ALERT_INTERVAL] ?: 15
-        val lower = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
-        val upper = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
-        MarginCheckWorker.schedule(
-            applicationContext,
-            MarginAlertSettings(enabled, lower, upper, interval)
-        )
-        return Result.success()
     }
 }
