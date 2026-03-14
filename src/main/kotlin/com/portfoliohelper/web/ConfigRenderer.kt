@@ -71,20 +71,26 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                     // IB Connection
                     renderConfigSection("IB Connection") {
                         // Per-portfolio table
+                        val allPortfolios = ManagedPortfolio.getAll()
+                        val firstSerialId = allPortfolios.firstOrNull()?.serialId
                         table(classes = "portfolio-config-table") {
                             thead {
                                 tr {
                                     th { +"Portfolio" }
                                     th { +"TWS Account" }
                                     th { +"Virtual Balance" }
+                                    th { }
                                 }
                             }
                             tbody {
-                                for (entry in ManagedPortfolio.getAll()) {
+                                for (entry in allPortfolios) {
                                     val virtualBalance =
                                         entry.getConfig("virtualBalance") == "true"
                                     tr {
-                                        td { +entry.name }
+                                        attributes["data-portfolio-slug"] = entry.slug
+                                        td {
+                                            span(classes = "portfolio-name-display") { +entry.name }
+                                        }
                                         td {
                                             input(type = InputType.text) {
                                                 placeholder = "e.g. U1234567"
@@ -99,6 +105,20 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                                 checked = virtualBalance
                                                 attributes["data-config-key"] = "virtualBalance"
                                                 attributes["data-portfolio-id"] = entry.slug
+                                            }
+                                        }
+                                        td(classes = "portfolio-config-table-actions-col") {
+                                            button(classes = "management-table-remove-btn portfolio-rename-btn") {
+                                                attributes["type"] = "button"
+                                                attributes["data-slug"] = entry.slug
+                                                +"Rename"
+                                            }
+                                            if (entry.serialId != firstSerialId) {
+                                                button(classes = "management-table-remove-btn portfolio-remove-btn") {
+                                                    attributes["type"] = "button"
+                                                    attributes["data-slug"] = entry.slug
+                                                    +"Remove"
+                                                }
                                             }
                                         }
                                     }

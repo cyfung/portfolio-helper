@@ -99,6 +99,63 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.querySelectorAll('.portfolio-rename-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const slug = btn.dataset.slug;
+            const row = btn.closest('tr');
+            const nameDisplay = row.querySelector('.portfolio-name-display');
+            const newName = prompt('Rename portfolio:', nameDisplay.textContent);
+            if (newName === null || newName.trim() === '') return;
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/portfolio/rename?portfolio=${encodeURIComponent(slug)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim() })
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    alert(data.message || 'Rename failed.');
+                    btn.disabled = false;
+                } else {
+                    location.reload();
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                btn.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.portfolio-remove-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const slug = btn.dataset.slug;
+            const row = btn.closest('tr');
+            const name = row.querySelector('.portfolio-name-display').textContent;
+            const confirmed = await window.showConfirmOverlay(
+                `Remove portfolio "${name}"? All positions, cash, and config will be deleted.`,
+                'Remove'
+            );
+            if (!confirmed) return;
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/portfolio/remove?portfolio=${encodeURIComponent(slug)}`, {
+                    method: 'DELETE'
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    alert(data.message || 'Remove failed.');
+                    btn.disabled = false;
+                } else {
+                    location.reload();
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                btn.disabled = false;
+            }
+        });
+    });
+
     document.getElementById('config-restore-btn').addEventListener('click', () => {
         // Reset global inputs to defaults
         document.querySelectorAll('[data-config-key]:not([data-portfolio-id])').forEach(el => {

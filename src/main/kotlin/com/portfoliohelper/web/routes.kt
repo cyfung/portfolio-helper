@@ -686,6 +686,63 @@ fun Application.configureRouting() {
             }
         }
 
+        // Rename a portfolio
+        post("/api/portfolio/rename") {
+            try {
+                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val portfolio = ManagedPortfolio.getBySlug(portfolioId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+                val newName = json["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+                if (newName.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
+                val newSlug = newName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                if (newSlug.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
+                if (newSlug != portfolioId && ManagedPortfolio.getBySlug(newSlug) != null) {
+                    return@post call.respondText(
+                        "{\"status\":\"error\",\"message\":\"A portfolio named '$newSlug' already exists.\"}",
+                        ContentType.Application.Json, HttpStatusCode.Conflict
+                    )
+                }
+                portfolio.rename(newSlug)
+                PortfolioUpdateBroadcaster.broadcastReload()
+                call.respondText(
+                    "{\"status\":\"ok\",\"slug\":\"$newSlug\"}",
+                    ContentType.Application.Json
+                )
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        // Remove a portfolio (first portfolio cannot be removed)
+        delete("/api/portfolio/remove") {
+            try {
+                val portfolioId = call.request.queryParameters["portfolio"]
+                    ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val portfolio = ManagedPortfolio.getBySlug(portfolioId)
+                    ?: return@delete call.respond(HttpStatusCode.NotFound)
+                if (portfolio.serialId == ManagedPortfolio.firstSerialId()) {
+                    return@delete call.respondText(
+                        "{\"status\":\"error\",\"message\":\"The default portfolio cannot be removed.\"}",
+                        ContentType.Application.Json, HttpStatusCode.Forbidden
+                    )
+                }
+                portfolio.delete()
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
         // Global app config save
         post("/api/config/save") {
             try {

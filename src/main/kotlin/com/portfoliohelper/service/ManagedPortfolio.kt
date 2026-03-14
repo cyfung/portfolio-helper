@@ -3,6 +3,7 @@ package com.portfoliohelper.service
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Stock
 import com.portfoliohelper.service.db.CashTable
+import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
@@ -143,6 +144,36 @@ class ManagedPortfolio(
         fun create(slug: String): ManagedPortfolio = transaction {
             val newId = PortfoliosTable.insert { it[PortfoliosTable.slug] = slug } get PortfoliosTable.id
             ManagedPortfolio(newId, slug)
+        }
+
+        /** Returns the serial id of the first (default) portfolio, used to guard against deletion. */
+        fun firstSerialId(): Int = transaction {
+            PortfoliosTable.selectAll()
+                .orderBy(PortfoliosTable.id to SortOrder.ASC)
+                .limit(1)
+                .single()[PortfoliosTable.id]
+        }
+    }
+
+    /** Rename this portfolio to a new slug derived from [newName]. Caller must ensure uniqueness. */
+    fun rename(newSlug: String) {
+        val pid = serialId
+        transaction {
+            PortfoliosTable.update({ PortfoliosTable.id eq pid }) {
+                it[slug] = newSlug
+            }
+        }
+    }
+
+    /** Delete this portfolio and all its associated data rows. */
+    fun delete() {
+        val pid = serialId
+        transaction {
+            PortfolioBackupsTable.deleteWhere { portfolioId eq pid }
+            PortfolioCfgTable.deleteWhere { portfolioId eq pid }
+            CashTable.deleteWhere { portfolioId eq pid }
+            PositionsTable.deleteWhere { portfolioId eq pid }
+            PortfoliosTable.deleteWhere { id eq pid }
         }
     }
 }

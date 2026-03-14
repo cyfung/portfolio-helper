@@ -867,6 +867,12 @@ h1 {
     text-align: center;
 }
 
+.portfolio-config-table-actions-col {
+    white-space: nowrap;
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
 .add-portfolio-form {
     display: flex;
     align-items: center;
