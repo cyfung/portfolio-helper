@@ -869,6 +869,9 @@ h1 {
 
 .portfolio-config-table-actions-col {
     white-space: nowrap;
+}
+
+.portfolio-config-table-actions-col > div {
     display: flex;
     gap: var(--spacing-sm);
 }

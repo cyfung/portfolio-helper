@@ -129,14 +129,16 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                             }
                                         }
                                         td(classes = "portfolio-config-table-actions-col") {
-                                            button(classes = "management-table-remove-btn portfolio-remove-btn") {
-                                                attributes["type"] = "button"
-                                                attributes["data-slug"] = entry.slug
-                                                if (entry.serialId == firstSerialId) {
-                                                    disabled = true
-                                                    style = "visibility: hidden"
+                                            div {
+                                                button(classes = "management-table-remove-btn portfolio-remove-btn") {
+                                                    attributes["type"] = "button"
+                                                    attributes["data-slug"] = entry.slug
+                                                    if (entry.serialId == firstSerialId) {
+                                                        disabled = true
+                                                        style = "visibility: hidden"
+                                                    }
+                                                    +"Remove"
                                                 }
-                                                +"Remove"
                                             }
                                         }
                                     }
