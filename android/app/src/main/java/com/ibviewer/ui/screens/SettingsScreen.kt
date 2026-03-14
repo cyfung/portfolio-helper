@@ -95,13 +95,17 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
 
                 if (syncServer == null) {
-                    Text("No server paired. Discovering servers on local network...", fontSize = 12.sp, color = ext.textSecondary)
-                    
-                    if (discoveredServers.isEmpty()) {
+                    if (syncStatus is SyncStatus.Syncing) {
+                        Text("Pairing and syncing...", fontSize = 12.sp, color = ext.textSecondary)
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     } else {
-                        discoveredServers.forEach { server ->
-                            ServerItem(server) { vm.requestPairing(server) }
+                        Text("No server paired. Discovering servers on local network...", fontSize = 12.sp, color = ext.textSecondary)
+                        if (discoveredServers.isEmpty()) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        } else {
+                            discoveredServers.forEach { server ->
+                                ServerItem(server) { vm.requestPairing(server) }
+                            }
                         }
                     }
                 } else {
