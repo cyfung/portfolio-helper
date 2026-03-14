@@ -1,4 +1,4 @@
-package com.ibviewer.ui.theme
+package com.portfoliohelper.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
@@ -10,7 +10,7 @@ import androidx.compose.ui.text.font.FontFamily
 
 // ── Brand colors matching web app ─────────────────────────────────────────────
 
-object IbColors {
+object PortfolioColors {
     // Light mode
     val BgPrimary        = Color(0xFFFFFFFF)
     val BgSecondary      = Color(0xFFF8F9FA)
@@ -67,39 +67,39 @@ data class ExtendedColors(
 )
 
 val LightExtended = ExtendedColors(
-    bgPrimary      = IbColors.BgPrimary,
-    bgSecondary    = IbColors.BgSecondary,
-    bgElevated     = IbColors.BgElevated,
-    textPrimary    = IbColors.TextPrimary,
-    textSecondary  = IbColors.TextSecondary,
-    textTertiary   = IbColors.TextTertiary,
-    borderMedium   = IbColors.BorderMedium,
-    positive       = IbColors.Positive,
-    negative       = IbColors.Negative,
-    actionPositive = IbColors.ActionPositive,
-    actionNegative = IbColors.ActionNegative,
-    actionNeutral  = IbColors.ActionNeutral,
-    warning        = IbColors.Warning,
-    headerBg       = IbColors.HeaderBg,
-    headerText     = IbColors.HeaderText
+    bgPrimary      = PortfolioColors.BgPrimary,
+    bgSecondary    = PortfolioColors.BgSecondary,
+    bgElevated     = PortfolioColors.BgElevated,
+    textPrimary    = PortfolioColors.TextPrimary,
+    textSecondary  = PortfolioColors.TextSecondary,
+    textTertiary   = PortfolioColors.TextTertiary,
+    borderMedium   = PortfolioColors.BorderMedium,
+    positive       = PortfolioColors.Positive,
+    negative       = PortfolioColors.Negative,
+    actionPositive = PortfolioColors.ActionPositive,
+    actionNegative = PortfolioColors.ActionNegative,
+    actionNeutral  = PortfolioColors.ActionNeutral,
+    warning        = PortfolioColors.Warning,
+    headerBg       = PortfolioColors.HeaderBg,
+    headerText     = PortfolioColors.HeaderText
 )
 
 val DarkExtended = ExtendedColors(
-    bgPrimary      = IbColors.BgPrimaryDark,
-    bgSecondary    = IbColors.BgSecondaryDark,
-    bgElevated     = IbColors.BgElevatedDark,
-    textPrimary    = IbColors.TextPrimaryDark,
-    textSecondary  = IbColors.TextSecondaryDark,
-    textTertiary   = IbColors.TextTertiaryDark,
-    borderMedium   = IbColors.BorderMediumDark,
-    positive       = IbColors.PositiveDark,
-    negative       = IbColors.NegativeDark,
-    actionPositive = IbColors.ActionPositiveDark,
-    actionNegative = IbColors.ActionNegativeDark,
-    actionNeutral  = IbColors.ActionNeutralDark,
-    warning        = IbColors.WarningDark,
-    headerBg       = IbColors.HeaderBgDark,
-    headerText     = IbColors.HeaderTextDark
+    bgPrimary      = PortfolioColors.BgPrimaryDark,
+    bgSecondary    = PortfolioColors.BgSecondaryDark,
+    bgElevated     = PortfolioColors.BgElevatedDark,
+    textPrimary    = PortfolioColors.TextPrimaryDark,
+    textSecondary  = PortfolioColors.TextSecondaryDark,
+    textTertiary   = PortfolioColors.TextTertiaryDark,
+    borderMedium   = PortfolioColors.BorderMediumDark,
+    positive       = PortfolioColors.PositiveDark,
+    negative       = PortfolioColors.NegativeDark,
+    actionPositive = PortfolioColors.ActionPositiveDark,
+    actionNegative = PortfolioColors.ActionNegativeDark,
+    actionNeutral  = PortfolioColors.ActionNeutralDark,
+    warning        = PortfolioColors.WarningDark,
+    headerBg       = PortfolioColors.HeaderBgDark,
+    headerText     = PortfolioColors.HeaderTextDark
 )
 
 val LocalExtendedColors = staticCompositionLocalOf { LightExtended }
@@ -107,31 +107,31 @@ val LocalExtendedColors = staticCompositionLocalOf { LightExtended }
 // ── Material3 color schemes ───────────────────────────────────────────────────
 
 private val LightColorScheme = lightColorScheme(
-    primary          = IbColors.ActionPositive,
+    primary          = PortfolioColors.ActionPositive,
     onPrimary        = Color.White,
-    secondary        = IbColors.Positive,
-    background       = IbColors.BgPrimary,
-    surface          = IbColors.BgSecondary,
-    onBackground     = IbColors.TextPrimary,
-    onSurface        = IbColors.TextPrimary,
-    outline          = IbColors.BorderMedium,
-    error            = IbColors.Negative
+    secondary        = PortfolioColors.Positive,
+    background       = PortfolioColors.BgPrimary,
+    surface          = PortfolioColors.BgSecondary,
+    onBackground     = PortfolioColors.TextPrimary,
+    onSurface        = PortfolioColors.TextPrimary,
+    outline          = PortfolioColors.BorderMedium,
+    error            = PortfolioColors.Negative
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary          = IbColors.ActionPositiveDark,
-    onPrimary        = IbColors.BgPrimaryDark,
-    secondary        = IbColors.PositiveDark,
-    background       = IbColors.BgPrimaryDark,
-    surface          = IbColors.BgSecondaryDark,
-    onBackground     = IbColors.TextPrimaryDark,
-    onSurface        = IbColors.TextPrimaryDark,
-    outline          = IbColors.BorderMediumDark,
-    error            = IbColors.NegativeDark
+    primary          = PortfolioColors.ActionPositiveDark,
+    onPrimary        = PortfolioColors.BgPrimaryDark,
+    secondary        = PortfolioColors.PositiveDark,
+    background       = PortfolioColors.BgPrimaryDark,
+    surface          = PortfolioColors.BgSecondaryDark,
+    onBackground     = PortfolioColors.TextPrimaryDark,
+    onSurface        = PortfolioColors.TextPrimaryDark,
+    outline          = PortfolioColors.BorderMediumDark,
+    error            = PortfolioColors.NegativeDark
 )
 
 @Composable
-fun IbViewerTheme(
+fun PortfolioHelperTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {

@@ -1,16 +1,16 @@
-package com.ibviewer.data.repository
+package com.portfoliohelper.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
-import com.ibviewer.data.model.MarginAlertSettings
+import com.portfoliohelper.data.model.MarginAlertSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ibviewer_prefs")
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "portfoliohelper_prefs")
 
 object PrefsKeys {
     val MARGIN_ALERT_ENABLED    = booleanPreferencesKey("margin_alert_enabled")

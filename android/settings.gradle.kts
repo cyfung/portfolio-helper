@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "IbViewer"
+rootProject.name = "PortfolioHelper"
 include(":app")

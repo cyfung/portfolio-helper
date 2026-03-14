@@ -1,4 +1,4 @@
-package com.ibviewer.ui.screens
+package com.portfoliohelper.ui.screens
 
 import android.net.nsd.NsdServiceInfo
 import androidx.compose.animation.AnimatedVisibility
@@ -17,10 +17,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ibviewer.MainViewModel
-import com.ibviewer.SyncStatus
-import com.ibviewer.data.model.MarginAlertSettings
-import com.ibviewer.ui.theme.ext
+import com.portfoliohelper.MainViewModel
+import com.portfoliohelper.SyncStatus
+import com.portfoliohelper.data.model.MarginAlertSettings
+import com.portfoliohelper.ui.theme.ext
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -218,7 +218,7 @@ fun SettingsScreen(vm: MainViewModel) {
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("About", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary)
-                Text("IB Viewer 1.0", color = ext.textTertiary, fontSize = 12.sp)
+                Text("Portfolio Helper 1.0", color = ext.textTertiary, fontSize = 12.sp)
                 Text("Portfolio tracking & rebalancing", color = ext.textTertiary, fontSize = 12.sp)
             }
         }

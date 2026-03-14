@@ -17,7 +17,7 @@ object SyncDiscoveryService {
             jmmdns = JmmDNS.Factory.getInstance()
 
             val serviceInfo = ServiceInfo.create(
-                "_ibviewer._tcp.local.",
+                "_portfoliohelper._tcp.local.",
                 "Portfolio Helper",
                 port,
                 0, 0,
@@ -25,7 +25,7 @@ object SyncDiscoveryService {
             )
 
             jmmdns?.registerService(serviceInfo)
-            logger.info("Registered mDNS service on all interfaces: _ibviewer._tcp.local. on port $port")
+            logger.info("Registered mDNS service on all interfaces: _portfoliohelper._tcp.local. on port $port")
         } catch (e: Exception) {
             logger.error("Failed to start mDNS discovery service", e)
         }

@@ -1,4 +1,4 @@
-package com.ibviewer.ui.components
+package com.portfoliohelper.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ibviewer.ui.theme.ext
+import com.portfoliohelper.ui.theme.ext
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs

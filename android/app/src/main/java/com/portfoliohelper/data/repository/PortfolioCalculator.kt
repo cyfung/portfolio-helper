@@ -1,8 +1,8 @@
-package com.ibviewer.data.repository
+package com.portfoliohelper.data.repository
 
-import com.ibviewer.data.model.AllocMode
-import com.ibviewer.data.model.GroupRow
-import com.ibviewer.data.model.Position
+import com.portfoliohelper.data.model.AllocMode
+import com.portfoliohelper.data.model.GroupRow
+import com.portfoliohelper.data.model.Position
 import kotlin.math.abs
 
 object PortfolioCalculator {

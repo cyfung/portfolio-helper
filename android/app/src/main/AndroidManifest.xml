@@ -9,16 +9,16 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
-        android:name="com.ibviewer.IbViewerApp"
-        android:label="IB Viewer"
+        android:name="com.portfoliohelper.PortfolioHelperApp"
+        android:label="Portfolio Helper"
         android:icon="@drawable/ic_launcher"
-        android:theme="@style/Theme.IbViewer"
+        android:theme="@style/Theme.PortfolioHelper"
         android:allowBackup="true"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true">
 
         <activity
-            android:name="com.ibviewer.MainActivity"
+            android:name="com.portfoliohelper.MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -28,7 +28,7 @@
         </activity>
 
         <receiver
-            android:name="com.ibviewer.worker.BootReceiver"
+            android:name="com.portfoliohelper.worker.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

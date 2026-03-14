@@ -1,4 +1,4 @@
-package com.ibviewer.ui.screens
+package com.portfoliohelper.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -11,10 +11,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ibviewer.MainViewModel
-import com.ibviewer.data.model.GroupRow
-import com.ibviewer.ui.components.*
-import com.ibviewer.ui.theme.ext
+import com.portfoliohelper.MainViewModel
+import com.portfoliohelper.data.model.GroupRow
+import com.portfoliohelper.ui.components.*
+import com.portfoliohelper.ui.theme.ext
 
 @Composable
 fun GroupsScreen(vm: MainViewModel) {

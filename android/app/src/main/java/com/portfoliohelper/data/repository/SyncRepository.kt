@@ -1,4 +1,4 @@
-package com.ibviewer.data.repository
+package com.portfoliohelper.data.repository
 
 import android.content.Context
 import android.net.nsd.NsdManager
@@ -7,8 +7,8 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
 import androidx.room.withTransaction
-import com.ibviewer.data.model.CashEntry
-import com.ibviewer.data.model.Position
+import com.portfoliohelper.data.model.CashEntry
+import com.portfoliohelper.data.model.Position
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.request.*
@@ -38,7 +38,7 @@ class SyncRepository(
     private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     private var multicastLock: WifiManager.MulticastLock? = null
 
-    private val SERVICE_TYPE = "_ibviewer._tcp"
+    private val SERVICE_TYPE = "_portfoliohelper._tcp"
 
     /** Build an HttpClient that trusts only the cert matching [fingerprint], or any cert if null. */
     private fun httpsClient(fingerprint: String?): HttpClient {
@@ -62,7 +62,7 @@ class SyncRepository(
         Log.d("SyncRepository", "Starting discovery for $SERVICE_TYPE")
 
         if (multicastLock == null) {
-            multicastLock = wifiManager.createMulticastLock("ibviewer_multicast_lock").apply {
+            multicastLock = wifiManager.createMulticastLock("portfoliohelper_multicast_lock").apply {
                 setReferenceCounted(true)
             }
         }
@@ -75,7 +75,7 @@ class SyncRepository(
 
             override fun onServiceFound(service: NsdServiceInfo) {
                 Log.d("SyncRepository", "Service found: ${service.serviceName}")
-                if (service.serviceType.contains("_ibviewer")) {
+                if (service.serviceType.contains("_portfoliohelper")) {
                     nsdManager.resolveService(service, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                             Log.e("SyncRepository", "Resolve failed: $errorCode")

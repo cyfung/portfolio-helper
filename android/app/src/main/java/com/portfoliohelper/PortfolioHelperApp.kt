@@ -1,15 +1,15 @@
-package com.ibviewer
+package com.portfoliohelper
 
 import android.app.Application
 import androidx.room.Room
-import com.ibviewer.data.repository.AppDatabase
-import com.ibviewer.data.repository.SettingsRepository
-import com.ibviewer.data.repository.SyncRepository
+import com.portfoliohelper.data.repository.AppDatabase
+import com.portfoliohelper.data.repository.SettingsRepository
+import com.portfoliohelper.data.repository.SyncRepository
 
-class IbViewerApp : Application() {
+class PortfolioHelperApp : Application() {
 
     val database: AppDatabase by lazy {
-        Room.databaseBuilder(this, AppDatabase::class.java, "ibviewer.db")
+        Room.databaseBuilder(this, AppDatabase::class.java, "portfoliohelper.db")
             .fallbackToDestructiveMigration()
             .build()
     }

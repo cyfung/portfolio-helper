@@ -1,4 +1,4 @@
-package com.ibviewer.worker
+package com.portfoliohelper.worker
 
 import android.Manifest
 import android.app.NotificationChannel
@@ -19,14 +19,14 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.ibviewer.IbViewerApp
-import com.ibviewer.data.model.MarginAlertSettings
-import com.ibviewer.data.model.MarketPrice
-import com.ibviewer.data.repository.PortfolioCalculator
-import com.ibviewer.data.repository.PrefsKeys
-import com.ibviewer.data.repository.YahooFinanceClient
-import com.ibviewer.data.repository.YahooMarketDataService
-import com.ibviewer.data.repository.dataStore
+import com.portfoliohelper.PortfolioHelperApp
+import com.portfoliohelper.data.model.MarginAlertSettings
+import com.portfoliohelper.data.model.MarketPrice
+import com.portfoliohelper.data.repository.PortfolioCalculator
+import com.portfoliohelper.data.repository.PrefsKeys
+import com.portfoliohelper.data.repository.YahooFinanceClient
+import com.portfoliohelper.data.repository.YahooMarketDataService
+import com.portfoliohelper.data.repository.dataStore
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
@@ -72,7 +72,7 @@ class MarginCheckWorker(
 
     override suspend fun doWork(): Result {
         Log.d(TAG, "Worker execution started")
-        val app = context.applicationContext as IbViewerApp
+        val app = context.applicationContext as PortfolioHelperApp
         val prefs = context.dataStore.data.first()
 
         // Read alert settings
@@ -115,7 +115,7 @@ class MarginCheckWorker(
                 Log.e(TAG, "Failed to fetch quote for $symbol", e)
                 // Try database fallback
                 app.database.marketPriceDao().get(symbol)?.let { dbCached ->
-                    com.ibviewer.data.repository.YahooQuote(symbol, dbCached.price, dbCached.previousClose)
+                    com.portfoliohelper.data.repository.YahooQuote(symbol, dbCached.price, dbCached.previousClose)
                 }
             }
         }.filterValues { it != null }.mapValues { it.value!! }

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.profilehelper"
+    namespace = "com.portfoliohelper"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.profilehelper"
+        applicationId = "com.portfoliohelper"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

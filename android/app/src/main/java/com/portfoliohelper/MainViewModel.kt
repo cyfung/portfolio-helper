@@ -1,20 +1,20 @@
-package com.ibviewer
+package com.portfoliohelper
 
 import android.app.Application
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.ibviewer.data.model.CashEntry
-import com.ibviewer.data.model.GroupRow
-import com.ibviewer.data.model.MarginAlertSettings
-import com.ibviewer.data.model.Position
-import com.ibviewer.data.repository.PortfolioCalculator
-import com.ibviewer.data.repository.SyncRepository
-import com.ibviewer.data.repository.SyncServerInfo
-import com.ibviewer.data.repository.YahooMarketDataService
-import com.ibviewer.data.repository.YahooQuote
-import com.ibviewer.worker.MarginCheckWorker
+import com.portfoliohelper.data.model.CashEntry
+import com.portfoliohelper.data.model.GroupRow
+import com.portfoliohelper.data.model.MarginAlertSettings
+import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.repository.PortfolioCalculator
+import com.portfoliohelper.data.repository.SyncRepository
+import com.portfoliohelper.data.repository.SyncServerInfo
+import com.portfoliohelper.data.repository.YahooMarketDataService
+import com.portfoliohelper.data.repository.YahooQuote
+import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,9 +36,9 @@ sealed class SyncStatus {
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val db = (app as IbViewerApp).database
-    private val settings = (app as IbViewerApp).settingsRepo
-    private val syncRepo = (app as IbViewerApp).syncRepo
+    private val db = (app as PortfolioHelperApp).database
+    private val settings = (app as PortfolioHelperApp).settingsRepo
+    private val syncRepo = (app as PortfolioHelperApp).syncRepo
 
     private val json = Json {
         ignoreUnknownKeys = true

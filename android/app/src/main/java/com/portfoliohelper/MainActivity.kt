@@ -1,4 +1,4 @@
-package com.ibviewer
+package com.portfoliohelper
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -32,11 +32,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.ibviewer.ui.screens.CashScreen
-import com.ibviewer.ui.screens.GroupsScreen
-import com.ibviewer.ui.screens.PortfolioScreen
-import com.ibviewer.ui.screens.SettingsScreen
-import com.ibviewer.ui.theme.IbViewerTheme
+import com.portfoliohelper.ui.screens.CashScreen
+import com.portfoliohelper.ui.screens.GroupsScreen
+import com.portfoliohelper.ui.screens.PortfolioScreen
+import com.portfoliohelper.ui.screens.SettingsScreen
+import com.portfoliohelper.ui.theme.PortfolioHelperTheme
 import kotlinx.serialization.Serializable
 
 @Serializable object PortfolioRoute
@@ -55,8 +55,8 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermission()
         
         setContent {
-            IbViewerTheme {
-                IbViewerApp(vm)
+            PortfolioHelperTheme {
+                PortfolioHelperApp(vm)
             }
         }
     }
@@ -83,7 +83,7 @@ val navItems = listOf(
 )
 
 @Composable
-fun IbViewerApp(vm: MainViewModel) {
+fun PortfolioHelperApp(vm: MainViewModel) {
     val navController = rememberNavController()
 
     Scaffold(
