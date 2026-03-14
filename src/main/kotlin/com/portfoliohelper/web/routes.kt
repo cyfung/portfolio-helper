@@ -1,6 +1,7 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
+import com.portfoliohelper.service.MarketDataCoordinator
 import com.portfoliohelper.service.*
 import com.portfoliohelper.service.UpdateService.toJson
 import com.portfoliohelper.service.db.CashTable
@@ -13,7 +14,6 @@ import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
-import io.ktor.http.content.streamProvider
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
 import io.ktor.server.request.*
@@ -21,6 +21,8 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.sse.*
+import io.ktor.utils.io.readByteArray
+import io.ktor.utils.io.toByteArray
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -459,6 +461,7 @@ fun Application.configureRouting() {
                 }
 
                 PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
@@ -501,6 +504,7 @@ fun Application.configureRouting() {
                 }
 
                 PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
@@ -690,6 +694,7 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
                 BackupService.restoreFromDb(portfolioEntry, id)
                 PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
@@ -737,7 +742,7 @@ fun Application.configureRouting() {
                 multipart.forEachPart { part ->
                     if (part is PartData.FileItem && part.name == "file") {
                         filename = part.originalFileName ?: "upload"
-                        bytes = part.streamProvider().readBytes()
+                        bytes = part.provider().toByteArray()
                     }
                     part.dispose()
                 }

@@ -4,6 +4,7 @@ import com.portfoliohelper.service.*
 import com.portfoliohelper.service.db.AppDatabase
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.service.MarketDataCoordinator
 import com.portfoliohelper.web.configureRouting
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -57,61 +58,21 @@ fun main() {
     UpdateService.initialize(appScope)
 
     // ---------------------------------------------------------------
-    // 3. Compute union of all symbols across all portfolios
+    // 3–5. Initialize Yahoo Finance + NAV service
     // ---------------------------------------------------------------
-    fun allSymbols(): List<String> {
-        val symbols = mutableListOf<String>()
-        for (entry in ManagedPortfolio.getAll()) {
-            val stocks = entry.getStocks()
-            symbols += stocks.map { it.label }
-            symbols += stocks.flatMap { it.letfComponents?.map { c -> c.second } ?: emptyList() }
-            symbols += entry.getCash()
-                .map { it.currency }.distinct()
-                .filter { it != "USD" && it != "P" }
-                .map { "${it}USD=X" }
-        }
-        return symbols.distinct()
+    MarketDataCoordinator.updateIntervalSeconds =
+        System.getenv("PRICE_UPDATE_INTERVAL")?.toLongOrNull() ?: 60L
+
+    try {
+        logger.info("Initializing Yahoo Finance market data service...")
+        YahooMarketDataService.initialize()
+        logger.info("Initializing NAV service...")
+        NavService.initialize()
+        MarketDataCoordinator.refresh()
+    } catch (e: Exception) {
+        logger.error("Failed to initialize market data services", e)
+        logger.warn("Application will continue without live market data")
     }
-
-    // ---------------------------------------------------------------
-    // 4. Initialize Yahoo Finance
-    // ---------------------------------------------------------------
-    val updateIntervalSeconds = System.getenv("PRICE_UPDATE_INTERVAL")?.toLongOrNull() ?: 60L
-
-    fun initializeMarketData() {
-        try {
-            logger.info("Initializing Yahoo Finance market data service...")
-            YahooMarketDataService.initialize()
-            val symbols = allSymbols()
-            YahooMarketDataService.requestMarketDataForSymbols(symbols, updateIntervalSeconds)
-            logger.info("Market data requests started for ${symbols.size} symbols (every ${updateIntervalSeconds}s)")
-        } catch (e: Exception) {
-            logger.error("Failed to initialize Yahoo Finance service", e)
-            logger.warn("Application will continue without live market data")
-        }
-    }
-
-    initializeMarketData()
-
-    // ---------------------------------------------------------------
-    // 5. Initialize NAV service
-    // ---------------------------------------------------------------
-    fun initializeNavData() {
-        try {
-            logger.info("Initializing NAV service...")
-            NavService.initialize()
-            val symbols = ManagedPortfolio.getAll()
-                .flatMap { it.getStocks().map { s -> s.label } }.distinct()
-            val fixedNavInterval = AppConfig.navUpdateInterval
-            if (fixedNavInterval != null) NavService.requestNavForSymbols(symbols, fixedNavInterval)
-            else NavService.requestNavForSymbols(symbols)
-        } catch (e: Exception) {
-            logger.error("Failed to initialize NAV service", e)
-            logger.warn("Application will continue without NAV data")
-        }
-    }
-
-    initializeNavData()
 
     // ---------------------------------------------------------------
     // 6. Initialize IBKR margin rate service
