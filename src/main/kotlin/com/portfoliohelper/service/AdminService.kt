@@ -92,6 +92,21 @@ object AdminService {
         AdminSessionsTable.deleteWhere { AdminSessionsTable.token eq token }
     }
 
+    data class SessionInfo(val token: String, val createdAt: Long, val ip: String, val userAgent: String)
+
+    fun getSessions(): List<SessionInfo> = transaction {
+        AdminSessionsTable.selectAll()
+            .orderBy(AdminSessionsTable.createdAt)
+            .map { row ->
+                SessionInfo(
+                    token = row[AdminSessionsTable.token],
+                    createdAt = row[AdminSessionsTable.createdAt],
+                    ip = row[AdminSessionsTable.ip],
+                    userAgent = row[AdminSessionsTable.userAgent]
+                )
+            }
+    }
+
     // ── Code generation / verification ───────────────────────────────────────
 
     private fun randomValue(): String =

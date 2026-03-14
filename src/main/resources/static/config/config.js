@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initUpdates();
     initPairing();
+    loadSessions();
+    loadPairedDevices();
 
     // Snapshot originals for restart detection
     document.querySelectorAll('[data-config-key]').forEach(el => {
@@ -99,6 +101,111 @@ function initPairing() {
     container.addEventListener('click', async (e) => {
         if (e.target.id === 'generate-pin-btn') generateAndShowPin(container);
     });
+
+    const unpairAllBtn = document.getElementById('unpair-all-btn');
+    if (unpairAllBtn) {
+        unpairAllBtn.addEventListener('click', async () => {
+            if (!confirm('Remove all paired devices?')) return;
+            try {
+                await fetch('/api/unpair-all', { method: 'POST' });
+                await loadPairedDevices();
+            } catch (err) {
+                console.error('Failed to unpair all', err);
+            }
+        });
+    }
+}
+
+function formatDate(ms) {
+    return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+async function loadSessions() {
+    const container = document.getElementById('sessions-list');
+    if (!container) return;
+    try {
+        const r = await fetch('/api/admin/sessions');
+        const sessions = await r.json();
+        if (!sessions.length) {
+            container.innerHTML = `<p class="config-env-override-note">No sessions found.</p>`;
+            return;
+        }
+        const rows = sessions.map(s => {
+            const ua = s.userAgent.length > 60 ? s.userAgent.slice(0, 60) + '…' : s.userAgent;
+            const action = s.isCurrent
+                ? `<span class="config-badge config-badge-live">this browser</span>`
+                : `<button class="management-table-remove-btn" data-token="${s.token}">Remove</button>`;
+            return `<tr>
+                <td title="${s.userAgent.replace(/"/g, '&quot;')}">${ua}</td>
+                <td>${s.ip}</td>
+                <td>${formatDate(s.createdAt)}</td>
+                <td class="management-table-action-col">${action}</td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<table class="management-table">
+            <thead><tr><th>Trusted Browser</th><th>IP</th><th>Added</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+        container.querySelectorAll('.management-table-remove-btn[data-token]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/admin/session?token=${encodeURIComponent(btn.dataset.token)}`, { method: 'DELETE' });
+                    if (res.ok) await loadSessions();
+                    else btn.disabled = false;
+                } catch (err) {
+                    btn.disabled = false;
+                    console.error('Failed to remove session', err);
+                }
+            });
+        });
+    } catch (err) {
+        container.innerHTML = `<p class="config-env-override-note">Failed to load sessions.</p>`;
+        console.error('Failed to load sessions', err);
+    }
+}
+
+async function loadPairedDevices() {
+    const container = document.getElementById('paired-devices-list');
+    if (!container) return;
+    try {
+        const r = await fetch('/api/paired-devices');
+        const devices = await r.json();
+        if (!devices.length) {
+            container.innerHTML = `<p class="config-env-override-note">No devices paired.</p>`;
+            return;
+        }
+        const rows = devices.map(d => {
+            return `<tr>
+                <td>${d.name || '(unnamed)'}</td>
+                <td>${d.lastIp || '—'}</td>
+                <td>${formatDate(d.pairedAt)}</td>
+                <td class="management-table-action-col">
+                    <button class="management-table-remove-btn" data-id="${d.serverAssignedId}">Remove</button>
+                </td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<table class="management-table">
+            <thead><tr><th>Device</th><th>Last IP</th><th>Paired</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+        container.querySelectorAll('.management-table-remove-btn[data-id]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/unpair?id=${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
+                    if (res.ok) await loadPairedDevices();
+                    else btn.disabled = false;
+                } catch (err) {
+                    btn.disabled = false;
+                    console.error('Failed to remove device', err);
+                }
+            });
+        });
+    } catch (err) {
+        container.innerHTML = `<p class="config-env-override-note">Failed to load devices.</p>`;
+        console.error('Failed to load paired devices', err);
+    }
 }
 
 async function generateAndShowPin(container) {

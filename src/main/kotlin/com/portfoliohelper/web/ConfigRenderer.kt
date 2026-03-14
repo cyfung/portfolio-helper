@@ -53,8 +53,6 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        hr(classes = "config-divider")
-
                         div(classes = "config-field") {
                             div(classes = "config-field-label-row") {
                                 span { +"Paired Devices" }
@@ -71,6 +69,15 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 // Populated by JS
                                 p(classes = "config-env-override-note") { +"Loading devices..." }
                             }
+                        }
+
+                    }
+
+                    // Trusted Browsers
+                    renderConfigSection("Trusted Browsers") {
+                        div {
+                            id = "sessions-list"
+                            p(classes = "config-env-override-note") { +"Loading…" }
                         }
                     }
 

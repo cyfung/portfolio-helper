@@ -98,6 +98,45 @@ fun Route.configureAdminRoutes() {
         )
     }
 
+    /** List all admin sessions with isCurrent flag */
+    get("/api/admin/sessions") {
+        val currentToken = call.request.cookies[AdminService.SESSION_COOKIE]
+        val sessions = AdminService.getSessions().map { s ->
+            buildJsonObject {
+                put("token", s.token)
+                put("createdAt", s.createdAt)
+                put("ip", s.ip)
+                put("userAgent", s.userAgent)
+                put("isCurrent", s.token == currentToken)
+            }
+        }
+        call.respondText(
+            appJson.encodeToString(
+                kotlinx.serialization.json.JsonArray.serializer(),
+                kotlinx.serialization.json.JsonArray(sessions)
+            ),
+            ContentType.Application.Json
+        )
+    }
+
+    /** Remove a specific admin session (cannot remove own session) */
+    delete("/api/admin/session") {
+        val token = call.request.queryParameters["token"]
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, "Missing token parameter")
+        val currentToken = call.request.cookies[AdminService.SESSION_COOKIE]
+        if (token == currentToken) {
+            return@delete call.respond(HttpStatusCode.Conflict, "Cannot remove current session")
+        }
+        AdminService.invalidateSession(token)
+        call.respond(HttpStatusCode.OK, "Session removed")
+    }
+
+    /** Unpair all paired devices */
+    post("/api/unpair-all") {
+        PairingService.unpairAll()
+        call.respond(HttpStatusCode.OK, "All devices unpaired")
+    }
+
     /** Unpair a specific device */
     delete("/api/unpair") {
         val id = call.request.queryParameters["id"]
