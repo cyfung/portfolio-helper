@@ -42,9 +42,13 @@ var marginTargetPct = null;
 
 // Allocation modes (server-rendered values take priority, then localStorage)
 var allocAddMode = (typeof savedAllocAddMode !== 'undefined' ? savedAllocAddMode : null)
-    || localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
+    || localStorage.getItem('portfolio-helper-alloc-add-mode')
+    || localStorage.getItem('ib-viewer-alloc-add-mode')
+    || 'PROPORTIONAL';
 var allocReduceMode = (typeof savedAllocReduceMode !== 'undefined' ? savedAllocReduceMode : null)
-    || localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
+    || localStorage.getItem('portfolio-helper-alloc-reduce-mode')
+    || localStorage.getItem('ib-viewer-alloc-reduce-mode')
+    || 'PROPORTIONAL';
 
 // Group view state
 var groupViewActive = false;

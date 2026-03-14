@@ -7,7 +7,7 @@ function initMoreInfoToggle() {
     const btn = document.getElementById('more-info-toggle');
     if (!btn) return;
     const body = document.body;
-    const visible = localStorage.getItem('ib-viewer-more-info-visible') === 'true';
+    const visible = (localStorage.getItem('portfolio-helper-more-info-visible') || localStorage.getItem('ib-viewer-more-info-visible')) === 'true';
     if (visible) {
         body.classList.add('more-info-visible');
         btn.classList.add('active');
@@ -15,7 +15,7 @@ function initMoreInfoToggle() {
     btn.addEventListener('click', () => {
         const isVisible = body.classList.toggle('more-info-visible');
         btn.classList.toggle('active', isVisible);
-        localStorage.setItem('ib-viewer-more-info-visible', isVisible);
+        localStorage.setItem('portfolio-helper-more-info-visible', isVisible);
     });
 }
 
@@ -23,7 +23,7 @@ function initColumnVisibility() {
     const rebalToggle = document.getElementById('rebal-toggle');
     const body = document.body;
 
-    const rebalVisible = localStorage.getItem('ib-viewer-rebal-visible') === 'true';
+    const rebalVisible = (localStorage.getItem('portfolio-helper-rebal-visible') || localStorage.getItem('ib-viewer-rebal-visible')) === 'true';
     if (rebalVisible) {
         body.classList.add('rebalancing-visible');
         rebalToggle.classList.add('active');
@@ -32,7 +32,7 @@ function initColumnVisibility() {
     rebalToggle.addEventListener('click', () => {
         const isVisible = body.classList.toggle('rebalancing-visible');
         rebalToggle.classList.toggle('active');
-        localStorage.setItem('ib-viewer-rebal-visible', isVisible);
+        localStorage.setItem('portfolio-helper-rebal-visible', isVisible);
         updateTargetWeightTotal();
     });
 }
@@ -101,14 +101,14 @@ function refreshDisplayCurrency() {
 function initCurrencyControls() {
     function setDisplayCurrency(ccy) {
         currentDisplayCurrency = ccy;
-        localStorage.setItem('ib-viewer-display-currency', ccy);
+        localStorage.setItem('portfolio-helper-display-currency', ccy);
         refreshDisplayCurrency();
     }
 
     const currencyToggle = document.getElementById('currency-toggle');
     if (currencyToggle) {
         const currencies = currencyToggle.getAttribute('data-currencies').split(',');
-        const saved = localStorage.getItem('ib-viewer-display-currency');
+        const saved = localStorage.getItem('portfolio-helper-display-currency') || localStorage.getItem('ib-viewer-display-currency');
         if (saved && currencies.includes(saved)) {
             currentDisplayCurrency = saved;
             currencyToggle.querySelector('.toggle-label').textContent = saved;
@@ -122,7 +122,7 @@ function initCurrencyControls() {
 
     const currencySelect = document.getElementById('currency-select');
     if (currencySelect) {
-        const savedSel = localStorage.getItem('ib-viewer-display-currency');
+        const savedSel = localStorage.getItem('portfolio-helper-display-currency') || localStorage.getItem('ib-viewer-display-currency');
         if (savedSel) { currentDisplayCurrency = savedSel; currencySelect.value = savedSel; }
         currencySelect.addEventListener('change', () => setDisplayCurrency(currencySelect.value));
     }

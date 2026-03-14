@@ -129,7 +129,7 @@ fun main() {
 
             sslConnector(
                 keyStore = keyStore,
-                keyAlias = "ibviewer",
+                keyAlias = "portfolio-helper",
                 keyStorePassword = { charArrayOf() },
                 privateKeyPassword = { charArrayOf() }
             ) {

@@ -375,7 +375,7 @@ tasks.register("githubRelease") {
         val releaseBody = """## Portfolio Helper $tagName
 
 ### Downloads
-- **Self-contained app** (no Java required): `ib-viewer-jpackage-$ver.zip`"""
+- **Self-contained app** (no Java required): `portfolio-helper-jpackage-$ver.zip`"""
 
         // Step 1: Create release
         println("Creating GitHub release $tagName on $repo...")

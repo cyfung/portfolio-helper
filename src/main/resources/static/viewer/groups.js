@@ -310,7 +310,7 @@ function initGroupViewToggle() {
     const hasGroups = Array.from(document.querySelectorAll('#stock-view-table tbody tr'))
         .some(row => row.dataset.groups);
     if (!hasGroups) { btn.style.display = 'none'; return; }
-    groupViewActive = localStorage.getItem('ib-viewer-group-view') === 'true';
+    groupViewActive = (localStorage.getItem('portfolio-helper-group-view') || localStorage.getItem('ib-viewer-group-view')) === 'true';
     if (groupViewActive) {
         btn.classList.add('active');
         applyGroupViewState();
@@ -319,7 +319,7 @@ function initGroupViewToggle() {
     btn.addEventListener('click', () => {
         groupViewActive = !groupViewActive;
         btn.classList.toggle('active', groupViewActive);
-        localStorage.setItem('ib-viewer-group-view', groupViewActive);
+        localStorage.setItem('portfolio-helper-group-view', groupViewActive);
         applyGroupViewState();
         if (groupViewActive) updateGroupTable();
     });

@@ -21,7 +21,7 @@ import java.util.Date
 
 object CertificateManager {
     private val logger = LoggerFactory.getLogger(CertificateManager::class.java)
-    private const val ALIAS = "ibviewer"
+    private const val ALIAS = "portfolio-helper"
     private const val P12_PATH = "tls/server.p12"
 
     fun loadOrGenerate(dataDir: File): Pair<KeyStore, String> {
@@ -31,7 +31,8 @@ object CertificateManager {
             val ks = KeyStore.getInstance("PKCS12").apply {
                 p12File.inputStream().use { load(it, charArrayOf()) }
             }
-            val cert = ks.getCertificate(ALIAS) as X509Certificate
+            val cert = ks.getCertificate(ALIAS) as X509Certificate?
+                ?: throw IllegalStateException("Certificate with alias '$ALIAS' not found in ${p12File.absolutePath}")
             val fp = fingerprint(cert)
             logger.info("TLS certificate fingerprint: $fp")
             return ks to fp
