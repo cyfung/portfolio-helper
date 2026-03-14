@@ -134,7 +134,7 @@ fun PositionRow(
     val mark = quote?.regularMarketPrice ?: quote?.previousClose
     val close = quote?.previousClose ?: quote?.regularMarketPrice
     val dayPct = if (mark != null && close != null && close != 0.0)
-        (mark - close) / close * 100.0 else null
+        (mark - close) / close * 100.0 else 0.0
     val pnl = if (mark != null && close != null) (mark - close) * pos.quantity else 0.0
 
     var showActions by remember { mutableStateOf(false) }
@@ -163,23 +163,19 @@ fun PositionRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             MonoText(
-                text = if (mark != null) "%.2f".format(mark) else "—",
+                text = if (mark != null) formatSmart(mark) else "—",
                 color = ext.textPrimary,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp
             )
             Spacer(Modifier.width(8.dp))
-            if (dayPct != null) {
-                DayPctPill(dayPct)
-            } else {
-                Box(Modifier.width(48.dp))
-            }
+            DayPctPill(dayPct)
         }
 
         // P&L
         val pnlColor = changeColor(pnl)
         MonoText(
-            text = if (pnl != 0.0) formatSignedCurrency(pnl) else "—",
+            text = formatSignedCurrency(pnl),
             color = pnlColor,
             fontSize = 15.sp,
             modifier = Modifier.weight(1.3f),

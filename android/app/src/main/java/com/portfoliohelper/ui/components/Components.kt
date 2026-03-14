@@ -42,7 +42,7 @@ fun formatSignedPct(v: Double, decimals: Int = 2): String =
  * - Optional USD symbol ($)
  * - Optional leading sign (+/-)
  *
- * Examples: 0.01, 11.11, 235.67, 1,234, 11.24K
+ * Examples: 0.01, 11.11, 235.67, 1,234, 11.24K, 1.30M
  */
 fun formatSmart(
     value: Double,
@@ -62,26 +62,21 @@ fun formatSmart(
         else -> absVal to ""
     }
 
-    // Determine decimals to respect max 5 sig figs (max 2 decimals total)
-    val log = log10(scaledValue).toInt().coerceAtLeast(0)
-    val digitsBeforeDecimal = log + 1
-    var decimals = (5 - digitsBeforeDecimal).coerceIn(0, 2)
-
-    // Handle the "1,234" case: no decimals for whole numbers >= 1000
-    if (abs(scaledValue - scaledValue.roundToInt()) < 0.000001) {
-        if (scaledValue >= 1000 || suffix != "") {
-            decimals = 0
-        }
-    }
-
     val formattedNum = if (suffix == "") {
         val nf = NumberFormat.getNumberInstance(Locale.US)
-        nf.minimumFractionDigits = if (absVal >= 1000 && absVal == absVal.roundToInt().toDouble()) 0 else 2
-        nf.maximumFractionDigits = decimals
+        if (absVal >= 1000) {
+            // Whole numbers >= 1000: no decimals (e.g. 1,234)
+            nf.minimumFractionDigits = 0
+            nf.maximumFractionDigits = 0
+        } else {
+            // Non-whole numbers or numbers < 1000: always 2 decimals as per user preference (e.g. 1,234.56)
+            nf.minimumFractionDigits = 2
+            nf.maximumFractionDigits = 2
+        }
         nf.format(absVal)
     } else {
-        val numPart = "%.${decimals}f".format(Locale.US, scaledValue).trimEnd('0').trimEnd('.')
-        "$numPart$suffix"
+        // Suffixed numbers: always 2 decimals for consistency (e.g. 1.30M, 564.50K)
+        "%.2f%s".format(Locale.US, scaledValue, suffix)
     }
 
     val signStr = if (value < 0) "-" else if (showSign) "+" else ""
