@@ -64,13 +64,16 @@ function _addAllocSpinner() {
     }
 }
 
+let _groupTableVersion = 0;
+
 function updateGroupTable() {
     const container = document.getElementById('group-table-container');
     if (!container) return;
     const groups = buildGroupMap();
     if (groups.size === 0) { container.innerHTML = ''; return; }
+    const version = ++_groupTableVersion;
     _renderGroupTableBase(container, groups, getRebalTotal());
-    _fillGroupAllocColumn();
+    _fillGroupAllocColumn(version);
 }
 
 function _renderGroupTableBase(container, groups, rebalTotal) {
@@ -156,12 +159,13 @@ function _renderGroupTableBase(container, groups, rebalTotal) {
     container.appendChild(table);
 }
 
-function _fillGroupAllocColumn() {
+function _fillGroupAllocColumn(version) {
     if (_gaRunning) _addAllocSpinner();
 
     computeGAAllocations((perSymbolAlloc) => {
+        if (version !== _groupTableVersion) return; // newer updateGroupTable() call supersedes this
         const table = document.getElementById('group-view-table');
-        if (!table) return; // table was destroyed by a newer updateGroupTable() call
+        if (!table) return;
 
         // Aggregate per-symbol alloc → per-group (respecting multipliers)
         const groupAllocMap = new Map();
@@ -181,6 +185,10 @@ function _fillGroupAllocColumn() {
                 groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
             }
         });
+
+        // Remove spinner now that GA has finished
+        const spinner = table.querySelector('thead th.alloc-column .ga-spinner');
+        if (spinner) spinner.remove();
 
         // Patch alloc cells in the existing table
         table.querySelectorAll('tbody tr[data-group-name]').forEach(tr => {
