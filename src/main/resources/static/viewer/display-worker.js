@@ -410,13 +410,15 @@ function compute(snap) {
         if (!stockGrossValueKnown) {
             allocDollarsText = 'N/A'; allocQtyText = 'N/A';
         } else {
-            const amt = allocations[symbol];
+            const amt = allocations[symbol]; // in USD
             if (amt != null) {
-                const dir = amt > 0.50 ? 'action-positive' : amt < -0.50 ? 'action-negative' : 'action-neutral';
-                allocDollarsText = formatSignedCurrency(amt);
+                const fxRate = d.fxRate;
+                const amtNative = (fxRate !== null && fxRate > 0) ? amt / fxRate : amt;
+                const dir = amtNative > 0.50 ? 'action-positive' : amtNative < -0.50 ? 'action-negative' : 'action-neutral';
+                allocDollarsText = formatSignedCurrency(amtNative);
                 allocDollarsClass = 'action-neutral loaded alloc-column ' + dir;
                 if (s && s.markPrice > 0) {
-                    const qty = amt / s.markPrice;
+                    const qty = amtNative / s.markPrice;
                     allocQtyText = (qty >= 0 ? '+' : '-') + Math.abs(qty).toFixed(2);
                     allocQtyClass = 'action-neutral loaded alloc-column col-moreinfo ' + dir;
                 }
