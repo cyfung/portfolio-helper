@@ -40,6 +40,7 @@ function initColumnVisibility() {
 // ── Currency controls ─────────────────────────────────────────────────────────
 
 function refreshDisplayCurrency() {
+    // Convert saved rebal target to new display currency
     const rebalInput = document.getElementById('rebal-target-input');
     if (rebalInput) {
         if (marginTargetPct !== null) {
@@ -54,19 +55,7 @@ function refreshDisplayCurrency() {
         }
     }
 
-    const totalCell = document.getElementById('stock-gross-total');
-    if (totalCell) totalCell.textContent = stockGrossValueKnown
-        ? formatDisplayCurrency(lastStockGrossVal) : 'N/A';
-
-    const changeDollars = lastPortfolioDayChangeUsd;
-    const changePercent = lastPrevPortfolioVal > 0 ? (changeDollars / lastPrevPortfolioVal) * 100 : 0;
-    const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
-    const portfolioChangeCell = document.getElementById('portfolio-day-change');
-    if (portfolioChangeCell) {
-        portfolioChangeCell.innerHTML = !stockGrossValueKnown ? 'N/A'
-            : buildDayChangeHTML(changeDollars, changePercent, changeClass);
-    }
-
+    // Re-render cash entries in new currency
     document.querySelectorAll('[data-cash-entry]').forEach(row => {
         const ccy = row.dataset.currency;
         const amount = parseFloat(row.dataset.amount);
@@ -78,24 +67,10 @@ function refreshDisplayCurrency() {
     const cashTotalEl = document.getElementById('cash-total-usd');
     if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(lastCashTotalUsd) : 'N/A';
     updateMarginDisplay(lastMarginUsd);
-    updateGrandTotal();
-
-    const totalChangeCell = document.getElementById('total-day-change');
-    if (totalChangeCell) {
-        if (!stockGrossValueKnown) {
-            totalChangeCell.innerHTML = 'N/A';
-        } else {
-            const prevGrand = lastPrevPortfolioVal + lastCashTotalUsd;
-            const totalChangePct = prevGrand !== 0 ? (changeDollars / Math.abs(prevGrand)) * 100 : 0;
-            totalChangeCell.innerHTML = buildDayChangeHTML(changeDollars, totalChangePct, changeClass);
-        }
-    }
-
-    updateRebalTargetPlaceholder();
-    updateRebalancingColumns(getRebalTotal());
-    updateAllocColumns(getAllocRebalTotal());
-    updateMarginTargetDisplay();
     updateIbkrDailyInterest();
+
+    // Stock cells, totals, weights, rebal/alloc, margin target — all via worker
+    scheduleDisplayUpdate();
 }
 
 function initCurrencyControls() {
@@ -190,7 +165,7 @@ function initRebalanceControls() {
         allocAddSelect.addEventListener('change', () => {
             allocAddMode = allocAddSelect.value;
             fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocAddMode`, { method: 'POST', body: allocAddMode });
-            updateAllocColumns(getAllocRebalTotal());
+            scheduleDisplayUpdate();
         });
     }
     if (allocReduceSelect) {
@@ -198,7 +173,7 @@ function initRebalanceControls() {
         allocReduceSelect.addEventListener('change', () => {
             allocReduceMode = allocReduceSelect.value;
             fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocReduceMode`, { method: 'POST', body: allocReduceMode });
-            updateAllocColumns(getAllocRebalTotal());
+            scheduleDisplayUpdate();
         });
     }
 }

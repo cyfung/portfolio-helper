@@ -52,6 +52,7 @@ function initSseConnection() {
                         fxRates[ccy] = data.markPrice;
                         updateCashTotals();
                         updateIbkrDailyInterest();
+                        scheduleDisplayUpdate();
                     }
                     return;
                 }

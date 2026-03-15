@@ -265,5 +265,5 @@ function updatePortfolioRefValues(portfolioId, newPortfolioValue) {
         if (rawCol) rawCol.textContent = formatCurrency(Math.abs(newAmount)) + ' USD';
         updated = true;
     });
-    if (updated) updateCashTotals();
+    if (updated) { updateCashTotals(); scheduleDisplayUpdate(); }
 }

@@ -16,6 +16,7 @@
 
 // Price/market state
 var componentDayPercents = {};  // symbol → intraday % (for LETF est val)
+var navValues = {};             // symbol → last NAV value (for LETF est val)
 var rawMarkPrices = {};         // symbol → raw mark price
 var rawClosePrices = {};        // symbol → raw close price
 var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
