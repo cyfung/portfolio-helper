@@ -99,9 +99,10 @@ fun PortfolioScreen(vm: MainViewModel) {
             item {
                 TableHeader(
                     listOf(
-                        "Symbol" to 1.2f,
-                        "Mark" to 2.5f,
-                        "P&L" to 1.3f
+                        "Symbol" to 1.1f,
+                        "Mark" to 2.2f,
+                        "P&L" to 1.3f,
+                        "Weight" to 2.2f,
                     )
                 )
                 Divider()
@@ -113,6 +114,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                 PositionRow(
                     pos = pos,
                     quote = quote,
+                    grossValue = totals.stockGrossValue,
                     onEdit = { editPosition = pos },
                     onDelete = { vm.deletePosition(pos.symbol) }
                 )
@@ -142,6 +144,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 fun PositionRow(
     pos: Position,
     quote: YahooQuote?,
+    grossValue: Double,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -151,6 +154,9 @@ fun PositionRow(
     val dayPct = if (mark != null && close != null && close != 0.0)
         (mark - close) / close * 100.0 else 0.0
     val pnl = if (mark != null && close != null) (mark - close) * pos.quantity else 0.0
+    
+    val currentVal = if (mark != null) mark * pos.quantity else 0.0
+    val currentWeight = if (grossValue > 0) (currentVal / grossValue) * 100.0 else 0.0
 
     var showActions by remember { mutableStateOf(false) }
 
@@ -165,25 +171,25 @@ fun PositionRow(
         // Symbol
         Text(
             pos.symbol,
-            modifier = Modifier.weight(1.2f),
-            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1.1f),
+            fontWeight = FontWeight.Medium,
             fontSize = 15.sp,
             color = ext.textPrimary
         )
 
         // Mark Price + Day % Pill
         Row(
-            modifier = Modifier.weight(2.5f),
+            modifier = Modifier.weight(2.2f),
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically
         ) {
             MonoText(
                 text = if (mark != null) formatSmart(mark) else "—",
                 color = ext.textPrimary,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp
+                fontWeight = FontWeight.Normal,
+                fontSize = 16.sp
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(4.dp))
             DayPctPill(dayPct)
         }
 
@@ -192,9 +198,18 @@ fun PositionRow(
         MonoText(
             text = formatSignedCurrency(pnl),
             color = pnlColor,
+            fontWeight = FontWeight.Light,
             fontSize = 15.sp,
             modifier = Modifier.weight(1.3f),
         )
+
+        // Weight Breakdown (Current / Target + Diff Pill)
+        WeightBreakdown(
+            current = currentWeight,
+            target = pos.targetWeight,
+            modifier = Modifier.weight(2.2f)
+        )
+
     }
 
     // Inline action row

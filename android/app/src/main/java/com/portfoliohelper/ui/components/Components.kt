@@ -9,9 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -20,11 +24,32 @@ import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
 
+// ── Typography Helpers ────────────────────────────────────────────────────────
+
+val DataFont = FontFamily.SansSerif
+
+/**
+ * Applies tighter spacing specifically to symbols like . , - + 
+ * while keeping digits at a readable width.
+ */
+fun thinData(text: String): AnnotatedString = buildAnnotatedString {
+    text.forEach { char ->
+        if (char in ".,-+%") {
+            // Very tight spacing for symbols
+            withStyle(SpanStyle(letterSpacing = (-1).sp)) {
+                append(char)
+            }
+        } else {
+            append(char)
+        }
+    }
+}
+
 // ── Number formatting ─────────────────────────────────────────────────────────
 
-fun formatCurrency(v: Double): String = formatSmart(v, showCurrency = true)
+fun formatCurrency(v: Double): String = formatSmart(v, showCurrency = false)
 
-fun formatSignedCurrency(v: Double): String = formatSmart(v, showCurrency = true, showSign = true)
+fun formatSignedCurrency(v: Double): String = formatSmart(v, showCurrency = false, showSign = true)
 
 fun formatPct(v: Double, decimals: Int = 2): String =
     "%.${decimals}f%%".format(v)
@@ -32,21 +57,13 @@ fun formatPct(v: Double, decimals: Int = 2): String =
 fun formatSignedPct(v: Double, decimals: Int = 2): String =
     "%+.${decimals}f%%".format(v)
 
-/**
- * Smart formatting:
- * - Max 5 significant figures
- * - Up to 2 decimal places
- * - Suffixes: K, M, B
- * - Optional USD symbol ($)
- * - Optional leading sign (+/-)
- */
 fun formatSmart(
     value: Double,
     showCurrency: Boolean = false,
     showSign: Boolean = false
 ): String {
     if (value == 0.0) {
-        val base = if (showCurrency) "$0.00" else "0.00"
+        val base = "0.00"
         return if (showSign) "+$base" else base
     }
 
@@ -73,9 +90,8 @@ fun formatSmart(
     }
 
     val signStr = if (value < 0) "-" else if (showSign) "+" else ""
-    val currencyStr = if (showCurrency) "$" else ""
 
-    return "$signStr$currencyStr$formattedNum"
+    return "$signStr$formattedNum"
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -118,19 +134,23 @@ fun SummaryCard(
                 color = ext.textTertiary,
                 fontSize = 10.sp)
             Spacer(Modifier.height(2.dp))
-            Text(value,
+            Text(
+                text = thinData(value),
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily  = FontFamily.Monospace,
+                    fontFamily  = DataFont,
                     fontWeight  = FontWeight.SemiBold,
-                    fontSize    = 16.sp
+                    fontSize    = 19.sp,
+                    letterSpacing = (-0.2).sp
                 ),
                 color = valueColor)
             if (subValue != null) {
                 Text(
-                    text = subValue,
+                    text = thinData(subValue),
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp
+                        fontFamily = DataFont,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 12.sp,
+                        letterSpacing = (-0.2).sp
                     ),
                     color = subValueColor
                 )
@@ -178,12 +198,13 @@ fun MonoText(
     modifier: Modifier = Modifier
 ) {
     Text(
-        text     = text,
+        text     = thinData(text),
         color    = color,
         style    = MaterialTheme.typography.bodySmall.copy(
-            fontFamily = FontFamily.Monospace,
+            fontFamily = DataFont,
             fontWeight = fontWeight,
-            fontSize   = fontSize
+            fontSize   = fontSize,
+            letterSpacing = (-0.2).sp
         ),
         textAlign = textAlign,
         modifier = modifier
@@ -211,12 +232,12 @@ fun DayPctPill(pct: Double, isStale: Boolean = false) {
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
         Text(
-            text  = text,
+            text  = thinData(text),
             color = color.copy(alpha = alpha),
             style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                fontSize   = 12.sp
+                fontFamily = DataFont,
+                fontWeight = FontWeight.Normal,
+                fontSize   = 13.sp
             )
         )
     }
@@ -240,11 +261,11 @@ fun WeightDiffPill(diff: Double) {
             .padding(horizontal = 5.dp, vertical = 1.dp)
     ) {
         Text(
-            text = text,
+            text = thinData(text),
             color = color,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
+                fontFamily = DataFont,
+                fontWeight = FontWeight.Normal,
                 fontSize = 11.sp
             )
         )
@@ -266,9 +287,10 @@ fun WeightBreakdown(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "${"%.1f".format(current)}%",
+                text = thinData("${"%.1f".format(current)}%"),
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Normal,
+                fontFamily = DataFont,
                 color = ext.textPrimary
             )
             Text(
@@ -278,13 +300,16 @@ fun WeightBreakdown(
                 modifier = Modifier.padding(horizontal = 2.dp)
             )
             Text(
-                text = "${"%.1f".format(target)}%",
+                text = thinData("${"%.1f".format(target)}%"),
                 fontSize = 12.sp,
-                color = ext.textSecondary
+                fontFamily = DataFont,
+                color = ext.textSecondary,
+                modifier = Modifier.padding(horizontal = 2.dp)
             )
+            Spacer(Modifier.width(2.dp))
+            WeightDiffPill(diff)
         }
         Spacer(Modifier.height(2.dp))
-        WeightDiffPill(diff)
     }
 }
 
@@ -305,7 +330,7 @@ fun CashTypeBadge(type: String) {
             text = text,
             color = color,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.Normal,
                 fontSize = 10.sp
             )
         )

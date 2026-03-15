@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 
 // ── Brand colors matching web app ─────────────────────────────────────────────
 
@@ -142,7 +143,15 @@ fun PortfolioHelperTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography  = Typography(
-                bodyMedium = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Default)
+                bodyLarge = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Light),
+                bodyMedium = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Light),
+                bodySmall = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Light),
+                labelLarge = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal),
+                labelMedium = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
+                labelSmall = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
+                titleLarge = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal),
+                titleMedium = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
+                titleSmall = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Normal),
             ),
             content = content
         )
