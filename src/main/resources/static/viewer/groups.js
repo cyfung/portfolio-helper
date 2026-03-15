@@ -60,52 +60,21 @@ function buildGroupMap() {
 function _addAllocSpinner() {
     const allocTh = document.querySelector('#group-view-table thead th.alloc-column');
     if (allocTh && !allocTh.querySelector('.ga-spinner')) {
-        allocTh.insertAdjacentHTML('beforeend', '<span class="ga-spinner"></span>');
+        allocTh.insertAdjacentHTML('afterbegin', '<span class="ga-spinner"></span>');
     }
 }
 
 function updateGroupTable() {
     const container = document.getElementById('group-table-container');
     if (!container) return;
-
     const groups = buildGroupMap();
     if (groups.size === 0) { container.innerHTML = ''; return; }
-
-    computeGAAllocations((perSymbolAlloc) => {
-        // Re-read rebalTotal at render time — it's cheap and avoids a stale closure
-        _renderGroupTable(container, groups, perSymbolAlloc, getRebalTotal());
-        // After render: if a pending job was queued while this one ran, show spinner
-        // on the freshly built table. (_gaPending is still set here; it's nulled after
-        // this callback returns.)
-        if (_gaPending) _addAllocSpinner();
-    });
-    // If a GA job is already running when we arrive, an existing table is present —
-    // add the spinner immediately.
-    if (_gaRunning) _addAllocSpinner();
+    _renderGroupTableBase(container, groups, getRebalTotal());
+    _fillGroupAllocColumn();
 }
 
-function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
+function _renderGroupTableBase(container, groups, rebalTotal) {
     container.innerHTML = '';
-
-    // Aggregate per-symbol alloc into groups (respecting multipliers)
-    // Also track per-symbol contributions per group for tooltip
-    const groupAllocMap = new Map();
-    const groupAllocMembersMap = new Map(); // groupName -> {symbol: contribution}
-    document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
-        if (row.dataset.deleted) return;
-        const symbol = row.dataset.symbol;
-        if (!symbol || !row.dataset.groups) return;
-        const symAlloc = perSymbolAlloc[symbol];
-        if (symAlloc == null) return;
-        const allocStockCcy = stockCurrencies[symbol] ?? 'USD';
-        const allocFxRate = getStockFxRate(allocStockCcy);
-        const symAllocUsd = (allocFxRate !== null && allocFxRate > 0) ? symAlloc * allocFxRate : symAlloc;
-        for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
-            groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAllocUsd * multiplier);
-            if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
-            groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
-        }
-    });
 
     const table = document.createElement('table');
     table.className = 'portfolio-table';
@@ -134,15 +103,14 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         const targetWeightPct = g.targetWeight;
         const weightDiff = weightPct - targetWeightPct;
         const rebalDollars = (targetWeightPct / 100) * rebalTotal - g.mktVal;
-        const allocDollars = groupAllocMap.get(name) ?? 0;
 
         const isZeroChg = Math.abs(mktValChg) < 0.01;
         const chgCls = isZeroChg ? 'neutral' : mktValChg > 0 ? 'positive' : 'negative';
 
         const tr = tbody.insertRow();
+        tr.dataset.groupName = name;
         tr.dataset.groupMembers = g.members.join(',');
-        const memberAllocs = groupAllocMembersMap.get(name) ?? {};
-        tr.dataset.groupMemberAllocs = JSON.stringify(memberAllocs);
+        tr.dataset.groupMemberAllocs = '{}';
         tr.addEventListener('mouseenter', _showGroupTooltip);
         tr.addEventListener('mousemove',  _moveGroupTooltip);
         tr.addEventListener('mouseleave', _hideGroupTooltip);
@@ -168,7 +136,6 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             mk('N/A', 'action-neutral alloc-column');
         } else {
             const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
-            const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
             const diffClass = Math.abs(weightDiff) > 1.0 ? (weightDiff > 0 ? 'alert-over' : 'alert-under')
                             : Math.abs(weightDiff) > 0.2 ? 'warning' : 'good';
             const pillSign  = weightDiff >= 0 ? '+' : '';
@@ -178,7 +145,7 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             const pillHtml  = `<span class="weight-diff ${diffClass}">${pillSign}${weightDiff.toFixed(1)}%</span>`;
             mk(curHtml + sepHtml + tgtHtml + pillHtml, 'col-num value', true);
             mk(formatSignedDisplayCurrency(rebalDollars), 'action-neutral ' + rebalDir + ' rebal-column');
-            mk(formatSignedDisplayCurrency(allocDollars), 'action-neutral ' + allocDir + ' alloc-column');
+            mk('\u2014', 'action-neutral alloc-column');
         }
     });
 
@@ -187,6 +154,55 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     warning.textContent = '\u26A0\uFE0E Group values should be interpreted cautiously — their meaning depends heavily on how groups are defined.';
     container.appendChild(warning);
     container.appendChild(table);
+}
+
+function _fillGroupAllocColumn() {
+    if (_gaRunning) _addAllocSpinner();
+
+    computeGAAllocations((perSymbolAlloc) => {
+        const table = document.getElementById('group-view-table');
+        if (!table) return; // table was destroyed by a newer updateGroupTable() call
+
+        // Aggregate per-symbol alloc → per-group (respecting multipliers)
+        const groupAllocMap = new Map();
+        const groupAllocMembersMap = new Map();
+        document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
+            if (row.dataset.deleted) return;
+            const symbol = row.dataset.symbol;
+            if (!symbol || !row.dataset.groups) return;
+            const symAlloc = perSymbolAlloc[symbol];
+            if (symAlloc == null) return;
+            const allocStockCcy = stockCurrencies[symbol] ?? 'USD';
+            const allocFxRate = getStockFxRate(allocStockCcy);
+            const symAllocUsd = (allocFxRate !== null && allocFxRate > 0) ? symAlloc * allocFxRate : symAlloc;
+            for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
+                groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAllocUsd * multiplier);
+                if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
+                groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
+            }
+        });
+
+        // Patch alloc cells in the existing table
+        table.querySelectorAll('tbody tr[data-group-name]').forEach(tr => {
+            const name = tr.dataset.groupName;
+            const allocDollars = groupAllocMap.get(name) ?? 0;
+            tr.dataset.groupMemberAllocs = JSON.stringify(groupAllocMembersMap.get(name) ?? {});
+            const allocTd = tr.querySelector('td.alloc-column');
+            if (!allocTd) return;
+            if (!stockGrossValueKnown) {
+                allocTd.textContent = 'N/A';
+                allocTd.className = 'action-neutral alloc-column';
+            } else {
+                const allocDir = Math.abs(allocDollars) > 0.50
+                    ? (allocDollars > 0 ? 'action-positive' : 'action-negative')
+                    : 'action-neutral';
+                allocTd.textContent = formatSignedDisplayCurrency(allocDollars);
+                allocTd.className = 'action-neutral ' + allocDir + ' alloc-column';
+            }
+        });
+
+        if (_gaPending) _addAllocSpinner();
+    });
 }
 
 // ── Group row hover tooltip ──────────────────────────────────────────────────
@@ -329,7 +345,9 @@ function initGroupViewToggle() {
     if (groupViewActive) {
         btn.classList.add('active');
         applyGroupViewState();
-        updateGroupTable();
+        // Don't call updateGroupTable() here: lastStockGrossVal = 0 at this point,
+        // which would render 0 weights and negative rebal values.
+        // The display worker calls updateGroupTable() once it has computed real values.
     }
     btn.addEventListener('click', () => {
         groupViewActive = !groupViewActive;
