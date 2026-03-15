@@ -30,8 +30,6 @@ object AppConfig {
         KEY_SHOW_STOCK_DISPLAY_CURRENCY to "false"
     )
 
-    fun isEnvOverridden(key: String) = false
-
     fun get(key: String): String {
         transaction {
             GlobalSettingsTable.selectAll()

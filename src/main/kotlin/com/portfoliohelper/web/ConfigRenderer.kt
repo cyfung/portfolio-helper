@@ -173,7 +173,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        val twsHostEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_TWS_HOST)
+                        val twsHostEnvOverridden = false
                         renderConfigField(
                             label = "TWS Host",
                             description = "Hostname or IP address of the TWS / IB Gateway.",
@@ -194,7 +194,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        val twsPortEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_TWS_PORT)
+                        val twsPortEnvOverridden = false
                         renderConfigField(
                             label = "TWS Port",
                             description = "Port of the TWS / IB Gateway. Default: 7496 (live), 7497 (paper), 4001 (IB Gateway live).",
@@ -268,7 +268,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                         }
 
                         val navEnvOverridden =
-                            AppConfig.isEnvOverridden(AppConfig.KEY_NAV_UPDATE_INTERVAL)
+                            false
                         renderConfigField(
                             label = "NAV Update Interval (seconds)",
                             description = "How often to fetch NAV data. Leave blank to use the trading-day schedule.",
