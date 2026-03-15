@@ -53,6 +53,13 @@ function buildGroupMap() {
     return groups;
 }
 
+function _addAllocSpinner() {
+    const allocTh = document.querySelector('#group-view-table thead th.alloc-column');
+    if (allocTh && !allocTh.querySelector('.ga-spinner')) {
+        allocTh.insertAdjacentHTML('beforeend', '<span class="ga-spinner"></span>');
+    }
+}
+
 function updateGroupTable() {
     const container = document.getElementById('group-table-container');
     if (!container) return;
@@ -63,7 +70,14 @@ function updateGroupTable() {
     computeGAAllocations((perSymbolAlloc) => {
         // Re-read rebalTotal at render time — it's cheap and avoids a stale closure
         _renderGroupTable(container, groups, perSymbolAlloc, getRebalTotal());
+        // After render: if a pending job was queued while this one ran, show spinner
+        // on the freshly built table. (_gaPending is still set here; it's nulled after
+        // this callback returns.)
+        if (_gaPending) _addAllocSpinner();
     });
+    // If a GA job is already running when we arrive, an existing table is present —
+    // add the spinner immediately.
+    if (_gaRunning) _addAllocSpinner();
 }
 
 function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {

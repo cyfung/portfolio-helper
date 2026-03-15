@@ -233,6 +233,19 @@ h1 {
 .sse-dot--ok  { background: var(--color-positive); }
 .sse-dot--err { background: var(--color-negative); }
 
+.ga-spinner {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid var(--color-text-tertiary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: ga-spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-left: 5px;
+}
+@keyframes ga-spin { to { transform: rotate(360deg); } }
+
 /* ============================================
    Header Right Group (version + buttons)
    ============================================ */
