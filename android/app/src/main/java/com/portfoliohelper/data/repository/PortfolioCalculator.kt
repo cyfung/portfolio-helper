@@ -1,18 +1,23 @@
 package com.portfoliohelper.data.repository
 
+import android.util.Log
 import com.portfoliohelper.data.model.AllocMode
 import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.GroupRow
+import com.portfoliohelper.data.model.MarketPrice
 import com.portfoliohelper.data.model.Position
 import kotlin.math.abs
 
 object PortfolioCalculator {
+
+    private const val TAG = "PortfolioCalculator"
 
     // ── Portfolio totals ──────────────────────────────────────────────────────
 
     data class PortfolioTotals(
         val stockGrossValue: Double,
         val prevStockGrossValue: Double,
+        val cashTotalUsd: Double,
         val marginUsd: Double,
         val marginPct: Double,       // margin as % of equity+margin
         val dayChangeDollars: Double,
@@ -20,11 +25,14 @@ object PortfolioCalculator {
         val isReady: Boolean = true
     )
 
+    /**
+     * Computes portfolio totals using a unified prices map that includes both
+     * stock symbols and FX pairs (e.g., "HKDUSD=X").
+     */
     fun computeTotals(
         positions: List<Position>,
-        prices: Map<String, YahooQuote>,
         cashEntries: List<CashEntry>,
-        fxRates: Map<String, Double>
+        prices: Map<String, YahooQuote>
     ): PortfolioTotals {
         var allReady = true
         var total = 0.0
@@ -42,24 +50,82 @@ object PortfolioCalculator {
             prevTotal += prev * pos.quantity
         }
 
+        var cashTotalUsd = 0.0
         var marginUsd = 0.0
         for (e in cashEntries) {
-            val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency]
+            val rate = if (e.currency == "USD") 1.0 else {
+                val pair = "${e.currency}USD=X"
+                val quote = prices[pair]
+                if (quote == null) {
+                    allReady = false
+                    null
+                } else {
+                    quote.regularMarketPrice ?: quote.previousClose
+                }
+            }
+            
             if (rate == null) {
                 allReady = false
                 continue
             }
+            val usd = e.amount * rate
+            cashTotalUsd += usd
             if (e.isMargin) {
-                marginUsd += e.amount * rate
+                marginUsd += usd
             }
         }
         
         val equity = total + marginUsd
         val marginPct = if (equity != 0.0) abs(marginUsd / equity) * 100.0 else 0.0
         val change = total - prevTotal
-        val changePct = if (prevTotal != 0.0) change / prevTotal * 100.0 else 0.0
+        val changePct = if (prevTotal != 0.0) (change / prevTotal) * 100.0 else 0.0
         
-        return PortfolioTotals(total, prevTotal, marginUsd, marginPct, change, changePct, allReady)
+        return PortfolioTotals(total, prevTotal, cashTotalUsd, marginUsd, marginPct, change, changePct, allReady)
+    }
+
+    // ── Market Data Fetching & Caching ────────────────────────────────────────
+
+    /**
+     * Fetches fresh quotes for all positions and FX pairs, updating the DB cache.
+     * Falls back to DB cache if network fetch fails for a specific symbol.
+     */
+    suspend fun fetchAndCacheMarketData(
+        db: AppDatabase,
+        positions: List<Position>,
+        cashEntries: List<CashEntry>
+    ): Map<String, YahooQuote> {
+        val symbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableList()
+        val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+        currencies.forEach { symbols.add("${it}USD=X") }
+
+        return symbols.associateWith { symbol ->
+            try {
+                val quote = YahooFinanceClient.fetchQuote(symbol)
+                val price = quote.regularMarketPrice ?: quote.previousClose
+                if (price != null) {
+                    db.marketPriceDao().upsert(
+                        MarketPrice(symbol, price, quote.previousClose, quote.isMarketClosed)
+                    )
+                    // Push to live service if it's active (updates UI in real-time)
+                    YahooMarketDataService.updateCache(symbol, quote)
+                }
+                quote
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch $symbol, falling back to DB: ${e.message}")
+                db.marketPriceDao().get(symbol)?.let { cached ->
+                    YahooQuote(symbol, cached.price, cached.previousClose, cached.isMarketClosed)
+                }
+            }
+        }.filterValues { it != null }.mapValues { it.value!! }
+    }
+
+    /**
+     * Loads all cached market data from the database.
+     */
+    suspend fun loadCachedMarketData(db: AppDatabase): Map<String, YahooQuote> {
+        return db.marketPriceDao().getAll().associate { cached ->
+            cached.symbol to YahooQuote(cached.symbol, cached.price, cached.previousClose, cached.isMarketClosed)
+        }
     }
 
     // ── Allocation ────────────────────────────────────────────────────────────

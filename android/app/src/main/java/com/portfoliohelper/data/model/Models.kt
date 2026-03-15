@@ -45,6 +45,7 @@ data class MarketPrice(
     @PrimaryKey val symbol: String,
     val price: Double,
     val previousClose: Double?,
+    val isMarketClosed: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )
 

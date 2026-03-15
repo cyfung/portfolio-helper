@@ -62,6 +62,9 @@ interface MarketPriceDao {
     @Query("SELECT * FROM market_prices")
     suspend fun getAll(): List<MarketPrice>
 
+    @Query("SELECT * FROM market_prices")
+    fun observeAll(): Flow<List<MarketPrice>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(price: MarketPrice)
 
@@ -73,7 +76,7 @@ interface MarketPriceDao {
 
 @Database(
     entities = [Position::class, CashEntry::class, MarketPrice::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

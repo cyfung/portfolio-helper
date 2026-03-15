@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -59,17 +60,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val syncServerInfo: StateFlow<SyncServerInfo?> = settings.syncServerInfo
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    // ── Market Data (In-memory) ───────────────────────────────────────────────
+    // ── Market Data (Database Cache is the source of truth) ───────────────────
 
-    private val _marketData = MutableStateFlow<Map<String, YahooQuote>>(emptyMap())
-    val marketData: StateFlow<Map<String, YahooQuote>> = _marketData
+    val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
+        .map { list ->
+            list.associate { 
+                it.symbol to YahooQuote(it.symbol, it.price, it.previousClose, it.isMarketClosed)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     // ── Discovery ─────────────────────────────────────────────────────────────
 
     val discoveredServers: StateFlow<List<NsdServiceInfo>> = syncRepo.discoverServers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // ── Derived: FX rates ─────────────────────────────────────────────────────
+    // ── Derived: FX rates (Legacy / Auxiliary) ────────────────────────────────
 
     val fxRates: StateFlow<Map<String, Double>> = marketData.combine(cashEntries) { data, entries ->
         val rates = mutableMapOf<String, Double>()
@@ -87,31 +93,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Derived: cash totals ──────────────────────────────────────────────────
 
-    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, fxRates) { entries, rates ->
-        var totalUsd = 0.0
-        var marginUsd = 0.0
-        var allReady = true
-        for (e in entries) {
-            val rate = if (e.currency == "USD") 1.0 else rates[e.currency]
-            if (rate == null) {
-                allReady = false
-                continue
-            }
-            val usd = e.amount * rate
-            totalUsd += usd
-            if (e.isMargin) marginUsd += usd
-        }
-        CashTotals(totalUsd, marginUsd, allReady)
+    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData) { entries, prices ->
+        // Use consolidated logic with empty positions list to extract cash-only metrics
+        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices)
+        CashTotals(totals.cashTotalUsd, totals.marginUsd, totals.isReady)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0, false))
 
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
-        combine(positions, marketData, cashTotals) { pos, prices, cash ->
-            PortfolioCalculator.computeTotals(pos, prices, cash.marginUsd, cash.isReady)
+        combine(positions, cashEntries, marketData) { pos, cash, prices ->
+            PortfolioCalculator.computeTotals(pos, cash, prices)
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
-            PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, false)
+            PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false)
         )
 
     // ── Derived: groups ───────────────────────────────────────────────────────
@@ -211,8 +206,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         YahooMarketDataService.setOnUpdateListener { symbol, quote ->
-            _marketData.value += (symbol to quote)
+            // Persist to DB cache
+            viewModelScope.launch {
+                val price = quote.regularMarketPrice ?: quote.previousClose
+                if (price != null) {
+                    db.marketPriceDao().upsert(
+                        com.portfoliohelper.data.model.MarketPrice(
+                            symbol, 
+                            price, 
+                            quote.previousClose, 
+                            quote.isMarketClosed
+                        )
+                    )
+                }
+            }
         }
+
         viewModelScope.launch {
             combine(positions, cashEntries) { pos, cash ->
                 val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableList()

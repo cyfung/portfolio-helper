@@ -21,11 +21,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.portfoliohelper.PortfolioHelperApp
 import com.portfoliohelper.data.model.MarginAlertSettings
-import com.portfoliohelper.data.model.MarketPrice
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.PrefsKeys
-import com.portfoliohelper.data.repository.YahooFinanceClient
-import com.portfoliohelper.data.repository.YahooMarketDataService
 import com.portfoliohelper.data.repository.dataStore
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
@@ -103,53 +100,17 @@ class MarginCheckWorker(
             return Result.success()
         }
 
-        // 3. Fetch/Persist Market Prices
-        val symbols = positions.map { it.symbol }.distinct()
-        val prices = symbols.associateWith { symbol ->
-            try {
-                val quote = YahooFinanceClient.fetchQuote(symbol)
-                // Persist to database for long-term fallback
-                app.database.marketPriceDao().upsert(
-                    MarketPrice(symbol, quote.regularMarketPrice ?: 0.0, quote.previousClose)
-                )
-                YahooMarketDataService.updateCache(symbol, quote)
-                quote
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch quote for $symbol", e)
-                // Try database fallback
-                app.database.marketPriceDao().get(symbol)?.let { dbCached ->
-                    com.portfoliohelper.data.repository.YahooQuote(symbol, dbCached.price, dbCached.previousClose)
-                }
-            }
-        }.filterValues { it != null }.mapValues { it.value!! }
+        // 3. Fetch/Persist Market Prices using centralized Calculator logic
+        val prices = PortfolioCalculator.fetchAndCacheMarketData(app.database, positions, cashEntries)
 
-        // 4. Fetch/Persist FX rates
-        val fxRates = mutableMapOf<String, Double>()
-        val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
-        for (ccy in currencies) {
-            val pair = "${ccy}USD=X"
-            try {
-                val quote = YahooFinanceClient.fetchQuote(pair)
-                val rate = quote.regularMarketPrice ?: quote.previousClose
-                if (rate != null) {
-                    app.database.marketPriceDao().upsert(MarketPrice(pair, rate, null))
-                    YahooMarketDataService.updateCache(pair, quote)
-                    fxRates[ccy] = rate
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch FX rate for $ccy", e)
-                app.database.marketPriceDao().get(pair)?.let { dbCached ->
-                    fxRates[ccy] = dbCached.price
-                }
-            }
-        }
-
-        // 5. Data Readiness Check & Computation
-        val totals = PortfolioCalculator.computeTotals(positions, prices, cashEntries, fxRates)
+        // 4. Data Readiness Check & Computation
+        val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices)
         
         if (!totals.isReady) {
+            val symbols = positions.map { it.symbol }.distinct()
+            val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
             val missingSymbols = symbols.filter { it !in prices }
-            val missingCurrencies = currencies.filter { it !in fxRates }
+            val missingCurrencies = currencies.filter { "${it}USD=X" !in prices }
             val missing = (missingSymbols + missingCurrencies).joinToString(", ")
             
             Log.w(TAG, "Data missing for: $missing. Showing error alert.")
