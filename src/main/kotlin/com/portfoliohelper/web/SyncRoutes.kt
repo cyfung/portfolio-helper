@@ -104,7 +104,7 @@ fun Route.configureSyncRoutes() {
                 "P" -> {
                     val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
                         ?: return@exportJson null
-                    e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
+                    e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
                 }
 
                 else -> YahooMarketDataService.getQuote("${e.currency}USD=X")

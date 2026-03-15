@@ -36,7 +36,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 val ref =
                     ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
                         ?: return null
-                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
+                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
             }
 
             else -> fxRateMap[e.currency]?.let { e.amount * it }
@@ -317,16 +317,16 @@ private fun TBODY.buildSummaryRows(
     portfolio: Portfolio,
     cashTotalUsd: Double
 ) {
-    // Total Value row — at the top of the summary table
+    // Portfolio Value row — at the top of the summary table (stocks + cash grand total)
     // Day change innerHTML is fully owned by JS (updateTotalValue); render empty
     tr(classes = "grand-total-row") {
-        td { +"Total Value" }
+        td { +"Portfolio Value" }
         td {}
         td {}
         td {
             span {
-                id = "grand-total-value"
-                +"$%,.2f".format(portfolio.totalValue + cashTotalUsd)
+                id = "portfolio-total"
+                +"$%,.2f".format(portfolio.stockGrossValue + cashTotalUsd)
             }
             div(classes = "summary-subvalue") { id = "total-day-change" }
         }
@@ -409,7 +409,7 @@ private fun TBODY.buildSummaryRows(
         if (hasMarginEntries) {
             val marginUsd = cashEntries.filter { it.marginFlag }
                 .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-            val marginDenominator = portfolio.totalValue + marginUsd
+            val marginDenominator = portfolio.stockGrossValue + marginUsd
             tr(classes = "margin-row") {
                 attributes["data-margin-row"] = "true"
                 if (marginUsd >= 0) style = "display:none;"
@@ -436,15 +436,15 @@ private fun TBODY.buildSummaryRows(
             td { attributes["colspan"] = "4" }
         }
 
-        // Portfolio Value row — day change innerHTML owned by JS (updateTotalValue); render empty
+        // Stock Gross Value row — day change innerHTML owned by JS (updateTotalValue); render empty
         tr {
-            td { +"Portfolio Value" }
+            td { +"Stock Gross Value" }
             td {}
             td {}
             td {
                 div {
-                    id = "portfolio-total"
-                    +"$%,.2f".format(portfolio.totalValue)
+                    id = "stock-gross-total"
+                    +"$%,.2f".format(portfolio.stockGrossValue)
                 }
                 div(classes = "summary-subvalue") { id = "portfolio-day-change" }
             }
@@ -459,7 +459,7 @@ private fun TBODY.buildSummaryRows(
         td {
             input(type = InputType.text, classes = "rebal-target-input") {
                 attributes["id"] = "rebal-target-input"
-                attributes["placeholder"] = "%,.2f".format(portfolio.totalValue)
+                attributes["placeholder"] = "%,.2f".format(portfolio.stockGrossValue)
                 attributes["autocomplete"] = "off"
             }
         }
@@ -468,7 +468,7 @@ private fun TBODY.buildSummaryRows(
     // Margin Target row — only rendered when margin entries are configured
     if (cashEntries.any { it.marginFlag }) {
         val mUsd = cashEntries.filter { it.marginFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-        val mDenom = portfolio.totalValue + mUsd
+        val mDenom = portfolio.stockGrossValue + mUsd
         val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"

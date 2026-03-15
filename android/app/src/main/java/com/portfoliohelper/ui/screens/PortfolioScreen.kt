@@ -28,6 +28,7 @@ fun PortfolioScreen(vm: MainViewModel) {
     val positions by vm.positions.collectAsState()
     val marketData by vm.marketData.collectAsState()
     val totals by vm.portfolioTotals.collectAsState()
+    val cashTotals by vm.cashTotals.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -63,7 +64,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                 ) {
                     SummaryCard(
                         label = "Portfolio Value",
-                        value = formatCurrency(totals.totalMktVal),
+                        value = formatCurrency(totals.stockGrossValue + cashTotals.totalUsd),
                         modifier = Modifier.weight(1f)
                     )
                     val changeColor = changeColor(totals.dayChangeDollars)

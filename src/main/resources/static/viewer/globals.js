@@ -25,14 +25,14 @@ var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
 var currentDisplayCurrency = 'USD';
 
 // Portfolio totals (updated live)
-var lastPortfolioVal = 0;
+var lastStockGrossVal = 0;
 var lastPrevPortfolioVal = 0;
 var lastPortfolioDayChangeUsd = 0;
 var lastCashTotalUsd = 0;
 var lastMarginUsd = 0;
 
 // Data quality flags
-var portfolioValueKnown = true;
+var stockGrossValueKnown = true;
 var cashTotalKnown = true;
 var marginKnown = false;
 

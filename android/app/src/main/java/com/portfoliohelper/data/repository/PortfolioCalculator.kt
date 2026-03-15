@@ -10,8 +10,8 @@ object PortfolioCalculator {
     // ── Portfolio totals ──────────────────────────────────────────────────────
 
     data class PortfolioTotals(
-        val totalMktVal: Double,
-        val totalPrevMktVal: Double,
+        val stockGrossValue: Double,
+        val prevStockGrossValue: Double,
         val marginPct: Double,       // margin as % of equity+margin
         val dayChangeDollars: Double,
         val dayChangePct: Double

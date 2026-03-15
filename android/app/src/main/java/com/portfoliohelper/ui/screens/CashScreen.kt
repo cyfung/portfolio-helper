@@ -58,7 +58,7 @@ fun CashScreen(vm: MainViewModel) {
                         formatCurrency(cashTotals.totalUsd), modifier = Modifier.weight(1f))
 
                     val marginUsd = cashTotals.marginUsd
-                    val equity    = totals.totalMktVal + marginUsd
+                    val equity    = totals.stockGrossValue + marginUsd
                     val marginPct = if (equity != 0.0) abs(marginUsd / equity) * 100.0 else 0.0
                     val marginColor = when {
                         marginPct > 40.0 -> ext.negative

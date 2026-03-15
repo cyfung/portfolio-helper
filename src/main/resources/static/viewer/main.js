@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Must run before restoring targets so lastMarginUsd is correct.
     updateCashTotals();
 
-    // Populate lastPortfolioVal from server-rendered DOM prices before restoring targets,
+    // Populate lastStockGrossVal from server-rendered DOM prices before restoring targets,
     // so delta is correct and alloc columns don't flash wrong values on load.
     updateTotalValue();
 

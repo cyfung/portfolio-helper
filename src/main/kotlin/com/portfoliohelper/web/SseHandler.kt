@@ -69,7 +69,7 @@ internal suspend fun ServerSSESession.handleSseStream() {
 
     val portfolioValueCallback: () -> Unit = {
         for (p in ManagedPortfolio.getAll()) {
-            val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).totalValue
+            val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).stockGrossValue
             val pvJson = buildString {
                 append("{\"type\":\"portfolio-value\",")
                 append("\"portfolioId\":\"${p.slug}\",")

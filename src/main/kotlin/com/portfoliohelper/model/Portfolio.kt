@@ -12,7 +12,7 @@ data class Portfolio(
      * Total value of all stock positions.
      * Sums only stocks with available market data (non-null values).
      */
-    val totalValue: Double get() = stocks.mapNotNull { it.value }.sum()
+    val stockGrossValue: Double get() = stocks.mapNotNull { it.value }.sum()
 
     /**
      * Check if all stocks in the portfolio have market data.
@@ -46,16 +46,16 @@ data class Portfolio(
     /**
      * Previous day's total portfolio value (based on last close prices).
      */
-    val previousTotalValue: Double get() = stocks.mapNotNull { stock ->
+    val previousStockGrossValue: Double get() = stocks.mapNotNull { stock ->
         stock.lastClosePrice?.let { it * stock.amount }
     }.sum()
 
     /**
      * Portfolio daily change as a percentage.
-     * Returns 0.0 if previousTotalValue is 0 or negative.
+     * Returns 0.0 if previousStockGrossValue is 0 or negative.
      */
     val dailyChangePercent: Double get() = when {
-        previousTotalValue > 0 -> (dailyChangeDollars / previousTotalValue) * 100.0
+        previousStockGrossValue > 0 -> (dailyChangeDollars / previousStockGrossValue) * 100.0
         else -> 0.0
     }
 

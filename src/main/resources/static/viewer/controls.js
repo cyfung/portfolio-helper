@@ -54,16 +54,16 @@ function refreshDisplayCurrency() {
         }
     }
 
-    const totalCell = document.getElementById('portfolio-total');
-    if (totalCell) totalCell.textContent = portfolioValueKnown
-        ? formatDisplayCurrency(lastPortfolioVal) : 'N/A';
+    const totalCell = document.getElementById('stock-gross-total');
+    if (totalCell) totalCell.textContent = stockGrossValueKnown
+        ? formatDisplayCurrency(lastStockGrossVal) : 'N/A';
 
     const changeDollars = lastPortfolioDayChangeUsd;
     const changePercent = lastPrevPortfolioVal > 0 ? (changeDollars / lastPrevPortfolioVal) * 100 : 0;
     const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
     const portfolioChangeCell = document.getElementById('portfolio-day-change');
     if (portfolioChangeCell) {
-        portfolioChangeCell.innerHTML = !portfolioValueKnown ? 'N/A'
+        portfolioChangeCell.innerHTML = !stockGrossValueKnown ? 'N/A'
             : buildDayChangeHTML(changeDollars, changePercent, changeClass);
     }
 
@@ -82,7 +82,7 @@ function refreshDisplayCurrency() {
 
     const totalChangeCell = document.getElementById('total-day-change');
     if (totalChangeCell) {
-        if (!portfolioValueKnown) {
+        if (!stockGrossValueKnown) {
             totalChangeCell.innerHTML = 'N/A';
         } else {
             const prevGrand = lastPrevPortfolioVal + lastCashTotalUsd;

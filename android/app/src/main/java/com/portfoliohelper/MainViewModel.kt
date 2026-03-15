@@ -113,7 +113,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val groupRows: StateFlow<List<GroupRow>> =
         combine(positions, marketData, portfolioTotals) { pos, prices, totals ->
-            PortfolioCalculator.computeGroups(pos, prices, totals.totalMktVal)
+            PortfolioCalculator.computeGroups(pos, prices, totals.stockGrossValue)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ── Write operations ──────────────────────────────────────────────────────

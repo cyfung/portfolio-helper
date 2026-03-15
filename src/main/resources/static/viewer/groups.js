@@ -109,7 +109,7 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     const tbody = table.createTBody();
     groups.forEach((g, name) => {
         const mktValChg = g.mktVal - g.prevMktVal;
-        const weightPct = lastPortfolioVal > 0 ? (g.mktVal / lastPortfolioVal) * 100 : 0;
+        const weightPct = lastStockGrossVal > 0 ? (g.mktVal / lastStockGrossVal) * 100 : 0;
         const targetWeightPct = g.targetWeight;
         const weightDiff = weightPct - targetWeightPct;
         const rebalDollars = (targetWeightPct / 100) * rebalTotal - g.mktVal;
@@ -141,7 +141,7 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         mk(isZeroChg ? '—' : formatSignedCurrency(mktValChg), 'price-change ' + chgCls);
         mk(formatCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
 
-        if (!portfolioValueKnown) {
+        if (!stockGrossValueKnown) {
             mk('N/A', 'col-num value');
             mk('N/A', 'action-neutral rebal-column');
             mk('N/A', 'action-neutral alloc-column');

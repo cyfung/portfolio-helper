@@ -22,7 +22,7 @@ function updateMarginDisplay(marginUsd) {
     marginEl.textContent = formatDisplayCurrency(-marginUsd);
 
     const marginPctEl = document.getElementById('margin-percent');
-    const denominator = lastPortfolioVal + lastMarginUsd;
+    const denominator = lastStockGrossVal + lastMarginUsd;
     const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
     if (marginPctEl) {
         marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';

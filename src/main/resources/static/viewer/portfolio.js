@@ -103,7 +103,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
 function updateTotalValue() {
     let total = 0;
     let previousTotal = 0;
-    portfolioValueKnown = true;
+    stockGrossValueKnown = true;
 
     document.querySelectorAll('tbody tr').forEach(row => {
         if (row.dataset.deleted) return;
@@ -118,18 +118,18 @@ function updateTotalValue() {
             const markPrice = rawMarkPrices[symbol] ?? parsePrice(markCell.textContent);
             const closePrice = rawClosePrices[symbol] ?? parsePrice(closeCell.textContent);
 
-            if (markPrice === null && closePrice === null) portfolioValueKnown = false;
+            if (markPrice === null && closePrice === null) stockGrossValueKnown = false;
             if (markPrice !== null) total += markPrice * amount;
             if (closePrice !== null) previousTotal += closePrice * amount;
         }
     });
 
-    lastPortfolioVal = total;
+    lastStockGrossVal = total;
     lastPrevPortfolioVal = previousTotal;
     updateRebalTargetPlaceholder();
 
-    const totalCell = document.getElementById('portfolio-total');
-    if (totalCell) totalCell.textContent = portfolioValueKnown
+    const totalCell = document.getElementById('stock-gross-total');
+    if (totalCell) totalCell.textContent = stockGrossValueKnown
         ? formatDisplayCurrency(total) : 'N/A';
 
     const changeDollars = total - previousTotal;
@@ -139,7 +139,7 @@ function updateTotalValue() {
 
     const portfolioChangeCell = document.getElementById('portfolio-day-change');
     if (portfolioChangeCell) {
-        portfolioChangeCell.innerHTML = !portfolioValueKnown ? 'N/A'
+        portfolioChangeCell.innerHTML = !stockGrossValueKnown ? 'N/A'
             : buildDayChangeHTML(changeDollars, changePercent, changeClass);
     }
 
@@ -151,7 +151,7 @@ function updateTotalValue() {
 
     const totalChangeCell = document.getElementById('total-day-change');
     if (totalChangeCell) {
-        if (!portfolioValueKnown) {
+        if (!stockGrossValueKnown) {
             totalChangeCell.innerHTML = 'N/A';
         } else {
             const prevGrandTotal = previousTotal + lastCashTotalUsd;
@@ -164,7 +164,7 @@ function updateTotalValue() {
 }
 
 function updateCurrentWeights(portfolioTotal) {
-    if (!portfolioValueKnown) {
+    if (!stockGrossValueKnown) {
         document.querySelectorAll('.weight-display').forEach(cell => {
             cell.innerHTML = 'N/A';
             cell.classList.remove('loaded');
