@@ -1,7 +1,9 @@
 package com.portfoliohelper.ui.components
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -16,6 +18,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,23 +71,37 @@ fun formatSmart(
     }
 
     val absVal = abs(value)
+
+    // Round at each candidate scale first, then re-check thresholds so that
+    // e.g. 999_999.999 rounds to 1000.00K → bumped up to 1.00M, not left as
+    // the malformed "1000.00K".
+    fun roundedScale(v: Double, divisor: Double): Double =
+        Math.round(v / divisor * 100.0) / 100.0
+
     val (scaledValue, suffix) = when {
-        absVal >= 1_000_000_000 -> (absVal / 1_000_000_000.0) to "B"
-        absVal >= 1_000_000 -> (absVal / 1_000_000.0) to "M"
-        absVal >= 10_000 -> (absVal / 1_000.0) to "K"
+        absVal >= 1_000_000_000 -> roundedScale(absVal, 1_000_000_000.0) to "B"
+        absVal >= 1_000_000     -> {
+            val s = roundedScale(absVal, 1_000_000.0)
+            if (s >= 1_000.0) roundedScale(absVal, 1_000_000_000.0) to "B" else s to "M"
+        }
+        absVal >= 10_000        -> {
+            val s = roundedScale(absVal, 1_000.0)
+            if (s >= 1_000.0) roundedScale(absVal, 1_000_000.0) to "M" else s to "K"
+        }
         else -> absVal to ""
     }
 
     val formattedNum = if (suffix == "") {
         val nf = NumberFormat.getNumberInstance(Locale.US)
-        if (absVal >= 1000) {
+        val rounded = Math.round(absVal * 100.0) / 100.0
+        if (rounded >= 1000.0) {
             nf.minimumFractionDigits = 0
             nf.maximumFractionDigits = 0
         } else {
             nf.minimumFractionDigits = 2
             nf.maximumFractionDigits = 2
         }
-        nf.format(absVal)
+        nf.format(rounded)
     } else {
         "%.2f%s".format(Locale.US, scaledValue, suffix)
     }
@@ -179,6 +196,51 @@ fun TableHeader(columns: List<Pair<String, Float>>) {
                 color     = ext.headerText,
                 textAlign = if (label == columns.first().first) TextAlign.Start else TextAlign.End
             )
+        }
+    }
+}
+
+@Composable
+fun TableHeader(
+    firstColumn: Pair<String, Dp>,
+    otherColumns: List<Pair<String, Dp>>,
+    scrollState: ScrollState? = null
+) {
+    val ext = MaterialTheme.ext
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ext.headerBg)
+            .padding(vertical = 6.dp)
+    ) {
+        Text(
+            text = firstColumn.first,
+            modifier = Modifier
+                .width(firstColumn.second)
+                .padding(start = 12.dp),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp
+            ),
+            color = ext.headerText,
+            textAlign = TextAlign.Start
+        )
+        val scrollModifier = if (scrollState != null) Modifier.horizontalScroll(scrollState) else Modifier
+        Row(
+            modifier = scrollModifier.padding(end = 12.dp)
+        ) {
+            otherColumns.forEach { (label, width) ->
+                Text(
+                    text = label,
+                    modifier = Modifier.width(width),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp
+                    ),
+                    color = ext.headerText,
+                    textAlign = TextAlign.End
+                )
+            }
         }
     }
 }
