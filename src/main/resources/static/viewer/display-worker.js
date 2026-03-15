@@ -747,6 +747,7 @@ function _applyDisplayResult(result) {
         if (closeCell) {
             closeCell.textContent = d.closeText;
             closeCell.classList.toggle('loaded', d.closeLoaded);
+            closeCell.classList.toggle('after-hours', d.markAfterHours);
         }
 
         // Day change
@@ -819,6 +820,7 @@ function _applyDisplayResult(result) {
         if (estValCell && d.estValText !== null) {
             estValCell.textContent = d.estValText;
             estValCell.classList.toggle('loaded', d.estValLoaded);
+            estValCell.classList.toggle('after-hours', d.markAfterHours);
             if (d.estValRaw !== null) estValCell.dataset.estVal = d.estValRaw;
         }
     }
