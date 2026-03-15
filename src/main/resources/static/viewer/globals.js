@@ -21,8 +21,12 @@ var rawClosePrices = {};        // symbol → raw close price
 var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
 var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
 
+// Per-stock currency (server-rendered + updated via SSE)
+var stockCurrencies = {};          // symbol → currency code (e.g. 'USD', 'HKD')
+
 // Display state
 var currentDisplayCurrency = 'USD';
+var showStockDisplayCurrency = (typeof savedShowStockDisplayCurrency !== 'undefined') ? savedShowStockDisplayCurrency : false;
 
 // Portfolio totals (updated live)
 var lastStockGrossVal = 0;

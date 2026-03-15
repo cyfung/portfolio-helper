@@ -56,6 +56,9 @@ function initSseConnection() {
                     return;
                 }
 
+                if (data.currency) {
+                    stockCurrencies[data.symbol] = data.currency;
+                }
                 updateGlobalTimestamp(data.timestamp);
                 updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
             }

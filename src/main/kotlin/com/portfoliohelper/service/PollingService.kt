@@ -105,6 +105,8 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
 
     fun get(symbol: String): TData? = cache[symbol]
 
+    fun cachedSymbols(): Set<String> = cache.keys
+
     open fun shutdown() {
         logger.info("Shutting down $serviceName...")
         updateJob?.cancel()

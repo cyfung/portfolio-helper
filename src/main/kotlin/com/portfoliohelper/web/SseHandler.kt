@@ -25,6 +25,7 @@ internal suspend fun ServerSSESession.handleSseStream() {
                 append("\"lastClosePrice\":${quote.previousClose},")
                 append("\"isMarketClosed\":${quote.isMarketClosed},")
                 append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
+                if (quote.currency != null) append("\"currency\":\"${quote.currency}\",")
                 append("\"timestamp\":${quote.lastUpdateTime}")
                 append("}")
             }

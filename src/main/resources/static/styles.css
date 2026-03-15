@@ -312,10 +312,10 @@ h1 {
     align-items: center;
     justify-content: center;
     padding: var(--spacing-sm) var(--spacing-xl);
-    border: 1px solid var(--color-border-medium);
+    border: 1px solid var(--color-accent-primary);
     border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
+    background-color: var(--color-accent-primary);
+    color: var(--color-text-inverse);
     cursor: pointer;
     transition: all var(--transition-fast);
     font-size: var(--font-size-sm);
@@ -325,7 +325,8 @@ h1 {
 }
 
 .currency-toggle:hover {
-    background-color: var(--color-bg-hover);
+    opacity: 0.85;
+    background-color: var(--color-accent-primary);
     border-color: var(--color-accent-primary);
 }
 
@@ -341,7 +342,23 @@ h1 {
 .currency-toggle-icon {
     font-size: 0.85em;
     margin-right: 4px;
-    opacity: 0.7;
+    opacity: 0.85;
+}
+
+.currency-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--spacing-sm) var(--spacing-xl);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background-color: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+    border: 1px solid var(--color-accent-primary);
+    cursor: default;
+    user-select: none;
 }
 
 .currency-select {

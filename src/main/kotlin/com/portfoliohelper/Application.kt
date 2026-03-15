@@ -73,6 +73,7 @@ fun main() {
         YahooMarketDataService.initialize()
         logger.info("Initializing NAV service...")
         NavService.initialize()
+        MarketDataCoordinator.setupAutoFxDiscovery()
         MarketDataCoordinator.refresh()
     } catch (e: Exception) {
         logger.error("Failed to initialize market data services", e)

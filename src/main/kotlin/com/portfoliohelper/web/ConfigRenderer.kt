@@ -64,6 +64,21 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                         }
                     }
 
+                    renderConfigSection("Display") {
+                        renderConfigField(
+                            label = "P&L and Market Value in display currency",
+                            description = "Convert per-stock P&L and Mkt Val columns to the selected display currency. Default: off (show in stock's native currency).",
+                            inputId = "show-stock-display-currency",
+                            badge = null
+                        ) {
+                            input(type = InputType.checkBox) {
+                                id = "show-stock-display-currency"
+                                checked = AppConfig.showStockDisplayCurrency
+                                attributes["data-config-key"] = AppConfig.KEY_SHOW_STOCK_DISPLAY_CURRENCY
+                            }
+                        }
+                    }
+
                     renderConfigSection("Portfolio Settings") {
                         // Per-portfolio table
                         val allPortfolios = ManagedPortfolio.getAll()

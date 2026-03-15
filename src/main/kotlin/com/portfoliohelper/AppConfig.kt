@@ -15,6 +15,7 @@ object AppConfig {
     const val KEY_GITHUB_REPO         = "githubRepo"
     const val KEY_AUTO_UPDATE         = "autoUpdate"
     const val KEY_UPDATE_CHECK_INTERVAL = "updateCheckInterval"
+    const val KEY_SHOW_STOCK_DISPLAY_CURRENCY = "showStockDisplayCurrency"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -25,7 +26,8 @@ object AppConfig {
         KEY_IBKR_RATE_INTERVAL  to "3600",
         KEY_GITHUB_REPO         to "cyfung/portfolio-helper",
         KEY_AUTO_UPDATE         to "true",
-        KEY_UPDATE_CHECK_INTERVAL to "86400"
+        KEY_UPDATE_CHECK_INTERVAL to "86400",
+        KEY_SHOW_STOCK_DISPLAY_CURRENCY to "false"
     )
 
     fun isEnvOverridden(key: String) = false
@@ -61,6 +63,7 @@ object AppConfig {
     val autoUpdate: Boolean get() = get(KEY_AUTO_UPDATE).lowercase() != "false"
     val updateCheckIntervalMs: Long get() =
         (get(KEY_UPDATE_CHECK_INTERVAL).toLongOrNull()?.takeIf { it >= 60 } ?: 86400L) * 1000L
+    val showStockDisplayCurrency: Boolean get() = get(KEY_SHOW_STOCK_DISPLAY_CURRENCY).lowercase() == "true"
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

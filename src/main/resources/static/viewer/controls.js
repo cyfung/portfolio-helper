@@ -113,6 +113,7 @@ function initCurrencyControls() {
             currentDisplayCurrency = saved;
             currencyToggle.querySelector('.toggle-label').textContent = saved;
         }
+        currencyToggle.classList.add('active');
         currencyToggle.addEventListener('click', () => {
             const next = currencies[(currencies.indexOf(currentDisplayCurrency) + 1) % currencies.length];
             currencyToggle.querySelector('.toggle-label').textContent = next;

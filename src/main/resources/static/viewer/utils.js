@@ -24,7 +24,7 @@ function formatTimestamp(timestamp) {
 
 function formatCurrency(val) {
     const sign = val < 0 ? '-' : '';
-    return sign + '$' + Math.abs(val).toLocaleString('en-US', {
+    return sign + Math.abs(val).toLocaleString('en-US', {
         minimumFractionDigits: 2, maximumFractionDigits: 2
     });
 }
@@ -41,14 +41,44 @@ function toDisplayCurrency(usdVal) {
 
 function formatDisplayCurrency(usdVal) {
     const converted = toDisplayCurrency(usdVal);
-    const ccy = currentDisplayCurrency;
     const absVal = Math.abs(converted);
     const sign = converted < 0 ? '-' : '';
-    const formatted = absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return ccy === 'USD' ? (sign + '$' + formatted) : (sign + formatted + '\u00A0' + ccy);
+    return sign + absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatSignedDisplayCurrency(usdVal) {
     const converted = toDisplayCurrency(usdVal);
     return (converted >= 0 ? '+' : '') + formatDisplayCurrency(usdVal);
+}
+
+// Returns USD per 1 unit of stockCcy, or null if the FX rate is not yet available.
+// Handles sub-unit currencies (e.g. GBp=pence, ILa=agorot, ZAc=cents) where Yahoo
+// Finance returns a code with a lowercase last letter meaning 1/100 of the parent.
+function getStockFxRate(stockCcy) {
+    if (stockCcy === 'USD') return 1.0;
+    // Sub-unit: two uppercase + one lowercase (e.g. GBp, ILa, ZAc) → parent = toUpperCase, rate /100
+    if (/^[A-Z]{2}[a-z]$/.test(stockCcy)) {
+        const parent = stockCcy.toUpperCase();
+        const rate = fxRates[parent];
+        return rate != null ? rate / 100 : null;
+    }
+    const rate = fxRates[stockCcy];
+    return rate != null ? rate : null;
+}
+
+function toStockDisplayCurrency(nativeVal, stockCcy) {
+    const toUsd = getStockFxRate(stockCcy);    // 1 stockCcy = toUsd USD
+    const usdVal = nativeVal * toUsd;
+    return toDisplayCurrency(usdVal);           // USD → displayCurrency
+}
+
+function formatStockDisplayCurrency(nativeVal, stockCcy) {
+    const converted = toStockDisplayCurrency(nativeVal, stockCcy);
+    const sign = converted < 0 ? '-' : '';
+    return sign + Math.abs(converted).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatSignedStockDisplayCurrency(nativeVal, stockCcy) {
+    const converted = toStockDisplayCurrency(nativeVal, stockCcy);
+    return (converted >= 0 ? '+' : '') + formatStockDisplayCurrency(nativeVal, stockCcy);
 }

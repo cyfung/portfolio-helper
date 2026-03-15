@@ -4,7 +4,7 @@
 function updateNavInUI(symbol, nav) {
     const navCell = document.getElementById('nav-' + symbol);
     if (navCell) {
-        navCell.textContent = nav !== null ? '$' + nav.toFixed(2) : '—';
+        navCell.textContent = nav !== null ? nav.toFixed(2) : '—';
         if (nav !== null) navCell.classList.add('loaded');
     }
     updateAllEstVals();
@@ -50,7 +50,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
 
         const changeCell = document.getElementById('day-change-' + symbol);
         if (changeCell) {
-            changeCell.textContent = (changeDollars >= 0 ? '+' : '-') + '$' + Math.abs(changeDollars).toFixed(2);
+            changeCell.textContent = (changeDollars >= 0 ? '+' : '-') + Math.abs(changeDollars).toFixed(2);
             applyChangeClasses(changeCell, changeDollars, isZeroChange, isMarketClosed);
         }
 
@@ -69,8 +69,16 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
             const positionChange = changeDollars * amount;
             const positionChangeCell = document.getElementById('position-change-' + symbol);
             if (positionChangeCell) {
-                positionChangeCell.textContent = formatSignedCurrency(positionChange);
-                applyChangeClasses(positionChangeCell, positionChange, isZeroChange, isMarketClosed);
+                const stockCcy = stockCurrencies[symbol] ?? 'USD';
+                const fxRate = getStockFxRate(stockCcy);
+                if (fxRate === null) {
+                    positionChangeCell.textContent = '—';
+                } else if (showStockDisplayCurrency) {
+                    positionChangeCell.textContent = formatSignedStockDisplayCurrency(positionChange, stockCcy);
+                } else {
+                    positionChangeCell.textContent = formatSignedCurrency(positionChange);
+                }
+                if (fxRate !== null) applyChangeClasses(positionChangeCell, positionChange, isZeroChange, isMarketClosed);
             }
         }
     }
@@ -78,15 +86,24 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
     if (valueCell && amountCell) {
         const amount = parseFloat(amountCell.textContent);
         const price = markPrice !== null ? markPrice : lastClosePrice;
-        if (price !== null) {
+        const stockCcy = stockCurrencies[symbol] ?? 'USD';
+        const fxRate = getStockFxRate(stockCcy);
+        if (price !== null && fxRate !== null) {
             const newValue = price * amount;
-            valueCell.textContent = formatCurrency(newValue);
+            if (showStockDisplayCurrency) {
+                valueCell.textContent = formatStockDisplayCurrency(newValue, stockCcy);
+            } else {
+                valueCell.textContent = formatCurrency(newValue);
+            }
             valueCell.classList.add('loaded');
             if (previousValue !== null && Math.abs(newValue - previousValue) > 0.01) {
                 valueChanged = true;
             }
-            updateTotalValue();
+        } else if (price !== null && fxRate === null) {
+            valueCell.textContent = '—';
+            valueCell.classList.remove('loaded');
         }
+        if (price !== null) updateTotalValue();
     }
 
     if (valueChanged && amountCell) {
@@ -119,8 +136,14 @@ function updateTotalValue() {
             const closePrice = rawClosePrices[symbol] ?? parsePrice(closeCell.textContent);
 
             if (markPrice === null && closePrice === null) stockGrossValueKnown = false;
-            if (markPrice !== null) total += markPrice * amount;
-            if (closePrice !== null) previousTotal += closePrice * amount;
+            const stockCcy = stockCurrencies[symbol] ?? 'USD';
+            const fxRate = getStockFxRate(stockCcy);
+            if (fxRate === null) {
+                stockGrossValueKnown = false;
+            } else {
+                if (markPrice !== null) total += markPrice * amount * fxRate;
+                if (closePrice !== null) previousTotal += closePrice * amount * fxRate;
+            }
         }
     });
 
