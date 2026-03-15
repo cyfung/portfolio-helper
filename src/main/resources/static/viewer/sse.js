@@ -43,15 +43,14 @@ function initSseConnection() {
                 updatePortfolioRefValues(data.portfolioId, data.value);
             } else if (data.type === 'ibkr-rates') {
                 buildIbkrRatesTable(data);
-                updateIbkrDailyInterest();
+                lastIbkrRatesData = data;
+                scheduleDisplayUpdate();
             } else {
                 // FX rate update
                 if (data.symbol && data.symbol.endsWith('USD=X')) {
                     const ccy = data.symbol.replace('USD=X', '');
                     if (data.markPrice !== null && data.markPrice !== undefined) {
                         fxRates[ccy] = data.markPrice;
-                        updateCashTotals();
-                        updateIbkrDailyInterest();
                         scheduleDisplayUpdate();
                     }
                     return;

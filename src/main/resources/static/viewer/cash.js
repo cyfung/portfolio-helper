@@ -1,55 +1,7 @@
-// ── cash.js — Cash totals, margin display, IBKR interest calculations ────────
+// ── cash.js — Cash table structure rebuild and portfolio-ref updates ──────────
 // Depends on: utils.js, ui-helpers.js, rebalance.js
-
-function updateMarginDisplay(marginUsd) {
-    const marginRow = document.querySelector('[data-margin-row]');
-    const marginEl = document.getElementById('margin-total-usd');
-    if (!marginEl) return;
-
-    if (marginUsd >= 0) {
-        if (marginRow) marginRow.style.display = 'none';
-        return;
-    }
-    if (marginRow) marginRow.style.display = '';
-
-    if (!marginKnown) {
-        marginEl.textContent = 'N/A';
-        const marginPctEl = document.getElementById('margin-percent');
-        if (marginPctEl) { marginPctEl.textContent = ''; marginPctEl.style.display = 'none'; }
-        return;
-    }
-
-    marginEl.textContent = formatDisplayCurrency(-marginUsd);
-
-    const marginPctEl = document.getElementById('margin-percent');
-    const denominator = lastStockGrossVal + lastMarginUsd;
-    const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
-    if (marginPctEl) {
-        marginPctEl.textContent = ' (' + pct.toFixed(1) + '%)';
-        marginPctEl.style.display = '';
-    }
-}
-
-/**
- * Compute blended IBKR rate (%) for a given native loan amount using tier data.
- * Returns null if amount is within the base tier (no blending needed).
- * tiers: [{upTo: number|null, rate: number}, ...]
- */
-function blendedIbkrRate(tiers, amount) {
-    if (amount <= 0 || !tiers.length) return null;
-    const baseCap = tiers[0].upTo;
-    if (baseCap === null || amount <= baseCap) return null;
-    let remaining = amount, totalInterest = 0, prevUpTo = 0;
-    for (const tier of tiers) {
-        const capacity = tier.upTo !== null ? tier.upTo - prevUpTo : Infinity;
-        const inTier = Math.min(remaining, capacity);
-        totalInterest += inTier * tier.rate / 100;
-        remaining -= inTier;
-        if (remaining <= 0) break;
-        prevUpTo = tier.upTo ?? 0;
-    }
-    return (totalInterest / amount) * 100;
-}
+// Note: cash totals, margin display, and IBKR interest are computed inside
+// display-worker.js and applied via _applyDisplayResult().
 
 function buildIbkrRatesTable(data) {
     const wrapper = document.querySelector('.ibkr-rates-wrapper');
@@ -122,139 +74,6 @@ function buildIbkrRatesTable(data) {
     if (reloadBtn) reloadBtn.dataset.lastFetch = data.lastFetch;
 }
 
-function updateIbkrDailyInterest() {
-    const rows = document.querySelectorAll('.ibkr-rates-table tbody tr[data-ibkr-rate]');
-    if (!rows.length) return;
-
-    const loanUsd = lastMarginUsd < 0 ? -lastMarginUsd : 0;
-
-    let currentUsd = 0;
-    let cheapestUsd = null, cheapestCcy = null;
-
-    rows.forEach(tr => {
-        const ccy = tr.querySelector('.ibkr-rate-currency')?.textContent?.trim();
-        if (!ccy) return;
-
-        if (!tr.dataset.ibkrTiers) return;
-        let tiers;
-        try { tiers = JSON.parse(tr.dataset.ibkrTiers); } catch (e) { return; }
-        const baseRate = tiers[0]?.rate;
-        if (baseRate === undefined) return;
-
-        const fxRate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
-        if (fxRate === null || fxRate <= 0) return;
-
-        // Sum actual margin entries for this specific currency
-        let nativeLoan = 0;
-        document.querySelectorAll('[data-cash-entry][data-margin-flag="true"]').forEach(row => {
-            if (row.dataset.currency?.toUpperCase() === ccy.toUpperCase()) {
-                const amount = parseFloat(row.dataset.amount || '0');
-                if (amount < 0) nativeLoan += -amount;
-            }
-        });
-
-        // Recalculate effective rate using this currency's own native loan
-        const blended = nativeLoan > 0 ? blendedIbkrRate(tiers, nativeLoan) : null;
-        const effectiveRate = blended !== null ? blended : baseRate;
-
-        // Hypothetical: if entire USD loan were in this currency
-        const hypotheticalNative = loanUsd > 0 ? loanUsd / fxRate : nativeLoan;
-        const hypotheticalBlended = blendedIbkrRate(tiers, hypotheticalNative);
-
-        const valueCell = tr.querySelector('.ibkr-rate-value');
-        if (valueCell) {
-            valueCell.textContent = hypotheticalBlended !== null
-                ? `${hypotheticalBlended.toFixed(3)}% (${baseRate.toFixed(3)}%)`
-                : `${baseRate.toFixed(3)}%`;
-        }
-
-        const days = parseInt(tr.dataset.ibkrDays, 10);
-
-        // Current interest: each currency's own native loan * its own rate
-        const nativeDaily = nativeLoan > 0 ? nativeLoan * effectiveRate / 100.0 / days : 0;
-        currentUsd += nativeDaily * fxRate;
-
-        // Cheapest: if we moved entire USD loan to this currency, what would interest be
-        if (loanUsd > 0) {
-            const hypotheticalRate = hypotheticalBlended !== null ? hypotheticalBlended : baseRate;
-            const interest = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate;
-            if (cheapestUsd === null || interest < cheapestUsd) {
-                cheapestUsd = interest;
-                cheapestCcy = ccy;
-            }
-        }
-    });
-
-    const diff = (cheapestUsd !== null && currentUsd > 0) ? currentUsd - cheapestUsd : null;
-
-    const savingLabelEl = document.getElementById('ibkr-saving-label');
-    let label = 'Saving';
-    if (cheapestCcy != null && rows.length === 2) {
-        if (cheapestCcy === 'USD') {
-            const otherRow = [...rows].find(r => r.querySelector('.ibkr-rate-currency')?.textContent?.trim() !== 'USD');
-            const ccy = otherRow?.querySelector('.ibkr-rate-currency')?.textContent?.trim();
-            if (ccy) label = 'Saving (Sell USD.' + ccy + ')';
-        } else {
-            label = 'Saving (Buy USD.' + cheapestCcy + ')';
-        }
-    }
-    if (savingLabelEl) savingLabelEl.textContent = label;
-
-    const currentEl = document.getElementById('ibkr-current-interest');
-    if (currentEl) currentEl.textContent = currentUsd > 0 ? formatDisplayCurrency(currentUsd) : '—';
-
-    const cheapestEl = document.getElementById('ibkr-cheapest-interest');
-    const cheapestCcyEl = document.getElementById('ibkr-cheapest-ccy');
-    if (cheapestEl) cheapestEl.textContent = cheapestUsd !== null ? formatDisplayCurrency(cheapestUsd) : '—';
-    if (cheapestCcyEl) cheapestCcyEl.textContent = cheapestCcy ? '(' + cheapestCcy + ')' : '';
-
-    const diffEl = document.getElementById('ibkr-interest-diff');
-    if (diffEl) {
-        diffEl.textContent = (diff !== null && diff >= 0.005) ? formatDisplayCurrency(diff) : '—';
-        diffEl.className = (diff !== null && diff >= 0.005) ? 'ibkr-rate-diff' : '';
-    }
-}
-
-function updateCashTotals() {
-    if (document.querySelectorAll('[data-cash-entry]').length === 0) return;
-    let totalUsd = 0;
-    let marginUsd = 0;
-    let hasUnknownFx = false;
-    let hasUnknownMarginFx = false;
-
-    document.querySelectorAll('[data-cash-entry]').forEach(row => {
-        const ccy = row.dataset.currency;
-        const amount = parseFloat(row.dataset.amount);
-        const rate = fxRates[ccy];
-        const entryId = row.dataset.entryId;
-        const span = document.getElementById('cash-usd-' + entryId);
-        let usd = 0;
-        if (rate !== undefined) {
-            usd = amount * rate;
-            if (span) span.textContent = formatDisplayCurrency(usd);
-        } else {
-            hasUnknownFx = true;
-            if (row.dataset.marginFlag === 'true') hasUnknownMarginFx = true;
-            if (span) span.textContent = 'N/A';
-            return;
-        }
-        totalUsd += usd;
-        if (row.dataset.marginFlag === 'true') marginUsd += usd;
-    });
-
-    cashTotalKnown = !hasUnknownFx;
-    marginKnown = !hasUnknownMarginFx;
-    lastCashTotalUsd = totalUsd;
-
-    const cashTotalEl = document.getElementById('cash-total-usd');
-    if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(totalUsd) : 'N/A';
-
-    lastMarginUsd = marginUsd;
-    updateMarginDisplay(marginUsd);
-    updateIbkrDailyInterest();
-    updateGrandTotal();
-}
-
 function updatePortfolioRefValues(portfolioId, newPortfolioValue) {
     let updated = false;
     document.querySelectorAll(`[data-portfolio-ref="${portfolioId}"]`).forEach(row => {
@@ -265,5 +84,5 @@ function updatePortfolioRefValues(portfolioId, newPortfolioValue) {
         if (rawCol) rawCol.textContent = formatCurrency(Math.abs(newAmount)) + ' USD';
         updated = true;
     });
-    if (updated) { updateCashTotals(); scheduleDisplayUpdate(); }
+    if (updated) { scheduleDisplayUpdate(); }
 }

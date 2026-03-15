@@ -55,21 +55,7 @@ function refreshDisplayCurrency() {
         }
     }
 
-    // Re-render cash entries in new currency
-    document.querySelectorAll('[data-cash-entry]').forEach(row => {
-        const ccy = row.dataset.currency;
-        const amount = parseFloat(row.dataset.amount);
-        const rate = fxRates[ccy];
-        const span = document.getElementById('cash-usd-' + row.dataset.entryId);
-        if (span) span.textContent = rate !== undefined ? formatDisplayCurrency(amount * rate) : 'N/A';
-    });
-
-    const cashTotalEl = document.getElementById('cash-total-usd');
-    if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(lastCashTotalUsd) : 'N/A';
-    updateMarginDisplay(lastMarginUsd);
-    updateIbkrDailyInterest();
-
-    // Stock cells, totals, weights, rebal/alloc, margin target — all via worker
+    // All cells (stock, cash, margin, IBKR interest) re-rendered via worker
     scheduleDisplayUpdate();
 }
 

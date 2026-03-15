@@ -62,6 +62,22 @@ function formatSignedStockDisplayCurrency(nativeVal, stockCcy, fxRates, cdc) {
     return (converted >= 0 ? '+' : '') + formatStockDisplayCurrency(nativeVal, stockCcy, fxRates, cdc);
 }
 
+function blendedIbkrRate(tiers, amount) {
+    if (amount <= 0 || !tiers.length) return null;
+    const baseCap = tiers[0].upTo;
+    if (baseCap === null || amount <= baseCap) return null;
+    let remaining = amount, totalInterest = 0, prevUpTo = 0;
+    for (const tier of tiers) {
+        const capacity = tier.upTo !== null ? tier.upTo - prevUpTo : Infinity;
+        const inTier = Math.min(remaining, capacity);
+        totalInterest += inTier * tier.rate / 100;
+        remaining -= inTier;
+        if (remaining <= 0) break;
+        prevUpTo = tier.upTo ?? 0;
+    }
+    return (totalInterest / amount) * 100;
+}
+
 function buildDayChangeHTML(changeDollars, changePercent, changeClass, fxRates, cdc) {
     const sign = changeDollars >= 0 ? '+' : '-';
     return '<span class="change-dollars ' + changeClass + '">' + formatSignedDisplayCurrency(changeDollars, fxRates, cdc) + '</span> ' +
@@ -172,13 +188,29 @@ function computeAllocations(delta, stocks, totalStockValue, mode) {
 
 function compute(snap) {
     const {
-        stocks, previousValues, rawMarkPrices, rawClosePrices, fxRates, stockCurrencies,
+        stocks, previousMarkTexts, rawMarkPrices, rawClosePrices, fxRates, stockCurrencies,
         symbolMarketClosed, symbolTradingPeriodEndMs, componentDayPercents, navValues,
         currentDisplayCurrency: cdc, showStockDisplayCurrency,
-        lastMarginUsd, lastCashTotalUsd, cashTotalKnown,
+        cashEntries, ibkrRatesData,
         rebalTargetUsd, marginTargetPct, allocAddMode, allocReduceMode,
         nowMs
     } = snap;
+
+    // Compute cash totals from DOM-sourced entries
+    let cashTotalUsd = 0, marginUsd = 0, cashTotalKnown = true;
+    const perEntryCash = {};
+    for (const e of cashEntries) {
+        const rate = e.currency === 'USD' ? 1 : (fxRates[e.currency] ?? null);
+        if (rate === null) {
+            cashTotalKnown = false;
+            perEntryCash[e.entryId] = '\\u2014';
+            continue;
+        }
+        const usd = e.amount * rate;
+        perEntryCash[e.entryId] = formatDisplayCurrency(usd, fxRates, cdc);
+        cashTotalUsd += usd;
+        if (e.marginFlag) marginUsd += usd;
+    }
 
     let markTotal = 0;
     let prevTotal = 0;
@@ -253,9 +285,9 @@ function compute(snap) {
             if (closePrice !== null) prevTotal += closePrice * qty * fxRate;
         }
 
-        // Flash delta (compare native values to match original behavior)
-        const prevVal = previousValues[symbol] ?? null;
-        const valueDelta = (prevVal !== null && price !== null) ? (price * qty) - prevVal : null;
+        // Flash: triggered only when displayed mark price text changes
+        const prevMarkText = previousMarkTexts[symbol] ?? null;
+        const markPriceChanged = prevMarkText !== null && markText !== '—' && markText !== prevMarkText;
 
         // LETF est val
         let estValText = null, estValLoaded = false, estValRaw = null;
@@ -291,14 +323,14 @@ function compute(snap) {
             dayPctText, dayPctClass,
             positionChangeText, positionChangeClass,
             valueText, valueLoaded, valueUsd,
-            valueDelta,
+            markPriceChanged,
             estValText, estValLoaded, estValRaw,
             qty, targetWeight, fxRate, stockCcy, markPrice, closePrice
         };
     }
 
     // Pass 2: weights, rebal, alloc
-    const rebalTotal = getRebalTotal(markTotal, lastMarginUsd, rebalTargetUsd, marginTargetPct);
+    const rebalTotal = getRebalTotal(markTotal, marginUsd, rebalTargetUsd, marginTargetPct);
     const allocStocks = [];
     let totalStockValueForAlloc = 0;
 
@@ -404,33 +436,104 @@ function compute(snap) {
     const portfolioDayChangeHTML = !stockGrossValueKnown ? 'N/A'
         : buildDayChangeHTML(dayChangeDollars, changePercent, changeClass, fxRates, cdc);
 
-    const prevGrandTotal = prevTotal + lastCashTotalUsd;
+    const prevGrandTotal = prevTotal + cashTotalUsd;
     const totalChangePercent = prevGrandTotal !== 0 ? (dayChangeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
     const totalDayChangeHTML = !stockGrossValueKnown ? 'N/A'
         : buildDayChangeHTML(dayChangeDollars, totalChangePercent, changeClass, fxRates, cdc);
 
     const grandTotal = (stockGrossValueKnown && cashTotalKnown)
-        ? formatDisplayCurrency(markTotal + lastCashTotalUsd, fxRates, cdc) : 'N/A';
+        ? formatDisplayCurrency(markTotal + cashTotalUsd, fxRates, cdc) : 'N/A';
 
     // Margin
-    const showMarginRow = lastMarginUsd < 0;
+    const showMarginRow = marginUsd < 0;
     let marginDisplay = '', marginPctText = '';
-    if (lastMarginUsd < 0) {
-        marginDisplay = formatDisplayCurrency(-lastMarginUsd, fxRates, cdc);
-        const denominator = markTotal + lastMarginUsd;
-        const pct = denominator !== 0 ? Math.abs(lastMarginUsd / denominator) * 100 : 0;
-        marginPctText = ' (' + pct.toFixed(1) + '%)';
+    if (marginUsd < 0) {
+        if (!cashTotalKnown) {
+            marginDisplay = 'N/A';
+        } else {
+            marginDisplay = formatDisplayCurrency(-marginUsd, fxRates, cdc);
+            const denominator = markTotal + marginUsd;
+            const pct = denominator !== 0 ? Math.abs(marginUsd / denominator) * 100 : 0;
+            marginPctText = ' (' + pct.toFixed(1) + '%)';
+        }
+    }
+
+    // Cash total text
+    const cashTotalText = cashTotalKnown ? formatDisplayCurrency(cashTotalUsd, fxRates, cdc) : 'N/A';
+
+    // IBKR interest computation
+    let ibkrResult = null;
+    if (ibkrRatesData && ibkrRatesData.currencies && ibkrRatesData.currencies.length > 0) {
+        const marginCurrencies = new Set(['USD']);
+        for (const e of cashEntries) {
+            if (e.marginFlag) {
+                const ccy = e.currency?.toUpperCase();
+                if (ccy && ccy !== 'P') marginCurrencies.add(ccy);
+            }
+        }
+        const filteredCurrencies = ibkrRatesData.currencies.filter(c =>
+            marginCurrencies.has(c.currency.toUpperCase())
+        );
+        if (filteredCurrencies.length > 0) {
+            const loanUsd = marginUsd < 0 ? -marginUsd : 0;
+            let currentUsd = 0;
+            let cheapestUsd = null, cheapestCcy = null;
+            const perCurrency = {};
+            for (const c of filteredCurrencies) {
+                const ccy = c.currency;
+                const tiers = c.tiers;
+                const baseRate = tiers[0]?.rate;
+                if (baseRate === undefined) continue;
+                const fxRate = ccy === 'USD' ? 1 : (fxRates[ccy] ?? null);
+                if (fxRate === null || fxRate <= 0) continue;
+                let nativeLoan = 0;
+                for (const e of cashEntries) {
+                    if (e.marginFlag && e.currency.toUpperCase() === ccy.toUpperCase() && e.amount < 0) {
+                        nativeLoan += -e.amount;
+                    }
+                }
+                const blended = nativeLoan > 0 ? blendedIbkrRate(tiers, nativeLoan) : null;
+                const effectiveRate = blended !== null ? blended : baseRate;
+                const hypotheticalNative = loanUsd > 0 ? loanUsd / fxRate : nativeLoan;
+                const hypotheticalBlended = blendedIbkrRate(tiers, hypotheticalNative);
+                perCurrency[ccy] = hypotheticalBlended !== null
+                    ? hypotheticalBlended.toFixed(3) + '% (' + baseRate.toFixed(3) + '%)'
+                    : baseRate.toFixed(3) + '%';
+                const days = c.days;
+                const nativeDaily = nativeLoan > 0 ? nativeLoan * effectiveRate / 100.0 / days : 0;
+                currentUsd += nativeDaily * fxRate;
+                if (loanUsd > 0) {
+                    const hypotheticalRate = hypotheticalBlended !== null ? hypotheticalBlended : baseRate;
+                    const interest = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate;
+                    if (cheapestUsd === null || interest < cheapestUsd) {
+                        cheapestUsd = interest;
+                        cheapestCcy = ccy;
+                    }
+                }
+            }
+            const diff = (cheapestUsd !== null && currentUsd > 0) ? currentUsd - cheapestUsd : null;
+            let label = 'Saving';
+            if (cheapestCcy != null && filteredCurrencies.length === 2) {
+                if (cheapestCcy === 'USD') {
+                    const otherCcy = filteredCurrencies.find(c => c.currency.toUpperCase() !== 'USD')?.currency;
+                    if (otherCcy) label = 'Saving (Sell USD.' + otherCcy + ')';
+                } else {
+                    label = 'Saving (Buy USD.' + cheapestCcy + ')';
+                }
+            }
+            ibkrResult = { perCurrency, currentUsd, cheapestUsd, cheapestCcy, diff, label };
+        }
     }
 
     // Margin target display
-    const marginTargetUsd = lastMarginUsd - (rebalTotal - markTotal);
+    const marginTargetUsd = marginUsd - (rebalTotal - markTotal);
     const marginTargetText = marginTargetUsd < 0 ? formatDisplayCurrency(-marginTargetUsd, fxRates, cdc) : '';
 
     // Margin input placeholder
-    const marginInputPlaceholder = deriveMarginPct(rebalTotal, markTotal, lastMarginUsd).toFixed(1);
+    const marginInputPlaceholder = deriveMarginPct(rebalTotal, markTotal, marginUsd).toFixed(1);
 
     // Rebal input placeholder
-    const baseUsd = marginTargetPct !== null ? rebalTotal : markTotal + Math.max(lastMarginUsd, 0);
+    const baseUsd = marginTargetPct !== null ? rebalTotal : markTotal + Math.max(marginUsd, 0);
     const rebalTargetPlaceholder = Math.abs(toDisplayCurrency(baseUsd, fxRates, cdc)).toLocaleString('en-US', {
         minimumFractionDigits: 2, maximumFractionDigits: 2
     });
@@ -447,7 +550,7 @@ function compute(snap) {
             dayChangeText: d.dayChangeText, dayChangeClass: d.dayChangeClass,
             dayPctText: d.dayPctText, dayPctClass: d.dayPctClass,
             positionChangeText: d.positionChangeText, positionChangeClass: d.positionChangeClass,
-            valueText: d.valueText, valueLoaded: d.valueLoaded, valueDelta: d.valueDelta,
+            valueText: d.valueText, valueLoaded: d.valueLoaded, markPriceChanged: d.markPriceChanged,
             weightHTML: d.weightHTML, weightLoaded: d.weightLoaded,
             rebalDollarsText: d.rebalDollarsText, rebalDollarsClass: d.rebalDollarsClass,
             rebalQtyText: d.rebalQtyText, rebalQtyClass: d.rebalQtyClass,
@@ -467,7 +570,10 @@ function compute(snap) {
             portfolioDayChangeHTML, totalDayChangeHTML,
             grandTotal, grandTotalKnown: stockGrossValueKnown && cashTotalKnown,
             marginDisplay, marginPctText, showMarginRow,
-            marginTargetText, marginInputPlaceholder, rebalTargetPlaceholder
+            marginTargetText, marginInputPlaceholder, rebalTargetPlaceholder,
+            cashTotalText, cashTotalKnown,
+            cashTotalRaw: cashTotalUsd, marginUsdRaw: marginUsd,
+            perEntryCash, ibkrResult
         }
     };
 }
@@ -542,10 +648,15 @@ function _buildSnapshot() {
         stocks.push({ symbol, qty, targetWeight, letfComponents });
     });
 
-    const previousValues = {};
+    // Read previously displayed mark price text to detect changes (for row flash).
+    // Comparing text strings avoids false positives from high-precision SSE floats vs
+    // the 2-decimal text that was previously rendered (e.g. 123.4567 !== 123.46).
+    const previousMarkTexts = {};
     for (const s of stocks) {
-        const cell = document.getElementById('value-' + s.symbol);
-        if (cell) previousValues[s.symbol] = parsePrice(cell.textContent);
+        const span = document.querySelector('#mark-' + s.symbol + ' .mark-price-value');
+        if (span && span.textContent && span.textContent !== '—') {
+            previousMarkTexts[s.symbol] = span.textContent.trim();
+        }
     }
 
     // Merge server-rendered DOM prices as fallback for symbols not yet received via SSE.
@@ -565,9 +676,16 @@ function _buildSnapshot() {
         }
     }
 
+    const cashEntries = [...document.querySelectorAll('[data-cash-entry]')].map(r => ({
+        entryId: r.dataset.entryId,
+        currency: r.dataset.currency,
+        amount: parseFloat(r.dataset.amount),
+        marginFlag: r.dataset.marginFlag === 'true'
+    }));
+
     return {
         stocks,
-        previousValues,
+        previousMarkTexts,
         rawMarkPrices: rawMarkPricesSnap,
         rawClosePrices: rawClosePricesSnap,
         fxRates: Object.assign({}, fxRates),
@@ -578,9 +696,8 @@ function _buildSnapshot() {
         navValues: Object.assign({}, navValues),
         currentDisplayCurrency,
         showStockDisplayCurrency,
-        lastMarginUsd,
-        lastCashTotalUsd,
-        cashTotalKnown,
+        cashEntries,
+        ibkrRatesData: lastIbkrRatesData,
         rebalTargetUsd,
         marginTargetPct,
         allocAddMode,
@@ -599,6 +716,10 @@ function _applyDisplayResult(result) {
     lastPrevPortfolioVal = totals.prevStockGrossValRaw;
     lastPortfolioDayChangeUsd = totals.dayChangeDollarsRaw;
     stockGrossValueKnown = totals.stockGrossValueKnown;
+    lastCashTotalUsd = totals.cashTotalRaw;
+    lastMarginUsd = totals.marginUsdRaw;
+    cashTotalKnown = totals.cashTotalKnown;
+    marginKnown = totals.cashTotalKnown;
 
     // Per-stock cells
     for (const [symbol, d] of Object.entries(perStock)) {
@@ -651,8 +772,8 @@ function _applyDisplayResult(result) {
             valueCell.classList.toggle('loaded', d.valueLoaded);
         }
 
-        // Row flash
-        if (d.valueDelta !== null && Math.abs(d.valueDelta) > 0.01) {
+        // Row flash — only when mark price itself changed
+        if (d.markPriceChanged) {
             const row = valueCell ? valueCell.closest('tr') : null;
             if (row && !row.classList.contains('recently-updated')) {
                 row.classList.add('recently-updated');
@@ -738,8 +859,46 @@ function _applyDisplayResult(result) {
     const rebalInput = document.getElementById('rebal-target-input');
     if (rebalInput) rebalInput.placeholder = totals.rebalTargetPlaceholder;
 
+    // Per-entry cash USD cells
+    for (const [entryId, text] of Object.entries(totals.perEntryCash)) {
+        const el = document.getElementById('cash-usd-' + entryId);
+        if (el) el.textContent = text;
+    }
+
+    // Cash total
+    const cashTotalEl = document.getElementById('cash-total-usd');
+    if (cashTotalEl) cashTotalEl.textContent = totals.cashTotalText;
+
+    // IBKR interest
+    if (totals.ibkrResult) _applyIbkrInterest(totals.ibkrResult);
+
     // Group table (runs on main thread, reads updated globals)
     if (groupViewActive && typeof updateGroupTable === 'function') {
         updateGroupTable();
+    }
+}
+
+function _applyIbkrInterest(r) {
+    for (const [ccy, text] of Object.entries(r.perCurrency)) {
+        const row = [...document.querySelectorAll('.ibkr-rates-table tbody tr')].find(
+            tr => tr.querySelector('.ibkr-rate-currency')?.textContent?.trim() === ccy
+        );
+        if (row) {
+            const cell = row.querySelector('.ibkr-rate-value');
+            if (cell) cell.textContent = text;
+        }
+    }
+    const savingLabelEl = document.getElementById('ibkr-saving-label');
+    if (savingLabelEl) savingLabelEl.textContent = r.label;
+    const currentEl = document.getElementById('ibkr-current-interest');
+    if (currentEl) currentEl.textContent = r.currentUsd > 0 ? formatDisplayCurrency(r.currentUsd) : '\u2014';
+    const cheapestEl = document.getElementById('ibkr-cheapest-interest');
+    if (cheapestEl) cheapestEl.textContent = r.cheapestUsd !== null ? formatDisplayCurrency(r.cheapestUsd) : '\u2014';
+    const cheapestCcyEl = document.getElementById('ibkr-cheapest-ccy');
+    if (cheapestCcyEl) cheapestCcyEl.textContent = r.cheapestCcy ? '(' + r.cheapestCcy + ')' : '';
+    const diffEl = document.getElementById('ibkr-interest-diff');
+    if (diffEl) {
+        diffEl.textContent = (r.diff !== null && r.diff >= 0.005) ? formatDisplayCurrency(r.diff) : '\u2014';
+        diffEl.className = (r.diff !== null && r.diff >= 0.005) ? 'ibkr-rate-diff' : '';
     }
 }

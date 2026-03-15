@@ -18,12 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initSaveToBacktest();
     initThemeToggle();
 
-    // Initialize cash totals on page load (USD entries are pre-filled server-side).
-    // Must run before restoring targets so lastMarginUsd is correct.
-    updateCashTotals();
-
-    // Compute display values from server-rendered DOM prices before restoring targets,
-    // so delta is correct and alloc columns don't flash wrong values on load.
+    // Compute display values (including cash totals) from server-rendered DOM data.
+    // The worker reads cash entries from DOM and sets lastMarginUsd/lastCashTotalUsd globals.
     scheduleDisplayUpdate();
 
     // Restore saved rebalance/margin targets — margin % takes priority
