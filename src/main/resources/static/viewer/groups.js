@@ -31,6 +31,10 @@ function buildGroupMap() {
 
         const mktVal = markPrice !== null ? markPrice * qty : null;
         const prevMktVal = closePrice !== null ? closePrice * qty : null;
+        const stockCcy = stockCurrencies[symbol] ?? 'USD';
+        const fxRate = getStockFxRate(stockCcy);
+        const mktValUsd = (mktVal !== null && fxRate !== null) ? mktVal * fxRate : mktVal;
+        const prevMktValUsd = (prevMktVal !== null && fxRate !== null) ? prevMktVal * fxRate : prevMktVal;
 
         for (const { multiplier, name } of groupEntries) {
             if (!groups.has(name)) {
@@ -41,8 +45,8 @@ function buildGroupMap() {
                 });
             }
             const g = groups.get(name);
-            if (mktVal !== null)     g.mktVal     += mktVal     * multiplier;
-            if (prevMktVal !== null) g.prevMktVal += prevMktVal * multiplier;
+            if (mktValUsd !== null)     g.mktVal     += mktValUsd     * multiplier;
+            if (prevMktValUsd !== null) g.prevMktVal += prevMktValUsd * multiplier;
             g.targetWeight += targetWeight * multiplier;
             g.stockCount++;
             if (!g.members.includes(symbol)) g.members.push(symbol);
@@ -93,10 +97,13 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
         if (!symbol || !row.dataset.groups) return;
         const symAlloc = perSymbolAlloc[symbol];
         if (symAlloc == null) return;
+        const allocStockCcy = stockCurrencies[symbol] ?? 'USD';
+        const allocFxRate = getStockFxRate(allocStockCcy);
+        const symAllocUsd = (allocFxRate !== null && allocFxRate > 0) ? symAlloc * allocFxRate : symAlloc;
         for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
-            groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAlloc * multiplier);
+            groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAllocUsd * multiplier);
             if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
-            groupAllocMembersMap.get(name)[symbol] = symAlloc * multiplier;
+            groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
         }
     });
 
@@ -152,8 +159,8 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
 
         mk(name, '');
         mk(dayPctHtml, 'col-num col-market-data', true);
-        mk(isZeroChg ? '—' : formatSignedCurrency(mktValChg), 'price-change ' + chgCls);
-        mk(formatCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
+        mk(isZeroChg ? '—' : formatSignedDisplayCurrency(mktValChg), 'price-change ' + chgCls);
+        mk(formatDisplayCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
 
         if (!stockGrossValueKnown) {
             mk('N/A', 'col-num value');
@@ -170,8 +177,8 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             const tgtHtml   = `<span class="weight-tgt">${targetWeightPct.toFixed(1)}%</span>`;
             const pillHtml  = `<span class="weight-diff ${diffClass}">${pillSign}${weightDiff.toFixed(1)}%</span>`;
             mk(curHtml + sepHtml + tgtHtml + pillHtml, 'col-num value', true);
-            mk(formatSignedCurrency(rebalDollars), 'action-neutral ' + rebalDir + ' rebal-column');
-            mk(formatSignedCurrency(allocDollars), 'action-neutral ' + allocDir + ' alloc-column');
+            mk(formatSignedDisplayCurrency(rebalDollars), 'action-neutral ' + rebalDir + ' rebal-column');
+            mk(formatSignedDisplayCurrency(allocDollars), 'action-neutral ' + allocDir + ' alloc-column');
         }
     });
 
@@ -256,7 +263,7 @@ function _showGroupTooltip(e) {
                 valHtml = `<span class="group-tooltip-na">—</span>`;
             } else {
                 const cls = amt > 0.5 ? 'action-positive' : amt < -0.5 ? 'action-negative' : 'action-neutral';
-                valHtml = `<span class="${cls}">${formatSignedCurrency(amt)}</span>`;
+                valHtml = `<span class="${cls}">${formatSignedDisplayCurrency(amt)}</span>`;
             }
         }
 
