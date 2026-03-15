@@ -78,14 +78,14 @@ object NewTrayService {
         val popup = PopupMenu()
         val openItem = MenuItem("Open")
         val openDirItem = MenuItem("Open Data Directory")
-        val checkUpdateItem = MenuItem("Check for Updates")
         val copyAdminCodeItem = MenuItem("Copy Admin Code")
+        val restartItem = MenuItem("Restart")
         val exitItem = MenuItem("Exit")
         popup.add(openItem)
         popup.add(openDirItem)
-        popup.add(checkUpdateItem)
         popup.add(copyAdminCodeItem)
         popup.addSeparator()
+        popup.add(restartItem)
         popup.add(exitItem)
 
         // Create the tray icon
@@ -111,11 +111,6 @@ object NewTrayService {
             }
         }
 
-        checkUpdateItem.addActionListener {
-            scope.launch { UpdateService.checkForUpdate() }
-            BrowserService.openBrowser("$url/config")
-        }
-
         copyAdminCodeItem.addActionListener {
             try {
                 val code = AdminService.getCurrentOrGenerate()
@@ -124,6 +119,11 @@ object NewTrayService {
             } catch (e: Exception) {
                 logger.warn("Failed to copy admin code to clipboard: ${e.message}")
             }
+        }
+
+        restartItem.addActionListener {
+            tray.remove(trayIcon)
+            UpdateService.relaunchSelf()
         }
 
         exitItem.addActionListener {

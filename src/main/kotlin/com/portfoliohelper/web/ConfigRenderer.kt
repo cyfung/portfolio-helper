@@ -35,7 +35,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                     h1 { +"App Settings" }
 
                     // Android Sync Pairing
-                    renderConfigSection("Android Sync Pairing") {
+                    renderConfigSection("Authorized Devices") {
                         div(classes = "config-field") {
                             div(classes = "config-field-label-row") {
                                 span { +"Authorize New Device" }
@@ -53,23 +53,19 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        div(classes = "paired-devices-list") {
+                        div(classes = "paired-devices-list config-field") {
                             id = "paired-devices-list"
                             // Populated by JS
                             p(classes = "config-env-override-note") { +"Loading devices..." }
                         }
-                    }
 
-                    // Trusted Browsers
-                    renderConfigSection("Trusted Browsers") {
-                        div {
+                        div(classes ="config-field") {
                             id = "sessions-list"
                             p(classes = "config-env-override-note") { +"Loading…" }
                         }
                     }
 
-                    // IB Connection
-                    renderConfigSection("IB Connection") {
+                    renderConfigSection("Portfolio Settings") {
                         // Per-portfolio table
                         val allPortfolios = ManagedPortfolio.getAll()
                         val firstSerialId = allPortfolios.firstOrNull()?.serialId
