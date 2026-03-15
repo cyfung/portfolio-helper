@@ -2,7 +2,6 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.AppConfig
-import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.UpdateService
 import com.portfoliohelper.service.UpdateService.DownloadPhase

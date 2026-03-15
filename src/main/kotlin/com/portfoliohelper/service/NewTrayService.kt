@@ -1,8 +1,6 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.AppDirs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.awt.*
 import java.awt.datatransfer.StringSelection
@@ -68,7 +66,7 @@ object NewTrayService {
         return tempIcon.absolutePath
     }
 
-    fun createTray(url: String, scope: CoroutineScope): Boolean {
+    fun createTray(url: String): Boolean {
         if (!SystemTray.isSupported()) {
             return false
         }
