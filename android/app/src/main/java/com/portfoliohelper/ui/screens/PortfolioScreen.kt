@@ -82,8 +82,14 @@ fun PortfolioScreen(vm: MainViewModel) {
                         modifier = Modifier.weight(1f)
                     )
                     SummaryCard(
-                        label = "Margin",
-                        value = if (totals.isReady) formatPct(totals.marginPct, 1) else "N/A",
+                        label = "Gross Value",
+                        value = if (totals.isReady) formatCurrency(totals.stockGrossValue) else "N/A",
+                        subValue = if (totals.isReady) {
+                            "${formatSignedCurrency(totals.dayChangeDollars)} (${
+                                formatSignedPct(totals.dayChangePct)
+                            })"
+                        } else null,
+                        subValueColor = changeColor,
                         modifier = Modifier.weight(1f)
                     )
                 }

@@ -122,7 +122,7 @@ fun SummaryCard(
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily  = FontFamily.Monospace,
                     fontWeight  = FontWeight.SemiBold,
-                    fontSize    = 14.sp
+                    fontSize    = 16.sp
                 ),
                 color = valueColor)
             if (subValue != null) {
@@ -130,7 +130,7 @@ fun SummaryCard(
                     text = subValue,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp
+                        fontSize = 12.sp
                     ),
                     color = subValueColor
                 )
