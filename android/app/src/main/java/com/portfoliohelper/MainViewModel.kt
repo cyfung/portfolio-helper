@@ -90,23 +90,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val cashTotals: StateFlow<CashTotals> = combine(cashEntries, fxRates) { entries, rates ->
         var totalUsd = 0.0
         var marginUsd = 0.0
+        var allReady = true
         for (e in entries) {
-            val rate = if (e.currency == "USD") 1.0 else rates[e.currency] ?: continue
+            val rate = if (e.currency == "USD") 1.0 else rates[e.currency]
+            if (rate == null) {
+                allReady = false
+                continue
+            }
             val usd = e.amount * rate
             totalUsd += usd
             if (e.isMargin) marginUsd += usd
         }
-        CashTotals(totalUsd, marginUsd)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0))
+        CashTotals(totalUsd, marginUsd, allReady)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0, false))
 
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
         combine(positions, marketData, cashTotals) { pos, prices, cash ->
-            PortfolioCalculator.computeTotals(pos, prices, cash.marginUsd)
+            PortfolioCalculator.computeTotals(pos, prices, cash.marginUsd, cash.isReady)
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
-            PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0)
+            PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, false)
         )
 
     // ── Derived: groups ───────────────────────────────────────────────────────
@@ -244,4 +249,4 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
-data class CashTotals(val totalUsd: Double, val marginUsd: Double)
+data class CashTotals(val totalUsd: Double, val marginUsd: Double, val isReady: Boolean)

@@ -1,6 +1,7 @@
 package com.portfoliohelper.data.repository
 
 import com.portfoliohelper.data.model.AllocMode
+import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.Position
 import kotlin.math.abs
@@ -12,29 +13,53 @@ object PortfolioCalculator {
     data class PortfolioTotals(
         val stockGrossValue: Double,
         val prevStockGrossValue: Double,
+        val marginUsd: Double,
         val marginPct: Double,       // margin as % of equity+margin
         val dayChangeDollars: Double,
-        val dayChangePct: Double
+        val dayChangePct: Double,
+        val isReady: Boolean = true
     )
 
     fun computeTotals(
         positions: List<Position>,
         prices: Map<String, YahooQuote>,
-        marginUsd: Double           // negative = loan
+        cashEntries: List<CashEntry>,
+        fxRates: Map<String, Double>
     ): PortfolioTotals {
-        val total = positions.sumOf { pos ->
+        var allReady = true
+        var total = 0.0
+        var prevTotal = 0.0
+
+        for (pos in positions) {
             val quote = prices[pos.symbol]
-            (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+            if (quote == null) {
+                allReady = false
+                continue
+            }
+            val mark = quote.regularMarketPrice ?: quote.previousClose ?: 0.0
+            val prev = quote.previousClose ?: quote.regularMarketPrice ?: 0.0
+            total += mark * pos.quantity
+            prevTotal += prev * pos.quantity
         }
-        val prevTotal = positions.sumOf { pos ->
-            val quote = prices[pos.symbol]
-            (quote?.previousClose ?: quote?.regularMarketPrice ?: 0.0) * pos.quantity
+
+        var marginUsd = 0.0
+        for (e in cashEntries) {
+            val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency]
+            if (rate == null) {
+                allReady = false
+                continue
+            }
+            if (e.isMargin) {
+                marginUsd += e.amount * rate
+            }
         }
+        
         val equity = total + marginUsd
         val marginPct = if (equity != 0.0) abs(marginUsd / equity) * 100.0 else 0.0
         val change = total - prevTotal
         val changePct = if (prevTotal != 0.0) change / prevTotal * 100.0 else 0.0
-        return PortfolioTotals(total, prevTotal, marginPct, change, changePct)
+        
+        return PortfolioTotals(total, prevTotal, marginUsd, marginPct, change, changePct, allReady)
     }
 
     // ── Allocation ────────────────────────────────────────────────────────────

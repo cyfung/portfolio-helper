@@ -144,12 +144,14 @@ class MarginCheckWorker(
             }
         }
 
-        // 5. Data Readiness Check
-        val missingSymbols = symbols.filter { it !in prices }
-        val missingCurrencies = currencies.filter { it !in fxRates }
+        // 5. Data Readiness Check & Computation
+        val totals = PortfolioCalculator.computeTotals(positions, prices, cashEntries, fxRates)
         
-        if (missingSymbols.isNotEmpty() || missingCurrencies.isNotEmpty()) {
+        if (!totals.isReady) {
+            val missingSymbols = symbols.filter { it !in prices }
+            val missingCurrencies = currencies.filter { it !in fxRates }
             val missing = (missingSymbols + missingCurrencies).joinToString(", ")
+            
             Log.w(TAG, "Data missing for: $missing. Showing error alert.")
             ensureChannel()
             notify(
@@ -164,16 +166,6 @@ class MarginCheckWorker(
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(NOTIF_ID_ERROR)
 
-        // 6. Compute margin USD
-        var marginUsd = 0.0
-        for (e in cashEntries) {
-            if (e.isMargin) {
-                val rate = if (e.currency == "USD") 1.0 else fxRates[e.currency]!!
-                marginUsd += e.amount * rate
-            }
-        }
-
-        val totals = PortfolioCalculator.computeTotals(positions, prices, marginUsd)
         val marginPct = totals.marginPct
         Log.i(TAG, "Computed Margin %: $marginPct")
 

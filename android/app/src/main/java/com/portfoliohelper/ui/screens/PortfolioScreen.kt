@@ -62,20 +62,28 @@ fun PortfolioScreen(vm: MainViewModel) {
                         .padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val totalValue = totals.stockGrossValue + cashTotals.totalUsd
+                    val prevTotalValue = totalValue - totals.dayChangeDollars
+                    val totalChangePct = if (prevTotalValue != 0.0) {
+                        (totals.dayChangeDollars / prevTotalValue) * 100.0
+                    } else 0.0
+
+                    val changeColor = changeColor(totals.dayChangeDollars)
+                    
                     SummaryCard(
                         label = "Portfolio Value",
-                        value = formatCurrency(totals.stockGrossValue + cashTotals.totalUsd),
+                        value = if (totals.isReady) formatCurrency(totalValue) else "N/A",
+                        subValue = if (totals.isReady) {
+                            "${formatSignedCurrency(totals.dayChangeDollars)} (${
+                                formatSignedPct(totalChangePct)
+                            })"
+                        } else null,
+                        subValueColor = changeColor,
                         modifier = Modifier.weight(1f)
                     )
-                    val changeColor = changeColor(totals.dayChangeDollars)
                     SummaryCard(
-                        label = "Day Change",
-                        value = "${formatSignedCurrency(totals.dayChangeDollars)} (${
-                            formatSignedPct(
-                                totals.dayChangePct
-                            )
-                        })",
-                        valueColor = changeColor,
+                        label = "Margin",
+                        value = if (totals.isReady) formatPct(totals.marginPct, 1) else "N/A",
                         modifier = Modifier.weight(1f)
                     )
                 }

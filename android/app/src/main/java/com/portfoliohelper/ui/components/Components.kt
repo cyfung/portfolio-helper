@@ -19,8 +19,6 @@ import com.portfoliohelper.ui.theme.ext
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.log10
-import kotlin.math.roundToInt
 
 // ── Number formatting ─────────────────────────────────────────────────────────
 
@@ -41,8 +39,6 @@ fun formatSignedPct(v: Double, decimals: Int = 2): String =
  * - Suffixes: K, M, B
  * - Optional USD symbol ($)
  * - Optional leading sign (+/-)
- *
- * Examples: 0.01, 11.11, 235.67, 1,234, 11.24K, 1.30M
  */
 fun formatSmart(
     value: Double,
@@ -65,17 +61,14 @@ fun formatSmart(
     val formattedNum = if (suffix == "") {
         val nf = NumberFormat.getNumberInstance(Locale.US)
         if (absVal >= 1000) {
-            // Whole numbers >= 1000: no decimals (e.g. 1,234)
             nf.minimumFractionDigits = 0
             nf.maximumFractionDigits = 0
         } else {
-            // Non-whole numbers or numbers < 1000: always 2 decimals as per user preference (e.g. 1,234.56)
             nf.minimumFractionDigits = 2
             nf.maximumFractionDigits = 2
         }
         nf.format(absVal)
     } else {
-        // Suffixed numbers: always 2 decimals for consistency (e.g. 1.30M, 564.50K)
         "%.2f%s".format(Locale.US, scaledValue, suffix)
     }
 
@@ -104,6 +97,8 @@ fun SummaryCard(
     label: String,
     value: String,
     valueColor: Color = MaterialTheme.ext.textPrimary,
+    subValue: String? = null,
+    subValueColor: Color = MaterialTheme.ext.textSecondary,
     modifier: Modifier = Modifier
 ) {
     val ext = MaterialTheme.ext
@@ -130,6 +125,16 @@ fun SummaryCard(
                     fontSize    = 14.sp
                 ),
                 color = valueColor)
+            if (subValue != null) {
+                Text(
+                    text = subValue,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp
+                    ),
+                    color = subValueColor
+                )
+            }
         }
     }
 }
