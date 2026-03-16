@@ -2,15 +2,38 @@ package com.portfoliohelper.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -18,77 +41,104 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.data.model.CashEntry
-import com.portfoliohelper.ui.components.*
+import com.portfoliohelper.ui.components.CashTypeBadge
+import com.portfoliohelper.ui.components.Divider
+import com.portfoliohelper.ui.components.MonoText
+import com.portfoliohelper.ui.components.SummaryCard
+import com.portfoliohelper.ui.components.formatCurrency
+import com.portfoliohelper.ui.components.formatPct
+import com.portfoliohelper.ui.components.formatSmart
 import com.portfoliohelper.ui.theme.ext
 import kotlin.math.abs
 
 @Composable
 fun CashScreen(vm: MainViewModel) {
-    val ext         = MaterialTheme.ext
+    val ext = MaterialTheme.ext
     val cashEntries by vm.cashEntries.collectAsState()
-    val cashTotals  by vm.cashTotals.collectAsState()
-    val totals      by vm.portfolioTotals.collectAsState()
-    val fxRates     by vm.fxRates.collectAsState()
+    val cashTotals by vm.cashTotals.collectAsState()
+    val totals by vm.portfolioTotals.collectAsState()
+    val fxRates by vm.fxRates.collectAsState()
 
-    var showAddDialog  by remember { mutableStateOf(false) }
-    var editEntry      by remember { mutableStateOf<CashEntry?>(null) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editEntry by remember { mutableStateOf<CashEntry?>(null) }
 
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(
-                onClick        = { showAddDialog = true },
+                onClick = { showAddDialog = true },
                 containerColor = ext.actionPositive
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add cash entry",
-                    tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(
+                    Icons.Default.Add, contentDescription = "Add cash entry",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
             }
         }
     ) { padding ->
         LazyColumn(
-            modifier       = Modifier.fillMaxSize().background(ext.bgPrimary).padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(ext.bgPrimary)
+                .padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
             // ── Summary cards ────────────────────────────────────────────────
             item {
                 Row(
-                    modifier              = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SummaryCard("Cash Total",
-                        if (cashTotals.isReady) formatCurrency(cashTotals.totalUsd) else "N/A",
-                        modifier = Modifier.weight(1f))
+                    if (cashTotals.isReady) {
+                        val totalUsd = cashTotals.totalUsd
+                        SummaryCard(
+                            "Cash Total",
+                            formatCurrency(totalUsd),
+                            valueColor = if (totalUsd < 0) ext.negative else ext.textPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        SummaryCard(
+                            "Cash Total",
+                            "N/A",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
                     val marginUsd = cashTotals.marginUsd
                     val marginPct = totals.marginPct
-                    val marginColor = when {
-                        marginPct > 40.0 -> ext.negative
-                        marginPct > 20.0 -> ext.warning
-                        else             -> ext.textPrimary
-                    }
-                    
+                    val marginColor = ext.warning
+
                     val marginValue = if (totals.isReady) {
-                        "${formatSmart(abs(marginUsd))} (${formatPct(marginPct, 1)})"
+                        if (marginUsd >= 0) {
+                            "-"
+                        } else {
+                            "${formatSmart(abs(marginUsd))} (${formatPct(marginPct, 1)}) "
+                        }
                     } else "N/A"
 
-                    SummaryCard("Margin",
+                    SummaryCard(
+                        "Margin",
                         marginValue,
-                        valueColor = if (totals.isReady && marginUsd < 0) marginColor else ext.textTertiary,
-                        modifier   = Modifier.weight(1f))
+                        valueColor = if (totals.isReady && marginUsd < 0) marginColor else ext.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
 
             // ── Table header ──────────────────────────────────────────────────
             item {
-                TableHeader(listOf("Label" to 1.5f, "" to 0.4f, "Amount" to 1.5f, "USD" to 1.3f))
+//                TableHeader(listOf("Label" to 1.5f, "" to 0.4f, "Amount" to 1.5f, "USD" to 1.3f))
                 Divider()
             }
 
             // ── Cash rows ─────────────────────────────────────────────────────
             items(cashEntries, key = { it.id }) { entry ->
                 CashEntryRow(
-                    entry    = entry,
-                    fxRates  = fxRates,
-                    onEdit   = { editEntry = entry },
+                    entry = entry,
+                    fxRates = fxRates,
+                    onEdit = { editEntry = entry },
                     onDelete = { vm.deleteCashEntry(entry) }
                 )
                 Divider()
@@ -98,17 +148,17 @@ fun CashScreen(vm: MainViewModel) {
 
     if (showAddDialog) {
         CashEntryDialog(
-            initial   = null,
+            initial = null,
             onDismiss = { showAddDialog = false },
-            onSave    = { vm.upsertCashEntry(it); showAddDialog = false }
+            onSave = { vm.upsertCashEntry(it); showAddDialog = false }
         )
     }
 
     editEntry?.let { entry ->
         CashEntryDialog(
-            initial   = entry,
+            initial = entry,
             onDismiss = { editEntry = null },
-            onSave    = { vm.upsertCashEntry(it); editEntry = null }
+            onSave = { vm.upsertCashEntry(it); editEntry = null }
         )
     }
 }
@@ -120,9 +170,9 @@ fun CashEntryRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val ext  = MaterialTheme.ext
+    val ext = MaterialTheme.ext
     val rate = if (entry.currency == "USD") 1.0 else fxRates[entry.currency]
-    val usd  = rate?.let { entry.amount * it }
+    val usd = rate?.let { entry.amount * it }
 
     var showActions by remember { mutableStateOf(false) }
 
@@ -157,9 +207,9 @@ fun CashEntryRow(
             ) {
                 MonoText(
                     text = formatSmart(entry.amount, showSign = false),
-                    color = if (entry.amount < 0) ext.negative else ext.textPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp
+                    color = ext.textTertiary,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 16.sp
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
@@ -173,28 +223,36 @@ fun CashEntryRow(
             // USD Converted
             MonoText(
                 text = if (usd != null) formatCurrency(usd) else "—",
-                color = if (usd != null && usd < 0) ext.negative else ext.textSecondary,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
+                color = ext.textSecondary,
+                fontWeight = FontWeight.Normal,
+                fontSize = 16.sp,
                 modifier = Modifier.weight(1.3f)
             )
         }
 
         if (showActions) {
             Row(
-                modifier              = Modifier.fillMaxWidth().background(ext.bgSecondary)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(ext.bgSecondary)
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = { onEdit(); showActions = false }) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(Modifier.width(4.dp))
                     Text("Edit", fontSize = 12.sp)
                 }
                 TextButton(onClick = { onDelete(); showActions = false }) {
-                    Icon(Icons.Default.Delete, contentDescription = null,
-                        modifier = Modifier.size(16.dp), tint = ext.negative)
+                    Icon(
+                        Icons.Default.Delete, contentDescription = null,
+                        modifier = Modifier.size(16.dp), tint = ext.negative
+                    )
                     Spacer(Modifier.width(4.dp))
                     Text("Delete", fontSize = 12.sp, color = ext.negative)
                 }
@@ -205,9 +263,9 @@ fun CashEntryRow(
 
 @Composable
 fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEntry) -> Unit) {
-    var label    by remember { mutableStateOf(initial?.label ?: "") }
+    var label by remember { mutableStateOf(initial?.label ?: "") }
     var currency by remember { mutableStateOf(initial?.currency ?: "USD") }
-    var amount   by remember { mutableStateOf(initial?.amount?.toString() ?: "") }
+    var amount by remember { mutableStateOf(initial?.amount?.toString() ?: "") }
     var isMargin by remember { mutableStateOf(initial?.isMargin ?: false) }
 
     AlertDialog(
@@ -215,12 +273,24 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
         title = { Text(if (initial == null) "Add Cash Entry" else "Edit Entry") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(label,    { label    = it }, label = { Text("Label") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(currency, { currency = it.uppercase() }, label = { Text("Currency") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(amount,   { amount   = it }, label = { Text("Amount (negative = loan)") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    label, { label = it }, label = { Text("Label") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    currency,
+                    { currency = it.uppercase() },
+                    label = { Text("Currency") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    amount,
+                    { amount = it },
+                    label = { Text("Amount (negative = loan)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(isMargin, { isMargin = it })
                     Text("Margin / Loan", fontSize = 13.sp)
@@ -230,10 +300,10 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
         confirmButton = {
             TextButton(onClick = {
                 val entry = CashEntry(
-                    id       = initial?.id ?: 0,
-                    label    = label.trim(),
+                    id = initial?.id ?: 0,
+                    label = label.trim(),
                     currency = currency.trim().uppercase(),
-                    amount   = amount.toDoubleOrNull() ?: 0.0,
+                    amount = amount.toDoubleOrNull() ?: 0.0,
                     isMargin = isMargin
                 )
                 if (entry.label.isNotEmpty()) onSave(entry)
