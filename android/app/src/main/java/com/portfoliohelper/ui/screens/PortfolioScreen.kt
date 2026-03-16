@@ -243,13 +243,11 @@ fun PortfolioScreen(vm: MainViewModel) {
                                     (totals.dayChange / prevTotalValue) * 100.0 else 0.0
                                 val changeColor = changeColor(totals.dayChange)
 
-                                val ccySuffix = if (displayCcy != "USD") " $displayCcy" else ""
-
                                 SummaryCard(
                                     label = "Portfolio Value",
-                                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totalValue) else formatSmart(totalValue)) + ccySuffix else "N/A",
+                                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totalValue) else formatSmart(totalValue))else "N/A",
                                     subValue = if (totals.isReady) {
-                                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange) + ccySuffix} (${
+                                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange)} (${
                                             formatSignedPct(totalChangePct)
                                         })"
                                     } else null,
@@ -258,9 +256,9 @@ fun PortfolioScreen(vm: MainViewModel) {
                                 )
                                 SummaryCard(
                                     label = "Gross Value",
-                                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totals.stockGrossValue) else formatSmart(totals.stockGrossValue)) + ccySuffix else "N/A",
+                                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totals.stockGrossValue) else formatSmart(totals.stockGrossValue)) else "N/A",
                                     subValue = if (totals.isReady) {
-                                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange) + ccySuffix} (${
+                                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange)} (${
                                             formatSignedPct(totals.dayChangePct)
                                         })"
                                     } else null,
