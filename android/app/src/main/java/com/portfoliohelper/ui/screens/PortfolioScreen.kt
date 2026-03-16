@@ -136,6 +136,7 @@ fun PortfolioScreen(vm: MainViewModel) {
             buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue, pnlMode, displayCcy)
         }
 
+        // add a data row used only for width measurement
         val widthMeasureData = stockData + StockDisplayData(
             symbol = "WWWW.PA",
             dayPct = -11.11,

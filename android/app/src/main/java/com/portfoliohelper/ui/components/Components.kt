@@ -346,35 +346,28 @@ fun WeightBreakdown(
     val ext = MaterialTheme.ext
     val diff = current - target
     
-    Column(
+    Row(
         modifier = modifier,
-        horizontalAlignment = Alignment.End
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = thinData("${"%.1f".format(current)}%"),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
-                fontFamily = DataFont,
-                color = ext.textPrimary
-            )
-            Text(
-                text = "/",
-                fontSize = 11.sp,
-                color = ext.textTertiary,
-                modifier = Modifier.padding(horizontal = 2.dp)
-            )
-            Text(
-                text = thinData("${"%.1f".format(target)}%"),
-                fontSize = 12.sp,
-                fontFamily = DataFont,
-                color = ext.textSecondary,
-                modifier = Modifier.padding(horizontal = 2.dp)
-            )
-            Spacer(Modifier.width(2.dp))
-            WeightDiffPill(diff)
-        }
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = thinData("${"%.1f".format(current)}%"),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Normal,
+            fontFamily = DataFont,
+            color = ext.textPrimary
+        )
+        Text(
+            text = thinData("/${"%.1f".format(target)}%"),
+            fontSize = 12.sp,
+            fontFamily = DataFont,
+            color = ext.textSecondary,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+        Spacer(Modifier.width(1.dp))
+        WeightDiffPill(diff)
     }
 }
 
