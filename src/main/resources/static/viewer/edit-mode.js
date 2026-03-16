@@ -224,6 +224,9 @@ function showEditTable() {
         const tr = addStockRow();
         if (tr) tr.querySelector('.new-symbol-input').focus();
     }
+
+    const divInput = document.getElementById('dividend-from-input');
+    if (divInput) divInput.value = divInput.dataset.originalValue ?? '';
 }
 
 function removeEditTable() {
@@ -361,7 +364,9 @@ function initEditMode() {
 
         if (dividendCalcUpToDate) {
             const divInput = document.getElementById('dividend-from-input');
-            if (divInput) divInput.value = dividendCalcUpToDate;
+            if (divInput) {
+                divInput.value = dividendCalcUpToDate;
+            }
         }
 
         const portfolioTotal = getRebalTotal();

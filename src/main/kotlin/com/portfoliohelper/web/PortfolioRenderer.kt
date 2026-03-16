@@ -285,6 +285,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                 input(type = InputType.date, classes = "dividend-from-input") {
                                     id = "dividend-from-input"
                                     value = portfolioConf["dividendStartDate"] ?: ""
+                                    attributes["data-original-value"] = portfolioConf["dividendStartDate"] ?: ""
                                     attributes["autocomplete"] = "off"
                                 }
                             }
