@@ -186,7 +186,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     TextButton(onClick = { 
                         vm.savePnlDisplayMode(if (pnlMode == "DISPLAY") "NATIVE" else "DISPLAY")
                     }) {
-                        Text(if (pnlMode == "DISPLAY") "USD (Portfolio)" else "Native (Stock)")
+                        Text(if (pnlMode == "DISPLAY") "Portfolio" else "Native")
                     }
                 }
             }

@@ -99,12 +99,14 @@ fun CashScreen(vm: MainViewModel) {
                             "Cash Total",
                             formatCurrency(totalUsd),
                             valueColor = if (totalUsd < 0) ext.negative else ext.textPrimary,
+                            subValue = "",
                             modifier = Modifier.weight(1f)
                         )
                     } else {
                         SummaryCard(
                             "Cash Total",
                             "N/A",
+                            subValue = "",
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -115,18 +117,33 @@ fun CashScreen(vm: MainViewModel) {
 
                     val marginValue = if (totals.isReady) {
                         if (marginUsd >= 0) {
-                            "-"
+                            SummaryCard(
+                                "Margin",
+                                "-",
+                                valueColor = ext.textPrimary,
+                                subValue = "",
+                                modifier = Modifier.weight(1f)
+                            )
                         } else {
-                            "${formatSmart(abs(marginUsd))} (${formatPct(marginPct, 1)}) "
+                            SummaryCard(
+                                "Margin",
+                                formatSmart(abs(marginUsd)),
+                                valueColor = ext.warning,
+                                subValue = formatPct(marginPct, 1),
+                                subValueColor = ext.warning,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
-                    } else "N/A"
+                    } else {
+                        SummaryCard(
+                            "Margin",
+                            "N/A",
+                            valueColor = ext.textPrimary,
+                            subValue = "",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
-                    SummaryCard(
-                        "Margin",
-                        marginValue,
-                        valueColor = if (totals.isReady && marginUsd < 0) marginColor else ext.textPrimary,
-                        modifier = Modifier.weight(1f)
-                    )
                 }
             }
 
