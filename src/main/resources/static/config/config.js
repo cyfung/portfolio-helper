@@ -19,55 +19,54 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSessions();
     loadPairedDevices();
 
-    // Snapshot originals for restart detection
-    document.querySelectorAll('[data-config-key]').forEach(el => {
-        el.dataset.originalValue = el.type === 'checkbox' ? String(el.checked) : el.value;
-    });
+    // --- Auto-save on change ---
+    let _saveDebounceTimers = new Map();
 
-    document.getElementById('config-save-btn').addEventListener('click', async () => {
-        const globalUpdates = {};
-        const portfolioUpdates = {};  // { portfolioId: { twsAccount: "...", virtualBalance: "..." } }
-        let requiresRestart = false;
-
-        document.querySelectorAll('[data-config-key]').forEach(el => {
-            if (el.disabled) return;
-            const key = el.dataset.configKey;
-            const portfolioId = el.dataset.portfolioId;
-            const value = el.type === 'checkbox' ? String(el.checked) : el.value.trim();
-
-            if (portfolioId) {
-                portfolioUpdates[portfolioId] = portfolioUpdates[portfolioId] || {};
-                portfolioUpdates[portfolioId][key] = value;
-            } else {
-                globalUpdates[key] = value;
-                if (RESTART_KEYS.has(key) && value !== el.dataset.originalValue) requiresRestart = true;
-            }
-        });
+    async function saveField(el) {
+        if (el.disabled) return;
+        const key = el.dataset.configKey;
+        const portfolioId = el.dataset.portfolioId;
+        const value = el.type === 'checkbox' ? String(el.checked) : el.value.trim();
+        const requiresRestart = !portfolioId && RESTART_KEYS.has(key) && value !== el.dataset.originalValue;
 
         try {
-            // Save global config
-            await fetch('/api/config/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(globalUpdates)
-            }).then(r => { if (!r.ok) throw new Error(`Global save failed: ${r.statusText}`); });
-
-            // Save per-portfolio configs
-            for (const [pid, updates] of Object.entries(portfolioUpdates)) {
-                await fetch(`/api/portfolio-config/save?portfolio=${encodeURIComponent(pid)}`, {
+            if (portfolioId) {
+                await fetch(`/api/portfolio-config/save?portfolio=${encodeURIComponent(portfolioId)}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updates)
-                }).then(r => { if (!r.ok) throw new Error(`Portfolio save failed: ${r.statusText}`); });
+                    body: JSON.stringify({ [key]: value })
+                }).then(r => { if (!r.ok) throw new Error(`Save failed: ${r.statusText}`); });
+            } else {
+                await fetch('/api/config/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [key]: value })
+                }).then(r => { if (!r.ok) throw new Error(`Save failed: ${r.statusText}`); });
             }
-
             showStatus(
-                requiresRestart ? 'Saved. Restart required for some changes to take effect.' : 'Settings saved.',
+                requiresRestart ? 'Saved. Restart required for some changes to take effect.' : 'Saved.',
                 requiresRestart ? 'warn' : 'ok'
             );
         } catch (err) {
             showStatus('Error: ' + err.message, 'error');
         }
+    }
+
+    function attachAutoSave(el) {
+        const isText = el.type !== 'checkbox';
+        if (isText) {
+            el.addEventListener('input', () => {
+                clearTimeout(_saveDebounceTimers.get(el));
+                _saveDebounceTimers.set(el, setTimeout(() => saveField(el), 600));
+            });
+        } else {
+            el.addEventListener('change', () => saveField(el));
+        }
+    }
+
+    document.querySelectorAll('[data-config-key]').forEach(el => {
+        el.dataset.originalValue = el.type === 'checkbox' ? String(el.checked) : el.value;
+        attachAutoSave(el);
     });
 
     const addPortfolioBtn = document.getElementById('add-portfolio-btn');
@@ -170,7 +169,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('config-restore-btn').addEventListener('click', () => {
+    document.getElementById('config-restore-btn').addEventListener('click', async () => {
+        const confirmed = await window.showConfirmOverlay('Restore all settings to defaults?', 'Restore');
+        if (!confirmed) return;
         // Reset global inputs to defaults
         document.querySelectorAll('[data-config-key]:not([data-portfolio-id])').forEach(el => {
             if (el.disabled) return;
@@ -184,8 +185,36 @@ document.addEventListener('DOMContentLoaded', () => {
             if (el.type === 'checkbox') el.checked = false;
             else el.value = '';
         });
-        // Trigger save
-        document.getElementById('config-save-btn').click();
+        // Save all at once (batch)
+        const globalUpdates = {};
+        const portfolioUpdates = {};
+        document.querySelectorAll('[data-config-key]').forEach(el => {
+            if (el.disabled) return;
+            const key = el.dataset.configKey;
+            const portfolioId = el.dataset.portfolioId;
+            const value = el.type === 'checkbox' ? String(el.checked) : el.value.trim();
+            if (portfolioId) {
+                portfolioUpdates[portfolioId] = portfolioUpdates[portfolioId] || {};
+                portfolioUpdates[portfolioId][key] = value;
+            } else {
+                globalUpdates[key] = value;
+            }
+        });
+        try {
+            await fetch('/api/config/save', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(globalUpdates)
+            }).then(r => { if (!r.ok) throw new Error(`Global save failed: ${r.statusText}`); });
+            for (const [pid, updates] of Object.entries(portfolioUpdates)) {
+                await fetch(`/api/portfolio-config/save?portfolio=${encodeURIComponent(pid)}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                }).then(r => { if (!r.ok) throw new Error(`Portfolio save failed: ${r.statusText}`); });
+            }
+            showStatus('Defaults restored.', 'ok');
+        } catch (err) {
+            showStatus('Error: ' + err.message, 'error');
+        }
     });
 });
 

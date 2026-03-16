@@ -323,11 +323,6 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 
                     // Actions
                     div(classes = "config-actions") {
-                        button(classes = "config-save-btn") {
-                            id = "config-save-btn"
-                            attributes["type"] = "button"
-                            +"Save All"
-                        }
                         button(classes = "config-restore-btn") {
                             id = "config-restore-btn"
                             attributes["type"] = "button"
