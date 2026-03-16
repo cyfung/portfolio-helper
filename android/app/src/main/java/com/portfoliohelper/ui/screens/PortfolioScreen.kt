@@ -51,6 +51,7 @@ private fun buildStockDisplayData(
     prices: Map<String, YahooQuote>,
     grossValue: Double,
     pnlDisplayMode: String,
+    displayCurrency: String
 ): StockDisplayData {
     val rawMark = quote?.regularMarketPrice ?: quote?.previousClose
     val rawClose = quote?.previousClose ?: quote?.regularMarketPrice
@@ -59,30 +60,35 @@ private fun buildStockDisplayData(
     val isPence = currency.length == 3 && currency[2].isLowerCase()
     val normalizedCcy = if (isPence) currency.uppercase() else currency
 
-    val rate = if (normalizedCcy == "USD") 1.0 else {
+    val rateToUsd = if (normalizedCcy == "USD") 1.0 else {
         val pair = "${normalizedCcy}USD=X"
         prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
     }
 
-    val multiplier = if (isPence) rate / 100.0 else rate
+    val multiplierToUsd = if (isPence) rateToUsd / 100.0 else rateToUsd
 
-    val markUsd = rawMark?.let { it * multiplier }
-    val closeUsd = rawClose?.let { it * multiplier }
+    val markUsd = rawMark?.let { it * multiplierToUsd }
+    val closeUsd = rawClose?.let { it * multiplierToUsd }
 
     val dayPct = if (markUsd != null && closeUsd != null && closeUsd != 0.0)
         (markUsd - closeUsd) / closeUsd * 100.0 else 0.0
 
+    // USD to Display Rate
+    val usdToDisplayRate = if (displayCurrency == "USD") 1.0 else {
+        val pair = "${displayCurrency}USD=X"
+        val rateToUsdVal = prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+        if (rateToUsdVal != 0.0) 1.0 / rateToUsdVal else 1.0
+    }
+
     // P&L calculation based on mode
     val pnl = if (pnlDisplayMode == "NATIVE") {
-        // Native P&L (pence stocks stay in pence)
         if (rawMark != null && rawClose != null) (rawMark - rawClose) * pos.quantity else 0.0
     } else {
-        // USD P&L
-        if (markUsd != null && closeUsd != null) (markUsd - closeUsd) * pos.quantity else 0.0
+        if (markUsd != null && closeUsd != null) (markUsd - closeUsd) * pos.quantity * usdToDisplayRate else 0.0
     }
 
     val currentValUsd = if (markUsd != null) markUsd * pos.quantity else 0.0
-    val currentWeight = if (grossValue > 0) (currentValUsd / grossValue) * 100.0 else 0.0
+    val currentWeight = if (grossValue > 0) (currentValUsd * usdToDisplayRate / grossValue) * 100.0 else 0.0
 
     return StockDisplayData(
         symbol = pos.symbol,
@@ -91,10 +97,10 @@ private fun buildStockDisplayData(
         targetWeight = pos.targetWeight,
         fmtMark = if (rawMark != null) formatSmart(rawMark) else "—",
         fmtPnl = if (pnlDisplayMode == "NATIVE") {
-            // Remove currency symbol if native as requested
             formatSigned(pnl)
         } else {
-            formatSignedCurrency(pnl)
+            // Note: formatSignedCurrency usually prepends $, we might need a generic formatSigned if displayCurrency is not USD
+            if (displayCurrency == "USD") formatSignedCurrency(pnl) else formatSigned(pnl)
         },
         pnlColor = changeColor(pnl),
     )
@@ -110,6 +116,8 @@ fun PortfolioScreen(vm: MainViewModel) {
     val totals by vm.portfolioTotals.collectAsState()
     val cashTotals by vm.cashTotals.collectAsState()
     val pnlMode by vm.pnlDisplayMode.collectAsState()
+    val displayCcy by vm.displayCurrency.collectAsState()
+    val cashEntries by vm.cashEntries.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -125,7 +133,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 
         // ── Build display data once — reused for measurement and row rendering ─
         val stockData = positions.map { pos ->
-            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue, pnlMode)
+            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue, pnlMode, displayCcy)
         }
 
         val widthMeasureData = stockData + StockDisplayData(
@@ -222,40 +230,44 @@ fun PortfolioScreen(vm: MainViewModel) {
                 ) {
                     // ── Summary cards ─────────────────────────────────────
                     item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            val totalValue = totals.stockGrossValue + cashTotals.totalUsd
-                            val prevTotalValue = totalValue - totals.dayChangeDollars
-                            val totalChangePct = if (prevTotalValue != 0.0)
-                                (totals.dayChangeDollars / prevTotalValue) * 100.0 else 0.0
-                            val changeColor = changeColor(totals.dayChangeDollars)
+                        Column {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val totalValue = totals.stockGrossValue + cashTotals.totalUsd
+                                val prevTotalValue = totalValue - totals.dayChange
+                                val totalChangePct = if (prevTotalValue != 0.0)
+                                    (totals.dayChange / prevTotalValue) * 100.0 else 0.0
+                                val changeColor = changeColor(totals.dayChange)
 
-                            SummaryCard(
-                                label = "Portfolio Value",
-                                value = if (totals.isReady) formatCurrency(totalValue) else "N/A",
-                                subValue = if (totals.isReady) {
-                                    "${formatSignedCurrency(totals.dayChangeDollars)} (${
-                                        formatSignedPct(totalChangePct)
-                                    })"
-                                } else null,
-                                subValueColor = changeColor,
-                                modifier = Modifier.weight(1f)
-                            )
-                            SummaryCard(
-                                label = "Gross Value",
-                                value = if (totals.isReady) formatCurrency(totals.stockGrossValue) else "N/A",
-                                subValue = if (totals.isReady) {
-                                    "${formatSignedCurrency(totals.dayChangeDollars)} (${
-                                        formatSignedPct(totals.dayChangePct)
-                                    })"
-                                } else null,
-                                subValueColor = changeColor,
-                                modifier = Modifier.weight(1f)
-                            )
+                                val ccySuffix = if (displayCcy != "USD") " $displayCcy" else ""
+
+                                SummaryCard(
+                                    label = "Portfolio Value",
+                                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totalValue) else formatSmart(totalValue)) + ccySuffix else "N/A",
+                                    subValue = if (totals.isReady) {
+                                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange) + ccySuffix} (${
+                                            formatSignedPct(totalChangePct)
+                                        })"
+                                    } else null,
+                                    subValueColor = changeColor,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                SummaryCard(
+                                    label = "Gross Value",
+                                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totals.stockGrossValue) else formatSmart(totals.stockGrossValue)) + ccySuffix else "N/A",
+                                    subValue = if (totals.isReady) {
+                                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange) + ccySuffix} (${
+                                            formatSignedPct(totals.dayChangePct)
+                                        })"
+                                    } else null,
+                                    subValueColor = changeColor,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
 

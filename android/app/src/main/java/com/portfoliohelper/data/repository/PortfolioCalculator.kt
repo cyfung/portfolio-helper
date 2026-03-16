@@ -17,26 +17,30 @@ object PortfolioCalculator {
     data class PortfolioTotals(
         val stockGrossValue: Double,
         val prevStockGrossValue: Double,
-        val cashTotalUsd: Double,
-        val marginUsd: Double,
+        val cashTotal: Double,
+        val margin: Double,
         val marginPct: Double,       // margin as % of equity+margin
-        val dayChangeDollars: Double,
+        val dayChange: Double,
         val dayChangePct: Double,
-        val isReady: Boolean = true
+        val isReady: Boolean = true,
+        val currency: String = "USD"
     )
 
     /**
-     * Computes portfolio totals using a unified prices map that includes both
-     * stock symbols and FX pairs (e.g., "HKDUSD=X").
+     * Computes portfolio totals in the specified [displayCurrency].
+     * Logic:
+     * 1. Calculate everything in USD first.
+     * 2. Convert final results to [displayCurrency] using the rates in [prices].
      */
     fun computeTotals(
         positions: List<Position>,
         cashEntries: List<CashEntry>,
-        prices: Map<String, YahooQuote>
+        prices: Map<String, YahooQuote>,
+        displayCurrency: String = "USD"
     ): PortfolioTotals {
         var allReady = true
-        var total = 0.0
-        var prevTotal = 0.0
+        var totalUsd = 0.0
+        var prevTotalUsd = 0.0
 
         for (pos in positions) {
             val quote = prices[pos.symbol]
@@ -67,10 +71,10 @@ object PortfolioCalculator {
 
             val multiplier = if (isPence) rate / 100.0 else rate
 
-            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
-            val prev = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier
-            total += mark * pos.quantity
-            prevTotal += prev * pos.quantity
+            val markUsd = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
+            val prevUsd = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier
+            totalUsd += markUsd * pos.quantity
+            prevTotalUsd += prevUsd * pos.quantity
         }
 
         var cashTotalUsd = 0.0
@@ -91,19 +95,40 @@ object PortfolioCalculator {
                 allReady = false
                 continue
             }
-            val usd = e.amount * rate
-            cashTotalUsd += usd
+            val usdValue = e.amount * rate
+            cashTotalUsd += usdValue
             if (e.isMargin) {
-                marginUsd += usd
+                marginUsd += usdValue
             }
         }
         
-        val equity = total + marginUsd
-        val marginPct = if (equity != 0.0) abs(marginUsd / equity) * 100.0 else 0.0
-        val change = total - prevTotal
-        val changePct = if (prevTotal != 0.0) (change / prevTotal) * 100.0 else 0.0
-        
-        return PortfolioTotals(total, prevTotal, cashTotalUsd, marginUsd, marginPct, change, changePct, allReady)
+        val equityUsd = totalUsd + marginUsd
+        val marginPct = if (equityUsd != 0.0) abs(marginUsd / equityUsd) * 100.0 else 0.0
+        val changeUsd = totalUsd - prevTotalUsd
+        val changePct = if (prevTotalUsd != 0.0) (changeUsd / prevTotalUsd) * 100.0 else 0.0
+
+        // Conversion from USD to Display Currency
+        val usdToDisplayRate = if (displayCurrency == "USD") 1.0 else {
+            val pair = "${displayCurrency}USD=X"
+            val fxQuote = prices[pair]
+            val rateToUsd = fxQuote?.regularMarketPrice ?: fxQuote?.previousClose
+            if (rateToUsd != null && rateToUsd != 0.0) 1.0 / rateToUsd else {
+                if (displayCurrency != "USD") allReady = false
+                1.0
+            }
+        }
+
+        return PortfolioTotals(
+            stockGrossValue = totalUsd * usdToDisplayRate,
+            prevStockGrossValue = prevTotalUsd * usdToDisplayRate,
+            cashTotal = cashTotalUsd * usdToDisplayRate,
+            margin = marginUsd * usdToDisplayRate,
+            marginPct = marginPct,
+            dayChange = changeUsd * usdToDisplayRate,
+            dayChangePct = changePct,
+            isReady = allReady,
+            currency = displayCurrency
+        )
     }
 
     // ── Market Data Fetching & Caching ────────────────────────────────────────

@@ -27,6 +27,7 @@ object PrefsKeys {
     val AES_KEY                 = stringPreferencesKey("aes_key")
     val TLS_FINGERPRINT         = stringPreferencesKey("tls_fingerprint")
     val PNL_DISPLAY_MODE        = stringPreferencesKey("pnl_display_mode") // "NATIVE" or "DISPLAY"
+    val DISPLAY_CURRENCY        = stringPreferencesKey("display_currency")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -47,7 +48,7 @@ class SettingsRepository(private val context: Context) {
         var id = prefs[PrefsKeys.DEVICE_ID]
         if (id == null) {
             id = UUID.randomUUID().toString()
-            context.dataStore.edit { it[PrefsKeys.DEVICE_ID] = id!! }
+            context.dataStore.edit { it[PrefsKeys.DEVICE_ID] = id }
         }
         return id
     }
@@ -111,6 +112,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun savePnlDisplayMode(mode: String) {
         context.dataStore.edit { it[PrefsKeys.PNL_DISPLAY_MODE] = mode }
+    }
+
+    val displayCurrency: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.DISPLAY_CURRENCY] ?: "USD"
+    }
+
+    suspend fun saveDisplayCurrency(ccy: String) {
+        context.dataStore.edit { it[PrefsKeys.DISPLAY_CURRENCY] = ccy }
     }
 
 }

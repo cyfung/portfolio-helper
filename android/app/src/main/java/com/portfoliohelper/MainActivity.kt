@@ -22,10 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -80,10 +78,11 @@ fun PortfolioHelperApp(vm: MainViewModel) {
     val navController = rememberNavController()
     val ext = MaterialTheme.ext
     
-    // Demo currency state
-    var selectedCurrency by remember { mutableStateOf("USD") }
-    // Dynamic list with 8 currencies to demonstrate scrolling
-    val currencies = listOf("USD", "HKD", "GBP", "EUR", "JPY", "AUD", "CAD", "CHF")
+    val selectedCurrency by vm.displayCurrency.collectAsState()
+    val cashEntries by vm.cashEntries.collectAsState()
+    
+    // Dynamic list taking currency from Cash, with USD always first
+    val currencies = (listOf("USD") + cashEntries.map { it.currency }).distinct()
 
     Scaffold(
         topBar = {
@@ -107,7 +106,7 @@ fun PortfolioHelperApp(vm: MainViewModel) {
                     DynamicCurrencySwitcher(
                         currencies = currencies,
                         selected = selectedCurrency,
-                        onCurrencySelected = { selectedCurrency = it }
+                        onCurrencySelected = { vm.saveDisplayCurrency(it) }
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

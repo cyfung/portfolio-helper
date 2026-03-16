@@ -61,7 +61,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val pnlDisplayMode: StateFlow<String> = settings.pnlDisplayMode
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "DISPLAY")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "NATIVE")
+
+    val displayCurrency: StateFlow<String> = settings.displayCurrency
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "USD")
 
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 
@@ -96,17 +99,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Derived: cash totals ──────────────────────────────────────────────────
 
-    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData) { entries, prices ->
+    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData, displayCurrency) { entries, prices, displayCcy ->
         // Use consolidated logic with empty positions list to extract cash-only metrics
-        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices)
-        CashTotals(totals.cashTotalUsd, totals.marginUsd, totals.isReady)
+        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices, displayCcy)
+        CashTotals(totals.cashTotal, totals.margin, totals.isReady)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0, false))
 
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
-        combine(positions, cashEntries, marketData) { pos, cash, prices ->
-            PortfolioCalculator.computeTotals(pos, cash, prices)
+        combine(positions, cashEntries, marketData, displayCurrency) { pos, cash, prices, displayCcy ->
+            PortfolioCalculator.computeTotals(pos, cash, prices, displayCcy)
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
             PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false)
@@ -148,6 +151,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun savePnlDisplayMode(mode: String) = viewModelScope.launch {
         settings.savePnlDisplayMode(mode)
+    }
+
+    fun saveDisplayCurrency(ccy: String) = viewModelScope.launch {
+        settings.saveDisplayCurrency(ccy)
+        refreshMarketData()
     }
 
     // ── Sync ──────────────────────────────────────────────────────────────────
@@ -231,7 +239,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            combine(positions, cashEntries, marketData) { pos, cash, data ->
+            combine(positions, cashEntries, marketData, displayCurrency) { pos, cash, data, displayCcy ->
                 val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
                 
                 // Add FX pairs for cash
@@ -246,6 +254,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         val normalizedCcy = if (isPence) ccy.uppercase() else ccy
                         symbols.add("${normalizedCcy}USD=X")
                     }
+                }
+
+                // Add FX pair for display currency if not USD
+                if (displayCcy != "USD") {
+                    symbols.add("${displayCcy}USD=X")
                 }
                 
                 symbols.toList()
@@ -276,6 +289,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val normalizedCcy = if (isPence) ccy.uppercase() else ccy
                 posSymbols.add("${normalizedCcy}USD=X")
             }
+        }
+
+        if (displayCurrency.value != "USD") {
+            posSymbols.add("${displayCurrency.value}USD=X")
         }
         
         val all = posSymbols.toList()

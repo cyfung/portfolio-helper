@@ -22,6 +22,7 @@ fun GroupsScreen(vm: MainViewModel) {
     val groups by vm.groupRows.collectAsState()
     val totals by vm.portfolioTotals.collectAsState()
     val cashTotals by vm.cashTotals.collectAsState()
+    val displayCcy by vm.displayCurrency.collectAsState()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(ext.bgPrimary),
@@ -36,18 +37,19 @@ fun GroupsScreen(vm: MainViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val totalValue = totals.stockGrossValue + cashTotals.totalUsd
-                val prevTotalValue = totalValue - totals.dayChangeDollars
+                val prevTotalValue = totalValue - totals.dayChange
                 val totalChangePct = if (prevTotalValue != 0.0) {
-                    (totals.dayChangeDollars / prevTotalValue) * 100.0
+                    (totals.dayChange / prevTotalValue) * 100.0
                 } else 0.0
 
-                val changeColor = changeColor(totals.dayChangeDollars)
+                val changeColor = changeColor(totals.dayChange)
+                val ccySuffix = if (displayCcy != "USD") " $displayCcy" else ""
 
                 SummaryCard(
                     label = "Portfolio Value",
-                    value = if (totals.isReady) formatCurrency(totalValue) else "N/A",
+                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totalValue) else formatSmart(totalValue)) + ccySuffix else "N/A",
                     subValue = if (totals.isReady) {
-                        "${formatSignedCurrency(totals.dayChangeDollars)} (${
+                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange) + ccySuffix} (${
                             formatSignedPct(totalChangePct)
                         })"
                     } else null,
@@ -56,9 +58,9 @@ fun GroupsScreen(vm: MainViewModel) {
                 )
                 SummaryCard(
                     label = "Gross Value",
-                    value = if (totals.isReady) formatCurrency(totals.stockGrossValue) else "N/A",
+                    value = if (totals.isReady) (if (displayCcy == "USD") formatCurrency(totals.stockGrossValue) else formatSmart(totals.stockGrossValue)) + ccySuffix else "N/A",
                     subValue = if (totals.isReady) {
-                        "${formatSignedCurrency(totals.dayChangeDollars)} (${
+                        "${if (displayCcy == "USD") formatSignedCurrency(totals.dayChange) else formatSigned(totals.dayChange) + ccySuffix} (${
                             formatSignedPct(totals.dayChangePct)
                         })"
                     } else null,
@@ -97,7 +99,9 @@ fun GroupsScreen(vm: MainViewModel) {
 
             items(groups, key = { it.name }) { group ->
                 GroupRow(
-                    group = group
+                    group = group,
+                    displayCurrency = displayCcy,
+                    prices = vm.marketData.collectAsState().value
                 )
                 Divider()
             }
@@ -116,11 +120,26 @@ fun GroupsScreen(vm: MainViewModel) {
 
 @Composable
 fun GroupRow(
-    group: GroupRow
+    group: GroupRow,
+    displayCurrency: String,
+    prices: Map<String, com.portfoliohelper.data.repository.YahooQuote>
 ) {
     val ext = MaterialTheme.ext
-    val mktValChg = group.mktVal - group.prevMktVal
-    val dayPct = if (group.prevMktVal > 0) (mktValChg / group.prevMktVal * 100.0) else null
+    
+    // Group values are computed in USD in PortfolioCalculator.computeGroups
+    // We need to convert them to displayCurrency
+    val usdToDisplayRate = if (displayCurrency == "USD") 1.0 else {
+        val pair = "${displayCurrency}USD=X"
+        val fxQuote = prices[pair]
+        val rateToUsd = fxQuote?.regularMarketPrice ?: fxQuote?.previousClose
+        if (rateToUsd != null && rateToUsd != 0.0) 1.0 / rateToUsd else 1.0
+    }
+
+    val mktValDisp = group.mktVal * usdToDisplayRate
+    val prevMktValDisp = group.prevMktVal * usdToDisplayRate
+    val mktValChgDisp = mktValDisp - prevMktValDisp
+    
+    val dayPct = if (group.prevMktVal > 0) (mktValChgDisp / prevMktValDisp * 100.0) else null
 
     Row(
         modifier = Modifier
@@ -145,9 +164,13 @@ fun GroupRow(
         }
 
         // P&L
-        val pnlColor = changeColor(mktValChg)
+        val pnlColor = changeColor(mktValChgDisp)
+        val ccySuffix = if (displayCurrency != "USD") " $displayCurrency" else ""
+        
         MonoText(
-            text = if (mktValChg != 0.0) formatSignedCurrency(mktValChg) else "—",
+            text = if (mktValChgDisp != 0.0) {
+                (if (displayCurrency == "USD") formatSignedCurrency(mktValChgDisp) else formatSigned(mktValChgDisp) + ccySuffix)
+            } else "—",
             color = pnlColor,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
