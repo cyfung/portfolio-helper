@@ -359,6 +359,11 @@ function initEditMode() {
             editToggle.click();
         }
 
+        if (dividendCalcUpToDate) {
+            const divInput = document.getElementById('dividend-from-input');
+            if (divInput) divInput.value = dividendCalcUpToDate;
+        }
+
         const portfolioTotal = getRebalTotal();
         document.querySelectorAll('#stock-edit-table tbody .edit-qty').forEach(input => {
             const sym = input.getAttribute('data-symbol');

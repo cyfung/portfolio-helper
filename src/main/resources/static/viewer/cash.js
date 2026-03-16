@@ -74,6 +74,17 @@ function buildIbkrRatesTable(data) {
     if (reloadBtn) reloadBtn.dataset.lastFetch = data.lastFetch;
 }
 
+function updateDividendInUI(eventPortfolioId, total, calcUpToDate) {
+    if (eventPortfolioId !== portfolioId) return;
+    dividendCalcUpToDate = calcUpToDate;
+    const row = document.querySelector('[data-entry-id="Dividend-USD"]');
+    if (!row) { location.reload(); return; }
+    row.dataset.amount = total.toString();
+    const rawCol = row.querySelector('.cash-raw-col');
+    if (rawCol) rawCol.textContent = formatCurrency(total) + ' USD';
+    scheduleDisplayUpdate();
+}
+
 function updatePortfolioRefValues(portfolioId, newPortfolioValue) {
     let updated = false;
     document.querySelectorAll(`[data-portfolio-ref="${portfolioId}"]`).forEach(row => {

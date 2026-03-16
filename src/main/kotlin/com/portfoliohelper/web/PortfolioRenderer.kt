@@ -109,6 +109,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         var savedAllocAddMode = "$savedAllocAddMode";
                         var savedAllocReduceMode = "$savedAllocReduceMode";
                         var virtualBalanceEnabled = $virtualBalanceEnabled;
+                        var dividendCalcUpToDate = "${portfolioConf["dividendCalcUpToDate"] ?: ""}";
                         var stockCurrencies = ${
                             buildString {
                                 append("{")

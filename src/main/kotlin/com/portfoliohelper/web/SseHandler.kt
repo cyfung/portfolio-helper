@@ -1,6 +1,7 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.service.CurrencyConventions
+import com.portfoliohelper.service.DividendService
 import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
@@ -85,6 +86,13 @@ internal suspend fun ServerSSESession.handleSseStream() {
     launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
             val json = "{\"type\":\"reload\",\"timestamp\":${it.timestamp}}"
+            channel.trySend(json)
+        }
+    }
+
+    launch {
+        DividendService.updates.collect { update ->
+            val json = "{\"type\":\"dividend\",\"portfolioId\":\"${update.portfolioSlug}\",\"total\":${update.total},\"calcUpToDate\":\"${update.calcUpToDate}\"}"
             channel.trySend(json)
         }
     }

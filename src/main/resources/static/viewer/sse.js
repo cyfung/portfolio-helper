@@ -41,6 +41,8 @@ function initSseConnection() {
                 updateNavInUI(data.symbol, data.nav);
             } else if (data.type === 'portfolio-value') {
                 updatePortfolioRefValues(data.portfolioId, data.value);
+            } else if (data.type === 'dividend') {
+                updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
             } else if (data.type === 'ibkr-rates') {
                 buildIbkrRatesTable(data);
                 lastIbkrRatesData = data;

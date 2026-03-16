@@ -4,16 +4,24 @@ import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 
+data class DividendUpdate(val portfolioSlug: String, val total: Double, val calcUpToDate: String)
+
 object DividendService {
     private lateinit var appScope: CoroutineScope
     private val pendingJobs = ConcurrentHashMap<Int, Job>()
     private val logger = LoggerFactory.getLogger(DividendService::class.java)
+
+    private val _updates = MutableSharedFlow<DividendUpdate>(extraBufferCapacity = 16)
+    val updates: SharedFlow<DividendUpdate> = _updates.asSharedFlow()
 
     fun initialize(scope: CoroutineScope) {
         appScope = scope
@@ -87,6 +95,7 @@ object DividendService {
                 portfolio.saveConfig("dividendTotal", total.toString())
                 portfolio.saveConfig("dividendCalcUpToDate", toDate.toString())
                 logger.info("Dividend calc done for '${portfolio.slug}': \$${"%.2f".format(total)} up to $toDate")
+                _updates.tryEmit(DividendUpdate(portfolio.slug, total, toDate.toString()))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
