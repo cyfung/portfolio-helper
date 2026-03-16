@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -63,6 +65,7 @@ fun CashScreen(vm: MainViewModel) {
     var editEntry by remember { mutableStateOf<CashEntry?>(null) }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0), // handled by Scaffold in MainActivity
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
@@ -82,6 +85,9 @@ fun CashScreen(vm: MainViewModel) {
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
+            item {
+                Spacer(modifier = Modifier.height(28.dp))
+            }
             // ── Summary cards ────────────────────────────────────────────────
             item {
                 Row(

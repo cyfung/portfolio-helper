@@ -155,7 +155,7 @@ fun SummaryCard(
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily  = DataFont,
                     fontWeight  = FontWeight.SemiBold,
-                    fontSize    = 19.sp,
+                    fontSize    = 21.sp,
                     letterSpacing = (-0.2).sp
                 ),
                 color = valueColor)
@@ -165,7 +165,7 @@ fun SummaryCard(
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = DataFont,
                         fontWeight = FontWeight.Normal,
-                        fontSize = 12.sp,
+                        fontSize = 15.sp,
                         letterSpacing = (-0.2).sp
                     ),
                     color = subValueColor
