@@ -186,16 +186,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Edit" }
                         }
 
-                        if (virtualBalanceEnabled) {
-                            button(classes = "virtual-rebal-btn") {
-                                attributes["id"] = "virtual-rebal-btn"
-                                attributes["type"] = "button"
-                                attributes["title"] =
-                                    "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
-                                span(classes = "toggle-label") { +"Virtual Rebalance" }
-                            }
-                        }
-
                         button(classes = "more-info-toggle") {
                             attributes["id"] = "more-info-toggle"
                             attributes["type"] = "button"
@@ -208,6 +198,16 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             attributes["type"] = "button"
                             attributes["title"] = "Switch between stock view and group view"
                             span(classes = "toggle-label") { +"Groups" }
+                        }
+
+                        if (virtualBalanceEnabled) {
+                            button(classes = "virtual-rebal-btn") {
+                                attributes["id"] = "virtual-rebal-btn"
+                                attributes["type"] = "button"
+                                attributes["title"] =
+                                    "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+                                span(classes = "toggle-label") { +"Virtual Rebalance" }
+                            }
                         }
 
                         button(classes = "rebal-toggle") {

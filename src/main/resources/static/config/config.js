@@ -378,10 +378,14 @@ async function generateAndShowPin(container) {
     }
 }
 
+let _statusHideTimer = null;
 function showStatus(msg, type) {
     const el = document.getElementById('config-status');
     el.textContent = msg;
-    el.className = 'config-status config-status-' + type;
+    el.className = 'config-status config-status-' + type + ' visible';
+    clearTimeout(_statusHideTimer);
+    const delay = type === 'ok' ? 2500 : 5000;
+    _statusHideTimer = setTimeout(() => el.classList.remove('visible'), delay);
 }
 
 function showUpdateStatus(msg, type) {

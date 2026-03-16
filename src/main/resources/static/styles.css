@@ -1020,20 +1020,43 @@ h1 {
 }
 
 .config-status {
+    position: fixed;
+    top: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(-0.5rem);
+    padding: 0.5rem 1.1rem;
+    border-radius: 6px;
     font-size: var(--font-size-sm);
-    min-height: 1.5em;
+    font-weight: 500;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    z-index: 9999;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.config-status.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
 }
 
 .config-status-ok {
     color: var(--color-positive);
+    border-color: var(--color-positive);
 }
 
 .config-status-warn {
     color: var(--color-warning);
+    border-color: var(--color-warning);
 }
 
 .config-status-error {
     color: var(--color-negative);
+    border-color: var(--color-negative);
 }
 
 /* ============================================
