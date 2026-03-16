@@ -48,10 +48,21 @@ private data class StockDisplayData(
 private fun buildStockDisplayData(
     pos: Position,
     quote: YahooQuote?,
+    prices: Map<String, YahooQuote>,
     grossValue: Double,
 ): StockDisplayData {
-    val mark = quote?.regularMarketPrice ?: quote?.previousClose
-    val close = quote?.previousClose ?: quote?.regularMarketPrice
+    val rawMark = quote?.regularMarketPrice ?: quote?.previousClose
+    val rawClose = quote?.previousClose ?: quote?.regularMarketPrice
+    
+    val currency = quote?.currency ?: "USD"
+    val rate = if (currency == "USD") 1.0 else {
+        val pair = "${currency}USD=X"
+        prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+    }
+
+    val mark = rawMark?.let { it * rate }
+    val close = rawClose?.let { it * rate }
+
     val dayPct = if (mark != null && close != null && close != 0.0)
         (mark - close) / close * 100.0 else 0.0
     val pnl = if (mark != null && close != null)
@@ -64,7 +75,7 @@ private fun buildStockDisplayData(
         dayPct = dayPct,
         currentWeight = currentWeight,
         targetWeight = pos.targetWeight,
-        fmtMark = if (mark != null) formatSmart(mark) else "—",
+        fmtMark = if (rawMark != null) formatSmart(rawMark) else "—", // Show raw price in the Mark column
         fmtPnl = formatSignedCurrency(pnl),
         pnlColor = changeColor(pnl),
     )
@@ -94,7 +105,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 
         // ── Build display data once — reused for measurement and row rendering ─
         val stockData = positions.map { pos ->
-            buildStockDisplayData(pos, marketData[pos.symbol], totals.stockGrossValue)
+            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue)
         }
 
         val widthMeasureData = stockData + StockDisplayData(
@@ -240,7 +251,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 
                     // ── Position rows ─────────────────────────────────────
                     items(positions, key = { it.symbol }) { pos ->
-                        val display = stockData.first { it.symbol == pos.symbol }
+                        val display = stockData.firstOrNull { it.symbol == pos.symbol } ?: return@items
                         PositionRow(
                             pos = pos,
                             display = display,

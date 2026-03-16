@@ -65,7 +65,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
         .map { list ->
             list.associate { 
-                it.symbol to YahooQuote(it.symbol, it.price, it.previousClose, it.isMarketClosed)
+                it.symbol to YahooQuote(it.symbol, it.price, it.previousClose, it.isMarketClosed, it.currency)
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -215,7 +215,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             symbol, 
                             price, 
                             quote.previousClose, 
-                            quote.isMarketClosed
+                            quote.isMarketClosed,
+                            currency = quote.currency
                         )
                     )
                 }
@@ -223,11 +224,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            combine(positions, cashEntries) { pos, cash ->
-                val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableList()
-                val currencies = cash.map { it.currency }.distinct().filter { it != "USD" }
-                currencies.forEach { symbols.add("${it}USD=X") }
-                symbols
+            combine(positions, cashEntries, marketData) { pos, cash, data ->
+                val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
+                
+                // Add FX pairs for cash
+                val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" }
+                cashCurrencies.forEach { symbols.add("${it}USD=X") }
+                
+                // Add FX pairs for stocks with known non-USD currency
+                data.values.forEach { quote ->
+                    if (quote.currency != null && quote.currency != "USD" && !quote.symbol.endsWith("=X")) {
+                        symbols.add("${quote.currency}USD=X")
+                    }
+                }
+                
+                symbols.toList()
             }.collect { activeSymbols ->
                 if (activeSymbols.isNotEmpty()) {
                     YahooMarketDataService.start(activeSymbols)
@@ -244,9 +255,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun refreshMarketData() {
-        val posSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }
-        val fxSymbols = cashEntries.value.map { it.currency }.distinct().filter { it != "USD" }.map { "${it}USD=X" }
-        val all = posSymbols + fxSymbols
+        val posSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
+        val cashFxSymbols = cashEntries.value.map { it.currency }.distinct().filter { it != "USD" }.map { "${it}USD=X" }
+        posSymbols.addAll(cashFxSymbols)
+        
+        marketData.value.values.forEach { quote ->
+            if (quote.currency != null && quote.currency != "USD" && !quote.symbol.endsWith("=X")) {
+                posSymbols.add("${quote.currency}USD=X")
+            }
+        }
+        
+        val all = posSymbols.toList()
         if (all.isNotEmpty()) {
             YahooMarketDataService.start(all)
         }

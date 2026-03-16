@@ -76,7 +76,7 @@ interface MarketPriceDao {
 
 @Database(
     entities = [Position::class, CashEntry::class, MarketPrice::class],
-    version = 4,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

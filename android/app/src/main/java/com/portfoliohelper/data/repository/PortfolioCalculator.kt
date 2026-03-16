@@ -44,8 +44,26 @@ object PortfolioCalculator {
                 allReady = false
                 continue
             }
-            val mark = quote.regularMarketPrice ?: quote.previousClose ?: 0.0
-            val prev = quote.previousClose ?: quote.regularMarketPrice ?: 0.0
+            
+            val currency = quote.currency ?: "USD"
+            val rate = if (currency == "USD") 1.0 else {
+                val pair = "${currency}USD=X"
+                val fxQuote = prices[pair]
+                if (fxQuote == null) {
+                    allReady = false
+                    null
+                } else {
+                    fxQuote.regularMarketPrice ?: fxQuote.previousClose
+                }
+            }
+
+            if (rate == null) {
+                allReady = false
+                continue
+            }
+
+            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate
+            val prev = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * rate
             total += mark * pos.quantity
             prevTotal += prev * pos.quantity
         }
@@ -94,29 +112,58 @@ object PortfolioCalculator {
         positions: List<Position>,
         cashEntries: List<CashEntry>
     ): Map<String, YahooQuote> {
-        val symbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableList()
-        val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
-        currencies.forEach { symbols.add("${it}USD=X") }
+        val initialSymbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableList()
+        val cashCurrencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+        cashCurrencies.forEach { initialSymbols.add("${it}USD=X") }
 
-        return symbols.associateWith { symbol ->
+        val results = mutableMapOf<String, YahooQuote>()
+        val pendingSymbols = initialSymbols.toMutableSet()
+        val processedSymbols = mutableSetOf<String>()
+
+        while (pendingSymbols.isNotEmpty()) {
+            val symbol = pendingSymbols.first()
+            pendingSymbols.remove(symbol)
+            processedSymbols.add(symbol)
+
             try {
                 val quote = YahooFinanceClient.fetchQuote(symbol)
                 val price = quote.regularMarketPrice ?: quote.previousClose
                 if (price != null) {
                     db.marketPriceDao().upsert(
-                        MarketPrice(symbol, price, quote.previousClose, quote.isMarketClosed)
+                        MarketPrice(symbol, price, quote.previousClose, quote.isMarketClosed, currency = quote.currency)
                     )
                     // Push to live service if it's active (updates UI in real-time)
                     YahooMarketDataService.updateCache(symbol, quote)
                 }
-                quote
+                results[symbol] = quote
+
+                // If this is a stock with a non-USD currency, we might need its FX rate
+                val stockCcy = quote.currency
+                if (stockCcy != null && stockCcy != "USD" && !stockCcy.endsWith("=X")) {
+                    val fxPair = "${stockCcy}USD=X"
+                    if (!processedSymbols.contains(fxPair)) {
+                        pendingSymbols.add(fxPair)
+                    }
+                }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch $symbol, falling back to DB: ${e.message}")
                 db.marketPriceDao().get(symbol)?.let { cached ->
-                    YahooQuote(symbol, cached.price, cached.previousClose, cached.isMarketClosed)
+                    val quote = YahooQuote(symbol, cached.price, cached.previousClose, cached.isMarketClosed, cached.currency)
+                    results[symbol] = quote
+                    
+                    val stockCcy = cached.currency
+                    if (stockCcy != null && stockCcy != "USD" && !stockCcy.endsWith("=X")) {
+                        val fxPair = "${stockCcy}USD=X"
+                        if (!processedSymbols.contains(fxPair)) {
+                            pendingSymbols.add(fxPair)
+                        }
+                    }
                 }
             }
-        }.filterValues { it != null }.mapValues { it.value!! }
+        }
+
+        return results
     }
 
     /**
@@ -124,7 +171,7 @@ object PortfolioCalculator {
      */
     suspend fun loadCachedMarketData(db: AppDatabase): Map<String, YahooQuote> {
         return db.marketPriceDao().getAll().associate { cached ->
-            cached.symbol to YahooQuote(cached.symbol, cached.price, cached.previousClose, cached.isMarketClosed)
+            cached.symbol to YahooQuote(cached.symbol, cached.price, cached.previousClose, cached.isMarketClosed, cached.currency)
         }
     }
 
@@ -138,7 +185,14 @@ object PortfolioCalculator {
     ): Map<String, Double> {
         val totalVal = positions.sumOf { pos ->
             val quote = prices[pos.symbol]
-            (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+            if (quote == null) return@sumOf 0.0
+            
+            val currency = quote.currency ?: "USD"
+            val rate = if (currency == "USD") 1.0 else {
+                val pair = "${currency}USD=X"
+                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+            }
+            (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
         }
 
         return when (mode) {
@@ -148,7 +202,13 @@ object PortfolioCalculator {
 
             AllocMode.CURRENT_WEIGHT -> positions.associate { pos ->
                 val quote = prices[pos.symbol]
-                val markPrice = quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0
+                if (quote == null) return@associate pos.symbol to 0.0
+                val currency = quote.currency ?: "USD"
+                val rate = if (currency == "USD") 1.0 else {
+                    val pair = "${currency}USD=X"
+                    prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+                }
+                val markPrice = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate
                 val w = if (totalVal > 0) markPrice * pos.quantity / totalVal else 0.0
                 pos.symbol to w * delta
             }
@@ -175,15 +235,25 @@ object PortfolioCalculator {
         val alloc = positions.associate { it.symbol to 0.0 }.toMutableMap()
         val eligible = positions.filter { it.targetWeight > 0 }
         val sorted = eligible.sortedBy { pos ->
-            val quote = prices[pos.symbol]
-            val curVal = (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+            val quote = prices[pos.symbol] ?: return@sortedBy 0.0
+            val currency = quote.currency ?: "USD"
+            val rate = if (currency == "USD") 1.0 else {
+                val pair = "${currency}USD=X"
+                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+            }
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
             sign * ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }
         var remaining = abs(delta)
         for (pos in sorted) {
             if (remaining <= 0) break
-            val quote = prices[pos.symbol]
-            val curVal = (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+            val quote = prices[pos.symbol] ?: continue
+            val currency = quote.currency ?: "USD"
+            val rate = if (currency == "USD") 1.0 else {
+                val pair = "${currency}USD=X"
+                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+            }
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
             val target = finalTotal * (pos.targetWeight / 100.0)
             val amount = minOf(remaining, maxOf(0.0, (target - curVal) * sign))
             alloc[pos.symbol] = amount * sign
@@ -210,8 +280,13 @@ object PortfolioCalculator {
         val eligible = positions.filter { it.targetWeight > 0 }
         val alloc = eligible.associate { it.symbol to 0.0 }.toMutableMap()
         val dev = eligible.associate { pos ->
-            val quote = prices[pos.symbol]
-            val curVal = (quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0) * pos.quantity
+            val quote = prices[pos.symbol] ?: return@associate pos.symbol to 0.0
+            val currency = quote.currency ?: "USD"
+            val rate = if (currency == "USD") 1.0 else {
+                val pair = "${currency}USD=X"
+                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+            }
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
             pos.symbol to ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }.toMutableMap()
         val sorted = eligible.sortedBy { sign * (dev[it.symbol] ?: 0.0) }
@@ -269,8 +344,16 @@ object PortfolioCalculator {
             if (pos.groups.isBlank()) continue
             val entries = parseGroups(pos.groups, pos.symbol)
             val quote = prices[pos.symbol]
-            val mark = quote?.regularMarketPrice ?: quote?.previousClose ?: 0.0
-            val close = quote?.previousClose ?: quote?.regularMarketPrice ?: 0.0
+            if (quote == null) continue
+            
+            val currency = quote.currency ?: "USD"
+            val rate = if (currency == "USD") 1.0 else {
+                val pair = "${currency}USD=X"
+                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
+            }
+
+            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate
+            val close = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * rate
             val mktVal = mark * pos.quantity
             val prevMktVal = close * pos.quantity
             for ((mult, name) in entries) {

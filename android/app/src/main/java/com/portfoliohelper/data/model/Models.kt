@@ -46,7 +46,8 @@ data class MarketPrice(
     val price: Double,
     val previousClose: Double?,
     val isMarketClosed: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val currency: String? = null
 )
 
 // ── Margin alert settings ─────────────────────────────────────────────────────

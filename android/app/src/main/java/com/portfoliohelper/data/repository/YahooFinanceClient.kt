@@ -14,7 +14,8 @@ data class YahooQuote(
     val symbol: String,
     val regularMarketPrice: Double?,
     val previousClose: Double?,
-    val isMarketClosed: Boolean = false
+    val isMarketClosed: Boolean = false,
+    val currency: String? = null
 )
 
 object YahooFinanceClient {
@@ -63,8 +64,19 @@ object YahooFinanceClient {
             ?: throw Exception("Invalid response structure for $symbol")
 
         val meta = result["meta"]?.jsonObject
-        val regularMarketPrice = meta?.get("regularMarketPrice")?.jsonPrimitive?.doubleOrNull
-        val previousClose = meta?.get("chartPreviousClose")?.jsonPrimitive?.doubleOrNull
+        var regularMarketPrice = meta?.get("regularMarketPrice")?.jsonPrimitive?.doubleOrNull
+        var previousClose = meta?.get("chartPreviousClose")?.jsonPrimitive?.doubleOrNull
+        val currency = meta?.get("currency")?.jsonPrimitive?.content
+
+        // Handle currencies like GBp (pence)
+        val finalCurrency = if (currency != null && currency.length == 3 && currency[2].isLowerCase()) {
+            val normalizedCcy = currency.uppercase()
+            if (regularMarketPrice != null) regularMarketPrice /= 100.0
+            if (previousClose != null) previousClose /= 100.0
+            normalizedCcy
+        } else {
+            currency
+        }
 
         val currentTradingPeriod = meta?.get("currentTradingPeriod")?.jsonObject
         val regularPeriod = currentTradingPeriod?.get("regular")?.jsonObject
@@ -82,7 +94,8 @@ object YahooFinanceClient {
             symbol = symbol,
             regularMarketPrice = regularMarketPrice,
             previousClose = previousClose,
-            isMarketClosed = isMarketClosed
+            isMarketClosed = isMarketClosed,
+            currency = finalCurrency
         )
     }
 }
