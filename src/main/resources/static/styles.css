@@ -2535,6 +2535,20 @@ body.editing-active .dividend-from-section {
     padding: 6px 0;
 }
 
+.dividend-from-section input[type="date"] {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    color-scheme: light;
+}
+
+[data-theme="dark"] .dividend-from-section input[type="date"] {
+    color-scheme: dark;
+}
+
 body.editing-active .cash-edit-table-wrapper {
     display: flex;
     flex-direction: column;
