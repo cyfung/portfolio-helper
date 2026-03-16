@@ -304,6 +304,8 @@ function initImportFile() {
             }
         }
 
+        updateTargetWeightTotal();
+
         // Populate cash table
         if (json.cash) {
             // Mark all existing cash rows as deleted
