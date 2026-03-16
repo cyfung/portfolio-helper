@@ -15,7 +15,7 @@
         android:theme="@style/Theme.PortfolioHelper"
         android:allowBackup="true"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
 
         <activity
             android:name="com.portfoliohelper.MainActivity"
