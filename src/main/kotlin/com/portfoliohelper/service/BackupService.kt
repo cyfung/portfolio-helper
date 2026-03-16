@@ -273,14 +273,14 @@ object BackupService {
                     "symbol" to s.symbol, "amount" to s.amount,
                     "targetWeight" to s.targetWeight, "letf" to s.letf, "groups" to s.groups
                 )
-            }.takeIf { it.isNotEmpty() }
+            }
             val cash = root.cash.map { c ->
                 val value = if (c.currency == "P") {
                     (if (c.amount < 0) "-" else "") + (c.portfolioRef ?: "")
                 } else c.amount.toString()
                 mapOf("key" to c.key, "value" to value)
-            }.takeIf { it.isNotEmpty() }
-            if (stocks == null && cash == null)
+            }
+            if (stocks.isEmpty() && cash.isEmpty())
                 ImportResult(null, null, "JSON backup has no stocks or cash entries")
             else
                 ImportResult(stocks, cash, null)
