@@ -2778,7 +2778,7 @@ body.rebalancing-visible .virtual-rebal-btn {
 .backup-modal-footer {
     display: flex;
     justify-content: flex-end;
-    gap: var(--spacing-sm);
+    gap: var(--spacing-md);
 }
 
 .backup-modal-import,
