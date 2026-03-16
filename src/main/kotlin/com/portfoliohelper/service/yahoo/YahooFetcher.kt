@@ -91,6 +91,46 @@ object YahooHistoricalFetcher {
         logger.info("Fetched ${prices.size} trading days for $ticker")
         return prices
     }
+
+    /** Fetches dividend events for [ticker] in the given date range. Returns ex-date → amount per share. */
+    fun fetchDividends(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Map<LocalDate, Double> {
+        val p1 = startDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+                "?period1=$p1&period2=$p2&interval=1d&events=div"
+
+        logger.info("Fetching dividends for $ticker from $startDate to $endDate")
+
+        val request = Request.Builder().url(url).build()
+        val body = http.newCall(request).execute().use { resp ->
+            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker dividends" }
+            resp.body!!.string()
+        }
+
+        val root = JSONObject(body)
+        val result = root.getJSONObject("chart").getJSONArray("result").getJSONObject(0)
+        val events = result.optJSONObject("events") ?: return emptyMap()
+        val dividends = events.optJSONObject("dividends") ?: return emptyMap()
+
+        val out = mutableMapOf<LocalDate, Double>()
+        for (key in dividends.keys()) {
+            val entry = dividends.getJSONObject(key)
+            val ts = entry.getLong("date")
+            val amount = entry.getDouble("amount")
+            val date = Instant.ofEpochSecond(ts).atZone(ZoneOffset.UTC).toLocalDate()
+            if (date in startDate..endDate) {
+                out[date] = amount
+            }
+        }
+
+        logger.info("Fetched ${out.size} dividend events for $ticker")
+        return out
+    }
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────

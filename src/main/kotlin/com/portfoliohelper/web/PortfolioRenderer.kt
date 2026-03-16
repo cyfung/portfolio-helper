@@ -58,11 +58,19 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
     val virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true"
 
+    // Inject dividend total as a virtual cash entry when virtualBalance is enabled and total is available
+    val dividendTotal = if (virtualBalanceEnabled) portfolioConf["dividendTotal"]?.toDoubleOrNull() else null
+    val effectiveCashEntries = if (dividendTotal != null) {
+        cashEntries + CashEntry(label = "Dividend", currency = "USD", marginFlag = false, amount = dividendTotal)
+    } else {
+        cashEntries
+    }
+
     // Compute totals and display currencies at function level so they can be used in both head and body
-    val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
+    val cashTotalUsd = effectiveCashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
     val displayCurrencies: List<String> = buildList {
         add("USD")
-        cashEntries.map { it.currency.uppercase() }
+        effectiveCashEntries.map { it.currency.uppercase() }
             .distinct().filter { it != "P" && it != "USD" }
             .sorted().forEach { add(it) }
     }
@@ -260,7 +268,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         table(classes = "portfolio-cash-table") {
                             tbody {
                                 buildSummaryRows(
-                                    cashEntries,
+                                    effectiveCashEntries,
                                     ::resolveEntryUsd,
                                     portfolio,
                                     cashTotalUsd
@@ -270,7 +278,18 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
 
                         buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
 
-                        if (cashEntries.any { it.marginFlag }) {
+                        if (virtualBalanceEnabled) {
+                            div(classes = "dividend-from-section") {
+                                label { attributes["for"] = "dividend-from-input"; +"Dividend From" }
+                                input(type = InputType.date, classes = "dividend-from-input") {
+                                    id = "dividend-from-input"
+                                    value = portfolioConf["dividendStartDate"] ?: ""
+                                    attributes["autocomplete"] = "off"
+                                }
+                            }
+                        }
+
+                        if (effectiveCashEntries.any { it.marginFlag }) {
                             buildIbkrRatesTable()
                         }
                     }

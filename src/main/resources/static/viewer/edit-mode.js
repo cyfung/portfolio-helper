@@ -297,23 +297,19 @@ function initEditMode() {
             cashUpdates.push({ key, value });
         });
 
+        const dividendInput = document.getElementById('dividend-from-input');
+        const dividendStartDate = dividendInput ? dividendInput.value : null;
+
         saveBtn.disabled = true;
         editToggle.disabled = true;
         saveBtn.querySelector('.toggle-label').textContent = 'Saving...';
 
-        Promise.all([
-            fetch('/api/portfolio/update?portfolio=' + portfolioId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updates)
-            }),
-            fetch('/api/cash/update?portfolio=' + portfolioId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(cashUpdates)
-            })
-        ]).then(results => {
-            if (!results.every(r => r.ok)) throw new Error('Save failed');
+        fetch('/api/portfolio/save-all?portfolio=' + portfolioId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stocks: updates, cash: cashUpdates, dividendStartDate })
+        }).then(r => {
+            if (!r.ok) throw new Error('Save failed');
         }).catch(err => {
             alert('Failed to save: ' + err.message);
             saveBtn.disabled = false;

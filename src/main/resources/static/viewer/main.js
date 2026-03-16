@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initPasteHandler();
     initCurrencyControls();
     initRebalanceControls();
-    initBackupPanel();
+initBackupPanel();
     initTwsSync();
     initSaveToBacktest();
     initThemeToggle();

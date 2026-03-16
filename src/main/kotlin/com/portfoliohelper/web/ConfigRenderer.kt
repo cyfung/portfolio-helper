@@ -304,6 +304,21 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 attributes["min"] = "60"
                             }
                         }
+
+                        renderConfigField(
+                            label = "Dividend Safe Lag Days",
+                            description = "Days before today to use as the safe end date for dividend calculations (avoids unreported recent events). Default: 5.",
+                            inputId = "dividend-safe-lag-days",
+                            badge = null
+                        ) {
+                            input(type = InputType.number) {
+                                id = "dividend-safe-lag-days"
+                                placeholder = "5"
+                                value = AppConfig.get(AppConfig.KEY_DIVIDEND_SAFE_LAG_DAYS)
+                                attributes["data-config-key"] = AppConfig.KEY_DIVIDEND_SAFE_LAG_DAYS
+                                attributes["min"] = "0"
+                            }
+                        }
                     }
 
                     // Actions

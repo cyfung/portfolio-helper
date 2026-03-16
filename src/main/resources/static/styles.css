@@ -2524,6 +2524,17 @@ body.editing-active .portfolio-cash-table {
     display: none;
 }
 
+.dividend-from-section {
+    display: none;
+}
+
+body.editing-active .dividend-from-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
 body.editing-active .cash-edit-table-wrapper {
     display: flex;
     flex-direction: column;

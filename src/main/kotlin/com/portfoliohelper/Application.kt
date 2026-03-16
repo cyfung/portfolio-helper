@@ -92,6 +92,11 @@ fun main() {
     }
 
     // ---------------------------------------------------------------
+    // 6b. Initialize dividend auto-calculation service
+    // ---------------------------------------------------------------
+    DividendService.initialize(appScope)
+
+    // ---------------------------------------------------------------
     // 7. Shutdown hook
     // ---------------------------------------------------------------
     val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443

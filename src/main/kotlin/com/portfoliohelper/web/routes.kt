@@ -5,6 +5,7 @@ import com.portfoliohelper.service.*
 import com.portfoliohelper.service.UpdateService.toJson
 import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.GlobalSettingsTable
+import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
@@ -161,6 +162,7 @@ fun Application.configureRouting() {
         get("/") {
             val all = ManagedPortfolio.getAll()
             val default = all.first()
+            DividendService.maybeScheduleCalculation(default)
             call.renderPortfolioPage(default, all, default.slug)
         }
 
@@ -168,6 +170,7 @@ fun Application.configureRouting() {
             val slug = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val entry =
                 ManagedPortfolio.getBySlug(slug) ?: return@get call.respond(HttpStatusCode.NotFound)
+            DividendService.maybeScheduleCalculation(entry)
             call.renderPortfolioPage(entry, ManagedPortfolio.getAll(), slug)
         }
 
@@ -523,6 +526,7 @@ fun Application.configureRouting() {
                     }
                 }
 
+                DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
@@ -566,6 +570,94 @@ fun Application.configureRouting() {
                     }
                 }
 
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        // Save stocks + cash + dividendStartDate in a single transaction
+        post("/api/portfolio/save-all") {
+            try {
+                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
+                val portfolioEntry =
+                    ManagedPortfolio.getBySlug(portfolioId) ?: return@post call.respond(
+                        HttpStatusCode.NotFound
+                    )
+
+                val body = call.receiveText()
+                val root = Json.parseToJsonElement(body).jsonObject
+
+                data class PositionRow(
+                    val symbol: String,
+                    val amount: Double,
+                    val targetWeight: Double,
+                    val letf: String,
+                    val groups: String
+                )
+
+                val stockRows = root["stocks"]?.jsonArray?.mapNotNull { el ->
+                    val obj = el.jsonObject
+                    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
+                    PositionRow(
+                        symbol = symbol,
+                        amount = amount,
+                        targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
+                        letf = obj["letf"]?.jsonPrimitive?.content ?: "",
+                        groups = obj["groups"]?.jsonPrimitive?.content ?: ""
+                    )
+                } ?: emptyList()
+
+                val cashEntries = root["cash"]?.jsonArray?.mapNotNull { el ->
+                    val obj = el.jsonObject
+                    val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val value = obj["value"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    parseCashEntryFromKeyValue(key, value)
+                } ?: emptyList()
+
+                val dividendStartDate = root["dividendStartDate"]?.jsonPrimitive?.contentOrNull
+
+                val pid = portfolioEntry.serialId
+                transaction {
+                    PositionsTable.deleteWhere { PositionsTable.portfolioId eq pid }
+                    PositionsTable.batchInsert(stockRows) { row ->
+                        this[PositionsTable.portfolioId] = pid
+                        this[PositionsTable.symbol] = row.symbol
+                        this[PositionsTable.amount] = row.amount
+                        this[PositionsTable.targetWeight] = row.targetWeight
+                        this[PositionsTable.letf] = row.letf
+                        this[PositionsTable.groups] = row.groups
+                    }
+                    CashTable.deleteWhere { CashTable.portfolioId eq pid }
+                    CashTable.batchInsert(cashEntries) { entry ->
+                        this[CashTable.portfolioId] = pid
+                        this[CashTable.label] = entry.label
+                        this[CashTable.currency] = entry.currency
+                        this[CashTable.marginFlag] = entry.marginFlag
+                        this[CashTable.amount] = entry.amount
+                        this[CashTable.portfolioRef] = entry.portfolioRef
+                    }
+                    if (!dividendStartDate.isNullOrBlank()) {
+                        PortfolioCfgTable.upsert {
+                            it[PortfolioCfgTable.portfolioId] = pid
+                            it[PortfolioCfgTable.cfgKey] = "dividendStartDate"
+                            it[PortfolioCfgTable.cfgValue] = dividendStartDate
+                        }
+                    } else if (dividendStartDate != null) {
+                        PortfolioCfgTable.deleteWhere {
+                            (PortfolioCfgTable.portfolioId eq pid) and (PortfolioCfgTable.cfgKey eq "dividendStartDate")
+                        }
+                    }
+                }
+
+                DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
@@ -641,12 +733,14 @@ fun Application.configureRouting() {
                         if (key == "rebalTarget") portfolioEntry.saveConfig("marginTarget", "")
                         else if (key == "marginTarget") portfolioEntry.saveConfig("rebalTarget", "")
                     }
+                    if (key == "dividendStartDate") DividendService.invalidate(portfolioEntry)
                 } else {
                     // Batch JSON mode (from config page)
                     val json = Json.parseToJsonElement(body).jsonObject
                     for ((k, v) in json) {
                         portfolioEntry.saveConfig(k, v.jsonPrimitive.contentOrNull ?: "")
                     }
+                    if (json.containsKey("dividendStartDate")) DividendService.invalidate(portfolioEntry)
                 }
                 call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
             } catch (e: Exception) {
