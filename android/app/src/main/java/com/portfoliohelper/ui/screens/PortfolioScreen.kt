@@ -55,13 +55,18 @@ private fun buildStockDisplayData(
     val rawClose = quote?.previousClose ?: quote?.regularMarketPrice
     
     val currency = quote?.currency ?: "USD"
-    val rate = if (currency == "USD") 1.0 else {
-        val pair = "${currency}USD=X"
+    val isPence = currency.length == 3 && currency[2].isLowerCase()
+    val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+    val rate = if (normalizedCcy == "USD") 1.0 else {
+        val pair = "${normalizedCcy}USD=X"
         prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
     }
 
-    val mark = rawMark?.let { it * rate }
-    val close = rawClose?.let { it * rate }
+    val multiplier = if (isPence) rate / 100.0 else rate
+
+    val mark = rawMark?.let { it * multiplier }
+    val close = rawClose?.let { it * multiplier }
 
     val dayPct = if (mark != null && close != null && close != 0.0)
         (mark - close) / close * 100.0 else 0.0

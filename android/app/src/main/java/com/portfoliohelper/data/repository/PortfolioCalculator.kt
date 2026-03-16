@@ -46,8 +46,11 @@ object PortfolioCalculator {
             }
             
             val currency = quote.currency ?: "USD"
-            val rate = if (currency == "USD") 1.0 else {
-                val pair = "${currency}USD=X"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
                 val fxQuote = prices[pair]
                 if (fxQuote == null) {
                     allReady = false
@@ -62,8 +65,10 @@ object PortfolioCalculator {
                 continue
             }
 
-            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate
-            val prev = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * rate
+            val multiplier = if (isPence) rate / 100.0 else rate
+
+            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
+            val prev = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier
             total += mark * pos.quantity
             prevTotal += prev * pos.quantity
         }
@@ -138,9 +143,12 @@ object PortfolioCalculator {
                 results[symbol] = quote
 
                 // If this is a stock with a non-USD currency, we might need its FX rate
-                val stockCcy = quote.currency
-                if (stockCcy != null && stockCcy != "USD" && !stockCcy.endsWith("=X")) {
-                    val fxPair = "${stockCcy}USD=X"
+                val stockCcyRaw = quote.currency
+                if (stockCcyRaw != null && stockCcyRaw != "USD" && !stockCcyRaw.endsWith("=X")) {
+                    val isPence = stockCcyRaw.length == 3 && stockCcyRaw[2].isLowerCase()
+                    val normalizedCcy = if (isPence) stockCcyRaw.uppercase() else stockCcyRaw
+                    
+                    val fxPair = "${normalizedCcy}USD=X"
                     if (!processedSymbols.contains(fxPair)) {
                         pendingSymbols.add(fxPair)
                     }
@@ -152,9 +160,12 @@ object PortfolioCalculator {
                     val quote = YahooQuote(symbol, cached.price, cached.previousClose, cached.isMarketClosed, cached.currency)
                     results[symbol] = quote
                     
-                    val stockCcy = cached.currency
-                    if (stockCcy != null && stockCcy != "USD" && !stockCcy.endsWith("=X")) {
-                        val fxPair = "${stockCcy}USD=X"
+                    val stockCcyRaw = cached.currency
+                    if (stockCcyRaw != null && stockCcyRaw != "USD" && !stockCcyRaw.endsWith("=X")) {
+                        val isPence = stockCcyRaw.length == 3 && stockCcyRaw[2].isLowerCase()
+                        val normalizedCcy = if (isPence) stockCcyRaw.uppercase() else stockCcyRaw
+                        
+                        val fxPair = "${normalizedCcy}USD=X"
                         if (!processedSymbols.contains(fxPair)) {
                             pendingSymbols.add(fxPair)
                         }
@@ -188,11 +199,15 @@ object PortfolioCalculator {
             if (quote == null) return@sumOf 0.0
             
             val currency = quote.currency ?: "USD"
-            val rate = if (currency == "USD") 1.0 else {
-                val pair = "${currency}USD=X"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
-            (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
+            val multiplier = if (isPence) rate / 100.0 else rate
+            (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
         }
 
         return when (mode) {
@@ -203,12 +218,17 @@ object PortfolioCalculator {
             AllocMode.CURRENT_WEIGHT -> positions.associate { pos ->
                 val quote = prices[pos.symbol]
                 if (quote == null) return@associate pos.symbol to 0.0
+                
                 val currency = quote.currency ?: "USD"
-                val rate = if (currency == "USD") 1.0 else {
-                    val pair = "${currency}USD=X"
+                val isPence = currency.length == 3 && currency[2].isLowerCase()
+                val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+                val rate = if (normalizedCcy == "USD") 1.0 else {
+                    val pair = "${normalizedCcy}USD=X"
                     prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
                 }
-                val markPrice = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate
+                val multiplier = if (isPence) rate / 100.0 else rate
+                val markPrice = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
                 val w = if (totalVal > 0) markPrice * pos.quantity / totalVal else 0.0
                 pos.symbol to w * delta
             }
@@ -236,24 +256,34 @@ object PortfolioCalculator {
         val eligible = positions.filter { it.targetWeight > 0 }
         val sorted = eligible.sortedBy { pos ->
             val quote = prices[pos.symbol] ?: return@sortedBy 0.0
+            
             val currency = quote.currency ?: "USD"
-            val rate = if (currency == "USD") 1.0 else {
-                val pair = "${currency}USD=X"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
-            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
+            val multiplier = if (isPence) rate / 100.0 else rate
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
             sign * ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }
         var remaining = abs(delta)
         for (pos in sorted) {
             if (remaining <= 0) break
             val quote = prices[pos.symbol] ?: continue
+            
             val currency = quote.currency ?: "USD"
-            val rate = if (currency == "USD") 1.0 else {
-                val pair = "${currency}USD=X"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
-            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
+            val multiplier = if (isPence) rate / 100.0 else rate
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
             val target = finalTotal * (pos.targetWeight / 100.0)
             val amount = minOf(remaining, maxOf(0.0, (target - curVal) * sign))
             alloc[pos.symbol] = amount * sign
@@ -281,12 +311,17 @@ object PortfolioCalculator {
         val alloc = eligible.associate { it.symbol to 0.0 }.toMutableMap()
         val dev = eligible.associate { pos ->
             val quote = prices[pos.symbol] ?: return@associate pos.symbol to 0.0
+            
             val currency = quote.currency ?: "USD"
-            val rate = if (currency == "USD") 1.0 else {
-                val pair = "${currency}USD=X"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
-            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate * pos.quantity
+            val multiplier = if (isPence) rate / 100.0 else rate
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
             pos.symbol to ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }.toMutableMap()
         val sorted = eligible.sortedBy { sign * (dev[it.symbol] ?: 0.0) }
@@ -347,13 +382,17 @@ object PortfolioCalculator {
             if (quote == null) continue
             
             val currency = quote.currency ?: "USD"
-            val rate = if (currency == "USD") 1.0 else {
-                val pair = "${currency}USD=X"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
+            val multiplier = if (isPence) rate / 100.0 else rate
 
-            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * rate
-            val close = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * rate
+            val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
+            val close = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier
             val mktVal = mark * pos.quantity
             val prevMktVal = close * pos.quantity
             for ((mult, name) in entries) {
