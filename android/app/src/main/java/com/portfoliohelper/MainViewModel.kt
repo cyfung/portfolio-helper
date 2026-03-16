@@ -60,6 +60,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val syncServerInfo: StateFlow<SyncServerInfo?> = settings.syncServerInfo
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val pnlDisplayMode: StateFlow<String> = settings.pnlDisplayMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "DISPLAY")
+
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 
     val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
@@ -141,6 +144,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveMarginAlertSettings(s: MarginAlertSettings) = viewModelScope.launch {
         settings.saveMarginAlertSettings(s)
         MarginCheckWorker.schedule(getApplication(), s)
+    }
+
+    fun savePnlDisplayMode(mode: String) = viewModelScope.launch {
+        settings.savePnlDisplayMode(mode)
     }
 
     // ── Sync ──────────────────────────────────────────────────────────────────
@@ -233,8 +240,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 
                 // Add FX pairs for stocks with known non-USD currency
                 data.values.forEach { quote ->
-                    if (quote.currency != null && quote.currency != "USD" && !quote.symbol.endsWith("=X")) {
-                        symbols.add("${quote.currency}USD=X")
+                    val ccy = quote.currency
+                    if (ccy != null && ccy != "USD" && !quote.symbol.endsWith("=X")) {
+                        val isPence = ccy.length == 3 && ccy[2].isLowerCase()
+                        val normalizedCcy = if (isPence) ccy.uppercase() else ccy
+                        symbols.add("${normalizedCcy}USD=X")
                     }
                 }
                 
@@ -260,8 +270,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         posSymbols.addAll(cashFxSymbols)
         
         marketData.value.values.forEach { quote ->
-            if (quote.currency != null && quote.currency != "USD" && !quote.symbol.endsWith("=X")) {
-                posSymbols.add("${quote.currency}USD=X")
+            val ccy = quote.currency
+            if (ccy != null && ccy != "USD" && !quote.symbol.endsWith("=X")) {
+                val isPence = ccy.length == 3 && ccy[2].isLowerCase()
+                val normalizedCcy = if (isPence) ccy.uppercase() else ccy
+                posSymbols.add("${normalizedCcy}USD=X")
             }
         }
         

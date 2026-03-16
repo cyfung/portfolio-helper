@@ -26,6 +26,7 @@ object PrefsKeys {
     val SERVER_ASSIGNED_ID      = stringPreferencesKey("server_assigned_id")
     val AES_KEY                 = stringPreferencesKey("aes_key")
     val TLS_FINGERPRINT         = stringPreferencesKey("tls_fingerprint")
+    val PNL_DISPLAY_MODE        = stringPreferencesKey("pnl_display_mode") // "NATIVE" or "DISPLAY"
 }
 
 class SettingsRepository(private val context: Context) {
@@ -103,6 +104,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun getTlsFingerprint(): String? =
         context.dataStore.data.first()[PrefsKeys.TLS_FINGERPRINT]
+
+    val pnlDisplayMode: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.PNL_DISPLAY_MODE] ?: "NATIVE"
+    }
+
+    suspend fun savePnlDisplayMode(mode: String) {
+        context.dataStore.edit { it[PrefsKeys.PNL_DISPLAY_MODE] = mode }
+    }
 
 }
 

@@ -38,6 +38,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val syncServer by vm.syncServerInfo.collectAsState()
     val discoveredServers by vm.discoveredServers.collectAsState()
     val syncStatus by vm.syncStatus.collectAsState()
+    val pnlMode by vm.pnlDisplayMode.collectAsState()
 
     var enabled by remember(currentAlerts) { mutableStateOf(currentAlerts.enabled) }
     var lowerPct by remember(currentAlerts) { mutableStateOf(currentAlerts.lowerPct.toString()) }
@@ -167,6 +168,28 @@ fun SettingsScreen(vm: MainViewModel) {
                 onDismiss = { vm.clearSyncStatus() },
                 onConfirm = { pin -> vm.pairServer(server, pin) }
             )
+        }
+
+        // ── Display Settings ───────────────────────────────────────────────────
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = ext.bgElevated,
+            tonalElevation = 1.dp,
+            shadowElevation = 1.dp
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Display Settings", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary)
+                
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Stock P&L Currency", modifier = Modifier.weight(1f), color = ext.textSecondary, fontSize = 13.sp)
+                    
+                    TextButton(onClick = { 
+                        vm.savePnlDisplayMode(if (pnlMode == "DISPLAY") "NATIVE" else "DISPLAY")
+                    }) {
+                        Text(if (pnlMode == "DISPLAY") "USD (Portfolio)" else "Native (Stock)")
+                    }
+                }
+            }
         }
 
         // ── Margin Alert section ──────────────────────────────────────────────

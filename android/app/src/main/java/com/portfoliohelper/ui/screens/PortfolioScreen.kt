@@ -50,6 +50,7 @@ private fun buildStockDisplayData(
     quote: YahooQuote?,
     prices: Map<String, YahooQuote>,
     grossValue: Double,
+    pnlDisplayMode: String,
 ): StockDisplayData {
     val rawMark = quote?.regularMarketPrice ?: quote?.previousClose
     val rawClose = quote?.previousClose ?: quote?.regularMarketPrice
@@ -65,23 +66,36 @@ private fun buildStockDisplayData(
 
     val multiplier = if (isPence) rate / 100.0 else rate
 
-    val mark = rawMark?.let { it * multiplier }
-    val close = rawClose?.let { it * multiplier }
+    val markUsd = rawMark?.let { it * multiplier }
+    val closeUsd = rawClose?.let { it * multiplier }
 
-    val dayPct = if (mark != null && close != null && close != 0.0)
-        (mark - close) / close * 100.0 else 0.0
-    val pnl = if (mark != null && close != null)
-        (mark - close) * pos.quantity else 0.0
-    val currentVal = if (mark != null) mark * pos.quantity else 0.0
-    val currentWeight = if (grossValue > 0) (currentVal / grossValue) * 100.0 else 0.0
+    val dayPct = if (markUsd != null && closeUsd != null && closeUsd != 0.0)
+        (markUsd - closeUsd) / closeUsd * 100.0 else 0.0
+
+    // P&L calculation based on mode
+    val pnl = if (pnlDisplayMode == "NATIVE") {
+        // Native P&L (pence stocks stay in pence)
+        if (rawMark != null && rawClose != null) (rawMark - rawClose) * pos.quantity else 0.0
+    } else {
+        // USD P&L
+        if (markUsd != null && closeUsd != null) (markUsd - closeUsd) * pos.quantity else 0.0
+    }
+
+    val currentValUsd = if (markUsd != null) markUsd * pos.quantity else 0.0
+    val currentWeight = if (grossValue > 0) (currentValUsd / grossValue) * 100.0 else 0.0
 
     return StockDisplayData(
         symbol = pos.symbol,
         dayPct = dayPct,
         currentWeight = currentWeight,
         targetWeight = pos.targetWeight,
-        fmtMark = if (rawMark != null) formatSmart(rawMark) else "—", // Show raw price in the Mark column
-        fmtPnl = formatSignedCurrency(pnl),
+        fmtMark = if (rawMark != null) formatSmart(rawMark) else "—",
+        fmtPnl = if (pnlDisplayMode == "NATIVE") {
+            // Remove currency symbol if native as requested
+            formatSigned(pnl)
+        } else {
+            formatSignedCurrency(pnl)
+        },
         pnlColor = changeColor(pnl),
     )
 }
@@ -95,6 +109,7 @@ fun PortfolioScreen(vm: MainViewModel) {
     val marketData by vm.marketData.collectAsState()
     val totals by vm.portfolioTotals.collectAsState()
     val cashTotals by vm.cashTotals.collectAsState()
+    val pnlMode by vm.pnlDisplayMode.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -110,7 +125,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 
         // ── Build display data once — reused for measurement and row rendering ─
         val stockData = positions.map { pos ->
-            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue)
+            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue, pnlMode)
         }
 
         val widthMeasureData = stockData + StockDisplayData(

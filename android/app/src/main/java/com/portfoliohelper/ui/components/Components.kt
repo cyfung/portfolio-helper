@@ -56,6 +56,8 @@ fun formatCurrency(v: Double): String = formatSmart(v)
 
 fun formatSignedCurrency(v: Double): String = formatSmart(v, showSign = true)
 
+fun formatSigned(v: Double): String = formatSmart(v, showSign = true)
+
 fun formatPct(v: Double, decimals: Int = 2): String =
     "%.${decimals}f%%".format(v)
 
