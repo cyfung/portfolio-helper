@@ -168,6 +168,7 @@ fun PortfolioScreen(vm: MainViewModel) {
         ) { layout ->
 
             Scaffold(
+                contentWindowInsets = WindowInsets(0, 0, 0, 0), // handled by Scaffold in MainActivity
                 floatingActionButton = {
                     FloatingActionButton(
                         onClick = { showAddDialog = true },

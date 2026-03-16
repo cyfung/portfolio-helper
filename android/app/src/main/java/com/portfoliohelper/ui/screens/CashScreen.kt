@@ -85,9 +85,6 @@ fun CashScreen(vm: MainViewModel) {
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            item {
-                Spacer(modifier = Modifier.height(28.dp))
-            }
             // ── Summary cards ────────────────────────────────────────────────
             item {
                 Row(

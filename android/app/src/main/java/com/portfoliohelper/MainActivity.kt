@@ -12,26 +12,36 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.portfoliohelper.ui.components.DynamicCurrencySwitcher
 import com.portfoliohelper.ui.screens.CashScreen
 import com.portfoliohelper.ui.screens.GroupsScreen
 import com.portfoliohelper.ui.screens.PortfolioScreen
 import com.portfoliohelper.ui.screens.SettingsScreen
 import com.portfoliohelper.ui.theme.PortfolioHelperTheme
+import com.portfoliohelper.ui.theme.ext
 import kotlinx.serialization.Serializable
 
 @Serializable object PortfolioRoute
@@ -64,13 +74,53 @@ val navItems = listOf(
     NavItem(SettingsRoute, "Settings", Icons.Default.Settings)
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortfolioHelperApp(vm: MainViewModel) {
     val navController = rememberNavController()
+    val ext = MaterialTheme.ext
+    
+    // Demo currency state
+    var selectedCurrency by remember { mutableStateOf("USD") }
+    // Dynamic list with 8 currencies to demonstrate scrolling
+    val currencies = listOf("USD", "HKD", "GBP", "EUR", "JPY", "AUD", "CAD", "CHF")
 
     Scaffold(
+        topBar = {
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentDestination = navBackStackEntry?.destination
+            val currentItem = navItems.find { item ->
+                currentDestination?.hierarchy?.any { 
+                    it.route?.contains(item.route::class.simpleName ?: "") == true 
+                } == true
+            }
+            TopAppBar(
+                title = { 
+                    Text(
+                        text = currentItem?.label ?: "Portfolio Helper",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    ) 
+                },
+                actions = {
+                    DynamicCurrencySwitcher(
+                        currencies = currencies,
+                        selected = selectedCurrency,
+                        onCurrencySelected = { selectedCurrency = it }
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = ext.bgPrimary,
+                    titleContentColor = ext.textPrimary
+                )
+            )
+        },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = ext.bgPrimary,
+                contentColor = ext.textPrimary
+            ) {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = navBackStackEntry?.destination
                 navItems.forEach { item ->

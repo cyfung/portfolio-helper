@@ -84,8 +84,6 @@ fun SettingsScreen(vm: MainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Settings", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = ext.textPrimary)
-
         // ── Data Sync Section ──────────────────────────────────────────────
         Surface(
             shape = RoundedCornerShape(10.dp),
@@ -209,7 +207,7 @@ fun SettingsScreen(vm: MainViewModel) {
                         onValueChange = { lowerPct = it },
                         label        = { Text("Lower threshold (%)") },
                         supportingText = { Text("Alert when margin drops below this", fontSize = 11.sp) },
-                        singleLine   = true,
+                        singleLine   =   true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier     = Modifier.fillMaxWidth()
                     )
@@ -219,7 +217,7 @@ fun SettingsScreen(vm: MainViewModel) {
                         onValueChange = { upperPct = it },
                         label        = { Text("Upper threshold (%)") },
                         supportingText = { Text("Alert when margin rises above this", fontSize = 11.sp) },
-                        singleLine   = true,
+                        singleLine   =   true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier     = Modifier.fillMaxWidth()
                     )
@@ -229,7 +227,7 @@ fun SettingsScreen(vm: MainViewModel) {
                         onValueChange = { interval = it },
                         label        = { Text("Check interval (minutes)") },
                         supportingText = { Text("Minimum 15 min recommended", fontSize = 11.sp) },
-                        singleLine   = true,
+                        singleLine   =   true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier     = Modifier.fillMaxWidth()
                     )

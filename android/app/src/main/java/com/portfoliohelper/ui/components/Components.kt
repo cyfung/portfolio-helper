@@ -3,11 +3,13 @@ package com.portfoliohelper.ui.components
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -395,5 +397,107 @@ fun CashTypeBadge(type: String) {
                 fontSize = 10.sp
             )
         )
+    }
+}
+
+// ── Currency Switchers ────────────────────────────────────────────────────────
+
+@Composable
+fun TripleCurrencySwitcher(
+    selected: String,
+    onCurrencySelected: (String) -> Unit
+) {
+    DynamicCurrencySwitcher(
+        currencies = listOf("USD", "HKD", "GBP"),
+        selected = selected,
+        onCurrencySelected = onCurrencySelected,
+        limit = 3
+    )
+}
+
+@Composable
+fun DynamicCurrencySwitcher(
+    currencies: List<String>,
+    selected: String,
+    onCurrencySelected: (String) -> Unit,
+    limit: Int = 4
+) {
+    val ext = MaterialTheme.ext
+    var expanded by remember { mutableStateOf(false) }
+
+    val showOverflow = currencies.size > limit
+    
+    // Logic for replacement:
+    // If selected is in the overflow part, visible items are [take(limit-2) + selected]
+    // Otherwise, visible items are just [take(limit-1)]
+    val baseVisibleCount = if (showOverflow) limit - 1 else currencies.size
+    val initialVisible = currencies.take(baseVisibleCount)
+    val isSelectedInOverflow = showOverflow && !initialVisible.contains(selected)
+    
+    val visibleCurrencies = if (isSelectedInOverflow) {
+        currencies.take(limit - 2) + selected
+    } else {
+        initialVisible
+    }
+    
+    val overflowCurrencies = currencies.filter { !visibleCurrencies.contains(it) }
+
+    Row(
+        modifier = Modifier.padding(end = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        visibleCurrencies.forEach { curr ->
+            Text(
+                text = curr,
+                color = if (selected == curr) ext.actionPositive else ext.textTertiary,
+                fontWeight = if (selected == curr) FontWeight.Bold else FontWeight.Normal,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .width(32.dp)
+                    .clickable { onCurrencySelected(curr) },
+                textAlign = TextAlign.Center
+            )
+        }
+
+        if (showOverflow) {
+            Box {
+                Box(
+                    modifier = Modifier
+                        .width(32.dp)
+                        .clickable { expanded = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "···",
+                        color = ext.textTertiary,
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.background(ext.bgElevated)
+                ) {
+                    overflowCurrencies.forEach { curr ->
+                        DropdownMenuItem(
+                            text = { 
+                                Text(
+                                    curr, 
+                                    color = ext.textPrimary,
+                                    fontWeight = FontWeight.Normal
+                                ) 
+                            },
+                            onClick = {
+                                onCurrencySelected(curr)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
     }
 }
