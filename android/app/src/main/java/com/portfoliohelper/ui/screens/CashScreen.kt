@@ -67,7 +67,7 @@ fun CashScreen(vm: MainViewModel) {
                     }
                     
                     val marginValue = if (totals.isReady) {
-                        "${formatSmart(abs(marginUsd), showCurrency = true)} (${formatPct(marginPct, 1)})"
+                        "${formatSmart(abs(marginUsd))} (${formatPct(marginPct, 1)})"
                     } else "N/A"
 
                     SummaryCard("Margin",
@@ -156,7 +156,7 @@ fun CashEntryRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MonoText(
-                    text = formatSmart(entry.amount, showCurrency = false, showSign = false),
+                    text = formatSmart(entry.amount, showSign = false),
                     color = if (entry.amount < 0) ext.negative else ext.textPrimary,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp

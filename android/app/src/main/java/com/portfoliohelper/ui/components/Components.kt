@@ -50,9 +50,9 @@ fun thinData(text: String): AnnotatedString = buildAnnotatedString {
 
 // ── Number formatting ─────────────────────────────────────────────────────────
 
-fun formatCurrency(v: Double): String = formatSmart(v, showCurrency = false)
+fun formatCurrency(v: Double): String = formatSmart(v)
 
-fun formatSignedCurrency(v: Double): String = formatSmart(v, showCurrency = false, showSign = true)
+fun formatSignedCurrency(v: Double): String = formatSmart(v, showSign = true)
 
 fun formatPct(v: Double, decimals: Int = 2): String =
     "%.${decimals}f%%".format(v)
@@ -62,7 +62,6 @@ fun formatSignedPct(v: Double, decimals: Int = 2): String =
 
 fun formatSmart(
     value: Double,
-    showCurrency: Boolean = false,
     showSign: Boolean = false
 ): String {
     if (value == 0.0) {
