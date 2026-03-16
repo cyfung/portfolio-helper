@@ -331,13 +331,15 @@ function initImportFile() {
 function showTwsSyncError(msg) {
     let el = document.getElementById('tws-sync-error');
     if (!el) {
-        el = document.createElement('span');
+        el = document.createElement('div');
         el.id = 'tws-sync-error';
         el.className = 'tws-sync-error';
-        document.getElementById('tws-sync-btn')?.insertAdjacentElement('afterend', el);
+        const anchor = document.querySelector('.summary-and-rates');
+        if (anchor) anchor.insertAdjacentElement('beforebegin', el);
+        else document.getElementById('tws-sync-btn')?.insertAdjacentElement('afterend', el);
     }
     el.textContent = msg;
-    el.style.display = 'inline';
+    el.style.display = 'block';
     clearTimeout(el._hideTimer);
     el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
@@ -372,7 +374,7 @@ async function initTwsSync() {
         try {
             const res = await fetch('/api/tws/snapshot?portfolio=' + portfolioId);
             const data = await res.json();
-            if (data.error) { showTwsSyncError('TWS sync error: ' + data.error); return; }
+            if (!res.ok || data.error) { showTwsSyncError('TWS sync error: ' + (data.error || res.statusText)); return; }
 
             if (!document.body.classList.contains('editing-active')) {
                 document.getElementById('edit-toggle')?.click();

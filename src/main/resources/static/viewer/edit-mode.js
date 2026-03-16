@@ -291,8 +291,9 @@ function initEditMode() {
         document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
             if (tr.dataset.deleted) return;
             const key = (tr.querySelector('.cash-edit-key')?.value || '').trim();
-            const value = (tr.querySelector('.cash-edit-value')?.value || '').trim();
+            let value = (tr.querySelector('.cash-edit-value')?.value || '').trim();
             if (!key) return;
+            if (!value && tr.dataset.entryType !== 'ref') value = '0';
             cashUpdates.push({ key, value });
         });
 

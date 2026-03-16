@@ -26,7 +26,7 @@ import com.portfoliohelper.ui.theme.ext
 private const val COL_PNL = 0
 private const val COL_WEIGHT = 1
 private val COLUMN_LABELS = listOf("P&L", "Weight")
-private val MAX_NAME_WIDTH = 120.dp
+private val MAX_NAME_WIDTH = 140.dp
 
 // ── Pre-computed display data for a single group ─────────────────────────────
 private data class GroupDisplayData(

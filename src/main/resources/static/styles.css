@@ -1082,6 +1082,11 @@ h1 {
     width: 100%;
 }
 
+.tws-sync-error {
+    color: var(--color-negative);
+    margin-bottom: 12px;
+}
+
 .summary-and-rates {
     display: flex;
     flex-direction: row;
