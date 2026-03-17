@@ -245,6 +245,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             syncRepo.sync()
             Log.i("MainViewModel", "Sync repository call completed successfully")
+
+            // Auto-select the portfolio with the lowest serialId after sync
+            db.portfolioDao().getAll().minByOrNull { it.serialId }?.let { lowest ->
+                settings.saveSelectedPortfolioId(lowest.serialId)
+            }
+
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
         } catch (e: Exception) {
