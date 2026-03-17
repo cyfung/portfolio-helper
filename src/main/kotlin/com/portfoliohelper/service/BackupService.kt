@@ -153,26 +153,10 @@ object BackupService {
             ?: throw IllegalArgumentException("Backup $backupId not found for portfolio '${portfolio.slug}'")
 
         val root = appJson.decodeFromString<BackupRoot>(json)
-        val pid = portfolio.serialId
+        val cashEntries = root.cash.map { c -> CashEntry(c.label, c.currency, c.marginFlag, c.amount, c.portfolioRef) }
         transaction {
-            PositionsTable.deleteWhere { PositionsTable.portfolioId eq pid }
-            PositionsTable.batchInsert(root.stocks) { s ->
-                this[PositionsTable.portfolioId] = pid
-                this[PositionsTable.symbol] = s.symbol
-                this[PositionsTable.amount] = s.amount
-                this[PositionsTable.targetWeight] = s.targetWeight
-                this[PositionsTable.letf] = s.letf
-                this[PositionsTable.groups] = s.groups
-            }
-            CashTable.deleteWhere { CashTable.portfolioId eq pid }
-            CashTable.batchInsert(root.cash) { c ->
-                this[CashTable.portfolioId] = pid
-                this[CashTable.label] = c.label
-                this[CashTable.currency] = c.currency
-                this[CashTable.marginFlag] = c.marginFlag
-                this[CashTable.amount] = c.amount
-                this[CashTable.portfolioRef] = c.portfolioRef
-            }
+            portfolio.replacePositions(root.stocks)
+            portfolio.replaceCash(cashEntries)
         }
         logger.info("Restored '${portfolio.slug}' from DB backup $backupId")
     }

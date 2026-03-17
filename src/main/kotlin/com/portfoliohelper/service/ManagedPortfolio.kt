@@ -102,6 +102,32 @@ class ManagedPortfolio(
         }
     }
 
+    fun replacePositions(stocks: List<BackupStock>) {
+        val pid = serialId
+        PositionsTable.deleteWhere { PositionsTable.portfolioId eq pid }
+        PositionsTable.batchInsert(stocks) { s ->
+            this[PositionsTable.portfolioId] = pid
+            this[PositionsTable.symbol] = s.symbol
+            this[PositionsTable.amount] = s.amount
+            this[PositionsTable.targetWeight] = s.targetWeight
+            this[PositionsTable.letf] = s.letf
+            this[PositionsTable.groups] = s.groups
+        }
+    }
+
+    fun replaceCash(entries: List<CashEntry>) {
+        val pid = serialId
+        CashTable.deleteWhere { CashTable.portfolioId eq pid }
+        CashTable.batchInsert(entries) { entry ->
+            this[CashTable.portfolioId] = pid
+            this[CashTable.label] = entry.label
+            this[CashTable.currency] = entry.currency
+            this[CashTable.marginFlag] = entry.marginFlag
+            this[CashTable.amount] = entry.amount
+            this[CashTable.portfolioRef] = entry.portfolioRef
+        }
+    }
+
     // TWS Account shortcut
     fun getTwsAccount(): String? = getConfig("twsAccount")
 
@@ -115,9 +141,8 @@ class ManagedPortfolio(
 
         /** Look up a portfolio by its URL slug. Returns null if not found. */
         fun getBySlug(slug: String): ManagedPortfolio? = transaction {
-            val s = slug
             PortfoliosTable.selectAll()
-                .where { PortfoliosTable.slug eq s }
+                .where { PortfoliosTable.slug eq slug }
                 .singleOrNull()
                 ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
         }
@@ -128,13 +153,25 @@ class ManagedPortfolio(
             ManagedPortfolio(newId, slug)
         }
 
-        /** Returns the serial id of the first (default) portfolio, used to guard against deletion. */
-        fun firstSerialId(): Int = transaction {
+        /** Returns the first (default) portfolio — the one with the lowest serial id. */
+        fun getDefault(): ManagedPortfolio = transaction {
             PortfoliosTable.selectAll()
                 .orderBy(PortfoliosTable.id to SortOrder.ASC)
                 .limit(1)
-                .single()[PortfoliosTable.id]
+                .single()
+                .let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
         }
+
+        /** Returns the serial id of the first (default) portfolio, used to guard against deletion. */
+        fun firstSerialId(): Int = getDefault().serialId
+
+        /**
+         * Resolves a portfolio from an optional slug query parameter.
+         * - slug provided → look up by slug (null if not found)
+         * - slug absent   → return the default (first) portfolio
+         */
+        fun resolve(slug: String?): ManagedPortfolio? =
+            if (slug != null) getBySlug(slug) else getDefault()
     }
 
     /** Rename this portfolio to [newSlug]. Caller must ensure uniqueness. */
@@ -161,7 +198,7 @@ class ManagedPortfolio(
 }
 
 // ---------------------------------------------------------------------------
-// Private parsing helpers (mirror CsvStockReader parsing logic)
+// Private parsing helpers
 // ---------------------------------------------------------------------------
 
 private fun parseLetf(raw: String): List<Pair<Double, String>>? {

@@ -247,8 +247,4 @@ object PairingService {
         logger.info("Loaded ${pairedClients.size} paired device(s) from DB")
     }
 
-    fun getActivePins(): Set<String> {
-        pendingPins.entries.removeIf { System.currentTimeMillis() > it.value }
-        return pendingPins.keys
-    }
 }

@@ -657,12 +657,7 @@ object BacktestService {
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>
     ): List<Double> {
-        val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val mergedWeights = mutableMapOf<String, Double>()
-        for (tw in pConfig.tickers) mergedWeights[tw.ticker] =
-            (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
-        val tickers = mergedWeights.keys.toList()
-        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
+        val (tickers, targetWeights) = pConfig.mergeWeights()
 
         // Initial allocation: weights × start value
         val startValue = 10_000.0
@@ -686,18 +681,27 @@ object BacktestService {
                 }
             }
 
-            // Apply daily returns
-            for (ticker in tickers) {
-                val s = seriesMap[ticker] ?: continue
-                val prev = s[prevDate] ?: continue
-                val cur = s[curDate] ?: continue
-                if (prev == 0.0) continue
-                holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
-            }
+            applyDailyReturns(tickers, holdings, seriesMap, prevDate, curDate)
 
             values.add(holdings.values.sum())
         }
         return values
+    }
+
+    private fun applyDailyReturns(
+        tickers: List<String>,
+        holdings: MutableMap<String, Double>,
+        seriesMap: Map<String, Map<LocalDate, Double>>,
+        prevDate: LocalDate,
+        curDate: LocalDate
+    ) {
+        for (ticker in tickers) {
+            val s = seriesMap[ticker] ?: continue
+            val prev = s[prevDate] ?: continue
+            val cur = s[curDate] ?: continue
+            if (prev == 0.0) continue
+            holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
+        }
     }
 
     private fun shouldRebalance(
@@ -855,12 +859,7 @@ object BacktestService {
         effrx: Map<LocalDate, Double>,
         mc: MarginConfig
     ): MarginApplyResult {
-        val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val mergedWeights = mutableMapOf<String, Double>()
-        for (tw in pConfig.tickers) mergedWeights[tw.ticker] =
-            (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
-        val tickers = mergedWeights.keys.toList()
-        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
+        val (tickers, targetWeights) = pConfig.mergeWeights()
 
         val startEquity = 10_000.0
         var borrowed = startEquity * mc.marginRatio
@@ -886,14 +885,7 @@ object BacktestService {
                 }
             }
 
-            // Apply each ticker's daily return
-            for (ticker in tickers) {
-                val s = seriesMap[ticker] ?: continue
-                val prev = s[prevDate] ?: continue
-                val cur = s[curDate] ?: continue
-                if (prev == 0.0) continue
-                holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
-            }
+            applyDailyReturns(tickers, holdings, seriesMap, prevDate, curDate)
 
             // Daily loan cost from EFFRX
             val effrxPrev = effrx[prevDate]

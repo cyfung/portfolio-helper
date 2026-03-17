@@ -4,11 +4,13 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 abstract class PollingService<TData : Any>(private val serviceName: String) {
-    protected val logger = LoggerFactory.getLogger(this::class.java)
+    protected val logger: Logger = LoggerFactory.getLogger(this::class.java)
     protected val cache = ConcurrentHashMap<String, TData>()
     private var updateJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -58,7 +60,7 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
         updateJob = serviceScope.launch {
             while (isActive) {
                 val delayMs = nextDelayMs()
-                val nextAt = java.time.Instant.ofEpochMilli(System.currentTimeMillis() + delayMs)
+                val nextAt = Instant.ofEpochMilli(System.currentTimeMillis() + delayMs)
                 logger.info("$serviceName: next fetch scheduled at $nextAt (in ${delayMs / 60_000} min)")
                 delay(delayMs)
                 if (isActive) fetchAll(symbols)

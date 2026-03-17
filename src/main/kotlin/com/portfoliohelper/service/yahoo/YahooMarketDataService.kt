@@ -41,5 +41,4 @@ object YahooMarketDataService : PollingService<YahooQuote>("Yahoo Finance") {
 
     fun getQuote(symbol: String): YahooQuote? = get(symbol)
 
-    fun isConnected(): Boolean = isInitialized
 }

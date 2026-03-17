@@ -3,10 +3,8 @@ package com.portfoliohelper.web
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.*
 import com.portfoliohelper.service.UpdateService.toJson
-import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.GlobalSettingsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
-import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
@@ -57,49 +55,17 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
 
 private val cashKeyKnownFlags = setOf("M")
 
-private data class PositionRow(
-    val symbol: String,
-    val amount: Double,
-    val targetWeight: Double,
-    val letf: String,
-    val groups: String
-)
-
-private fun parsePositionRows(arr: JsonArray): List<PositionRow> = arr.mapNotNull { el ->
+private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNull { el ->
     val obj = el.jsonObject
     val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
     val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
-    PositionRow(
+    BackupStock(
         symbol = symbol,
         amount = amount,
         targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
         letf = obj["letf"]?.jsonPrimitive?.content ?: "",
         groups = obj["groups"]?.jsonPrimitive?.content ?: ""
     )
-}
-
-private fun replacePositions(portfolioId: Int, rows: List<PositionRow>) {
-    PositionsTable.deleteWhere { PositionsTable.portfolioId eq portfolioId }
-    PositionsTable.batchInsert(rows) { row ->
-        this[PositionsTable.portfolioId] = portfolioId
-        this[PositionsTable.symbol] = row.symbol
-        this[PositionsTable.amount] = row.amount
-        this[PositionsTable.targetWeight] = row.targetWeight
-        this[PositionsTable.letf] = row.letf
-        this[PositionsTable.groups] = row.groups
-    }
-}
-
-private fun replaceCash(portfolioId: Int, entries: List<com.portfoliohelper.model.CashEntry>) {
-    CashTable.deleteWhere { CashTable.portfolioId eq portfolioId }
-    CashTable.batchInsert(entries) { entry ->
-        this[CashTable.portfolioId] = portfolioId
-        this[CashTable.label] = entry.label
-        this[CashTable.currency] = entry.currency
-        this[CashTable.marginFlag] = entry.marginFlag
-        this[CashTable.amount] = entry.amount
-        this[CashTable.portfolioRef] = entry.portfolioRef
-    }
 }
 
 private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
@@ -153,6 +119,16 @@ private suspend fun ApplicationCall.respondApiError(
 )
 
 private fun String.toSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+private fun String.jsonEscape() = replace("\\", "\\\\").replace("\"", "\\\"")
+private fun JsonObject.parseSlug() =
+    this["name"]?.jsonPrimitive?.contentOrNull?.trim()
+        ?.takeIf { it.isNotBlank() }?.toSlug()?.takeIf { it.isNotBlank() }
+private fun JsonArray.parseCashEntries() = mapNotNull { el ->
+    val obj = el.jsonObject
+    val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
+    val value = obj["value"]?.jsonPrimitive?.content ?: return@mapNotNull null
+    parseCashEntryFromKeyValue(key, value)
+}
 
 private val LOAN_COMPARE_FIELDS = listOf(
     "loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows"
@@ -383,13 +359,10 @@ fun Application.configureRouting() {
                     append("{\"portfolios\":[")
                     result.portfolios.forEachIndexed { pi, pr ->
                         if (pi > 0) append(",")
-                        val escapedLabel = pr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                        append("{\"label\":\"$escapedLabel\",\"curves\":[")
+                        append("{\"label\":\"${pr.label.jsonEscape()}\",\"curves\":[")
                         pr.curves.forEachIndexed { ci, cr ->
                             if (ci > 0) append(",")
-                            val escapedCurveLabel =
-                                cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                            append("{\"label\":\"$escapedCurveLabel\",")
+                            append("{\"label\":\"${cr.label.jsonEscape()}\",")
                             append("\"points\":${serializePoints(cr.points)},")
                             append("\"stats\":${serializeStats(cr.stats)}}")
                         }
@@ -452,12 +425,10 @@ fun Application.configureRouting() {
                     append(",\"portfolios\":[")
                     result.portfolios.forEachIndexed { pi, pr ->
                         if (pi > 0) append(",")
-                        val pLabel = pr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                        append("{\"label\":\"$pLabel\",\"curves\":[")
+                        append("{\"label\":\"${pr.label.jsonEscape()}\",\"curves\":[")
                         pr.curves.forEachIndexed { ci, cr ->
                             if (ci > 0) append(",")
-                            val cLabel = cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                            append("{\"label\":\"$cLabel\",\"percentilePaths\":[")
+                            append("{\"label\":\"${cr.label.jsonEscape()}\",\"percentilePaths\":[")
                             cr.percentilePaths.forEachIndexed { ppi, pp ->
                                 if (ppi > 0) append(",")
                                 append("{\"percentile\":${pp.percentile}")
@@ -496,15 +467,12 @@ fun Application.configureRouting() {
         // Update portfolio positions — client sends full state: [{symbol, amount, targetWeight, letf, groups}]
         post("/api/portfolio/update") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry =
-                    ManagedPortfolio.getBySlug(portfolioId) ?: return@post call.respond(
-                        HttpStatusCode.NotFound
-                    )
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
 
                 val rows = parsePositionRows(Json.parseToJsonElement(call.receiveText()).jsonArray)
 
-                transaction { replacePositions(portfolioEntry.serialId, rows) }
+                transaction { portfolioEntry.replacePositions(rows) }
 
                 DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
@@ -518,21 +486,12 @@ fun Application.configureRouting() {
         // Update cash — full-state write: [{key, value}]; replaces all existing entries for the portfolio
         post("/api/cash/update") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry =
-                    ManagedPortfolio.getBySlug(portfolioId) ?: return@post call.respond(
-                        HttpStatusCode.NotFound
-                    )
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
 
-                val updates = Json.parseToJsonElement(call.receiveText()).jsonArray
-                val entries = updates.mapNotNull { el ->
-                    val obj = el.jsonObject
-                    val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    val value = obj["value"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    parseCashEntryFromKeyValue(key, value)
-                }
+                val entries = Json.parseToJsonElement(call.receiveText()).jsonArray.parseCashEntries()
 
-                transaction { replaceCash(portfolioEntry.serialId, entries) }
+                transaction { portfolioEntry.replaceCash(entries) }
 
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
@@ -545,27 +504,19 @@ fun Application.configureRouting() {
         // Save stocks + cash + dividendStartDate in a single transaction
         post("/api/portfolio/save-all") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry =
-                    ManagedPortfolio.getBySlug(portfolioId) ?: return@post call.respond(
-                        HttpStatusCode.NotFound
-                    )
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
 
                 val root = Json.parseToJsonElement(call.receiveText()).jsonObject
                 val stockRows = root["stocks"]?.jsonArray?.let { parsePositionRows(it) } ?: emptyList()
-                val cashEntries = root["cash"]?.jsonArray?.mapNotNull { el ->
-                    val obj = el.jsonObject
-                    val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    val value = obj["value"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    parseCashEntryFromKeyValue(key, value)
-                } ?: emptyList()
+                val cashEntries = root["cash"]?.jsonArray?.parseCashEntries() ?: emptyList()
 
                 val dividendStartDate = root["dividendStartDate"]?.jsonPrimitive?.contentOrNull
 
                 val pid = portfolioEntry.serialId
                 transaction {
-                    replacePositions(pid, stockRows)
-                    replaceCash(pid, cashEntries)
+                    portfolioEntry.replacePositions(stockRows)
+                    portfolioEntry.replaceCash(cashEntries)
                     if (!dividendStartDate.isNullOrBlank()) {
                         PortfolioCfgTable.upsert {
                             it[PortfolioCfgTable.portfolioId] = pid
@@ -611,7 +562,7 @@ fun Application.configureRouting() {
                                 .filter { el -> el is JsonObject && loanEntryKey(el.jsonObject) != newKey }
                                 .toMutableList()
                         }
-                        ?: mutableListOf<JsonElement>()
+                        ?: mutableListOf()
                     existing.add(0, newEntry)
                     GlobalSettingsTable.upsert {
                         it[GlobalSettingsTable.key] = "loan.history"
@@ -630,12 +581,9 @@ fun Application.configureRouting() {
         // Also accepts JSON body (no key param) for batch updates (e.g. twsAccount from config page).
         post("/api/portfolio-config/save") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
                 val key = call.request.queryParameters["key"]
-                val portfolioEntry =
-                    ManagedPortfolio.getBySlug(portfolioId) ?: return@post call.respond(
-                        HttpStatusCode.NotFound
-                    )
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
                 val body = call.receiveText().trim()
 
                 if (key != null) {
@@ -667,10 +615,7 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                val name = json["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
-                if (name.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
-                val slug = name.toSlug()
-                if (slug.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
+                val slug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
                 if (ManagedPortfolio.getBySlug(slug) != null) {
                     return@post call.respondText(
                         "{\"status\":\"error\",\"message\":\"A portfolio named '${slug}' already exists.\"}",
@@ -690,16 +635,12 @@ fun Application.configureRouting() {
         // Rename a portfolio
         post("/api/portfolio/rename") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolio = ManagedPortfolio.getBySlug(portfolioId)
+                val portfolio = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                val newName = json["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
-                if (newName.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
-                val newSlug = newName.toSlug()
-                if (newSlug.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
-                if (newSlug != portfolioId && ManagedPortfolio.getBySlug(newSlug) != null) {
+                val newSlug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                if (newSlug != portfolio.slug && ManagedPortfolio.getBySlug(newSlug) != null) {
                     return@post call.respondText(
                         "{\"status\":\"error\",\"message\":\"A portfolio named '$newSlug' already exists.\"}",
                         ContentType.Application.Json, HttpStatusCode.Conflict
@@ -777,8 +718,7 @@ fun Application.configureRouting() {
 
         // Trigger an immediate DB backup for a portfolio
         post("/api/backup/trigger") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@post call.respond(HttpStatusCode.NotFound)
             val label = call.request.queryParameters["label"]?.takeIf { it.isNotBlank() } ?: ""
             BackupService.saveToDb(portfolioEntry, label)
@@ -787,8 +727,7 @@ fun Application.configureRouting() {
 
         // List DB backups for a portfolio — [{id, savedAt, label}, ...] newest first
         get("/api/backup/list-db") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val entries = BackupService.listDbBackups(portfolioEntry)
             val json = "[" + entries.joinToString(",") {
@@ -800,8 +739,7 @@ fun Application.configureRouting() {
         // Restore a portfolio from a DB backup row
         post("/api/backup/restore-db") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val id = call.request.queryParameters["id"]?.toIntOrNull()
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
@@ -816,8 +754,7 @@ fun Application.configureRouting() {
 
         // Delete a single DB backup by id
         delete("/api/backup/delete-db") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@delete call.respond(HttpStatusCode.NotFound)
             val id = call.request.queryParameters["id"]?.toIntOrNull()
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
@@ -827,8 +764,7 @@ fun Application.configureRouting() {
 
         // Delete all DB backups for a portfolio
         delete("/api/backup/delete-all") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@delete call.respond(HttpStatusCode.NotFound)
             BackupService.deleteAllFromDb(portfolioEntry)
             call.respondOk()
@@ -836,8 +772,7 @@ fun Application.configureRouting() {
 
         // Export portfolio as JSON download (includes snapshotUsd for P entries)
         get("/api/backup/export-json") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val json = BackupService.exportJson(portfolioEntry)
             val filename = "backup-${portfolioEntry.slug}.json"
@@ -850,8 +785,7 @@ fun Application.configureRouting() {
 
         // Import CSV / TXT / ZIP / JSON file — validates and returns parsed data for edit-mode population
         post("/api/backup/import-file") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            ManagedPortfolio.getBySlug(portfolioId)
+            ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@post call.respond(HttpStatusCode.NotFound)
             try {
                 val multipart = call.receiveMultipart()
@@ -933,8 +867,7 @@ fun Application.configureRouting() {
             try {
                 val host = AppConfig.twsHost
                 val port = AppConfig.twsPort
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val account = ManagedPortfolio.getBySlug(portfolioId)?.getTwsAccount()
+                val account = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])?.getTwsAccount()
                 val snapshot = withContext(Dispatchers.IO) {
                     PortfolioSnapshot.fetch(
                         host, port, account = account

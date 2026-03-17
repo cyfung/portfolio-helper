@@ -94,7 +94,7 @@ object DividendService {
                 // Atomic write: only save when full run succeeds
                 portfolio.saveConfig("dividendTotal", total.toString())
                 portfolio.saveConfig("dividendCalcUpToDate", toDate.toString())
-                logger.info("Dividend calc done for '${portfolio.slug}': \$${"%.2f".format(total)} up to $toDate")
+                logger.info($$"Dividend calc done for '$${portfolio.slug}': $$${"%.2f".format(total)} up to $$toDate")
                 _updates.tryEmit(DividendUpdate(portfolio.slug, total, toDate.toString()))
             } catch (e: CancellationException) {
                 throw e

@@ -3,7 +3,6 @@ package com.portfoliohelper.service.db
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertTrue

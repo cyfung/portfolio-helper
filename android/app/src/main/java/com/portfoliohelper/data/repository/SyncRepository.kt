@@ -1,5 +1,6 @@
 package com.portfoliohelper.data.repository
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
@@ -32,7 +33,7 @@ import javax.net.ssl.SSLSession
 import javax.net.ssl.X509TrustManager
 
 class SyncRepository(
-    private val context: Context,
+    context: Context,
     private val db: AppDatabase,
     private val settings: SettingsRepository
 ) {
@@ -111,7 +112,7 @@ class SyncRepository(
             Log.d("SyncRepository", "Stopping discovery")
             try {
                 nsdManager.stopServiceDiscovery(discoveryListener)
-            } catch (e: Exception) { }
+            } catch (_: Exception) { }
             if (multicastLock?.isHeld == true) {
                 multicastLock?.release()
             }
@@ -136,6 +137,7 @@ class SyncRepository(
                 engine {
                     val captureTrustManager = object : X509TrustManager {
                         override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+                        @SuppressLint("TrustAllX509TrustManager")
                         override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
                         override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
                             if (chain.isNotEmpty()) {
@@ -183,6 +185,8 @@ class SyncRepository(
         }
     }
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     suspend fun sync() {
         val serverInfo = settings.syncServerInfo.firstOrNull() ?: run {
             Log.w("SyncRepository", "Sync skipped: No paired server")
@@ -217,7 +221,7 @@ class SyncRepository(
 
             val encryptedBytes = response.readBytes()
             val jsonBytes = AesGcm.decrypt(encryptedBytes, aesKey)
-            val allSync = Json { ignoreUnknownKeys = true }
+            val allSync = json
                 .decodeFromString<AllSyncResponse>(jsonBytes.toString(Charsets.UTF_8))
 
             parseAndSave(allSync)

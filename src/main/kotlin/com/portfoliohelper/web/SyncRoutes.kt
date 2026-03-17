@@ -12,21 +12,17 @@ import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("SyncRoutes")
 
-fun Route.configureSyncRoutes() {
-
-    // Security interceptor for /api/sync — all routes except /pair require a paired device
-    intercept(ApplicationCallPipeline.Plugins) {
-        val path = call.request.path()
-        if (!path.startsWith("/api/sync/")) return@intercept
-        if (path == "/api/sync/pair") return@intercept
-
+private val syncAuthPlugin = createRouteScopedPlugin("SyncAuth") {
+    onCall { call ->
         val deviceId = call.request.headers["X-Device-ID"]
         if (deviceId == null || !PairingService.isAuthorized(deviceId)) {
-            logger.warn("Unauthorized sync access to $path. Device-ID: $deviceId")
+            logger.warn("Unauthorized sync access to ${call.request.path()}. Device-ID: $deviceId")
             call.respond(HttpStatusCode.Unauthorized, "Device not paired")
-            return@intercept finish()
         }
     }
+}
+
+fun Route.configureSyncRoutes() {
 
     /**
      * Pairing endpoint.
@@ -79,44 +75,43 @@ fun Route.configureSyncRoutes() {
         }
     }
 
-    /**
-     * Consolidated data sync endpoint.
-     * Returns AES-256-GCM encrypted BackupRoot JSON (same format as /api/backup/export-json).
-     * P-type cash entries include snapshotUsd resolved at request time.
-     * Response: application/octet-stream bytes (12-byte IV + ciphertext + 16-byte GCM tag)
-     */
-    get("/api/sync/data") {
-        val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-        val entry = ManagedPortfolio.getBySlug(portfolioId)
-            ?: return@get call.respond(HttpStatusCode.NotFound)
+    route("/api/sync") {
+        install(syncAuthPlugin)
 
-        val deviceId = call.request.headers["X-Device-ID"]!!
-        val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
-            ?: return@get call.respond(
-                HttpStatusCode.Unauthorized,
-                "Device not found or key expired"
-            )
+        /**
+         * Consolidated data sync endpoint.
+         * Returns AES-256-GCM encrypted BackupRoot JSON (same format as /api/backup/export-json).
+         * P-type cash entries include snapshotUsd resolved at request time.
+         * Response: application/octet-stream bytes (12-byte IV + ciphertext + 16-byte GCM tag)
+         */
+        get("/data") {
+            val entry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                ?: return@get call.respond(HttpStatusCode.NotFound)
 
-        val json = BackupService.exportJson(entry)
+            val deviceId = call.request.headers["X-Device-ID"]!!
+            val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
+                ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
 
-        val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey, nonce)
-        call.respondBytes(encrypted, ContentType.Application.OctetStream)
-    }
-
-    /**
-     * Bulk sync endpoint — all portfolios in one encrypted payload.
-     * Response: AES-GCM encrypted JSON of AllSyncResponse
-     */
-    get("/api/sync/all") {
-        val deviceId = call.request.headers["X-Device-ID"]!!
-        val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
-            ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
-
-        val roots = ManagedPortfolio.getAll().associate { entry ->
-            entry.serialId to BackupService.exportRoot(entry)
+            val json = BackupService.exportJson(entry)
+            val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey, nonce)
+            call.respondBytes(encrypted, ContentType.Application.OctetStream)
         }
-        val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(roots))
-        val encrypted = AesGcm.encrypt(payload.toByteArray(Charsets.UTF_8), aesKey, nonce)
-        call.respondBytes(encrypted, ContentType.Application.OctetStream)
+
+        /**
+         * Bulk sync endpoint — all portfolios in one encrypted payload.
+         * Response: AES-GCM encrypted JSON of AllSyncResponse
+         */
+        get("/all") {
+            val deviceId = call.request.headers["X-Device-ID"]!!
+            val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
+                ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
+
+            val roots = ManagedPortfolio.getAll().associate { entry ->
+                entry.serialId to BackupService.exportRoot(entry)
+            }
+            val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(roots))
+            val encrypted = AesGcm.encrypt(payload.toByteArray(Charsets.UTF_8), aesKey, nonce)
+            call.respondBytes(encrypted, ContentType.Application.OctetStream)
+        }
     }
 }

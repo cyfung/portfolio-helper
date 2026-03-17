@@ -28,7 +28,7 @@ import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 
 // ── Reusable historical fetcher ───────────────────────────────────────────────
 
@@ -40,7 +40,10 @@ object YahooHistoricalFetcher {
         .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val req = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                )
                 .header("Accept", "application/json")
                 .build()
             chain.proceed(req)
@@ -135,10 +138,10 @@ object YahooHistoricalFetcher {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-val TICKERS    = listOf("SPY")
-val START_DATE = LocalDate.of(2007, 1, 1)   // CTA inception date
-val END_DATE   = LocalDate.now()
-val OUTPUT_CSV = "portfolio_prices.csv"
+val TICKERS = listOf("SPY")
+val START_DATE: LocalDate = LocalDate.of(2007, 1, 1)   // CTA inception date
+val END_DATE: LocalDate = LocalDate.now()
+const val OUTPUT_CSV = "portfolio_prices.csv"
 
 // ── HTTP client (standalone use) ──────────────────────────────────────────────
 
@@ -192,7 +195,7 @@ fun writeCsv(series: List<PriceSeries>, outputPath: String) {
 
         // Rows
         for (date in commonDates) {
-            val row = mutableListOf<String>(date.toString())
+            val row = mutableListOf(date.toString())
             for (s in series) {
                 val price = s.prices[date]!!
                 row.add("%.6f".format(price))
@@ -230,7 +233,7 @@ fun main() {
     println("date,vti_adj_close,cta_adj_close,dbmf_adj_close")
     File(OUTPUT_CSV).bufferedReader().use { br ->
         br.readLine() // skip header
-        repeat(5) { line -> br.readLine()?.let { println(it) } }
+        repeat(5) { br.readLine()?.let { println(it) } }
     }
 
     println()
