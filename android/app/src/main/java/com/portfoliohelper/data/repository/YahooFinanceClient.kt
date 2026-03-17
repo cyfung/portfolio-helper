@@ -43,29 +43,37 @@ object YahooFinanceClient {
 
     /**
      * Fetch a single quote using the chart API (stable).
+     * Includes a single retry logic for transient failures.
      */
     suspend fun fetchQuote(symbol: String): YahooQuote {
-        try {
-            // query2 is sometimes more reliable than query1
-            val url = "https://query2.finance.yahoo.com/v8/finance/chart/$symbol?interval=1d&range=1d"
-            
-            val response: HttpResponse = httpClient.get(url) {
-                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                header("Accept", "*/*")
-                header("Connection", "keep-alive")
+        var lastException: Exception? = null
+        
+        repeat(2) { attempt ->
+            try {
+                // query2 is sometimes more reliable than query1
+                val url = "https://query2.finance.yahoo.com/v8/finance/chart/$symbol?interval=1d&range=1d"
+                
+                val response: HttpResponse = httpClient.get(url) {
+                    header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    header("Accept", "*/*")
+                    header("Connection", "keep-alive")
+                }
+
+                if (response.status.value == 200) {
+                    val body = response.bodyAsText()
+                    return parseChartResponse(symbol, body)
+                } else {
+                    throw Exception("HTTP ${response.status.value} for $symbol")
+                }
+
+            } catch (e: Exception) {
+                lastException = e
+                Log.w(TAG, "Attempt ${attempt + 1} failed for $symbol: ${e.message}")
+                if (attempt == 0) delay(500) // Small delay before retry
             }
-
-            if (response.status.value != 200) {
-                throw Exception("HTTP ${response.status.value} for $symbol")
-            }
-
-            val body = response.bodyAsText()
-            return parseChartResponse(symbol, body)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch quote for $symbol: ${e.message}")
-            throw e
         }
+        
+        throw lastException ?: Exception("Failed to fetch quote for $symbol")
     }
 
     /**
@@ -78,7 +86,7 @@ object YahooFinanceClient {
                 try {
                     fetchQuote(symbol)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Parallel fetch failed for $symbol: ${e.message}")
+                    Log.e(TAG, "Parallel fetch permanently failed for $symbol: ${e.message}")
                     null
                 }
             }
