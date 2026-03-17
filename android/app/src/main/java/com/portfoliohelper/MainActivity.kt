@@ -10,6 +10,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
@@ -19,9 +22,11 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -105,7 +110,6 @@ val navItems = listOf(
     NavItem(SettingsRoute, "Settings", Icons.Default.Settings)
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortfolioSelectorTitle(
     portfolios: List<Portfolio>,
@@ -115,13 +119,12 @@ fun PortfolioSelectorTitle(
     var expanded by remember { mutableStateOf(false) }
     val selected = portfolios.find { it.serialId == selectedId } ?: portfolios.firstOrNull()
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it }
-    ) {
-        androidx.compose.foundation.layout.Row(
-            modifier = Modifier.menuAnchor(),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    Box {
+        Row(
+            modifier = Modifier
+                .clickable { expanded = true }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = selected?.displayName ?: selectedId.toString(),
@@ -131,11 +134,11 @@ fun PortfolioSelectorTitle(
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
         }
-        ExposedDropdownMenu(
+        DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            portfolios.forEach { portfolio ->
+            portfolios.filter { it.serialId != selected?.serialId }.forEach { portfolio ->
                 DropdownMenuItem(
                     text = { Text(portfolio.displayName) },
                     onClick = {
