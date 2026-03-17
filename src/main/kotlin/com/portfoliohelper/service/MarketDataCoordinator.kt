@@ -3,6 +3,10 @@ package com.portfoliohelper.service
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
 /**
@@ -12,6 +16,7 @@ import org.slf4j.LoggerFactory
  */
 object MarketDataCoordinator {
     private val logger = LoggerFactory.getLogger(MarketDataCoordinator::class.java)
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /** Populated once at startup from the environment / config. */
     var updateIntervalSeconds: Long = 60L
@@ -48,13 +53,15 @@ object MarketDataCoordinator {
      * Safe to call multiple times — deduplication is handled by [allSymbols].
      */
     fun setupAutoFxDiscovery() {
-        YahooMarketDataService.onBatchComplete {
-            val needed = allSymbols()
-            val current = YahooMarketDataService.cachedSymbols()
-            val missing = needed.filterNot { it in current }
-            if (missing.isNotEmpty()) {
-                logger.info("Auto-discovered ${missing.size} new FX pair(s): $missing — adding to polling")
-                YahooMarketDataService.requestMarketDataForSymbols(needed, updateIntervalSeconds)
+        scope.launch {
+            YahooMarketDataService.batchComplete.collect {
+                val needed = allSymbols()
+                val current = YahooMarketDataService.cachedSymbols()
+                val missing = needed.filterNot { it in current }
+                if (missing.isNotEmpty()) {
+                    logger.info("Auto-discovered ${missing.size} new FX pair(s): $missing — adding to polling")
+                    YahooMarketDataService.requestMarketDataForSymbols(needed, updateIntervalSeconds)
+                }
             }
         }
     }

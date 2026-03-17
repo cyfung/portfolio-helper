@@ -3,14 +3,16 @@ package com.portfoliohelper.service
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.portfoliohelper.AppConfig
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 
 object IbkrMarginRateService {
 
@@ -33,6 +35,12 @@ object IbkrMarginRateService {
 
     private val numberRegex = Regex("[\\d,]+")
     private val rateRegex = Regex("(\\d+\\.\\d+)%")
+
+    private val _updates = MutableSharedFlow<Unit>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val updates: SharedFlow<Unit> = _updates
 
     fun initialize() {
         serviceScope.launch {
@@ -120,25 +128,13 @@ object IbkrMarginRateService {
                 ratesCache.putAll(newRates)
                 lastFetchMillis.set(System.currentTimeMillis())
                 logger.info("Fetched IBKR margin rates for ${newRates.size} currencies: ${newRates.keys.sorted()}")
-                notifyListeners()
+                _updates.tryEmit(Unit)
             } else {
                 logger.warn("IBKR margin rates page parsed but no valid rates found")
             }
         } catch (e: Exception) {
             logger.warn("Failed to fetch IBKR margin rates: ${e.message}")
         }
-    }
-
-    private val listeners = CopyOnWriteArrayList<() -> Unit>()
-
-    fun onUpdateWithReplay(callback: () -> Unit): () -> Unit {
-        listeners.add(callback)
-        if (getLastFetchMillis() > 0L) callback() // replay if already fetched
-        return { listeners.remove(callback) }
-    }
-
-    private fun notifyListeners() {
-        listeners.forEach { it() }
     }
 
     fun getAllRates(): Map<String, CurrencyRates> = ratesCache

@@ -34,8 +34,6 @@ object YahooMarketDataService : PollingService<YahooQuote>("Yahoo Finance") {
         return Portfolio(enrichedStocks)
     }
 
-    fun onPriceUpdate(callback: (String, YahooQuote) -> Unit) = onUpdate(callback)
-
     override fun shutdown() {
         super.shutdown()
         YahooFinanceClient.shutdown()

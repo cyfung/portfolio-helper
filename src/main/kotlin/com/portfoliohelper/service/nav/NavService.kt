@@ -36,8 +36,6 @@ object NavService : PollingService<NavData>("NAV") {
 
     fun getNav(symbol: String): Double? = get(symbol)?.nav
 
-    fun onNavUpdate(callback: (String, NavData) -> Unit) = onUpdate(callback)
-
     override fun shutdown() {
         super.shutdown()
         SimplifyEtfNavProvider.shutdown()
