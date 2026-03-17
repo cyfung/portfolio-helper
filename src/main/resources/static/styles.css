@@ -1323,11 +1323,15 @@ h1 {
 .price-change.negative { color: var(--color-negative); }
 .price-change.neutral { color: var(--color-text-tertiary); }
 
-/* After-hours styling - use secondary text color */
-.price-change.after-hours,
+/* After-hours styling - mark price goes grey */
 .price.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 0.8;
+}
+
+/* After-hours styling - chg preserves positive/negative color, just dimmed */
+.price-change.after-hours {
+    opacity: 0.75;
 }
 
 /* Weight Difference Display */

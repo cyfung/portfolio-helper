@@ -237,10 +237,7 @@ function compute(snap) {
 
         if (markPrice !== null && closePrice !== null) {
             dayChangeDollars = markPrice - closePrice;
-            const isZeroChange = Math.abs(dayChangeDollars) < 0.001;
             dayChangeText = (dayChangeDollars >= 0 ? '+' : '-') + Math.abs(dayChangeDollars).toFixed(2);
-            const dir = isZeroChange ? 'neutral' : dayChangeDollars > 0 ? 'positive' : 'negative';
-            dayChangeClass = 'loaded ' + dir + (markAfterHours ? ' after-hours' : '');
 
             const changePercent = (dayChangeDollars / closePrice) * 100;
             const sign = changePercent >= 0 ? '+' : '\\u2212';
@@ -248,10 +245,11 @@ function compute(snap) {
             const isNeutralPct = Math.abs(changePercent) < 0.1;
             const colorClass = isNeutralPct ? 'neutral' : changePercent > 0 ? 'positive' : 'negative';
             dayPctClass = 'mark-day-pct ' + colorClass + (markAfterHours ? ' after-hours' : '');
+            dayChangeClass = 'loaded ' + colorClass + (markAfterHours ? ' after-hours' : '');
 
             if (fxRate !== null) {
                 const positionChange = dayChangeDollars * qty;
-                const posDir = isZeroChange ? 'neutral' : positionChange > 0 ? 'positive' : 'negative';
+                const posDir = Math.abs(positionChange) < 0.005 ? 'neutral' : positionChange > 0 ? 'positive' : 'negative';
                 if (showStockDisplayCurrency) {
                     positionChangeText = formatSignedStockDisplayCurrency(positionChange, stockCcy, fxRates, cdc);
                     if (positionChangeText === null) positionChangeText = '—';
@@ -431,7 +429,8 @@ function compute(snap) {
     // Totals
     const dayChangeDollars = markTotal - prevTotal;
     const changePercent = prevTotal > 0 ? (dayChangeDollars / prevTotal) * 100 : 0;
-    const changeClass = dayChangeDollars > 0 ? 'positive' : dayChangeDollars < 0 ? 'negative' : 'neutral';
+    const isZeroTotalChange = Math.abs(dayChangeDollars) < 0.005;
+    const changeClass = isZeroTotalChange ? 'neutral' : dayChangeDollars > 0 ? 'positive' : 'negative';
 
     const stockGrossTotal = stockGrossValueKnown
         ? formatDisplayCurrency(markTotal, fxRates, cdc) : 'N/A';
@@ -733,6 +732,7 @@ function _applyDisplayResult(result) {
                 markValSpan.textContent = d.markText;
                 markValSpan.classList.toggle('loaded', d.markLoaded);
             }
+            markCell.classList.toggle('loaded', d.markLoaded);
             markCell.classList.toggle('after-hours', d.markAfterHours);
         }
 
