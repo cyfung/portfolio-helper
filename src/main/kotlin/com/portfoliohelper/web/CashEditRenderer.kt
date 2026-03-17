@@ -28,7 +28,7 @@ internal fun FlowContent.buildCashEditTable(
                         attributes["data-original-margin"] = entry.marginFlag.toString()
                         attributes["data-original-is-ref"] = isRef.toString()
                         if (isRef) {
-                            attributes["data-original-portfolio-ref"] = entry.portfolioRef.orEmpty()
+                            attributes["data-original-portfolio-ref"] = entry.portfolioRef
                             attributes["data-original-multiplier"] = entry.amount.toString()
                         }
 

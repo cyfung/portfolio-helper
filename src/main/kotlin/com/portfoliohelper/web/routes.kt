@@ -53,8 +53,6 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
     )
 }
 
-private val cashKeyKnownFlags = setOf("M")
-
 private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNull { el ->
     val obj = el.jsonObject
     val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -144,34 +142,6 @@ private val LOAN_COMPARE_FIELDS = listOf(
 
 private fun loanEntryKey(obj: JsonObject): String =
     LOAN_COMPARE_FIELDS.joinToString("|") { obj[it]?.toString() ?: "" }
-
-/** Parse a cash key (e.g. "Cash.USD.M") + raw value string into a CashEntry for DB insertion. */
-private fun parseCashEntryFromKeyValue(
-    key: String, valueStr: String
-): com.portfoliohelper.model.CashEntry? {
-    val allParts = key.split(".")
-    val mutableParts = allParts.toMutableList()
-    val flags = mutableSetOf<String>()
-    while (mutableParts.isNotEmpty() && mutableParts.last().uppercase() in cashKeyKnownFlags) {
-        flags.add(mutableParts.removeLast().uppercase())
-    }
-    if (mutableParts.size < 2) return null
-    val currency = mutableParts.last().uppercase()
-    val label = mutableParts.dropLast(1).joinToString(".")
-    val marginFlag = "M" in flags
-    return if (currency == "P") {
-        val trimmed = valueStr.trim()
-        val sign = if (trimmed.startsWith("-")) -1.0 else 1.0
-        val portfolioId = trimmed.trimStart('+', '-').lowercase()
-        if (portfolioId.isEmpty()) null
-        else com.portfoliohelper.model.CashEntry(
-            label, "P", marginFlag, amount = sign, portfolioRef = portfolioId
-        )
-    } else {
-        val amount = valueStr.toDoubleOrNull() ?: return null
-        com.portfoliohelper.model.CashEntry(label, currency, marginFlag, amount)
-    }
-}
 
 @OptIn(DelicateCoroutinesApi::class)
 fun Application.configureRouting() {
