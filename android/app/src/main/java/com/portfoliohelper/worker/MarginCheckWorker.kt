@@ -22,6 +22,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.portfoliohelper.PortfolioHelperApp
+import com.portfoliohelper.data.model.CashEntry
+import com.portfoliohelper.data.model.PortfolioMarginAlert
+import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import java.util.concurrent.TimeUnit
 
@@ -127,35 +130,72 @@ class MarginCheckWorker(
 
         ensureChannels()
 
+        // 1. Identify enabled alerts and clear disabled ones
+        val enabledAlerts = mutableListOf<PortfolioMarginAlert>()
         allAlerts.forEach { alert ->
+            val isEnabled = alert.lowerPct > 0 || alert.upperPct > 0
+            if (isEnabled) {
+                enabledAlerts.add(alert)
+            } else {
+                val portfolioName = portfolios[alert.portfolioId]?.displayName ?: "Portfolio ${alert.portfolioId}"
+                Log.d(TAG, "Alert disabled for $portfolioName. Clearing notifications.")
+                nm.cancel(NOTIF_ID_ALERT_BASE + alert.portfolioId)
+                nm.cancel(NOTIF_ID_ERROR_BASE + alert.portfolioId)
+            }
+        }
+
+        if (enabledAlerts.isEmpty()) {
+            Log.d(TAG, "No enabled alerts found.")
+            return Result.success()
+        }
+
+        // 2. Fetch all data for enabled portfolios to merge and dedup symbols
+        val portfolioPositions = mutableMapOf<Int, List<Position>>()
+        val portfolioCash = mutableMapOf<Int, List<CashEntry>>()
+        val allPositions = mutableListOf<Position>()
+        val allCashEntries = mutableListOf<CashEntry>()
+
+        for (alert in enabledAlerts) {
+            val portfolioId = alert.portfolioId
+            val positions = app.database.positionDao().getAll(portfolioId)
+            val cashEntries = app.database.cashDao().getAll(portfolioId)
+            
+            portfolioPositions[portfolioId] = positions
+            portfolioCash[portfolioId] = cashEntries
+            allPositions.addAll(positions)
+            allCashEntries.addAll(cashEntries)
+        }
+
+        if (allPositions.isEmpty() && allCashEntries.isEmpty()) {
+            Log.d(TAG, "No positions or cash entries found for enabled alerts.")
+            return Result.success()
+        }
+
+        // 3. Batch fetch and cache market data (dedup happens inside fetchAndCacheMarketData)
+        Log.d(TAG, "Batch fetching market data for ${allPositions.size} positions and ${allCashEntries.size} cash entries...")
+        val prices = try {
+            val p = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
+            Log.i(TAG, "Batch market data fetch completed. Found ${p.size} prices.")
+            p
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error during batch market data fetch: ${e.message}", e)
+            // fetchAndCacheMarketData already falls back to DB cache for individual symbols.
+            // If it throws, we continue with whatever we might have or skip this run.
+            return Result.success()
+        }
+
+        // 4. Process alerts using the fetched prices
+        enabledAlerts.forEach { alert ->
             val portfolioId = alert.portfolioId
             val portfolioName = portfolios[portfolioId]?.displayName ?: "Portfolio $portfolioId"
             val alertNotifId = NOTIF_ID_ALERT_BASE + portfolioId
             val errorNotifId = NOTIF_ID_ERROR_BASE + portfolioId
 
-            val isEnabled = alert.lowerPct > 0 || alert.upperPct > 0
-            if (!isEnabled) {
-                Log.d(TAG, "Alert disabled for $portfolioName. Clearing notifications.")
-                nm.cancel(alertNotifId)
-                nm.cancel(errorNotifId)
-                return@forEach
-            }
-
-            val positions = app.database.positionDao().getAll(portfolioId)
-            val cashEntries = app.database.cashDao().getAll(portfolioId)
+            val positions = portfolioPositions[portfolioId] ?: emptyList()
+            val cashEntries = portfolioCash[portfolioId] ?: emptyList()
 
             if (positions.isEmpty() && cashEntries.isEmpty()) {
-                Log.d(TAG, "No data for $portfolioName. Skipping.")
-                return@forEach
-            }
-
-            Log.d(TAG, "[$portfolioName] Fetching market data for ${positions.size} positions and ${cashEntries.size} cash entries...")
-            val prices = try {
-                val p = PortfolioCalculator.fetchAndCacheMarketData(app.database, positions, cashEntries)
-                Log.i(TAG, "[$portfolioName] Market data fetch completed. Found ${p.size} prices.")
-                p
-            } catch (e: Exception) {
-                Log.e(TAG, "[$portfolioName] Fatal error during market data fetch: ${e.message}", e)
+                Log.d(TAG, "[$portfolioName] No data. Skipping.")
                 return@forEach
             }
 
