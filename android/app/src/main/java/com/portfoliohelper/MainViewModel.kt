@@ -265,19 +265,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Market Data ───────────────────────────────────────────────────────────
 
     init {
-        YahooMarketDataService.setOnUpdateListener { symbol, quote ->
+        YahooMarketDataService.setOnBatchUpdateListener { quotes ->
             viewModelScope.launch {
-                val price = quote.regularMarketPrice ?: quote.previousClose
-                if (price != null) {
-                    db.marketPriceDao().upsert(
+                val marketPrices = quotes.mapNotNull { quote ->
+                    val price = quote.regularMarketPrice ?: quote.previousClose
+                    if (price != null) {
                         com.portfoliohelper.data.model.MarketPrice(
-                            symbol,
+                            quote.symbol,
                             price,
                             quote.previousClose,
                             quote.isMarketClosed,
                             currency = quote.currency
                         )
-                    )
+                    } else null
+                }
+                if (marketPrices.isNotEmpty()) {
+                    db.marketPriceDao().upsertAll(marketPrices)
                 }
             }
         }

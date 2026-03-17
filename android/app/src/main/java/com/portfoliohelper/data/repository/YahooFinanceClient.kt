@@ -40,13 +40,14 @@ object YahooFinanceClient {
         isLenient = true
     }
 
+    /**
+     * Fetch a single quote using the chart API (legacy fallback).
+     */
     suspend fun fetchQuote(symbol: String): YahooQuote {
         try {
-            // Use query1 or query2 (fallbacks)
             val url = "https://query1.finance.yahoo.com/v8/finance/chart/$symbol?interval=1d&range=1d"
             
             val response: HttpResponse = httpClient.get(url) {
-                // Critical: Yahoo often blocks requests without a browser-like User-Agent
                 header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 header("Accept", "*/*")
                 header("Connection", "keep-alive")
@@ -57,7 +58,7 @@ object YahooFinanceClient {
             }
 
             val body = response.bodyAsText()
-            return parseQuoteResponse(symbol, body)
+            return parseChartResponse(symbol, body)
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch quote for $symbol: ${e.message}")
@@ -65,7 +66,38 @@ object YahooFinanceClient {
         }
     }
 
-    private fun parseQuoteResponse(symbol: String, jsonBody: String): YahooQuote {
+    /**
+     * Fetch multiple quotes in a single batch request (efficient).
+     */
+    suspend fun fetchQuotes(symbols: List<String>): List<YahooQuote> {
+        if (symbols.isEmpty()) return emptyList()
+        
+        // Yahoo allows up to ~100 symbols per request.
+        return symbols.chunked(100).flatMap { chunk ->
+            try {
+                val symbolsString = chunk.joinToString(",")
+                val url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=$symbolsString"
+                
+                val response: HttpResponse = httpClient.get(url) {
+                    header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    header("Accept", "*/*")
+                    header("Connection", "keep-alive")
+                }
+
+                if (response.status.value != 200) {
+                    throw Exception("HTTP ${response.status.value} for batch")
+                }
+
+                val body = response.bodyAsText()
+                parseQuoteResponse(body)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch batch $chunk: ${e.message}")
+                emptyList()
+            }
+        }
+    }
+
+    private fun parseChartResponse(symbol: String, jsonBody: String): YahooQuote {
         val jsonElement = json.parseToJsonElement(jsonBody)
         val result = jsonElement.jsonObject["chart"]?.jsonObject?.get("result")?.jsonArray?.get(0)?.jsonObject
             ?: throw Exception("Invalid response structure for $symbol")
@@ -87,12 +119,31 @@ object YahooFinanceClient {
             beforeOpen || afterClose
         }
 
-        return YahooQuote(
-            symbol = symbol,
-            regularMarketPrice = regularMarketPrice,
-            previousClose = previousClose,
-            isMarketClosed = isMarketClosed,
-            currency = currency
-        )
+        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency)
+    }
+
+    private fun parseQuoteResponse(jsonBody: String): List<YahooQuote> {
+        val jsonElement = json.parseToJsonElement(jsonBody)
+        val quoteResponse = jsonElement.jsonObject["quoteResponse"]?.jsonObject
+        val results = quoteResponse?.get("result")?.jsonArray ?: return emptyList()
+
+        return results.map { it.jsonObject }.map { result ->
+            val symbol = result["symbol"]?.jsonPrimitive?.content ?: ""
+            val regularMarketPrice = result["regularMarketPrice"]?.jsonPrimitive?.doubleOrNull
+            val previousClose = result["regularMarketPreviousClose"]?.jsonPrimitive?.doubleOrNull
+            val currency = result["currency"]?.jsonPrimitive?.content
+            val marketState = result["marketState"]?.jsonPrimitive?.content
+            
+            // REGULAR means market is open. PRE, POST, CLOSED mean it's closed for regular trading.
+            val isMarketClosed = marketState != "REGULAR"
+
+            YahooQuote(
+                symbol = symbol,
+                regularMarketPrice = regularMarketPrice,
+                previousClose = previousClose,
+                isMarketClosed = isMarketClosed,
+                currency = currency
+            )
+        }
     }
 }

@@ -10,20 +10,21 @@ object YahooMarketDataService {
     private var updateJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private var onUpdateCallback: ((String, YahooQuote) -> Unit)? = null
+    private var onBatchUpdateCallback: ((List<YahooQuote>) -> Unit)? = null
 
     fun start(symbols: List<String>, updateIntervalSeconds: Long = 60) {
         updateJob?.cancel()
         updateJob = serviceScope.launch {
             while (isActive) {
-                symbols.forEach { symbol ->
-                    try {
-                        val quote = YahooFinanceClient.fetchQuote(symbol)
-                        updateCache(symbol, quote)
-                        Log.d(TAG, "Updated $symbol: ${quote.regularMarketPrice}")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to fetch $symbol", e)
+                try {
+                    val quotes = YahooFinanceClient.fetchQuotes(symbols)
+                    if (quotes.isNotEmpty()) {
+                        quotes.forEach { cache[it.symbol] = it }
+                        onBatchUpdateCallback?.invoke(quotes)
+                        Log.d(TAG, "Batch updated ${quotes.size} symbols")
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to fetch quotes", e)
                 }
                 delay(updateIntervalSeconds * 1000)
             }
@@ -34,13 +35,13 @@ object YahooMarketDataService {
         updateJob?.cancel()
     }
 
-    fun setOnUpdateListener(callback: (String, YahooQuote) -> Unit) {
-        onUpdateCallback = callback
+    fun setOnBatchUpdateListener(callback: (List<YahooQuote>) -> Unit) {
+        onBatchUpdateCallback = callback
     }
 
     fun updateCache(symbol: String, quote: YahooQuote) {
         cache[symbol] = quote
-        onUpdateCallback?.invoke(symbol, quote)
+        onBatchUpdateCallback?.invoke(listOf(quote))
     }
 
     fun getQuote(symbol: String): YahooQuote? = cache[symbol]

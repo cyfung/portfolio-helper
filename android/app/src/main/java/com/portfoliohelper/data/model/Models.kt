@@ -65,9 +65,8 @@ data class MarketPrice(
 @Entity(tableName = "portfolio_margin_alerts")
 data class PortfolioMarginAlert(
     @PrimaryKey val portfolioId: Int,
-    val enabled: Boolean = false,
-    val lowerPct: Double = 20.0,   // alert when margin% drops below this
-    val upperPct: Double = 50.0    // alert when margin% rises above this
+    val lowerPct: Double = -1.0,   // alert when margin% drops below this
+    val upperPct: Double = -1.0    // alert when margin% rises above this
 )
 
 // ── Allocation modes ──────────────────────────────────────────────────────────

@@ -204,8 +204,8 @@ private fun PortfoliosSection(
         portfolios.map { p ->
             val a = alerts.find { it.portfolioId == p.serialId }
                 ?: PortfolioMarginAlert(portfolioId = p.serialId)
-            val showLower = if (a.enabled && a.lowerPct > 0) a.lowerPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
-            val showUpper = if (a.enabled && a.upperPct > 0) a.upperPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
+            val showLower = if (a.lowerPct > 0) a.lowerPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
+            val showUpper = if (a.upperPct > 0) a.upperPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
             mutableStateOf(RowState(p.serialId, p.displayName, showLower, showUpper))
         }
     }
@@ -215,7 +215,7 @@ private fun PortfoliosSection(
         delay(800)
         
         // Save alerts
-        var anyNewlyEnabled = false
+        var anyEnabled = false
         val updatedAlerts = rowStates.map { stateHolder ->
             val s = stateHolder.value
             val lower = s.lowerPct.toDoubleOrNull()?.takeIf { it > 0 } ?: -1.0
@@ -224,22 +224,18 @@ private fun PortfoliosSection(
             
             // Check if this specific row was just enabled
             if (isEnabled) {
-                val originalAlert = alerts.find { it.portfolioId == s.id }
-                if (originalAlert == null || (!originalAlert.enabled || originalAlert.lowerPct <= 0 && originalAlert.upperPct <= 0)) {
-                    anyNewlyEnabled = true
-                }
+                anyEnabled = true
             }
 
             PortfolioMarginAlert(
                 portfolioId = s.id,
-                enabled = isEnabled,
                 lowerPct = lower,
                 upperPct = upper
             )
         }
         onSaveAlerts(updatedAlerts)
         
-        if (anyNewlyEnabled) {
+        if (anyEnabled) {
             onAskPermission()
         }
 
