@@ -279,8 +279,23 @@ object BacktestService {
         logger.info("Extending $upperTicker SIM from $lastKnownDate to $today via Yahoo")
         return try {
             val yahoo = YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate.minusDays(10), today)
-            if (!passesSanityCheckA(existing, yahoo, lastKnownDate, upperTicker)) return null
-            val extended = chainExtend(existing, yahoo, lastKnownDate)
+            val (baseExisting, baseLastDate) = if (!passesSanityCheckA(existing, yahoo, lastKnownDate, upperTicker)) {
+                // Sanity A failed — the last stored entry may have been captured intraday (before
+                // the official close was finalised), causing a divergence vs Yahoo's adjusted close.
+                // If dropping just that last date makes the check pass, discard it and reuse the
+                // rest of the series so chain-extension proceeds from a clean close price.
+                val trimmed = existing.filter { it.key < lastKnownDate }
+                val trimmedLastDate = trimmed.keys.maxOrNull()
+                if (trimmedLastDate != null && passesSanityCheckA(trimmed, yahoo, trimmedLastDate, upperTicker)) {
+                    logger.warn("$upperTicker sanity A passed after dropping last date ($lastKnownDate) — reusing trimmed series")
+                    trimmed to trimmedLastDate
+                } else {
+                    return null
+                }
+            } else {
+                existing to lastKnownDate
+            }
+            val extended = chainExtend(baseExisting, yahoo, baseLastDate)
             val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
             writeSimCsv(newFile, extended)
             files.forEach { it.delete() }
