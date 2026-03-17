@@ -304,7 +304,7 @@ private fun PortfoliosSection(
                         OutlinedTextField(
                             value = state.lowerPct,
                             onValueChange = { state = state.copy(lowerPct = it) },
-                            placeholder = { Text("off", fontSize = 11.sp) },
+                            placeholder = { Text("off", fontSize = 11.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
                             singleLine = true,
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
@@ -316,7 +316,7 @@ private fun PortfoliosSection(
                         OutlinedTextField(
                             value = state.upperPct,
                             onValueChange = { state = state.copy(upperPct = it) },
-                            placeholder = { Text("off", fontSize = 11.sp) },
+                            placeholder = { Text("off", fontSize = 11.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
                             singleLine = true,
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
