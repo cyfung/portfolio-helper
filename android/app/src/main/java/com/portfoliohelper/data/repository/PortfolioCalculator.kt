@@ -135,85 +135,55 @@ object PortfolioCalculator {
 
     /**
      * Fetches fresh quotes for all positions and FX pairs, updating the DB cache.
-     * Falls back to DB cache if network fetch fails for a specific symbol.
+     * Uses parallel requests for maximum speed.
      */
     suspend fun fetchAndCacheMarketData(
         db: AppDatabase,
         positions: List<Position>,
         cashEntries: List<CashEntry>
     ): Map<String, YahooQuote> {
-        val initialSymbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableList()
+        val initialSymbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableSet()
         val cashCurrencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
         cashCurrencies.forEach { initialSymbols.add("${it}USD=X") }
 
-        val results = mutableMapOf<String, YahooQuote>()
-        val pendingSymbols = initialSymbols.toMutableSet()
-        val processedSymbols = mutableSetOf<String>()
-        
-        var fetchCount = 0
-        var successCount = 0
-        var cacheFallbackCount = 0
+        // Step 1: Fetch initial symbols in parallel
+        val initialQuotes = YahooFinanceClient.fetchQuotes(initialSymbols.toList())
+        val results = initialQuotes.associateBy { it.symbol }.toMutableMap()
 
-        while (pendingSymbols.isNotEmpty()) {
-            val symbol = pendingSymbols.first()
-            pendingSymbols.remove(symbol)
-            processedSymbols.add(symbol)
-            fetchCount++
-
-            try {
-                Log.d(TAG, "Fetching fresh quote for $symbol...")
-                val quote = YahooFinanceClient.fetchQuote(symbol)
-                val price = quote.regularMarketPrice ?: quote.previousClose
-                if (price != null) {
-                    Log.i(TAG, "Successfully fetched $symbol: $price")
-                    successCount++
-                    db.marketPriceDao().upsert(
-                        MarketPrice(symbol, price, quote.previousClose, quote.isMarketClosed, currency = quote.currency)
-                    )
-                    // Push to live service if it's active (updates UI in real-time)
-                    YahooMarketDataService.updateCache(symbol, quote)
-                } else {
-                    Log.w(TAG, "Fetched $symbol but price is null")
-                }
-                results[symbol] = quote
-
-                // If this is a stock with a non-USD currency, we might need its FX rate
-                val stockCcyRaw = quote.currency
-                if (stockCcyRaw != null && stockCcyRaw != "USD" && !stockCcyRaw.endsWith("=X")) {
-                    val isPence = stockCcyRaw.length == 3 && stockCcyRaw[2].isLowerCase()
-                    val normalizedCcy = if (isPence) stockCcyRaw.uppercase() else stockCcyRaw
-                    
-                    val fxPair = "${normalizedCcy}USD=X"
-                    if (!processedSymbols.contains(fxPair)) {
-                        pendingSymbols.add(fxPair)
-                    }
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch $symbol: ${e.message}")
-                db.marketPriceDao().get(symbol)?.let { cached ->
-                    Log.i(TAG, "Falling back to DB cache for $symbol: ${cached.price}")
-                    cacheFallbackCount++
-                    val quote = YahooQuote(symbol, cached.price, cached.previousClose, cached.isMarketClosed, cached.currency)
-                    results[symbol] = quote
-                    
-                    val stockCcyRaw = cached.currency
-                    if (stockCcyRaw != null && stockCcyRaw != "USD" && !stockCcyRaw.endsWith("=X")) {
-                        val isPence = stockCcyRaw.length == 3 && stockCcyRaw[2].isLowerCase()
-                        val normalizedCcy = if (isPence) stockCcyRaw.uppercase() else stockCcyRaw
-                        
-                        val fxPair = "${normalizedCcy}USD=X"
-                        if (!processedSymbols.contains(fxPair)) {
-                            pendingSymbols.add(fxPair)
-                        }
-                    }
-                } ?: run {
-                    Log.w(TAG, "No cached price available for $symbol after network failure")
+        // Step 2: Identify missing FX pairs (e.g. for stocks listed in GBP, EUR, etc.)
+        val additionalFxSymbols = mutableSetOf<String>()
+        initialQuotes.forEach { quote ->
+            val ccy = quote.currency
+            if (ccy != null && ccy != "USD" && !quote.symbol.endsWith("=X")) {
+                val isPence = ccy.length == 3 && ccy[2].isLowerCase()
+                val normalizedCcy = if (isPence) ccy.uppercase() else ccy
+                val pair = "${normalizedCcy}USD=X"
+                if (!results.containsKey(pair)) {
+                    additionalFxSymbols.add(pair)
                 }
             }
         }
 
-        Log.i(TAG, "Market data fetch summary: Total=$fetchCount, NetworkSuccess=$successCount, CacheFallback=$cacheFallbackCount")
+        // Step 3: Fetch additional FX pairs in parallel if needed
+        if (additionalFxSymbols.isNotEmpty()) {
+            val additionalQuotes = YahooFinanceClient.fetchQuotes(additionalFxSymbols.toList())
+            additionalQuotes.forEach { results[it.symbol] = it }
+        }
+
+        // Step 4: Batch update database and live cache
+        val marketPrices = results.values.mapNotNull { quote ->
+            val price = quote.regularMarketPrice ?: quote.previousClose
+            if (price != null) {
+                MarketPrice(quote.symbol, price, quote.previousClose, quote.isMarketClosed, currency = quote.currency)
+            } else null
+        }
+        
+        if (marketPrices.isNotEmpty()) {
+            db.marketPriceDao().upsertAll(marketPrices)
+            results.values.forEach { YahooMarketDataService.updateCache(it.symbol, it) }
+            Log.i(TAG, "Market data updated: ${marketPrices.size} prices")
+        }
+
         return results
     }
 
