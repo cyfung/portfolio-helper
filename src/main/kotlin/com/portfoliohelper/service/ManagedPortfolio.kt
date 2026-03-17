@@ -10,7 +10,6 @@ import com.portfoliohelper.service.db.PositionsTable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.slf4j.LoggerFactory
 
 /**
  * Represents a single portfolio. Data is persisted in SQLite (app.db) via Exposed.
@@ -26,8 +25,6 @@ class ManagedPortfolio(
     val slug: String,
 ) {
     val name: String get() = slug.replaceFirstChar { it.uppercase() }
-
-    private val logger = LoggerFactory.getLogger("ManagedPortfolio[$slug]")
 
     fun getStocks(): List<Stock> {
         val pid = serialId
@@ -46,7 +43,6 @@ class ManagedPortfolio(
                     )
                 }
         }
-        logger.info("getStocks() returned ${stocks.size} stocks for portfolio '$slug'")
         return stocks
     }
 
