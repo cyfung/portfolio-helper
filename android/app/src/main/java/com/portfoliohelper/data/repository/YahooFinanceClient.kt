@@ -23,9 +23,9 @@ object YahooFinanceClient {
 
     private val httpClient = HttpClient(OkHttp) {
         install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            requestTimeoutMillis = 15_000
-            socketTimeoutMillis = 15_000
+            connectTimeoutMillis = 15_000
+            requestTimeoutMillis = 20_000
+            socketTimeoutMillis = 20_000
         }
         install(ContentNegotiation) {
             json(Json {
@@ -42,8 +42,15 @@ object YahooFinanceClient {
 
     suspend fun fetchQuote(symbol: String): YahooQuote {
         try {
+            // Use query1 or query2 (fallbacks)
             val url = "https://query1.finance.yahoo.com/v8/finance/chart/$symbol?interval=1d&range=1d"
-            val response: HttpResponse = httpClient.get(url)
+            
+            val response: HttpResponse = httpClient.get(url) {
+                // Critical: Yahoo often blocks requests without a browser-like User-Agent
+                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                header("Accept", "*/*")
+                header("Connection", "keep-alive")
+            }
 
             if (response.status.value != 200) {
                 throw Exception("HTTP ${response.status.value} for $symbol")
@@ -53,7 +60,7 @@ object YahooFinanceClient {
             return parseQuoteResponse(symbol, body)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch quote for $symbol", e)
+            Log.e(TAG, "Failed to fetch quote for $symbol: ${e.message}")
             throw e
         }
     }

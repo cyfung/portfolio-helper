@@ -54,6 +54,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         db.portfolioMarginAlertDao().observeAll()
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val isAnyAlertEnabled: StateFlow<Boolean> = portfolioAlerts.map { alerts ->
+        alerts.any { it.lowerPct > 0 || it.upperPct > 0 }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     // ── Portfolio-scoped data flows ───────────────────────────────────────────
 
     val positions: StateFlow<List<Position>> = selectedPortfolioId
@@ -194,6 +198,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         db.positionDao().hardDeleteAll(serialId)
         db.cashDao().deleteAll(serialId)
+        db.portfolioMarginAlertDao().delete(serialId)
         db.portfolioDao().delete(serialId)
         refreshMarketData()
     }

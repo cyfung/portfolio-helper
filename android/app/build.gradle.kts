@@ -17,25 +17,15 @@ android {
         versionName = "1.0.0"
     }
 
-//    signingConfigs {
-//        // We use the debug key for the release build type so you can test it locally.
-//        // For Google Play, you will eventually create a real 'upload' key.
-//        getByName("debug") {
-//            storeFile = file("../debug.keystore")
-//        }
-//    }
-
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             isDebuggable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            
-            // This enables the 'installRelease' task
         }
         debug {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
     }

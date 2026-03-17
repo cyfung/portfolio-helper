@@ -149,21 +149,31 @@ object PortfolioCalculator {
         val results = mutableMapOf<String, YahooQuote>()
         val pendingSymbols = initialSymbols.toMutableSet()
         val processedSymbols = mutableSetOf<String>()
+        
+        var fetchCount = 0
+        var successCount = 0
+        var cacheFallbackCount = 0
 
         while (pendingSymbols.isNotEmpty()) {
             val symbol = pendingSymbols.first()
             pendingSymbols.remove(symbol)
             processedSymbols.add(symbol)
+            fetchCount++
 
             try {
+                Log.d(TAG, "Fetching fresh quote for $symbol...")
                 val quote = YahooFinanceClient.fetchQuote(symbol)
                 val price = quote.regularMarketPrice ?: quote.previousClose
                 if (price != null) {
+                    Log.i(TAG, "Successfully fetched $symbol: $price")
+                    successCount++
                     db.marketPriceDao().upsert(
                         MarketPrice(symbol, price, quote.previousClose, quote.isMarketClosed, currency = quote.currency)
                     )
                     // Push to live service if it's active (updates UI in real-time)
                     YahooMarketDataService.updateCache(symbol, quote)
+                } else {
+                    Log.w(TAG, "Fetched $symbol but price is null")
                 }
                 results[symbol] = quote
 
@@ -180,8 +190,10 @@ object PortfolioCalculator {
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch $symbol, falling back to DB: ${e.message}")
+                Log.e(TAG, "Failed to fetch $symbol: ${e.message}")
                 db.marketPriceDao().get(symbol)?.let { cached ->
+                    Log.i(TAG, "Falling back to DB cache for $symbol: ${cached.price}")
+                    cacheFallbackCount++
                     val quote = YahooQuote(symbol, cached.price, cached.previousClose, cached.isMarketClosed, cached.currency)
                     results[symbol] = quote
                     
@@ -195,10 +207,13 @@ object PortfolioCalculator {
                             pendingSymbols.add(fxPair)
                         }
                     }
+                } ?: run {
+                    Log.w(TAG, "No cached price available for $symbol after network failure")
                 }
             }
         }
 
+        Log.i(TAG, "Market data fetch summary: Total=$fetchCount, NetworkSuccess=$successCount, CacheFallback=$cacheFallbackCount")
         return results
     }
 

@@ -43,6 +43,9 @@ interface PortfolioMarginAlertDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(alerts: List<PortfolioMarginAlert>)
+
+    @Query("DELETE FROM portfolio_margin_alerts WHERE portfolioId = :portfolioId")
+    suspend fun delete(portfolioId: Int)
 }
 
 // ── Position DAO ──────────────────────────────────────────────────────────────

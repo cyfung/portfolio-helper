@@ -28,7 +28,7 @@ import com.portfoliohelper.ui.theme.ext
 import kotlinx.coroutines.delay
 
 @Composable
-fun SettingsScreen(vm: MainViewModel) {
+fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val ext = MaterialTheme.ext
     val syncServer by vm.syncServerInfo.collectAsState()
     val discoveredServers by vm.discoveredServers.collectAsState()
@@ -138,6 +138,7 @@ fun SettingsScreen(vm: MainViewModel) {
             onRenamePortfolio = { id, name -> vm.renamePortfolio(id, name) },
             onDeletePortfolio = { vm.deletePortfolio(it) },
             onSaveAlerts = { vm.savePortfolioAlerts(it) },
+            onAskPermission = onAskPermission,
             ext = ext
         )
 
@@ -186,6 +187,7 @@ private fun PortfoliosSection(
     onRenamePortfolio: (Int, String) -> Unit,
     onDeletePortfolio: (Int) -> Unit,
     onSaveAlerts: (List<PortfolioMarginAlert>) -> Unit,
+    onAskPermission: () -> Unit,
     ext: com.portfoliohelper.ui.theme.ExtendedColors
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -213,18 +215,33 @@ private fun PortfoliosSection(
         delay(800)
         
         // Save alerts
+        var anyNewlyEnabled = false
         val updatedAlerts = rowStates.map { stateHolder ->
             val s = stateHolder.value
             val lower = s.lowerPct.toDoubleOrNull()?.takeIf { it > 0 } ?: -1.0
             val upper = s.upperPct.toDoubleOrNull()?.takeIf { it > 0 } ?: -1.0
+            val isEnabled = lower > 0 || upper > 0
+            
+            // Check if this specific row was just enabled
+            if (isEnabled) {
+                val originalAlert = alerts.find { it.portfolioId == s.id }
+                if (originalAlert == null || (!originalAlert.enabled || originalAlert.lowerPct <= 0 && originalAlert.upperPct <= 0)) {
+                    anyNewlyEnabled = true
+                }
+            }
+
             PortfolioMarginAlert(
                 portfolioId = s.id,
-                enabled = lower > 0 || upper > 0,
+                enabled = isEnabled,
                 lowerPct = lower,
                 upperPct = upper
             )
         }
         onSaveAlerts(updatedAlerts)
+        
+        if (anyNewlyEnabled) {
+            onAskPermission()
+        }
 
         // Save names if changed
         rowStates.forEach { stateHolder ->

@@ -1,10 +1,14 @@
 package com.portfoliohelper
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -13,26 +17,15 @@ import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -47,6 +40,7 @@ import com.portfoliohelper.ui.screens.PortfolioScreen
 import com.portfoliohelper.ui.screens.SettingsScreen
 import com.portfoliohelper.ui.theme.PortfolioHelperTheme
 import com.portfoliohelper.ui.theme.ext
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable object PortfolioRoute
@@ -57,14 +51,46 @@ import kotlinx.serialization.Serializable
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            Log.i("MainActivity", "Notification permission granted")
+        } else {
+            Log.w("MainActivity", "Notification permission denied")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "onCreate started")
         enableEdgeToEdge()
 
+        // Request permission only if alerts are already enabled in the DB
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.isAnyAlertEnabled.collect { enabled ->
+                    if (enabled) {
+                        askNotificationPermission()
+                    }
+                }
+            }
+        }
+
         setContent {
             PortfolioHelperTheme {
-                PortfolioHelperApp(vm)
+                PortfolioHelperApp(vm, onAskPermission = { askNotificationPermission() })
+            }
+        }
+    }
+
+    private fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.i("MainActivity", "Requesting notification permission")
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
@@ -124,7 +150,7 @@ fun PortfolioSelectorTitle(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PortfolioHelperApp(vm: MainViewModel) {
+fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
     val navController = rememberNavController()
     val ext = MaterialTheme.ext
 
@@ -211,7 +237,7 @@ fun PortfolioHelperApp(vm: MainViewModel) {
             composable<PortfolioRoute> { PortfolioScreen(vm) }
             composable<GroupsRoute> { GroupsScreen(vm) }
             composable<CashRoute> { CashScreen(vm) }
-            composable<SettingsRoute> { SettingsScreen(vm) }
+            composable<SettingsRoute> { SettingsScreen(vm, onAskPermission = onAskPermission) }
         }
     }
 }
