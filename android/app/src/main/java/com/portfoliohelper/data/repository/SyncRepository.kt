@@ -8,6 +8,8 @@ import android.os.Build
 import android.util.Log
 import androidx.room.withTransaction
 import com.portfoliohelper.data.model.CashEntry
+import com.portfoliohelper.data.model.Portfolio
+import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
@@ -206,7 +208,7 @@ class SyncRepository(
 
         val client = httpsClient(fingerprint)
         try {
-            val response = client.get("https://$host:$port/api/sync/data") {
+            val response = client.get("https://$host:$port/api/sync/all") {
                 header("X-Device-ID", serverAssignedId)
             }
 
@@ -215,10 +217,11 @@ class SyncRepository(
 
             val encryptedBytes = response.readBytes()
             val jsonBytes = AesGcm.decrypt(encryptedBytes, aesKey)
-            val root = Json.decodeFromString<BackupRoot>(jsonBytes.toString(Charsets.UTF_8))
+            val allSync = Json { ignoreUnknownKeys = true }
+                .decodeFromString<AllSyncResponse>(jsonBytes.toString(Charsets.UTF_8))
 
-            parseAndSave(root)
-            Log.i("SyncRepository", "Sync successful: ${root.stocks.size} positions, ${root.cash.size} cash entries")
+            parseAndSave(allSync)
+            Log.i("SyncRepository", "Sync successful: ${allSync.portfolios.size} portfolios")
 
             settings.saveSyncServerInfo(serverInfo.copy(host = host, port = port))
         } catch (e: Exception) {
@@ -237,52 +240,79 @@ class SyncRepository(
         }?.find { it.serviceName == name }
     }
 
-    private suspend fun parseAndSave(root: BackupRoot) {
-        val positions = root.stocks.map { s ->
-            Position(
-                symbol = s.symbol,
-                quantity = s.amount,
-                targetWeight = s.targetWeight,
-                groups = s.groups
-            )
-        }
+    private suspend fun parseAndSave(response: AllSyncResponse) {
+        db.withTransaction {
+            // Clear all existing positions and cash
+            db.positionDao().hardDeleteAll()
+            db.cashDao().deleteAll()
 
-        val cashEntries = root.cash.mapNotNull { c ->
-            when {
-                c.currency == "P" -> {
-                    // Use snapshotUsd if present; skip entry if not resolvable
-                    val usd = c.snapshotUsd ?: return@mapNotNull null
-                    CashEntry(
-                        label = c.label,
-                        currency = "USD",
-                        amount = usd,
-                        isMargin = c.marginFlag
+            for (root in response.portfolios) {
+                val portfolioId = root.portfolioSlug
+
+                // Upsert portfolio row
+                db.portfolioDao().upsert(
+                    Portfolio(
+                        id = portfolioId,
+                        displayName = portfolioId.replaceFirstChar { it.uppercase() }
+                    )
+                )
+
+                // Insert positions
+                val positions = root.stocks.map { s ->
+                    Position(
+                        portfolioId = portfolioId,
+                        symbol = s.symbol,
+                        quantity = s.amount,
+                        targetWeight = s.targetWeight,
+                        groups = s.groups
                     )
                 }
-                else -> CashEntry(
-                    label = c.label,
-                    currency = c.currency,
-                    amount = c.amount,
-                    isMargin = c.marginFlag
-                )
+                positions.forEach { db.positionDao().upsert(it) }
+
+                // Insert cash entries
+                val cashEntries = root.cash.mapNotNull { c ->
+                    when {
+                        c.currency == "P" -> {
+                            val usd = c.snapshotUsd ?: return@mapNotNull null
+                            CashEntry(
+                                portfolioId = portfolioId,
+                                label = c.label,
+                                currency = "USD",
+                                amount = usd,
+                                isMargin = c.marginFlag
+                            )
+                        }
+                        else -> CashEntry(
+                            portfolioId = portfolioId,
+                            label = c.label,
+                            currency = c.currency,
+                            amount = c.amount,
+                            isMargin = c.marginFlag
+                        )
+                    }
+                }
+                cashEntries.forEach { db.cashDao().upsert(it) }
+
+                // Upsert default margin alert for newly-appeared portfolio (keep existing)
+                val existing = db.portfolioMarginAlertDao().getAll()
+                    .find { it.portfolioId == portfolioId }
+                if (existing == null) {
+                    db.portfolioMarginAlertDao().upsert(PortfolioMarginAlert(portfolioId = portfolioId))
+                }
             }
-        }
-
-        db.withTransaction {
-            db.positionDao().hardDeleteAll()
-            positions.forEach { db.positionDao().upsert(it) }
-
-            db.cashDao().deleteAll()
-            cashEntries.forEach { db.cashDao().upsert(it) }
         }
     }
 
     class UnauthorizedException : Exception("Device not paired or authentication failed")
 }
 
-// BackupRoot models — mirror of server BackupService data classes
+// ── Sync response models ───────────────────────────────────────────────────────
+
 @kotlinx.serialization.Serializable
-private data class BackupRoot(
+data class AllSyncResponse(val portfolios: List<BackupRoot>)
+
+@kotlinx.serialization.Serializable
+data class BackupRoot(
     val version: Int = 1,
     val portfolioSlug: String,
     val stocks: List<BackupStock>,
@@ -290,7 +320,7 @@ private data class BackupRoot(
 )
 
 @kotlinx.serialization.Serializable
-private data class BackupStock(
+data class BackupStock(
     val symbol: String,
     val amount: Double,
     val targetWeight: Double = 0.0,
@@ -299,7 +329,7 @@ private data class BackupStock(
 )
 
 @kotlinx.serialization.Serializable
-private data class BackupCash(
+data class BackupCash(
     val key: String,
     val label: String,
     val currency: String,

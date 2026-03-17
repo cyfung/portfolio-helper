@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
-import com.portfoliohelper.data.model.MarginAlertSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -13,10 +12,6 @@ import java.util.UUID
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "portfoliohelper_prefs")
 
 object PrefsKeys {
-    val MARGIN_ALERT_ENABLED    = booleanPreferencesKey("margin_alert_enabled")
-    val MARGIN_ALERT_LOWER_PCT  = floatPreferencesKey("margin_alert_lower_pct")
-    val MARGIN_ALERT_UPPER_PCT  = floatPreferencesKey("margin_alert_upper_pct")
-    val MARGIN_ALERT_INTERVAL   = intPreferencesKey("margin_alert_interval_min")
     val ALLOC_ADD_MODE          = stringPreferencesKey("alloc_add_mode")
     val ALLOC_REDUCE_MODE       = stringPreferencesKey("alloc_reduce_mode")
     val SYNC_SERVER_HOST        = stringPreferencesKey("sync_server_host")
@@ -28,6 +23,7 @@ object PrefsKeys {
     val TLS_FINGERPRINT         = stringPreferencesKey("tls_fingerprint")
     val PNL_DISPLAY_MODE        = stringPreferencesKey("pnl_display_mode") // "NATIVE" or "DISPLAY"
     val DISPLAY_CURRENCY        = stringPreferencesKey("display_currency")
+    val SELECTED_PORTFOLIO_ID   = stringPreferencesKey("selected_portfolio_id")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -67,24 +63,6 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    val marginAlertSettings: Flow<MarginAlertSettings> = context.dataStore.data.map { prefs ->
-        MarginAlertSettings(
-            enabled               = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false,
-            lowerPct              = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble(),
-            upperPct              = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble(),
-            checkIntervalMinutes  = prefs[PrefsKeys.MARGIN_ALERT_INTERVAL] ?: 15
-        )
-    }
-
-    suspend fun saveMarginAlertSettings(s: MarginAlertSettings) {
-        context.dataStore.edit { prefs ->
-            prefs[PrefsKeys.MARGIN_ALERT_ENABLED]   = s.enabled
-            prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] = s.lowerPct.toFloat()
-            prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] = s.upperPct.toFloat()
-            prefs[PrefsKeys.MARGIN_ALERT_INTERVAL]  = s.checkIntervalMinutes
-        }
-    }
-
     suspend fun saveServerAssignedId(id: String) {
         context.dataStore.edit { it[PrefsKeys.SERVER_ASSIGNED_ID] = id }
     }
@@ -120,6 +98,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun saveDisplayCurrency(ccy: String) {
         context.dataStore.edit { it[PrefsKeys.DISPLAY_CURRENCY] = ccy }
+    }
+
+    val selectedPortfolioId: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.SELECTED_PORTFOLIO_ID] ?: "main"
+    }
+
+    suspend fun saveSelectedPortfolioId(id: String) {
+        context.dataStore.edit { it[PrefsKeys.SELECTED_PORTFOLIO_ID] = id }
     }
 
 }

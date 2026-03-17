@@ -118,4 +118,35 @@ fun Route.configureSyncRoutes() {
         val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey, nonce)
         call.respondBytes(encrypted, ContentType.Application.OctetStream)
     }
+
+    /**
+     * Bulk sync endpoint — all portfolios in one encrypted payload.
+     * Response: AES-GCM encrypted JSON of AllSyncResponse
+     */
+    get("/api/sync/all") {
+        val deviceId = call.request.headers["X-Device-ID"]!!
+        val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
+
+        val roots = ManagedPortfolio.getAll().map { entry ->
+            BackupService.exportRoot(entry) { e ->
+                when (e.currency) {
+                    "USD" -> e.amount
+                    "P" -> {
+                        val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportRoot null)
+                            ?: return@exportRoot null
+                        e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
+                    }
+                    else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+                        ?.let { q ->
+                            (q.regularMarketPrice ?: q.previousClose
+                            ?: return@exportRoot null) * e.amount
+                        }
+                }
+            }
+        }
+        val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(roots))
+        val encrypted = AesGcm.encrypt(payload.toByteArray(Charsets.UTF_8), aesKey, nonce)
+        call.respondBytes(encrypted, ContentType.Application.OctetStream)
+    }
 }

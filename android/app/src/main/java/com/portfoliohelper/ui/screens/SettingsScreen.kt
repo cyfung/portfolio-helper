@@ -1,11 +1,6 @@
 package com.portfoliohelper.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.net.nsd.NsdServiceInfo
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,69 +8,34 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.SyncStatus
-import com.portfoliohelper.data.model.MarginAlertSettings
+import com.portfoliohelper.data.model.Portfolio
+import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.ui.theme.ext
 import kotlinx.coroutines.delay
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
-    val context = LocalContext.current
     val ext = MaterialTheme.ext
-    val currentAlerts by vm.marginAlertSettings.collectAsState()
     val syncServer by vm.syncServerInfo.collectAsState()
     val discoveredServers by vm.discoveredServers.collectAsState()
     val syncStatus by vm.syncStatus.collectAsState()
     val pnlMode by vm.pnlDisplayMode.collectAsState()
-
-    var enabled by remember(currentAlerts) { mutableStateOf(currentAlerts.enabled) }
-    var lowerPct by remember(currentAlerts) { mutableStateOf(currentAlerts.lowerPct.toString()) }
-    var upperPct by remember(currentAlerts) { mutableStateOf(currentAlerts.upperPct.toString()) }
-    var interval by remember(currentAlerts) { mutableStateOf(currentAlerts.checkIntervalMinutes.toString()) }
-
-    val saveSettings = {
-        val l = lowerPct.toDoubleOrNull()
-        val u = upperPct.toDoubleOrNull()
-        val i = interval.toIntOrNull()
-        if (l != null && u != null && i != null) {
-            val settings = MarginAlertSettings(
-                enabled = enabled,
-                lowerPct = l,
-                upperPct = u,
-                checkIntervalMinutes = i.coerceAtLeast(15)
-            )
-            if (settings != currentAlerts) {
-                vm.saveMarginAlertSettings(settings)
-            }
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            saveSettings()
-        } else {
-            enabled = false
-        }
-    }
-
-    LaunchedEffect(enabled, lowerPct, upperPct, interval) {
-        delay(500) // Debounce text updates
-        saveSettings()
-    }
+    val portfolios by vm.portfolios.collectAsState()
+    val portfolioAlerts by vm.portfolioAlerts.collectAsState()
 
     Column(
         modifier = Modifier
@@ -170,6 +130,17 @@ fun SettingsScreen(vm: MainViewModel) {
             )
         }
 
+        // ── Portfolios & Alerts Section (Local) ───────────────────────────────────
+        PortfoliosSection(
+            portfolios = portfolios,
+            alerts = portfolioAlerts,
+            onCreatePortfolio = { vm.createPortfolio(it) },
+            onRenamePortfolio = { id, name -> vm.renamePortfolio(id, name) },
+            onDeletePortfolio = { vm.deletePortfolio(it) },
+            onSaveAlerts = { vm.savePortfolioAlerts(it) },
+            ext = ext
+        )
+
         // ── Display Settings ───────────────────────────────────────────────────
         Surface(
             shape = RoundedCornerShape(10.dp),
@@ -179,81 +150,15 @@ fun SettingsScreen(vm: MainViewModel) {
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Display Settings", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary)
-                
+
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Stock P&L Currency", modifier = Modifier.weight(1f), color = ext.textSecondary, fontSize = 13.sp)
-                    
-                    TextButton(onClick = { 
+
+                    TextButton(onClick = {
                         vm.savePnlDisplayMode(if (pnlMode == "DISPLAY") "NATIVE" else "DISPLAY")
                     }) {
                         Text(if (pnlMode == "DISPLAY") "Portfolio" else "Native")
                     }
-                }
-            }
-        }
-
-        // ── Margin Alert section ──────────────────────────────────────────────
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = ext.bgElevated,
-            tonalElevation = 1.dp,
-            shadowElevation = 1.dp
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-
-                Text("Margin Alerts",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize   = 15.sp,
-                    color      = ext.textPrimary)
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier          = Modifier.fillMaxWidth()
-                ) {
-                    Text("Enable background check", modifier = Modifier.weight(1f),
-                        color = ext.textSecondary, fontSize = 13.sp)
-                    Switch(enabled, { newValue ->
-                        enabled = newValue
-                        if (newValue) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                            }
-                        }
-                    })
-                }
-
-                if (enabled) {
-                    OutlinedTextField(
-                        value        = lowerPct,
-                        onValueChange = { lowerPct = it },
-                        label        = { Text("Lower threshold (%)") },
-                        supportingText = { Text("Alert when margin drops below this", fontSize = 11.sp) },
-                        singleLine   =   true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier     = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value        = upperPct,
-                        onValueChange = { upperPct = it },
-                        label        = { Text("Upper threshold (%)") },
-                        supportingText = { Text("Alert when margin rises above this", fontSize = 11.sp) },
-                        singleLine   =   true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier     = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value        = interval,
-                        onValueChange = { interval = it },
-                        label        = { Text("Check interval (minutes)") },
-                        supportingText = { Text("Minimum 15 min recommended", fontSize = 11.sp) },
-                        singleLine   =   true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier     = Modifier.fillMaxWidth()
-                    )
                 }
             }
         }
@@ -274,52 +179,261 @@ fun SettingsScreen(vm: MainViewModel) {
 }
 
 @Composable
-fun ServerItem(server: NsdServiceInfo, onPair: () -> Unit) {
-    val ext = MaterialTheme.ext
+private fun PortfoliosSection(
+    portfolios: List<Portfolio>,
+    alerts: List<PortfolioMarginAlert>,
+    onCreatePortfolio: (String) -> Unit,
+    onRenamePortfolio: (String, String) -> Unit,
+    onDeletePortfolio: (String) -> Unit,
+    onSaveAlerts: (List<PortfolioMarginAlert>) -> Unit,
+    ext: com.portfoliohelper.ui.theme.ExtendedColors
+) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<Portfolio?>(null) }
+
+    data class RowState(
+        val id: String,
+        val name: String,
+        val lowerPct: String,
+        val upperPct: String
+    )
+
+    val rowStates = remember(alerts, portfolios) {
+        portfolios.map { p ->
+            val a = alerts.find { it.portfolioId == p.id }
+                ?: PortfolioMarginAlert(portfolioId = p.id)
+            val showLower = if (a.enabled && a.lowerPct > 0) a.lowerPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
+            val showUpper = if (a.enabled && a.upperPct > 0) a.upperPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
+            mutableStateOf(RowState(p.id, p.displayName, showLower, showUpper))
+        }
+    }
+
+    // Debounce save for alerts and names
+    LaunchedEffect(rowStates.map { it.value }) {
+        delay(800)
+        
+        // Save alerts
+        val updatedAlerts = rowStates.map { stateHolder ->
+            val s = stateHolder.value
+            val lower = s.lowerPct.toDoubleOrNull()?.takeIf { it > 0 } ?: -1.0
+            val upper = s.upperPct.toDoubleOrNull()?.takeIf { it > 0 } ?: -1.0
+            PortfolioMarginAlert(
+                portfolioId = s.id,
+                enabled = lower > 0 || upper > 0,
+                lowerPct = lower,
+                upperPct = upper
+            )
+        }
+        onSaveAlerts(updatedAlerts)
+
+        // Save names if changed
+        rowStates.forEach { stateHolder ->
+            val s = stateHolder.value
+            val original = portfolios.find { it.id == s.id }
+            if (original != null && s.name.isNotBlank() && s.name != original.displayName) {
+                onRenamePortfolio(s.id, s.name.trim())
+            }
+        }
+    }
+
     Surface(
-        onClick = onPair,
-        color = ext.bgSecondary,
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth()
+        shape = RoundedCornerShape(10.dp),
+        color = ext.bgElevated,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Portfolios & Alerts", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary)
+            Text(
+                "Directly edit portfolio names and margin thresholds. Changes are saved automatically.",
+                fontSize = 11.sp, color = ext.textTertiary
+            )
+
+            if (portfolios.isEmpty()) {
+                Text("No portfolios yet.", fontSize = 12.sp, color = ext.textTertiary)
+            } else {
+                // Header row
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Portfolio Name", modifier = Modifier.weight(2f), fontSize = 12.sp, color = ext.textSecondary, fontWeight = FontWeight.Medium)
+                    Text("Low%", modifier = Modifier.weight(1f), fontSize = 12.sp, color = ext.textSecondary, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+                    Text("High%", modifier = Modifier.weight(1f), fontSize = 12.sp, color = ext.textSecondary, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.width(48.dp))
+                }
+                HorizontalDivider()
+
+                rowStates.forEachIndexed { index, stateHolder ->
+                    val portfolio = portfolios.getOrNull(index) ?: return@forEachIndexed
+                    var state by stateHolder
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Name
+                        OutlinedTextField(
+                            value = state.name,
+                            onValueChange = { state = state.copy(name = it) },
+                            singleLine = true,
+                            modifier = Modifier.weight(2f),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = ext.actionPositive.copy(alpha = 0.5f),
+                                unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent
+                            )
+                        )
+                        
+                        // Low%
+                        OutlinedTextField(
+                            value = state.lowerPct,
+                            onValueChange = { state = state.copy(lowerPct = it) },
+                            placeholder = { Text("off", fontSize = 11.sp) },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, textAlign = TextAlign.Center),
+                            isError = state.lowerPct.isNotBlank() && state.lowerPct.toDoubleOrNull()?.let { it > 0 } != true
+                        )
+                        
+                        // High%
+                        OutlinedTextField(
+                            value = state.upperPct,
+                            onValueChange = { state = state.copy(upperPct = it) },
+                            placeholder = { Text("off", fontSize = 11.sp) },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp, textAlign = TextAlign.Center),
+                            isError = state.upperPct.isNotBlank() && state.upperPct.toDoubleOrNull()?.let { it > 0 } != true
+                        )
+
+                        // Delete
+                        IconButton(
+                            onClick = { deleteTarget = portfolio },
+                            enabled = portfolios.size > 1,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = if (portfolios.size > 1) ext.negative else ext.textTertiary.copy(alpha = 0.3f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            TextButton(
+                onClick = { showCreateDialog = true },
+                modifier = Modifier.align(Alignment.Start)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add Portfolio", color = ext.actionPositive)
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        CreatePortfolioDialog(
+            onDismiss = { showCreateDialog = false },
+            onCreate = { name ->
+                onCreatePortfolio(name)
+                showCreateDialog = false
+            }
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete Portfolio") },
+            text = { Text("Delete \"${target.displayName}\"? All positions and cash data will be removed.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeletePortfolio(target.id)
+                    deleteTarget = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CreatePortfolioDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Portfolio") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Portfolio name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (name.isNotBlank()) onCreate(name.trim()) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ServerItem(server: NsdServiceInfo, onClick: () -> Unit) {
+    val ext = MaterialTheme.ext
+    OutlinedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(containerColor = ext.bgElevated)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(server.serviceName, fontWeight = FontWeight.Medium, color = ext.textPrimary)
-                Text("${server.host?.hostAddress ?: "Resolving..."}:${server.port}", fontSize = 11.sp, color = ext.textSecondary)
+                Text(server.serviceName, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = ext.textPrimary)
+                Text("${server.host?.hostAddress ?: "Unknown IP"}:${server.port}", fontSize = 12.sp, color = ext.textTertiary)
             }
-            Text("Pair", color = ext.actionPositive, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text("Tap to pair", fontSize = 11.sp, color = ext.actionPositive)
         }
     }
 }
 
 @Composable
-fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var pin by remember { mutableStateOf("") }
-    
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Pair with $serverName") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Enter the 6-digit PIN displayed on your computer screen.")
+                Text("Enter the 6-digit PIN shown on the server.")
                 OutlinedTextField(
                     value = pin,
-                    onValueChange = { if (it.length <= 6) pin = it.filter { c -> c.isDigit() } },
+                    onValueChange = { if (it.length <= 6) pin = it },
                     label = { Text("PIN") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number)
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = { if (pin.length == 6) onConfirm(pin) },
-                enabled = pin.length == 6
-            ) {
+            TextButton(onClick = { onConfirm(pin) }, enabled = pin.length >= 4) {
                 Text("Pair")
             }
         },

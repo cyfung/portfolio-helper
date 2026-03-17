@@ -20,11 +20,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.portfoliohelper.PortfolioHelperApp
-import com.portfoliohelper.data.model.MarginAlertSettings
 import com.portfoliohelper.data.repository.PortfolioCalculator
-import com.portfoliohelper.data.repository.PrefsKeys
-import com.portfoliohelper.data.repository.dataStore
-import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 class MarginCheckWorker(
@@ -35,23 +31,25 @@ class MarginCheckWorker(
     companion object {
         const val WORK_NAME = "margin_check"
         const val CHANNEL_ID = "margin_alerts"
-        const val NOTIF_ID_ALERT = 1001
-        const val NOTIF_ID_ERROR = 1003
+        const val NOTIF_ID_ALERT_BASE = 1001
+        const val NOTIF_ID_ERROR_BASE = 2001
+        private const val INTERVAL_MINUTES = 15L
         private const val TAG = "MarginCheckWorker"
 
-        fun schedule(context: Context, settings: MarginAlertSettings) {
-            Log.d(TAG, "Scheduling worker. Enabled: ${settings.enabled}, Interval: ${settings.checkIntervalMinutes}")
+        fun schedule(context: Context, isAnyEnabled: Boolean) {
+            Log.d(TAG, "Scheduling worker. AnyEnabled: $isAnyEnabled")
             val wm = WorkManager.getInstance(context)
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            
-            if (!settings.enabled) {
+
+            if (!isAnyEnabled) {
                 wm.cancelUniqueWork(WORK_NAME)
-                nm.cancel(NOTIF_ID_ALERT)
-                nm.cancel(NOTIF_ID_ERROR)
+                nm.cancel(NOTIF_ID_ALERT_BASE)
+                nm.cancel(NOTIF_ID_ERROR_BASE)
                 return
             }
+
             val request = PeriodicWorkRequestBuilder<MarginCheckWorker>(
-                settings.checkIntervalMinutes.toLong(), TimeUnit.MINUTES
+                INTERVAL_MINUTES, TimeUnit.MINUTES
             ).setConstraints(
                 Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -64,7 +62,7 @@ class MarginCheckWorker(
                 request
             )
 
-            // For testing: trigger a one-time run immediately
+            // Trigger a one-time run immediately for testing
             Log.d(TAG, "Enqueuing one-time test run")
             wm.enqueue(OneTimeWorkRequestBuilder<MarginCheckWorker>().build())
         }
@@ -73,79 +71,72 @@ class MarginCheckWorker(
     override suspend fun doWork(): Result {
         Log.d(TAG, "Worker execution started")
         val app = context.applicationContext as PortfolioHelperApp
-        val prefs = context.dataStore.data.first()
 
-        // Read alert settings
-        val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
-        if (!enabled) return Result.success()
+        // Read all portfolio margin alerts from DB
+        val allAlerts = app.database.portfolioMarginAlertDao().getAll()
+        // An alert is active if at least one threshold is set (> 0)
+        val enabledAlerts = allAlerts.filter { it.lowerPct > 0 || it.upperPct > 0 }
+        if (enabledAlerts.isEmpty()) return Result.success()
 
-        // 1. Background Sync: Attempt to get latest positions from the server
+        // Background sync: attempt to get latest data from server
         try {
             Log.d(TAG, "Attempting background sync with portfolio server...")
             app.syncRepo.sync()
             Log.i(TAG, "Background sync successful")
         } catch (e: Exception) {
-            Log.w(TAG, "Background sync failed: ${e.message}. Falling back to cached database data.")
+            Log.w(TAG, "Background sync failed: ${e.message}. Using cached database data.")
         }
-
-        val lowerPct = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
-        val upperPct = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
-
-        // 2. Read portfolio data from DB
-        val positions = app.database.positionDao().getAll()
-        val cashEntries = app.database.cashDao().getAll()
-        
-        if (positions.isEmpty() && cashEntries.isEmpty()) {
-            Log.d(TAG, "No data found in database. Success.")
-            return Result.success()
-        }
-
-        // 3. Fetch/Persist Market Prices using centralized Calculator logic
-        val prices = PortfolioCalculator.fetchAndCacheMarketData(app.database, positions, cashEntries)
-
-        // 4. Data Readiness Check & Computation
-        val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices)
-        
-        if (!totals.isReady) {
-            val symbols = positions.map { it.symbol }.distinct()
-            val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
-            val missingSymbols = symbols.filter { it !in prices }
-            val missingCurrencies = currencies.filter { "${it}USD=X" !in prices }
-            val missing = (missingSymbols + missingCurrencies).joinToString(", ")
-            
-            Log.w(TAG, "Data missing for: $missing. Showing error alert.")
-            ensureChannel()
-            notify(
-                NOTIF_ID_ERROR,
-                "⚠️ Margin Check Error",
-                "Missing data for: $missing. Check internet or server sync."
-            )
-            return Result.success()
-        }
-
-        // Clear error if data is now ready
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.cancel(NOTIF_ID_ERROR)
-
-        val marginPct = totals.marginPct
-        Log.i(TAG, "Computed Margin %: $marginPct")
 
         ensureChannel()
 
-        if (marginPct < lowerPct) {
-            notify(
-                NOTIF_ID_ALERT,
-                "⚠️ Margin Low",
-                "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, lowerPct)
-            )
-        } else if (marginPct > upperPct) {
-            notify(
-                NOTIF_ID_ALERT,
-                "⚠️ Margin High",
-                "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, upperPct)
-            )
-        } else {
-            nm.cancel(NOTIF_ID_ALERT)
+        enabledAlerts.forEachIndexed { index, alert ->
+            val portfolioId = alert.portfolioId
+            val positions = app.database.positionDao().getAll(portfolioId)
+            val cashEntries = app.database.cashDao().getAll(portfolioId)
+
+            if (positions.isEmpty() && cashEntries.isEmpty()) {
+                Log.d(TAG, "No data for portfolio $portfolioId. Skipping.")
+                return@forEachIndexed
+            }
+
+            val prices = PortfolioCalculator.fetchAndCacheMarketData(app.database, positions, cashEntries)
+            val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices)
+
+            val alertNotifId = NOTIF_ID_ALERT_BASE + index
+            val errorNotifId = NOTIF_ID_ERROR_BASE + index
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            if (!totals.isReady) {
+                val symbols = positions.map { it.symbol }.distinct()
+                val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+                val missingSymbols = symbols.filter { it !in prices }
+                val missingCurrencies = currencies.filter { "${it}USD=X" !in prices }
+                val missing = (missingSymbols + missingCurrencies).joinToString(", ")
+                Log.w(TAG, "Data missing for $portfolioId: $missing")
+                notify(errorNotifId, "⚠️ Margin Check Error ($portfolioId)", "Missing data: $missing")
+                return@forEachIndexed
+            }
+
+            nm.cancel(errorNotifId)
+
+            val marginPct = totals.marginPct
+            Log.i(TAG, "Portfolio $portfolioId margin: $marginPct%")
+
+            val lowerActive = alert.lowerPct > 0
+            val upperActive = alert.upperPct > 0
+            when {
+                lowerActive && marginPct < alert.lowerPct -> notify(
+                    alertNotifId,
+                    "⚠️ Margin Low — $portfolioId",
+                    "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, alert.lowerPct)
+                )
+                upperActive && marginPct > alert.upperPct -> notify(
+                    alertNotifId,
+                    "⚠️ Margin High — $portfolioId",
+                    "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, alert.upperPct)
+                )
+                else -> nm.cancel(alertNotifId)
+            }
         }
 
         return Result.success()
@@ -191,15 +182,9 @@ class BootReceiver : BroadcastReceiver() {
 
 class ReScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
-        val prefs = applicationContext.dataStore.data.first()
-        val enabled = prefs[PrefsKeys.MARGIN_ALERT_ENABLED] ?: false
-        val interval = prefs[PrefsKeys.MARGIN_ALERT_INTERVAL] ?: 15
-        val lower = (prefs[PrefsKeys.MARGIN_ALERT_LOWER_PCT] ?: 20f).toDouble()
-        val upper = (prefs[PrefsKeys.MARGIN_ALERT_UPPER_PCT] ?: 50f).toDouble()
-        MarginCheckWorker.schedule(
-            applicationContext,
-            MarginAlertSettings(enabled, lower, upper, interval)
-        )
+        val app = applicationContext as PortfolioHelperApp
+        val anyEnabled = app.database.portfolioMarginAlertDao().getAll().any { it.lowerPct > 0 || it.upperPct > 0 }
+        MarginCheckWorker.schedule(applicationContext, anyEnabled)
         return Result.success()
     }
 }

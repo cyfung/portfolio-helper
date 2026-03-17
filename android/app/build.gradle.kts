@@ -33,7 +33,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             
             // This enables the 'installRelease' task
-//            signingConfig = signingConfigs.getByName("debug")
+        }
+        debug {
+            isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

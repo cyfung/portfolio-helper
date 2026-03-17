@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -24,6 +27,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +39,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.ui.components.DynamicCurrencySwitcher
 import com.portfoliohelper.ui.screens.CashScreen
 import com.portfoliohelper.ui.screens.GroupsScreen
@@ -54,7 +61,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "onCreate started")
         enableEdgeToEdge()
-        
+
         setContent {
             PortfolioHelperTheme {
                 PortfolioHelperApp(vm)
@@ -74,13 +81,58 @@ val navItems = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun PortfolioSelectorTitle(
+    portfolios: List<Portfolio>,
+    selectedId: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = portfolios.find { it.id == selectedId } ?: portfolios.firstOrNull()
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.menuAnchor(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Text(
+                text = selected?.displayName ?: selectedId,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+        }
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            portfolios.forEach { portfolio ->
+                DropdownMenuItem(
+                    text = { Text(portfolio.displayName) },
+                    onClick = {
+                        onSelect(portfolio.id)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun PortfolioHelperApp(vm: MainViewModel) {
     val navController = rememberNavController()
     val ext = MaterialTheme.ext
-    
+
     val selectedCurrency by vm.displayCurrency.collectAsState()
     val cashEntries by vm.cashEntries.collectAsState()
-    
+    val portfolios by vm.portfolios.collectAsState()
+    val selectedPortfolioId by vm.selectedPortfolioId.collectAsState()
+
     // Dynamic list taking currency from Cash, with USD always first
     val currencies = (listOf("USD") + cashEntries.map { it.currency }).distinct()
 
@@ -89,18 +141,28 @@ fun PortfolioHelperApp(vm: MainViewModel) {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = navBackStackEntry?.destination
             val currentItem = navItems.find { item ->
-                currentDestination?.hierarchy?.any { 
-                    it.route?.contains(item.route::class.simpleName ?: "") == true 
+                currentDestination?.hierarchy?.any {
+                    it.route?.contains(item.route::class.simpleName ?: "") == true
                 } == true
             }
+            val isSettingsScreen = currentItem?.route is SettingsRoute
+
             TopAppBar(
-                title = { 
-                    Text(
-                        text = currentItem?.label ?: "Portfolio Helper",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    ) 
+                title = {
+                    if (!isSettingsScreen && portfolios.size > 1) {
+                        PortfolioSelectorTitle(
+                            portfolios = portfolios,
+                            selectedId = selectedPortfolioId,
+                            onSelect = vm::selectPortfolio
+                        )
+                    } else {
+                        Text(
+                            text = currentItem?.label ?: "Portfolio Helper",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
                 },
                 actions = {
                     DynamicCurrencySwitcher(
@@ -126,8 +188,8 @@ fun PortfolioHelperApp(vm: MainViewModel) {
                     NavigationBarItem(
                         icon = { Icon(item.icon, contentDescription = item.label) },
                         label = { Text(item.label) },
-                        selected = currentDestination?.hierarchy?.any { 
-                            it.route?.contains(item.route::class.simpleName ?: "") == true 
+                        selected = currentDestination?.hierarchy?.any {
+                            it.route?.contains(item.route::class.simpleName ?: "") == true
                         } == true,
                         onClick = {
                             navController.navigate(item.route) {

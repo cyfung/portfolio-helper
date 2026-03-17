@@ -4,12 +4,21 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
+// ── Portfolio ─────────────────────────────────────────────────────────────────
+
+@Entity(tableName = "portfolios")
+data class Portfolio(
+    @PrimaryKey val id: String,
+    val displayName: String
+)
+
 // ── Portfolio position ────────────────────────────────────────────────────────
 
-@Entity(tableName = "positions")
+@Entity(tableName = "positions", primaryKeys = ["portfolioId", "symbol"])
 @Serializable
 data class Position(
-    @PrimaryKey val symbol: String,
+    val portfolioId: String = "main",
+    val symbol: String,
     val quantity: Double,
     val targetWeight: Double,     // % 0–100
     val groups: String = "",      // semicolon-separated "multiplier name" entries
@@ -32,6 +41,7 @@ data class GroupRow(
 @Serializable
 data class CashEntry(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val portfolioId: String = "main",
     val label: String,
     val currency: String,       // ISO code e.g. "USD", "HKD"
     val amount: Double,         // negative = margin/loan
@@ -50,13 +60,14 @@ data class MarketPrice(
     val currency: String? = null
 )
 
-// ── Margin alert settings ─────────────────────────────────────────────────────
+// ── Per-portfolio margin alert settings ───────────────────────────────────────
 
-data class MarginAlertSettings(
+@Entity(tableName = "portfolio_margin_alerts")
+data class PortfolioMarginAlert(
+    @PrimaryKey val portfolioId: String,
     val enabled: Boolean = false,
     val lowerPct: Double = 20.0,   // alert when margin% drops below this
-    val upperPct: Double = 50.0,   // alert when margin% rises above this
-    val checkIntervalMinutes: Int = 15
+    val upperPct: Double = 50.0    // alert when margin% rises above this
 )
 
 // ── Allocation modes ──────────────────────────────────────────────────────────

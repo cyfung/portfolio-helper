@@ -25,6 +25,9 @@ import java.util.concurrent.*
 import java.util.zip.*
 
 @Serializable
+data class AllSyncResponse(val portfolios: List<BackupRoot>)
+
+@Serializable
 data class BackupRoot(
     val version: Int = 1,
     val portfolioSlug: String,
@@ -175,6 +178,9 @@ object BackupService {
 
     fun exportJson(portfolio: ManagedPortfolio, resolveUsd: (CashEntry) -> Double?): String =
         serializeToJson(portfolio, resolveUsd)
+
+    fun exportRoot(portfolio: ManagedPortfolio, resolveUsd: (CashEntry) -> Double?): BackupRoot =
+        appJson.decodeFromString(serializeToJson(portfolio, resolveUsd))
 
     fun parseImportFile(bytes: ByteArray, filename: String): ImportResult {
         val lower = filename.lowercase()
