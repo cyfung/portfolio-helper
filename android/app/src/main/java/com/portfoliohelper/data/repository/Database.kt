@@ -46,6 +46,9 @@ interface PortfolioMarginAlertDao {
 
     @Query("DELETE FROM portfolio_margin_alerts WHERE portfolioId = :portfolioId")
     suspend fun delete(portfolioId: Int)
+
+    @Query("DELETE FROM portfolio_margin_alerts WHERE portfolioId NOT IN (SELECT serialId FROM portfolios)")
+    suspend fun deleteOrphans()
 }
 
 // ── Position DAO ──────────────────────────────────────────────────────────────

@@ -274,6 +274,9 @@ class SyncRepository(
                 }
             }
 
+            // Cleanup any orphan alerts where the portfolio no longer exists
+            db.portfolioMarginAlertDao().deleteOrphans()
+
             // Seed sqlite_sequence so locally-created portfolios get IDs above server's max
             if (maxSerialId > 0) {
                 db.openHelper.writableDatabase.execSQL(
