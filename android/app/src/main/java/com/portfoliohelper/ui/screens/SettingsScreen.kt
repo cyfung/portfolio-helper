@@ -249,6 +249,10 @@ private fun PortfoliosSection(
         }
     }
 
+    val minPortfolioId = remember(portfolios) {
+        portfolios.minOfOrNull { it.serialId } ?: -1
+    }
+
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = ext.bgElevated,
@@ -277,6 +281,7 @@ private fun PortfoliosSection(
                 rowStates.forEachIndexed { index, stateHolder ->
                     val portfolio = portfolios.getOrNull(index) ?: return@forEachIndexed
                     var state by stateHolder
+                    val isDeletable = portfolios.size > 1 && portfolio.serialId != minPortfolioId
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -322,13 +327,13 @@ private fun PortfoliosSection(
                         // Delete
                         IconButton(
                             onClick = { deleteTarget = portfolio },
-                            enabled = portfolios.size > 1,
+                            enabled = isDeletable,
                             modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Delete",
-                                tint = if (portfolios.size > 1) ext.negative else ext.textTertiary.copy(alpha = 0.3f)
+                                tint = if (isDeletable) ext.negative else ext.textTertiary.copy(alpha = 0.3f)
                             )
                         }
                     }
