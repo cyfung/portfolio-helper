@@ -104,7 +104,6 @@ class ManagedPortfolio(
 
     // TWS Account shortcut
     fun getTwsAccount(): String? = getConfig("twsAccount")
-    fun saveTwsAccount(account: String) = saveConfig("twsAccount", account)
 
     companion object {
         /** All portfolios ordered by serial id (default/oldest first). */
@@ -114,15 +113,6 @@ class ManagedPortfolio(
                 .map { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
         }
 
-        /** The portfolio with the smallest serial id — the "default" portfolio. */
-        fun getDefault(): ManagedPortfolio = transaction {
-            PortfoliosTable.selectAll()
-                .orderBy(PortfoliosTable.id to SortOrder.ASC)
-                .limit(1)
-                .single()
-                .let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
-        }
-
         /** Look up a portfolio by its URL slug. Returns null if not found. */
         fun getBySlug(slug: String): ManagedPortfolio? = transaction {
             val s = slug
@@ -130,10 +120,6 @@ class ManagedPortfolio(
                 .where { PortfoliosTable.slug eq s }
                 .singleOrNull()
                 ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
-        }
-
-        fun hasMultiple(): Boolean = transaction {
-            PortfoliosTable.selectAll().count() > 1
         }
 
         /** Insert a new portfolio row. Returns the new instance. Caller must ensure slug is unique. */
@@ -151,7 +137,7 @@ class ManagedPortfolio(
         }
     }
 
-    /** Rename this portfolio to a new slug derived from [newName]. Caller must ensure uniqueness. */
+    /** Rename this portfolio to [newSlug]. Caller must ensure uniqueness. */
     fun rename(newSlug: String) {
         val pid = serialId
         transaction {

@@ -238,7 +238,7 @@ fun Application.configureRouting() {
             val saved = transaction {
                 val takenNames = SavedBacktestPortfoliosTable.selectAll()
                     .map { it[SavedBacktestPortfoliosTable.name] }.toSet()
-                var finalName = name;
+                var finalName = name
                 var counter = 2
                 while (finalName in takenNames) {
                     finalName = "$name ($counter)"; counter++
