@@ -8,7 +8,6 @@ import com.portfoliohelper.service.db.GlobalSettingsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
-import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -946,20 +945,7 @@ fun Application.configureRouting() {
             val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
             val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
                 ?: return@get call.respond(HttpStatusCode.NotFound)
-            val json = BackupService.exportJson(portfolioEntry) { e ->
-                when (e.currency) {
-                    "USD" -> e.amount
-                    "P" -> {
-                        val ref =
-                            ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
-                                ?: return@exportJson null
-                        e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
-                    }
-
-                    else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
-                        ?.regularMarketPrice?.let { e.amount * it }
-                }
-            }
+            val json = BackupService.exportJson(portfolioEntry)
             val filename = "backup-${portfolioEntry.slug}.json"
             call.response.headers.append(
                 HttpHeaders.ContentDisposition,

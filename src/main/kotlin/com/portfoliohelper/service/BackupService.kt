@@ -4,6 +4,7 @@ import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PositionsTable
+import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +26,7 @@ import java.util.concurrent.*
 import java.util.zip.*
 
 @Serializable
-data class AllSyncResponse(val portfolios: List<BackupRoot>)
+data class AllSyncResponse(val portfolios: Map<Int, BackupRoot>)
 
 @Serializable
 data class BackupRoot(
@@ -81,10 +82,10 @@ object BackupService {
     fun saveToDb(
         portfolio: ManagedPortfolio,
         label: String = "",
-        resolveUsd: ((CashEntry) -> Double?)? = null
+        resolveUsd: Boolean = false
     ) {
         // Hash computed without snapshotUsd so P-entry price fluctuations don't trigger spurious backups
-        val hashJson = serializeToJson(portfolio, resolveUsd = null)
+        val hashJson = serializeToJson(portfolio, resolveUsd = false)
         val hash = sha256(hashJson)
         // On first call after startup, seed the cache from the most recent DB backup so we don't
         // create a duplicate row just because the in-memory map was empty.
@@ -94,7 +95,7 @@ object BackupService {
             logger.debug("No changes for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}, backup skipped")
             return
         }
-        val storeJson = if (resolveUsd != null) serializeToJson(portfolio, resolveUsd) else hashJson
+        val storeJson = if (resolveUsd) serializeToJson(portfolio, true) else hashJson
         val nowMillis = System.currentTimeMillis()
         transaction {
             PortfolioBackupsTable.insert {
@@ -176,11 +177,11 @@ object BackupService {
         logger.info("Restored '${portfolio.slug}' from DB backup $backupId")
     }
 
-    fun exportJson(portfolio: ManagedPortfolio, resolveUsd: (CashEntry) -> Double?): String =
-        serializeToJson(portfolio, resolveUsd)
+    fun exportJson(portfolio: ManagedPortfolio): String =
+        serializeToJson(portfolio, true)
 
-    fun exportRoot(portfolio: ManagedPortfolio, resolveUsd: (CashEntry) -> Double?): BackupRoot =
-        appJson.decodeFromString(serializeToJson(portfolio, resolveUsd))
+    fun exportRoot(portfolio: ManagedPortfolio): BackupRoot =
+        root(portfolio, true)
 
     fun parseImportFile(bytes: ByteArray, filename: String): ImportResult {
         val lower = filename.lowercase()
@@ -217,8 +218,33 @@ object BackupService {
 
     private fun serializeToJson(
         portfolio: ManagedPortfolio,
-        resolveUsd: ((CashEntry) -> Double?)? = null
+        resolveUsd: Boolean = false
     ): String {
+        val root = root(portfolio, resolveUsd)
+        return appJson.encodeToString(root)
+    }
+
+    private fun resolveUsd(e: CashEntry): Double? {
+        return when (e.currency) {
+            "USD" -> e.amount
+            "P" -> {
+                val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
+                    ?: return null
+                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
+            }
+
+            else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+                ?.let { q ->
+                    (q.regularMarketPrice ?: q.previousClose
+                    ?: return null) * e.amount
+                }
+        }
+    }
+
+    private fun root(
+        portfolio: ManagedPortfolio,
+        resolveUsd: Boolean = false
+    ): BackupRoot {
         val pid = portfolio.serialId
         val stocks = transaction {
             PositionsTable.selectAll()
@@ -247,7 +273,7 @@ object BackupService {
                 }
         }
         val cashBackup = cashEntries.map { e ->
-            val snapshotUsd = if (e.currency == "P") resolveUsd?.invoke(e) else null
+            val snapshotUsd = if (e.currency == "P" && resolveUsd) resolveUsd(e) else null
             BackupCash(
                 key = e.key,
                 label = e.label,
@@ -263,7 +289,7 @@ object BackupService {
             stocks = stocks,
             cash = cashBackup
         )
-        return appJson.encodeToString(root)
+        return root
     }
 
     private fun sha256(input: String): String {

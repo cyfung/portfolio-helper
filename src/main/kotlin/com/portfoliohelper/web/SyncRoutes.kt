@@ -1,7 +1,6 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.service.*
-import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -98,22 +97,7 @@ fun Route.configureSyncRoutes() {
                 "Device not found or key expired"
             )
 
-        val json = BackupService.exportJson(entry) { e ->
-            when (e.currency) {
-                "USD" -> e.amount
-                "P" -> {
-                    val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportJson null)
-                        ?: return@exportJson null
-                    e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
-                }
-
-                else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
-                    ?.let { q ->
-                        (q.regularMarketPrice ?: q.previousClose
-                        ?: return@exportJson null) * e.amount
-                    }
-            }
-        }
+        val json = BackupService.exportJson(entry)
 
         val encrypted = AesGcm.encrypt(json.toByteArray(Charsets.UTF_8), aesKey, nonce)
         call.respondBytes(encrypted, ContentType.Application.OctetStream)
@@ -128,22 +112,8 @@ fun Route.configureSyncRoutes() {
         val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
             ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
 
-        val roots = ManagedPortfolio.getAll().map { entry ->
-            BackupService.exportRoot(entry) { e ->
-                when (e.currency) {
-                    "USD" -> e.amount
-                    "P" -> {
-                        val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return@exportRoot null)
-                            ?: return@exportRoot null
-                        e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
-                    }
-                    else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
-                        ?.let { q ->
-                            (q.regularMarketPrice ?: q.previousClose
-                            ?: return@exportRoot null) * e.amount
-                        }
-                }
-            }
+        val roots = ManagedPortfolio.getAll().associate { entry ->
+            entry.serialId to BackupService.exportRoot(entry)
         }
         val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(roots))
         val encrypted = AesGcm.encrypt(payload.toByteArray(Charsets.UTF_8), aesKey, nonce)
