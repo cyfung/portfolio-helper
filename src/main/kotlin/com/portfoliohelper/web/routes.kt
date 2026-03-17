@@ -57,6 +57,103 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
 
 private val cashKeyKnownFlags = setOf("M")
 
+private data class PositionRow(
+    val symbol: String,
+    val amount: Double,
+    val targetWeight: Double,
+    val letf: String,
+    val groups: String
+)
+
+private fun parsePositionRows(arr: JsonArray): List<PositionRow> = arr.mapNotNull { el ->
+    val obj = el.jsonObject
+    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
+    val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
+    PositionRow(
+        symbol = symbol,
+        amount = amount,
+        targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
+        letf = obj["letf"]?.jsonPrimitive?.content ?: "",
+        groups = obj["groups"]?.jsonPrimitive?.content ?: ""
+    )
+}
+
+private fun replacePositions(portfolioId: Int, rows: List<PositionRow>) {
+    PositionsTable.deleteWhere { PositionsTable.portfolioId eq portfolioId }
+    PositionsTable.batchInsert(rows) { row ->
+        this[PositionsTable.portfolioId] = portfolioId
+        this[PositionsTable.symbol] = row.symbol
+        this[PositionsTable.amount] = row.amount
+        this[PositionsTable.targetWeight] = row.targetWeight
+        this[PositionsTable.letf] = row.letf
+        this[PositionsTable.groups] = row.groups
+    }
+}
+
+private fun replaceCash(portfolioId: Int, entries: List<com.portfoliohelper.model.CashEntry>) {
+    CashTable.deleteWhere { CashTable.portfolioId eq portfolioId }
+    CashTable.batchInsert(entries) { entry ->
+        this[CashTable.portfolioId] = portfolioId
+        this[CashTable.label] = entry.label
+        this[CashTable.currency] = entry.currency
+        this[CashTable.marginFlag] = entry.marginFlag
+        this[CashTable.amount] = entry.amount
+        this[CashTable.portfolioRef] = entry.portfolioRef
+    }
+}
+
+private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
+    json["portfolios"]?.jsonArray?.map { pel ->
+        val pObj = pel.jsonObject
+        PortfolioConfig(
+            label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
+            tickers = pObj["tickers"]?.jsonArray?.map { el ->
+                val obj = el.jsonObject
+                TickerWeight(
+                    ticker = obj["ticker"]!!.jsonPrimitive.content,
+                    weight = obj["weight"]!!.jsonPrimitive.double
+                )
+            } ?: emptyList(),
+            rebalanceStrategy = runCatching {
+                RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
+            }.getOrDefault(RebalanceStrategy.YEARLY),
+            marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
+                val mObj = mel.jsonObject
+                MarginConfig(
+                    marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                    marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+                    marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                    marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                    upperRebalanceMode = runCatching {
+                        MarginRebalanceMode.valueOf(
+                            mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                        )
+                    }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
+                    lowerRebalanceMode = runCatching {
+                        MarginRebalanceMode.valueOf(
+                            mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                        )
+                    }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
+                )
+            } ?: emptyList(),
+            includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
+        )
+    } ?: emptyList()
+
+private suspend fun ApplicationCall.respondOk() =
+    respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+
+private suspend fun ApplicationCall.respondApiError(
+    e: Exception,
+    status: HttpStatusCode = HttpStatusCode.InternalServerError
+) = respondText(
+    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+    ContentType.Application.Json,
+    status
+)
+
+private fun String.toSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+
 private val LOAN_COMPARE_FIELDS = listOf(
     "loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows"
 )
@@ -225,7 +322,7 @@ fun Application.configureRouting() {
                 HttpStatusCode.BadRequest
             )
             transaction { SavedBacktestPortfoliosTable.deleteWhere { SavedBacktestPortfoliosTable.name eq name } }
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            call.respondOk()
         }
 
         post("/api/backtest/savedPortfolios") {
@@ -264,49 +361,7 @@ fun Application.configureRouting() {
                 val toDate =
                     json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
-                val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
-                    val pObj = pel.jsonObject
-                    PortfolioConfig(
-                        label = pObj["label"]?.jsonPrimitive?.contentOrNull
-                            ?: "Portfolio",
-                        tickers = pObj["tickers"]?.jsonArray?.map { el ->
-                            val obj = el.jsonObject
-                            TickerWeight(
-                                ticker = obj["ticker"]!!.jsonPrimitive.content,
-                                weight = obj["weight"]!!.jsonPrimitive.double
-                            )
-                        } ?: emptyList(),
-                        rebalanceStrategy = runCatching {
-                            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
-                        }.getOrDefault(RebalanceStrategy.YEARLY),
-                        marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
-                            val mObj = mel.jsonObject
-                            MarginConfig(
-                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.0,
-                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.015,
-                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.05,
-                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.05,
-                                upperRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull
-                                            ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-                                lowerRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull
-                                            ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
-                            )
-                        } ?: emptyList(),
-                        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull
-                            ?: true)
-                } ?: emptyList()
+                val portfolios = parsePortfolioConfigs(json)
 
                 val result =
                     BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
@@ -375,49 +430,7 @@ fun Application.configureRouting() {
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
 
-                val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
-                    val pObj = pel.jsonObject
-                    PortfolioConfig(
-                        label = pObj["label"]?.jsonPrimitive?.contentOrNull
-                            ?: "Portfolio",
-                        tickers = pObj["tickers"]?.jsonArray?.map { el ->
-                            val obj = el.jsonObject
-                            TickerWeight(
-                                ticker = obj["ticker"]!!.jsonPrimitive.content,
-                                weight = obj["weight"]!!.jsonPrimitive.double
-                            )
-                        } ?: emptyList(),
-                        rebalanceStrategy = runCatching {
-                            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
-                        }.getOrDefault(RebalanceStrategy.YEARLY),
-                        marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
-                            val mObj = mel.jsonObject
-                            MarginConfig(
-                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.0,
-                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.015,
-                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.05,
-                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.05,
-                                upperRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull
-                                            ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-                                lowerRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull
-                                            ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
-                            )
-                        } ?: emptyList(),
-                        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull
-                            ?: true)
-                } ?: emptyList()
+                val portfolios = parsePortfolioConfigs(json)
 
                 val request = MonteCarloRequest(
                     fromDate,
@@ -489,52 +502,16 @@ fun Application.configureRouting() {
                         HttpStatusCode.NotFound
                     )
 
-                val body = call.receiveText()
-                val updates = Json.parseToJsonElement(body).jsonArray
+                val rows = parsePositionRows(Json.parseToJsonElement(call.receiveText()).jsonArray)
 
-                data class PositionRow(
-                    val symbol: String,
-                    val amount: Double,
-                    val targetWeight: Double,
-                    val letf: String,
-                    val groups: String
-                )
-
-                val rows = updates.mapNotNull { el ->
-                    val obj = el.jsonObject
-                    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
-                    PositionRow(
-                        symbol = symbol,
-                        amount = amount,
-                        targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
-                        letf = obj["letf"]?.jsonPrimitive?.content ?: "",
-                        groups = obj["groups"]?.jsonPrimitive?.content ?: ""
-                    )
-                }
-
-                transaction {
-                    PositionsTable.deleteWhere { PositionsTable.portfolioId eq portfolioEntry.serialId }
-                    PositionsTable.batchInsert(rows) { row ->
-                        this[PositionsTable.portfolioId] = portfolioEntry.serialId
-                        this[PositionsTable.symbol] = row.symbol
-                        this[PositionsTable.amount] = row.amount
-                        this[PositionsTable.targetWeight] = row.targetWeight
-                        this[PositionsTable.letf] = row.letf
-                        this[PositionsTable.groups] = row.groups
-                    }
-                }
+                transaction { replacePositions(portfolioEntry.serialId, rows) }
 
                 DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -547,9 +524,7 @@ fun Application.configureRouting() {
                         HttpStatusCode.NotFound
                     )
 
-                val body = call.receiveText()
-                val updates = Json.parseToJsonElement(body).jsonArray
-
+                val updates = Json.parseToJsonElement(call.receiveText()).jsonArray
                 val entries = updates.mapNotNull { el ->
                     val obj = el.jsonObject
                     val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -557,27 +532,13 @@ fun Application.configureRouting() {
                     parseCashEntryFromKeyValue(key, value)
                 }
 
-                transaction {
-                    CashTable.deleteWhere { CashTable.portfolioId eq portfolioEntry.serialId }
-                    CashTable.batchInsert(entries) { entry ->
-                        this[CashTable.portfolioId] = portfolioEntry.serialId
-                        this[CashTable.label] = entry.label
-                        this[CashTable.currency] = entry.currency
-                        this[CashTable.marginFlag] = entry.marginFlag
-                        this[CashTable.amount] = entry.amount
-                        this[CashTable.portfolioRef] = entry.portfolioRef
-                    }
-                }
+                transaction { replaceCash(portfolioEntry.serialId, entries) }
 
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -590,30 +551,8 @@ fun Application.configureRouting() {
                         HttpStatusCode.NotFound
                     )
 
-                val body = call.receiveText()
-                val root = Json.parseToJsonElement(body).jsonObject
-
-                data class PositionRow(
-                    val symbol: String,
-                    val amount: Double,
-                    val targetWeight: Double,
-                    val letf: String,
-                    val groups: String
-                )
-
-                val stockRows = root["stocks"]?.jsonArray?.mapNotNull { el ->
-                    val obj = el.jsonObject
-                    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                    val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
-                    PositionRow(
-                        symbol = symbol,
-                        amount = amount,
-                        targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
-                        letf = obj["letf"]?.jsonPrimitive?.content ?: "",
-                        groups = obj["groups"]?.jsonPrimitive?.content ?: ""
-                    )
-                } ?: emptyList()
-
+                val root = Json.parseToJsonElement(call.receiveText()).jsonObject
+                val stockRows = root["stocks"]?.jsonArray?.let { parsePositionRows(it) } ?: emptyList()
                 val cashEntries = root["cash"]?.jsonArray?.mapNotNull { el ->
                     val obj = el.jsonObject
                     val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -625,24 +564,8 @@ fun Application.configureRouting() {
 
                 val pid = portfolioEntry.serialId
                 transaction {
-                    PositionsTable.deleteWhere { PositionsTable.portfolioId eq pid }
-                    PositionsTable.batchInsert(stockRows) { row ->
-                        this[PositionsTable.portfolioId] = pid
-                        this[PositionsTable.symbol] = row.symbol
-                        this[PositionsTable.amount] = row.amount
-                        this[PositionsTable.targetWeight] = row.targetWeight
-                        this[PositionsTable.letf] = row.letf
-                        this[PositionsTable.groups] = row.groups
-                    }
-                    CashTable.deleteWhere { CashTable.portfolioId eq pid }
-                    CashTable.batchInsert(cashEntries) { entry ->
-                        this[CashTable.portfolioId] = pid
-                        this[CashTable.label] = entry.label
-                        this[CashTable.currency] = entry.currency
-                        this[CashTable.marginFlag] = entry.marginFlag
-                        this[CashTable.amount] = entry.amount
-                        this[CashTable.portfolioRef] = entry.portfolioRef
-                    }
+                    replacePositions(pid, stockRows)
+                    replaceCash(pid, cashEntries)
                     if (!dividendStartDate.isNullOrBlank()) {
                         PortfolioCfgTable.upsert {
                             it[PortfolioCfgTable.portfolioId] = pid
@@ -659,13 +582,9 @@ fun Application.configureRouting() {
                 DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -699,13 +618,9 @@ fun Application.configureRouting() {
                         it[GlobalSettingsTable.value] = JsonArray(existing.take(5)).toString()
                     }
                 }
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -741,13 +656,9 @@ fun Application.configureRouting() {
                     }
                     if (json.containsKey("dividendStartDate")) DividendService.invalidate(portfolioEntry)
                 }
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -758,7 +669,7 @@ fun Application.configureRouting() {
                 val json = Json.parseToJsonElement(body).jsonObject
                 val name = json["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                 if (name.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
-                val slug = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                val slug = name.toSlug()
                 if (slug.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
                 if (ManagedPortfolio.getBySlug(slug) != null) {
                     return@post call.respondText(
@@ -772,10 +683,7 @@ fun Application.configureRouting() {
                     ContentType.Application.Json
                 )
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -789,7 +697,7 @@ fun Application.configureRouting() {
                 val json = Json.parseToJsonElement(body).jsonObject
                 val newName = json["name"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                 if (newName.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
-                val newSlug = newName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                val newSlug = newName.toSlug()
                 if (newSlug.isBlank()) return@post call.respond(HttpStatusCode.BadRequest)
                 if (newSlug != portfolioId && ManagedPortfolio.getBySlug(newSlug) != null) {
                     return@post call.respondText(
@@ -804,10 +712,7 @@ fun Application.configureRouting() {
                     ContentType.Application.Json
                 )
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -827,12 +732,9 @@ fun Application.configureRouting() {
                 portfolio.delete()
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -844,13 +746,9 @@ fun Application.configureRouting() {
                 val updates =
                     json.entries.associate { (k, v) -> k to (v.jsonPrimitive.contentOrNull ?: "") }
                 AppConfig.save(updates)
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -884,7 +782,7 @@ fun Application.configureRouting() {
                 ?: return@post call.respond(HttpStatusCode.NotFound)
             val label = call.request.queryParameters["label"]?.takeIf { it.isNotBlank() } ?: ""
             BackupService.saveToDb(portfolioEntry, label)
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            call.respondOk()
         }
 
         // List DB backups for a portfolio — [{id, savedAt, label}, ...] newest first
@@ -910,13 +808,9 @@ fun Application.configureRouting() {
                 BackupService.restoreFromDb(portfolioEntry, id)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
@@ -928,7 +822,7 @@ fun Application.configureRouting() {
             val id = call.request.queryParameters["id"]?.toIntOrNull()
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
             BackupService.deleteFromDb(portfolioEntry, id)
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            call.respondOk()
         }
 
         // Delete all DB backups for a portfolio
@@ -937,7 +831,7 @@ fun Application.configureRouting() {
             val portfolioEntry = ManagedPortfolio.getBySlug(portfolioId)
                 ?: return@delete call.respond(HttpStatusCode.NotFound)
             BackupService.deleteAllFromDb(portfolioEntry)
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            call.respondOk()
         }
 
         // Export portfolio as JSON download (includes snapshotUsd for P entries)
