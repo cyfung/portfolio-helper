@@ -87,6 +87,9 @@ interface CashDao {
     @Query("SELECT * FROM cash_entries WHERE portfolioId = :portfolioId ORDER BY label")
     fun observeAll(portfolioId: Int): Flow<List<CashEntry>>
 
+    @Query("SELECT * FROM cash_entries ORDER BY label")
+    fun observeAll(): Flow<List<CashEntry>>
+
     @Query("SELECT * FROM cash_entries WHERE portfolioId = :portfolioId ORDER BY label")
     suspend fun getAll(portfolioId: Int): List<CashEntry>
 

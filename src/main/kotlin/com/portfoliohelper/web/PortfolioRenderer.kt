@@ -70,9 +70,10 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     val cashTotalUsd = effectiveCashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
     val displayCurrencies: List<String> = buildList {
         add("USD")
-        effectiveCashEntries.map { it.currency.uppercase() }
+        allPortfolios.asSequence().flatMap { it.getCash() }
+            .map { it.currency.uppercase() }
             .distinct().filter { it != "P" && it != "USD" }
-            .sorted().forEach { add(it) }
+            .sorted().toList().forEach { add(it) }
     }
 
     respondHtml(HttpStatusCode.OK) {

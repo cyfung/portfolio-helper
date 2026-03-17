@@ -11,12 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.portfoliohelper.MainViewModel
@@ -51,6 +52,7 @@ import com.portfoliohelper.ui.components.formatCurrency
 import com.portfoliohelper.ui.components.formatPct
 import com.portfoliohelper.ui.components.formatSmart
 import com.portfoliohelper.ui.theme.ext
+import java.util.Locale
 import kotlin.math.abs
 
 @Composable
@@ -111,11 +113,9 @@ fun CashScreen(vm: MainViewModel) {
                         )
                     }
 
-                    val marginUsd = cashTotals.marginUsd
-                    val marginPct = totals.marginPct
-                    val marginColor = ext.warning
-
-                    val marginValue = if (totals.isReady) {
+                    if (totals.isReady) {
+                        val marginUsd = cashTotals.marginUsd
+                        val marginPct = totals.marginPct
                         if (marginUsd >= 0) {
                             SummaryCard(
                                 "Margin",
@@ -143,13 +143,11 @@ fun CashScreen(vm: MainViewModel) {
                             modifier = Modifier.weight(1f)
                         )
                     }
-
                 }
             }
 
             // ── Table header ──────────────────────────────────────────────────
             item {
-//                TableHeader(listOf("Label" to 1.5f, "" to 0.4f, "Amount" to 1.5f, "USD" to 1.3f))
                 Divider()
             }
 
@@ -226,7 +224,7 @@ fun CashEntryRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MonoText(
-                    text = formatSmart(entry.amount, showSign = false),
+                    text = "%,.2f".format(Locale.US, entry.amount),
                     color = ext.textTertiary,
                     fontWeight = FontWeight.Normal,
                     fontSize = 16.sp
@@ -285,8 +283,20 @@ fun CashEntryRow(
 fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEntry) -> Unit) {
     var label by remember { mutableStateOf(initial?.label ?: "") }
     var currency by remember { mutableStateOf(initial?.currency ?: "USD") }
-    var amount by remember { mutableStateOf(initial?.amount?.toString() ?: "") }
+    
+    // Format the initial amount for display (e.g. "1,234.56")
+    val formattedInitialAmount = remember(initial) {
+        initial?.amount?.let { 
+            "%,.2f".format(Locale.US, it) 
+        } ?: ""
+    }
+    var amount by remember { mutableStateOf(formattedInitialAmount) }
     var isMargin by remember { mutableStateOf(initial?.isMargin ?: false) }
+
+    // Validation
+    val isValidAmount = remember(amount) {
+        amount.isEmpty() || amount == "-" || amount.replace(",", "").toDoubleOrNull() != null
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -294,22 +304,33 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    label, { label = it }, label = { Text("Label") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    currency,
-                    { currency = it.uppercase() },
+                    value = currency,
+                    onValueChange = { currency = it.uppercase() },
                     label = { Text("Currency") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    amount,
-                    { amount = it },
+                    value = amount,
+                    onValueChange = { input -> 
+                        // Allow digits, dots, commas, and a leading minus sign
+                        if (input.all { it.isDigit() || it == '.' || it == ',' || it == '-' }) {
+                            amount = input
+                        }
+                    },
                     label = { Text("Amount (negative = loan)") },
+                    placeholder = { Text("0.00") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    isError = !isValidAmount,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text) // Text allows commas and minus
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(isMargin, { isMargin = it })
@@ -318,16 +339,20 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val entry = CashEntry(
-                    id = initial?.id ?: 0,
-                    label = label.trim(),
-                    currency = currency.trim().uppercase(),
-                    amount = amount.toDoubleOrNull() ?: 0.0,
-                    isMargin = isMargin
-                )
-                if (entry.label.isNotEmpty()) onSave(entry)
-            }) { Text("Save") }
+            TextButton(
+                onClick = {
+                    val parsedAmount = amount.replace(",", "").toDoubleOrNull() ?: 0.0
+                    val entry = CashEntry(
+                        id = initial?.id ?: 0,
+                        label = label.trim(),
+                        currency = currency.trim().uppercase(),
+                        amount = parsedAmount,
+                        isMargin = isMargin
+                    )
+                    if (entry.label.isNotEmpty() && isValidAmount) onSave(entry)
+                },
+                enabled = label.isNotBlank() && isValidAmount
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

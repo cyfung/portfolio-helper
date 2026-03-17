@@ -158,12 +158,12 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
     val ext = MaterialTheme.ext
 
     val selectedCurrency by vm.displayCurrency.collectAsState()
-    val cashEntries by vm.cashEntries.collectAsState()
+    val allCashEntries by vm.allCashEntries.collectAsState()
     val portfolios by vm.portfolios.collectAsState()
     val selectedPortfolioId by vm.selectedPortfolioId.collectAsState()
 
-    // Dynamic list taking currency from Cash, with USD always first
-    val currencies = (listOf("USD") + cashEntries.map { it.currency }).distinct()
+    // Dynamic list taking currency from Cash across all portfolios, with USD always first
+    val currencies = (listOf("USD") + allCashEntries.map { it.currency }).distinct()
 
     Scaffold(
         topBar = {

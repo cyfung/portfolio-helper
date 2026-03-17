@@ -68,6 +68,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { pid -> db.cashDao().observeAll(pid) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val allCashEntries: StateFlow<List<CashEntry>> = db.cashDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     val syncServerInfo: StateFlow<SyncServerInfo?> = settings.syncServerInfo
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -292,7 +295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            combine(positions, cashEntries, marketData, displayCurrency) { pos, cash, data, displayCcy ->
+            combine(positions, allCashEntries, marketData, displayCurrency) { pos, cash, data, displayCcy ->
                 val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
 
                 val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" }
@@ -329,7 +332,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun refreshMarketData() {
         val posSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
-        val cashFxSymbols = cashEntries.value.map { it.currency }.distinct().filter { it != "USD" }.map { "${it}USD=X" }
+        val cashFxSymbols = allCashEntries.value.map { it.currency }.distinct().filter { it != "USD" }.map { "${it}USD=X" }
         posSymbols.addAll(cashFxSymbols)
 
         marketData.value.values.forEach { quote ->
