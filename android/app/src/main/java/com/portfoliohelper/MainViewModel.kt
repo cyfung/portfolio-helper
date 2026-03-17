@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.util.UUID
 
 sealed class SyncStatus {
     object Idle : SyncStatus()
@@ -48,8 +47,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val portfolios: StateFlow<List<Portfolio>> = db.portfolioDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val selectedPortfolioId: StateFlow<String> = settings.selectedPortfolioId
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "main")
+    val selectedPortfolioId: StateFlow<Int> = settings.selectedPortfolioId
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     val portfolioAlerts: StateFlow<List<PortfolioMarginAlert>> =
         db.portfolioMarginAlertDao().observeAll()
@@ -131,7 +130,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Portfolio selection ───────────────────────────────────────────────────
 
-    fun selectPortfolio(id: String) = viewModelScope.launch {
+    fun selectPortfolio(id: Int) = viewModelScope.launch {
         settings.saveSelectedPortfolioId(id)
     }
 
@@ -177,26 +176,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────
 
     fun createPortfolio(name: String) = viewModelScope.launch {
-        val id = UUID.randomUUID().toString().take(8)
-        db.portfolioDao().upsert(Portfolio(id = id, displayName = name))
-        db.portfolioMarginAlertDao().upsert(PortfolioMarginAlert(portfolioId = id))
+        val serialId = db.portfolioDao().insert(Portfolio(displayName = name)).toInt()
+        db.portfolioMarginAlertDao().upsert(PortfolioMarginAlert(portfolioId = serialId))
+        selectPortfolio(serialId)
         refreshMarketData()
     }
 
-    fun renamePortfolio(id: String, name: String) = viewModelScope.launch {
-        db.portfolioDao().upsert(Portfolio(id = id, displayName = name))
+    fun renamePortfolio(serialId: Int, name: String) = viewModelScope.launch {
+        db.portfolioDao().upsert(Portfolio(serialId = serialId, displayName = name))
         refreshMarketData()
     }
 
-    fun deletePortfolio(id: String) = viewModelScope.launch {
-        // If we deleted the selected portfolio, switch to the first remaining
-        if (selectedPortfolioId.value == id) {
-            val remaining = portfolios.value.firstOrNull { it.id != id }
-            settings.saveSelectedPortfolioId(remaining?.id ?: "main")
+    fun deletePortfolio(serialId: Int) = viewModelScope.launch {
+        if (selectedPortfolioId.value == serialId) {
+            val remaining = portfolios.value.firstOrNull { it.serialId != serialId }
+            settings.saveSelectedPortfolioId(remaining?.serialId ?: 0)
         }
-        db.positionDao().hardDeleteAll(id)
-        db.cashDao().deleteAll(id)
-        db.portfolioDao().delete(id)
+        db.positionDao().hardDeleteAll(serialId)
+        db.cashDao().deleteAll(serialId)
+        db.portfolioDao().delete(serialId)
         refreshMarketData()
     }
 

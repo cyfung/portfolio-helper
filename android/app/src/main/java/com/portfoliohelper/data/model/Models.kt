@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 
 @Entity(tableName = "portfolios")
 data class Portfolio(
-    @PrimaryKey val id: String,
+    @PrimaryKey(autoGenerate = true) val serialId: Int = 0,
     val displayName: String
 )
 
@@ -17,7 +17,7 @@ data class Portfolio(
 @Entity(tableName = "positions", primaryKeys = ["portfolioId", "symbol"])
 @Serializable
 data class Position(
-    val portfolioId: String = "main",
+    val portfolioId: Int = 0,
     val symbol: String,
     val quantity: Double,
     val targetWeight: Double,     // % 0–100
@@ -41,7 +41,7 @@ data class GroupRow(
 @Serializable
 data class CashEntry(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val portfolioId: String = "main",
+    val portfolioId: Int = 0,
     val label: String,
     val currency: String,       // ISO code e.g. "USD", "HKD"
     val amount: Double,         // negative = margin/loan
@@ -64,7 +64,7 @@ data class MarketPrice(
 
 @Entity(tableName = "portfolio_margin_alerts")
 data class PortfolioMarginAlert(
-    @PrimaryKey val portfolioId: String,
+    @PrimaryKey val portfolioId: Int,
     val enabled: Boolean = false,
     val lowerPct: Double = 20.0,   // alert when margin% drops below this
     val upperPct: Double = 50.0    // alert when margin% rises above this

@@ -242,63 +242,43 @@ class SyncRepository(
 
     private suspend fun parseAndSave(response: AllSyncResponse) {
         db.withTransaction {
-            // Clear all existing positions and cash
             db.positionDao().hardDeleteAll()
             db.cashDao().deleteAll()
 
-            for (root in response.portfolios) {
-                val portfolioId = root.portfolioSlug
+            var maxSerialId = 0
 
-                // Upsert portfolio row
+            for ((serialId, root) in response.portfolios) {
+                if (serialId > maxSerialId) maxSerialId = serialId
+
                 db.portfolioDao().upsert(
-                    Portfolio(
-                        id = portfolioId,
-                        displayName = portfolioId.replaceFirstChar { it.uppercase() }
-                    )
+                    Portfolio(serialId = serialId, displayName = root.portfolioSlug.replaceFirstChar { it.uppercase() })
                 )
 
-                // Insert positions
-                val positions = root.stocks.map { s ->
-                    Position(
-                        portfolioId = portfolioId,
-                        symbol = s.symbol,
-                        quantity = s.amount,
-                        targetWeight = s.targetWeight,
-                        groups = s.groups
+                root.stocks.forEach { s ->
+                    db.positionDao().upsert(
+                        Position(portfolioId = serialId, symbol = s.symbol, quantity = s.amount, targetWeight = s.targetWeight, groups = s.groups)
                     )
                 }
-                positions.forEach { db.positionDao().upsert(it) }
 
-                // Insert cash entries
-                val cashEntries = root.cash.mapNotNull { c ->
+                root.cash.mapNotNull { c ->
                     when {
-                        c.currency == "P" -> {
-                            val usd = c.snapshotUsd ?: return@mapNotNull null
-                            CashEntry(
-                                portfolioId = portfolioId,
-                                label = c.label,
-                                currency = "USD",
-                                amount = usd,
-                                isMargin = c.marginFlag
-                            )
+                        c.currency == "P" -> c.snapshotUsd?.let {
+                            CashEntry(portfolioId = serialId, label = c.label, currency = "USD", amount = it, isMargin = c.marginFlag)
                         }
-                        else -> CashEntry(
-                            portfolioId = portfolioId,
-                            label = c.label,
-                            currency = c.currency,
-                            amount = c.amount,
-                            isMargin = c.marginFlag
-                        )
+                        else -> CashEntry(portfolioId = serialId, label = c.label, currency = c.currency, amount = c.amount, isMargin = c.marginFlag)
                     }
-                }
-                cashEntries.forEach { db.cashDao().upsert(it) }
+                }.forEach { db.cashDao().upsert(it) }
 
-                // Upsert default margin alert for newly-appeared portfolio (keep existing)
-                val existing = db.portfolioMarginAlertDao().getAll()
-                    .find { it.portfolioId == portfolioId }
-                if (existing == null) {
-                    db.portfolioMarginAlertDao().upsert(PortfolioMarginAlert(portfolioId = portfolioId))
+                if (db.portfolioMarginAlertDao().getAll().none { it.portfolioId == serialId }) {
+                    db.portfolioMarginAlertDao().upsert(PortfolioMarginAlert(portfolioId = serialId))
                 }
+            }
+
+            // Seed sqlite_sequence so locally-created portfolios get IDs above server's max
+            if (maxSerialId > 0) {
+                db.openHelper.writableDatabase.execSQL(
+                    "INSERT OR REPLACE INTO sqlite_sequence (name, seq) VALUES ('portfolios', $maxSerialId)"
+                )
             }
         }
     }
@@ -309,7 +289,7 @@ class SyncRepository(
 // ── Sync response models ───────────────────────────────────────────────────────
 
 @kotlinx.serialization.Serializable
-data class AllSyncResponse(val portfolios: List<BackupRoot>)
+data class AllSyncResponse(val portfolios: Map<Int, BackupRoot>)
 
 @kotlinx.serialization.Serializable
 data class BackupRoot(

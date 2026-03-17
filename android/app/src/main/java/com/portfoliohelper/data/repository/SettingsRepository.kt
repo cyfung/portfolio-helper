@@ -23,7 +23,7 @@ object PrefsKeys {
     val TLS_FINGERPRINT         = stringPreferencesKey("tls_fingerprint")
     val PNL_DISPLAY_MODE        = stringPreferencesKey("pnl_display_mode") // "NATIVE" or "DISPLAY"
     val DISPLAY_CURRENCY        = stringPreferencesKey("display_currency")
-    val SELECTED_PORTFOLIO_ID   = stringPreferencesKey("selected_portfolio_id")
+    val SELECTED_PORTFOLIO_ID   = intPreferencesKey("selected_portfolio_id")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -100,11 +100,11 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[PrefsKeys.DISPLAY_CURRENCY] = ccy }
     }
 
-    val selectedPortfolioId: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[PrefsKeys.SELECTED_PORTFOLIO_ID] ?: "main"
+    val selectedPortfolioId: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.SELECTED_PORTFOLIO_ID] ?: 0
     }
 
-    suspend fun saveSelectedPortfolioId(id: String) {
+    suspend fun saveSelectedPortfolioId(id: Int) {
         context.dataStore.edit { it[PrefsKeys.SELECTED_PORTFOLIO_ID] = id }
     }
 

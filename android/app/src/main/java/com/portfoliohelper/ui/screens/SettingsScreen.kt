@@ -183,8 +183,8 @@ private fun PortfoliosSection(
     portfolios: List<Portfolio>,
     alerts: List<PortfolioMarginAlert>,
     onCreatePortfolio: (String) -> Unit,
-    onRenamePortfolio: (String, String) -> Unit,
-    onDeletePortfolio: (String) -> Unit,
+    onRenamePortfolio: (Int, String) -> Unit,
+    onDeletePortfolio: (Int) -> Unit,
     onSaveAlerts: (List<PortfolioMarginAlert>) -> Unit,
     ext: com.portfoliohelper.ui.theme.ExtendedColors
 ) {
@@ -192,7 +192,7 @@ private fun PortfoliosSection(
     var deleteTarget by remember { mutableStateOf<Portfolio?>(null) }
 
     data class RowState(
-        val id: String,
+        val id: Int,
         val name: String,
         val lowerPct: String,
         val upperPct: String
@@ -200,11 +200,11 @@ private fun PortfoliosSection(
 
     val rowStates = remember(alerts, portfolios) {
         portfolios.map { p ->
-            val a = alerts.find { it.portfolioId == p.id }
-                ?: PortfolioMarginAlert(portfolioId = p.id)
+            val a = alerts.find { it.portfolioId == p.serialId }
+                ?: PortfolioMarginAlert(portfolioId = p.serialId)
             val showLower = if (a.enabled && a.lowerPct > 0) a.lowerPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
             val showUpper = if (a.enabled && a.upperPct > 0) a.upperPct.toBigDecimal().stripTrailingZeros().toPlainString() else ""
-            mutableStateOf(RowState(p.id, p.displayName, showLower, showUpper))
+            mutableStateOf(RowState(p.serialId, p.displayName, showLower, showUpper))
         }
     }
 
@@ -229,7 +229,7 @@ private fun PortfoliosSection(
         // Save names if changed
         rowStates.forEach { stateHolder ->
             val s = stateHolder.value
-            val original = portfolios.find { it.id == s.id }
+            val original = portfolios.find { it.serialId == s.id }
             if (original != null && s.name.isNotBlank() && s.name != original.displayName) {
                 onRenamePortfolio(s.id, s.name.trim())
             }
@@ -350,7 +350,7 @@ private fun PortfoliosSection(
             text = { Text("Delete \"${target.displayName}\"? All positions and cash data will be removed.") },
             confirmButton = {
                 TextButton(onClick = {
-                    onDeletePortfolio(target.id)
+                    onDeletePortfolio(target.serialId)
                     deleteTarget = null
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },

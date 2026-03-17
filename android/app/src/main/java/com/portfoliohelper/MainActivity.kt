@@ -83,11 +83,11 @@ val navItems = listOf(
 @Composable
 fun PortfolioSelectorTitle(
     portfolios: List<Portfolio>,
-    selectedId: String,
-    onSelect: (String) -> Unit
+    selectedId: Int,
+    onSelect: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selected = portfolios.find { it.id == selectedId } ?: portfolios.firstOrNull()
+    val selected = portfolios.find { it.serialId == selectedId } ?: portfolios.firstOrNull()
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -98,7 +98,7 @@ fun PortfolioSelectorTitle(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
         ) {
             Text(
-                text = selected?.displayName ?: selectedId,
+                text = selected?.displayName ?: selectedId.toString(),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
@@ -113,7 +113,7 @@ fun PortfolioSelectorTitle(
                 DropdownMenuItem(
                     text = { Text(portfolio.displayName) },
                     onClick = {
-                        onSelect(portfolio.id)
+                        onSelect(portfolio.serialId)
                         expanded = false
                     }
                 )
