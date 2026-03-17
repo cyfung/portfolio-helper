@@ -125,9 +125,17 @@ private fun JsonObject.parseSlug() =
         ?.takeIf { it.isNotBlank() }?.toSlug()?.takeIf { it.isNotBlank() }
 private fun JsonArray.parseCashEntries() = mapNotNull { el ->
     val obj = el.jsonObject
-    val key = obj["key"]?.jsonPrimitive?.content ?: return@mapNotNull null
-    val value = obj["value"]?.jsonPrimitive?.content ?: return@mapNotNull null
-    parseCashEntryFromKeyValue(key, value)
+    val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+    val currency = obj["currency"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase() ?: return@mapNotNull null
+    val marginFlag = obj["marginFlag"]?.jsonPrimitive?.booleanOrNull ?: false
+    if (currency == "P") {
+        val ref = obj["portfolioRef"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val sign = if ((obj["amount"]?.jsonPrimitive?.doubleOrNull ?: 1.0) < 0) -1.0 else 1.0
+        com.portfoliohelper.model.CashEntry(label, "P", marginFlag, sign, portfolioRef = ref)
+    } else {
+        val amount = obj["amount"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+        com.portfoliohelper.model.CashEntry(label, currency, marginFlag, amount)
+    }
 }
 
 private val LOAN_COMPARE_FIELDS = listOf(

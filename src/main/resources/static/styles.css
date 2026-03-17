@@ -2591,7 +2591,7 @@ body.editing-active .cash-edit-table-wrapper {
 }
 
 .cash-edit-table td {
-    padding: var(--spacing-xs) var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-lg);
     vertical-align: middle;
 }
 
@@ -2601,10 +2601,52 @@ body.editing-active .edit-symbol {
     width: 80px;
 }
 
-/* Cash key input: wider, left-aligned */
-body.editing-active .cash-edit-key {
+/* Cash structured field inputs */
+body.editing-active .cash-edit-label {
     text-align: left;
-    width: 160px;
+    width: 120px;
+}
+body.editing-active .cash-edit-currency {
+    width: 52px;
+    text-transform: uppercase;
+}
+body.editing-active .cash-edit-amount {
+    width: 110px;
+    text-align: right;
+}
+body.editing-active .cash-edit-multiplier {
+    width: 52px;
+    text-align: right;
+}
+.cash-normal-fields,
+.cash-ref-fields {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cash-normal-fields td,
+.cash-ref-fields td {
+    padding: 0;
+}
+.cash-edit-portfolio-ref {
+    padding: 2px 4px;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    width: 110px;
+}
+.cash-margin-toggle,
+.cash-ref-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
 }
 
 /* ============================================
@@ -2855,12 +2897,6 @@ body.rebalancing-visible .virtual-rebal-btn {
     border-color: var(--color-border-strong);
 }
 
-/* Cash value input */
-body.editing-active .cash-edit-value {
-    width: 100px;
-    text-align: right;
-}
-
 /* ============================================
    Cash Type Badges
    ============================================ */
@@ -2886,21 +2922,6 @@ body.editing-active .cash-edit-value {
     border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 .cash-badge-ref {
-    background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
-    color: var(--color-accent-primary);
-    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
-}
-
-/* Cash edit mode: type badge column */
-.cash-edit-table .cash-type-badge-cell {
-    padding-left: 4px;
-}
-.cash-edit-table tr[data-entry-type="margin"] .cash-type-badge {
-    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-    color: var(--color-warning);
-    border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
-}
-.cash-edit-table tr[data-entry-type="ref"] .cash-type-badge {
     background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
     color: var(--color-accent-primary);
     border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);

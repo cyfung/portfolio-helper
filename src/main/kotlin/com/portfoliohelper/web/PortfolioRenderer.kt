@@ -119,6 +119,15 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         };
                         var savedShowStockDisplayCurrency = $showStockDisplayCurrency;
+                        var allPortfolioOptions = ${
+                            buildString {
+                                append("[")
+                                allPortfolios.joinTo(this, ",") { p ->
+                                    "{\"slug\":\"${p.slug.replace("\"", "\\\"")}\",\"name\":\"${p.name.replace("\"", "\\\"")}\"}"
+                                }
+                                append("]")
+                            }
+                        };
                         """.trimIndent()
                     )
                 }
@@ -278,7 +287,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
-                        buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
+                        buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() }, allPortfolios.toList())
 
                         if (virtualBalanceEnabled) {
                             div(classes = "dividend-from-section") {

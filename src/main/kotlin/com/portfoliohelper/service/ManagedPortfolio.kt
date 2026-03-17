@@ -49,15 +49,15 @@ class ManagedPortfolio(
     fun getCash(): List<CashEntry> {
         val pid = serialId
         return transaction {
-            CashTable.selectAll()
-                .where { CashTable.portfolioId eq pid }
+            CashTable.leftJoin(PortfoliosTable, { CashTable.portfolioRefId }, { PortfoliosTable.id })
+                .selectAll().where { CashTable.portfolioId eq pid }
                 .map { row ->
                     CashEntry(
                         label        = row[CashTable.label],
                         currency     = row[CashTable.currency],
                         marginFlag   = row[CashTable.marginFlag],
                         amount       = row[CashTable.amount],
-                        portfolioRef = row[CashTable.portfolioRef]
+                        portfolioRef = row.getOrNull(PortfoliosTable.slug)
                     )
                 }
         }
@@ -117,6 +117,7 @@ class ManagedPortfolio(
 
     fun replaceCash(entries: List<CashEntry>) {
         val pid = serialId
+        val slugToId = PortfoliosTable.selectAll().associate { it[PortfoliosTable.slug] to it[PortfoliosTable.id] }
         CashTable.deleteWhere { CashTable.portfolioId eq pid }
         CashTable.batchInsert(entries) { entry ->
             this[CashTable.portfolioId] = pid
@@ -124,7 +125,7 @@ class ManagedPortfolio(
             this[CashTable.currency] = entry.currency
             this[CashTable.marginFlag] = entry.marginFlag
             this[CashTable.amount] = entry.amount
-            this[CashTable.portfolioRef] = entry.portfolioRef
+            this[CashTable.portfolioRefId] = entry.portfolioRef?.let { slugToId[it] }
         }
     }
 

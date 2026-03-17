@@ -14,6 +14,7 @@ private val logger = LoggerFactory.getLogger("SyncRoutes")
 
 private val syncAuthPlugin = createRouteScopedPlugin("SyncAuth") {
     onCall { call ->
+        if (call.request.path() == "/api/sync/pair") return@onCall
         val deviceId = call.request.headers["X-Device-ID"]
         if (deviceId == null || !PairingService.isAuthorized(deviceId)) {
             logger.warn("Unauthorized sync access to ${call.request.path()}. Device-ID: $deviceId")

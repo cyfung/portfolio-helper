@@ -248,6 +248,7 @@ class SyncRepository(
         db.withTransaction {
             db.positionDao().hardDeleteAll()
             db.cashDao().deleteAll()
+            db.portfolioDao().deleteAll()
 
             var maxSerialId = 0
 

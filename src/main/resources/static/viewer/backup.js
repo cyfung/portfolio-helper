@@ -316,10 +316,7 @@ function initImportFile() {
             for (const c of json.cash) {
                 const tr = addCashRow();
                 if (!tr) continue;
-                const keyInput = tr.querySelector('.cash-edit-key');
-                const valInput = tr.querySelector('.cash-edit-value');
-                if (keyInput) keyInput.value = c.key;
-                if (valInput) valInput.value = c.value;
+                populateCashRowFromKeyValue(tr, c.key, c.value);
             }
         }
 
@@ -347,23 +344,36 @@ function showTwsSyncError(msg) {
 }
 
 function updateOrAddCashRow(key, value) {
+    // Parse the key to extract label+currency for matching existing rows
+    const allParts = key.split('.');
+    const parts = [...allParts];
+    let marginFlag = false;
+    while (parts.length > 0 && parts[parts.length - 1].toUpperCase() === 'M') {
+        marginFlag = true;
+        parts.pop();
+    }
+    if (parts.length < 2) return;
+    const currency = parts[parts.length - 1].toUpperCase();
+    const label = parts.slice(0, -1).join('.');
+
     const rows = document.querySelectorAll('[data-cash-edit-row]');
     for (const tr of rows) {
         if (tr.dataset.deleted) continue;
-        const keyInput = tr.querySelector('.cash-edit-key');
-        if (keyInput && keyInput.value.toLowerCase() === key.toLowerCase()) {
-            const valInput = tr.querySelector('.cash-edit-value');
-            if (valInput) valInput.value = value;
+        const existingLabel = (tr.querySelector('.cash-edit-label')?.value ?? '').trim();
+        const existingCurrency = (tr.querySelector('.cash-edit-currency')?.value ?? '').trim().toUpperCase();
+        if (existingLabel.toLowerCase() === label.toLowerCase() && existingCurrency === currency) {
+            const amtInp = tr.querySelector('.cash-edit-amount');
+            if (amtInp) amtInp.value = value;
+            const isRefCb = tr.querySelector('.cash-edit-is-ref');
+            if (isRefCb) isRefCb.checked = false;
+            const marginCb = tr.querySelector('.cash-edit-margin');
+            if (marginCb) marginCb.checked = marginFlag;
+            syncCashRowVisibility(tr);
             return;
         }
     }
     const tr = addCashRow();
-    if (tr) {
-        const keyInput = tr.querySelector('.cash-edit-key');
-        const valInput = tr.querySelector('.cash-edit-value');
-        if (keyInput) keyInput.value = key;
-        if (valInput) valInput.value = value;
-    }
+    if (tr) populateCashRowFromKeyValue(tr, key, value);
 }
 
 async function initTwsSync() {

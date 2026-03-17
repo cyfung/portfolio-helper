@@ -3,6 +3,7 @@ package com.portfoliohelper.service
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.PortfolioBackupsTable
+import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
@@ -244,15 +245,15 @@ object BackupService {
                 }
         }
         val cashEntries = transaction {
-            CashTable.selectAll()
-                .where { CashTable.portfolioId eq pid }
+            CashTable.leftJoin(PortfoliosTable, { CashTable.portfolioRefId }, { PortfoliosTable.id })
+                .selectAll().where { CashTable.portfolioId eq pid }
                 .map { row ->
                     CashEntry(
                         label = row[CashTable.label],
                         currency = row[CashTable.currency],
                         marginFlag = row[CashTable.marginFlag],
                         amount = row[CashTable.amount],
-                        portfolioRef = row[CashTable.portfolioRef]
+                        portfolioRef = row.getOrNull(PortfoliosTable.slug)
                     )
                 }
         }

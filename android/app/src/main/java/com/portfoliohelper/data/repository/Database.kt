@@ -26,6 +26,9 @@ interface PortfolioDao {
 
     @Query("DELETE FROM portfolios WHERE serialId = :serialId")
     suspend fun delete(serialId: Int)
+
+    @Query("DELETE FROM portfolios")
+    suspend fun deleteAll()
 }
 
 // ── Portfolio Margin Alert DAO ────────────────────────────────────────────────

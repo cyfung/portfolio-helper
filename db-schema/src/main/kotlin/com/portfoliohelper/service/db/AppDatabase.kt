@@ -30,7 +30,7 @@ object CashTable : Table("cash") {
     val currency = varchar("currency", 16)
     val marginFlag = bool("margin_flag").default(false)
     val amount = double("amount")
-    val portfolioRef = varchar("portfolio_ref", 64).nullable()
+    val portfolioRefId = integer("portfolio_ref_id").nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
