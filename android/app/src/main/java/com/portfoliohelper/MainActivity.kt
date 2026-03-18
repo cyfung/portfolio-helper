@@ -50,6 +50,7 @@ import com.portfoliohelper.ui.screens.PortfolioScreen
 import com.portfoliohelper.ui.screens.SettingsScreen
 import com.portfoliohelper.ui.theme.PortfolioHelperTheme
 import com.portfoliohelper.ui.theme.ext
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -76,11 +77,13 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onCreate started")
         enableEdgeToEdge()
 
-        // Request permission only if alerts are already enabled in the DB
+        // Request permission only if alerts are enabled AND notifications are turned on
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                vm.isAnyAlertEnabled.collect { enabled ->
-                    if (enabled) {
+                combine(vm.isAnyAlertEnabled, vm.marginCheckNotificationsEnabled) { alertsEnabled, notifsOn ->
+                    alertsEnabled && notifsOn
+                }.collect { shouldAsk ->
+                    if (shouldAsk) {
                         askNotificationPermission()
                     }
                 }

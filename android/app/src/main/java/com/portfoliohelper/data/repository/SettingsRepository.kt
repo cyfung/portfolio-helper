@@ -25,6 +25,7 @@ object PrefsKeys {
     val PNL_DISPLAY_MODE        = stringPreferencesKey("pnl_display_mode") // "NATIVE" or "DISPLAY"
     val DISPLAY_CURRENCY        = stringPreferencesKey("display_currency")
     val SELECTED_PORTFOLIO_ID   = intPreferencesKey("selected_portfolio_id")
+    val MARGIN_CHECK_NOTIFICATIONS_ENABLED = booleanPreferencesKey("margin_check_notifications_enabled")
     
     // Margin check stats
     val LAST_MARGIN_CHECK_TIME  = longPreferencesKey("last_margin_check_time")
@@ -120,6 +121,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun saveSelectedPortfolioId(id: Int) {
         context.dataStore.edit { it[PrefsKeys.SELECTED_PORTFOLIO_ID] = id }
+    }
+
+    val marginCheckNotificationsEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.MARGIN_CHECK_NOTIFICATIONS_ENABLED] ?: true
+    }
+
+    suspend fun saveMarginCheckNotificationsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PrefsKeys.MARGIN_CHECK_NOTIFICATIONS_ENABLED] = enabled }
     }
 
     // ── Margin check stats ──────────────────────────────────────────────────

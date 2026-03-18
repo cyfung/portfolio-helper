@@ -81,6 +81,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val displayCurrency: StateFlow<String> = settings.displayCurrency
         .stateIn(viewModelScope, SharingStarted.Eagerly, "USD")
     
+    val marginCheckNotificationsEnabled: StateFlow<Boolean> = settings.marginCheckNotificationsEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     val marginCheckStats: StateFlow<MarginCheckStats?> = settings.marginCheckStats
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -184,8 +187,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun savePortfolioAlerts(alerts: List<PortfolioMarginAlert>) = viewModelScope.launch {
         db.portfolioMarginAlertDao().upsertAll(alerts)
-        val anyEnabled = alerts.any { it.lowerPct > 0 || it.upperPct > 0 }
-        MarginCheckWorker.schedule(getApplication(), anyEnabled)
+        MarginCheckWorker.schedule(getApplication(), true) // Always schedule
     }
 
     // ── Write operations ──────────────────────────────────────────────────────
@@ -217,6 +219,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveDisplayCurrency(ccy: String) = viewModelScope.launch {
         settings.saveDisplayCurrency(ccy)
         refreshMarketData()
+    }
+
+    fun saveMarginCheckNotificationsEnabled(enabled: Boolean) = viewModelScope.launch {
+        settings.saveMarginCheckNotificationsEnabled(enabled)
     }
 
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────

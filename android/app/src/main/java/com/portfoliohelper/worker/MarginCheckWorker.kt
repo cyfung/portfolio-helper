@@ -28,6 +28,7 @@ import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 class MarginCheckWorker(
@@ -45,12 +46,12 @@ class MarginCheckWorker(
         private const val INTERVAL_MINUTES = 15L
         private const val TAG = "MarginCheckWorker"
 
-        fun schedule(context: Context, isAnyEnabled: Boolean) {
-            Log.d(TAG, "Scheduling worker. AnyEnabled: $isAnyEnabled")
+        fun schedule(context: Context, shouldRun: Boolean) {
+            Log.d(TAG, "Scheduling worker. ShouldRun: $shouldRun")
             val wm = WorkManager.getInstance(context)
 
-            if (!isAnyEnabled) {
-                Log.d(TAG, "No alerts enabled. Cancelling periodic work.")
+            if (!shouldRun) {
+                Log.d(TAG, "Worker disabled. Cancelling periodic work.")
                 wm.cancelUniqueWork(WORK_NAME)
                 return
             }
@@ -101,7 +102,6 @@ class MarginCheckWorker(
         Log.d(TAG, "Worker execution started")
         val app = context.applicationContext as PortfolioHelperApp
         
-        // Promote to foreground to ensure network reliability in background/Doze mode
         try {
             setForeground(getForegroundInfo())
         } catch (e: Exception) {
@@ -110,7 +110,6 @@ class MarginCheckWorker(
 
         try {
             val result = runMarginCheck(app)
-            // Update widget after every run
             MarginCheckWidget().updateAll(context)
             return result
         } catch (e: Exception) {
@@ -124,109 +123,65 @@ class MarginCheckWorker(
                 )
             )
             MarginCheckWidget().updateAll(context)
-            return Result.success() // Return success so WorkManager doesn't retry unnecessarily if it's a code error
+            return Result.success()
         }
     }
 
     private suspend fun runMarginCheck(app: PortfolioHelperApp): Result {
-        // Small delay to let DNS/Network stabilize
         kotlinx.coroutines.delay(1000)
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationsEnabled = app.settingsRepo.marginCheckNotificationsEnabled.first()
 
-        // Read all portfolio margin alerts and portfolio names from DB
         val allAlerts = app.database.portfolioMarginAlertDao().getAll()
         val portfolios = app.database.portfolioDao().getAll().associateBy { it.serialId }
         
-        Log.d(TAG, "Found ${allAlerts.size} alert configurations in database")
-        
         if (allAlerts.isEmpty()) return Result.success()
 
-        // Background sync: attempt to get latest data from server
         try {
-            Log.d(TAG, "Attempting background sync with portfolio server...")
+            Log.d(TAG, "Attempting background sync...")
             app.syncRepo.sync()
-            Log.i(TAG, "Background sync successful")
         } catch (e: Exception) {
-            Log.w(TAG, "Background sync failed: ${e.message}. Using cached database data.")
+            Log.w(TAG, "Background sync failed: ${e.message}")
         }
 
         ensureChannels()
 
-        // 1. Identify enabled alerts and clear disabled ones
-        val enabledAlerts = mutableListOf<PortfolioMarginAlert>()
-        allAlerts.forEach { alert ->
-            val isEnabled = alert.lowerPct > 0 || alert.upperPct > 0
-            if (isEnabled) {
-                enabledAlerts.add(alert)
-            } else {
-                val portfolioName = portfolios[alert.portfolioId]?.displayName ?: "Portfolio ${alert.portfolioId}"
-                Log.d(TAG, "Alert disabled for $portfolioName. Clearing notifications.")
-                nm.cancel(NOTIF_ID_ALERT_BASE + alert.portfolioId)
-                nm.cancel(NOTIF_ID_ERROR_BASE + alert.portfolioId)
-            }
-        }
-
-        if (enabledAlerts.isEmpty()) {
-            Log.d(TAG, "No enabled alerts found.")
-            return Result.success()
-        }
-
-        // 2. Fetch all data for enabled portfolios to merge and dedup symbols
-        val portfolioPositions = mutableMapOf<Int, List<Position>>()
-        val portfolioCash = mutableMapOf<Int, List<CashEntry>>()
         val allPositions = mutableListOf<Position>()
         val allCashEntries = mutableListOf<CashEntry>()
-
-        for (alert in enabledAlerts) {
-            val portfolioId = alert.portfolioId
-            val positions = app.database.positionDao().getAll(portfolioId)
-            val cashEntries = app.database.cashDao().getAll(portfolioId)
-            
-            portfolioPositions[portfolioId] = positions
-            portfolioCash[portfolioId] = cashEntries
-            allPositions.addAll(positions)
-            allCashEntries.addAll(cashEntries)
+        val portfolioBundles = allAlerts.map { alert ->
+            val pid = alert.portfolioId
+            val pos = app.database.positionDao().getAll(pid)
+            val cash = app.database.cashDao().getAll(pid)
+            allPositions.addAll(pos)
+            allCashEntries.addAll(cash)
+            Triple(alert, pos, cash)
         }
 
         if (allPositions.isEmpty() && allCashEntries.isEmpty()) {
-            Log.d(TAG, "No positions or cash entries found for enabled alerts.")
+            Log.d(TAG, "No data to check.")
             return Result.success()
         }
 
-        // 3. Batch fetch and cache market data (dedup happens inside fetchAndCacheMarketData)
-        Log.d(TAG, "Batch fetching market data for ${allPositions.size} positions and ${allCashEntries.size} cash entries...")
-        val prices = try {
-            val p = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
-            Log.i(TAG, "Batch market data fetch completed. Found ${p.size} prices.")
-            p
-        } catch (e: Exception) {
-            Log.e(TAG, "Fatal error during batch market data fetch: ${e.message}", e)
-            throw e
-        }
+        val prices = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
 
-        // Stats tracking
         val triggeredPortfolioNames = mutableListOf<String>()
         var oldestDataTime = Long.MAX_VALUE
 
-        // 4. Process alerts using the fetched prices
-        enabledAlerts.forEach { alert ->
-            val portfolioId = alert.portfolioId
-            val portfolioName = portfolios[portfolioId]?.displayName ?: "Portfolio $portfolioId"
-            val alertNotifId = NOTIF_ID_ALERT_BASE + portfolioId
-            val errorNotifId = NOTIF_ID_ERROR_BASE + portfolioId
-
-            val positions = portfolioPositions[portfolioId] ?: emptyList()
-            val cashEntries = portfolioCash[portfolioId] ?: emptyList()
+        portfolioBundles.forEach { (alert, positions, cashEntries) ->
+            val pid = alert.portfolioId
+            val name = portfolios[pid]?.displayName ?: "Portfolio $pid"
+            val alertNotifId = NOTIF_ID_ALERT_BASE + pid
+            val errorNotifId = NOTIF_ID_ERROR_BASE + pid
 
             if (positions.isEmpty() && cashEntries.isEmpty()) {
-                Log.d(TAG, "[$portfolioName] No data. Skipping.")
+                nm.cancel(alertNotifId)
+                nm.cancel(errorNotifId)
                 return@forEach
             }
 
             val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices)
 
-            // Update oldest timestamp seen
             positions.forEach { pos ->
                 prices[pos.symbol]?.timestamp?.let { if (it < oldestDataTime) oldestDataTime = it }
             }
@@ -235,52 +190,40 @@ class MarginCheckWorker(
             }
 
             if (!totals.isReady) {
-                val symbols = positions.map { it.symbol }.distinct()
-                val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
-                val missingSymbols = symbols.filter { it !in prices }
-                val missingCurrencies = currencies.filter { "${it}USD=X" !in prices }
-                val missing = (missingSymbols + missingCurrencies).joinToString(", ")
-                Log.w(TAG, "[$portfolioName] Data missing: $missing")
-                notify(errorNotifId, "⚠️ Margin Check Error ($portfolioName)", "Missing data: $missing")
+                val hasThresholds = alert.lowerPct > 0 || alert.upperPct > 0
+                if (hasThresholds && notificationsEnabled) {
+                    val symbols = positions.map { it.symbol }.distinct()
+                    val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+                    val missing = (symbols.filter { it !in prices } + currencies.filter { "${it}USD=X" !in prices }).joinToString(", ")
+                    notify(errorNotifId, "⚠️ Margin Check Error ($name)", "Missing data: $missing")
+                }
                 return@forEach
             }
 
-            // If we reached here, calculation was successful, so clear any previous error notif
             nm.cancel(errorNotifId)
 
             val marginPct = totals.marginPct
-            Log.i(TAG, "[$portfolioName] Calculated margin: %.2f%% (Lower: %.1f%%, Upper: %.1f%%)".format(marginPct, alert.lowerPct, alert.upperPct))
+            val isLower = alert.lowerPct > 0 && marginPct < alert.lowerPct
+            val isUpper = alert.upperPct > 0 && marginPct > alert.upperPct
 
-            val isLowerTriggered = alert.lowerPct > 0 && marginPct < alert.lowerPct
-            val isUpperTriggered = alert.upperPct > 0 && marginPct > alert.upperPct
-
-            when {
-                isLowerTriggered -> {
-                    triggeredPortfolioNames.add(portfolioName)
-                    Log.i(TAG, "[$portfolioName] TRIGGER: Margin low (%.2f%% < %.1f%%)".format(marginPct, alert.lowerPct))
-                    notify(
-                        alertNotifId,
-                        "⚠️ Margin Low — $portfolioName",
+            if (isLower || isUpper) {
+                triggeredPortfolioNames.add(name)
+                if (notificationsEnabled) {
+                    val title = if (isLower) "⚠️ Margin Low — $name" else "⚠️ Margin High — $name"
+                    val body = if (isLower) {
                         "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, alert.lowerPct)
-                    )
-                }
-                isUpperTriggered -> {
-                    triggeredPortfolioNames.add(portfolioName)
-                    Log.i(TAG, "[$portfolioName] TRIGGER: Margin high (%.2f%% > %.1f%%)".format(marginPct, alert.upperPct))
-                    notify(
-                        alertNotifId,
-                        "⚠️ Margin High — $portfolioName",
+                    } else {
                         "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, alert.upperPct)
-                    )
-                }
-                else -> {
-                    Log.d(TAG, "[$portfolioName] Margin safe. Cancelling any existing alert notification.")
+                    }
+                    notify(alertNotifId, title, body)
+                } else {
                     nm.cancel(alertNotifId)
                 }
+            } else {
+                nm.cancel(alertNotifId)
             }
         }
 
-        // Save stats
         app.settingsRepo.updateMarginCheckStats(
             MarginCheckStats(
                 runTime = System.currentTimeMillis(),
@@ -318,7 +261,6 @@ class MarginCheckWorker(
     private fun notify(id: Int, title: String, body: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "Notification permission not granted. Cannot notify.")
                 return
             }
         }
@@ -346,8 +288,8 @@ class BootReceiver : BroadcastReceiver() {
 class ReScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val app = applicationContext as PortfolioHelperApp
-        val anyEnabled = app.database.portfolioMarginAlertDao().getAll().any { it.lowerPct > 0 || it.upperPct > 0 }
-        MarginCheckWorker.schedule(applicationContext, anyEnabled)
+        val portfolios = app.database.portfolioDao().getAll()
+        MarginCheckWorker.schedule(applicationContext, portfolios.isNotEmpty())
         return Result.success()
     }
 }

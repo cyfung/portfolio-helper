@@ -36,6 +36,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val portfolios by vm.portfolios.collectAsState()
     val portfolioAlerts by vm.portfolioAlerts.collectAsState()
     val marginStats by vm.marginCheckStats.collectAsState()
+    val notificationsEnabled by vm.marginCheckNotificationsEnabled.collectAsState()
 
     Column(
         modifier = Modifier
@@ -139,6 +140,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
         PortfoliosSection(
             portfolios = portfolios,
             alerts = portfolioAlerts,
+            notificationsEnabled = notificationsEnabled,
             onCreatePortfolio = { vm.createPortfolio(it) },
             onRenamePortfolio = { id, name -> vm.renamePortfolio(id, name) },
             onDeletePortfolio = { vm.deletePortfolio(it) },
@@ -147,7 +149,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
             ext = ext
         )
 
-        // ── Display Settings ───────────────────────────────────────────────────
+        // ── App Settings ───────────────────────────────────────────────────
         Surface(
             shape = RoundedCornerShape(10.dp),
             color = ext.bgElevated,
@@ -155,16 +157,37 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
             shadowElevation = 1.dp
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Display Settings", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary)
+                Text("App Settings", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = ext.textPrimary)
 
+                // P&L Mode
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("Stock P&L Currency", modifier = Modifier.weight(1f), color = ext.textSecondary, fontSize = 13.sp)
-
                     TextButton(onClick = {
                         vm.savePnlDisplayMode(if (pnlMode == "DISPLAY") "NATIVE" else "DISPLAY")
                     }) {
                         Text(if (pnlMode == "DISPLAY") "Portfolio" else "Native")
                     }
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
+                // Notification Toggle
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Margin Notifications", color = ext.textSecondary, fontSize = 13.sp)
+                        Text("Send push alerts when margin is low/high", color = ext.textTertiary, fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = notificationsEnabled,
+                        onCheckedChange = { 
+                            vm.saveMarginCheckNotificationsEnabled(it)
+                            if (it) onAskPermission()
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = ext.actionPositive,
+                            checkedTrackColor = ext.actionPositive.copy(alpha = 0.3f)
+                        )
+                    )
                 }
             }
         }
@@ -188,6 +211,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
 private fun PortfoliosSection(
     portfolios: List<Portfolio>,
     alerts: List<PortfolioMarginAlert>,
+    notificationsEnabled: Boolean,
     onCreatePortfolio: (String) -> Unit,
     onRenamePortfolio: (Int, String) -> Unit,
     onDeletePortfolio: (Int) -> Unit,
@@ -216,7 +240,7 @@ private fun PortfoliosSection(
     }
 
     // Debounce save for alerts and names
-    LaunchedEffect(rowStates.map { it.value }) {
+    LaunchedEffect(rowStates.map { it.value }, notificationsEnabled) {
         delay(800)
         
         // Save alerts
@@ -227,7 +251,6 @@ private fun PortfoliosSection(
             val upper = s.upperPct.toDoubleOrNull()?.takeIf { it > 0 } ?: -1.0
             val isEnabled = lower > 0 || upper > 0
             
-            // Check if this specific row was just enabled
             if (isEnabled) {
                 anyEnabled = true
             }
@@ -240,7 +263,7 @@ private fun PortfoliosSection(
         }
         onSaveAlerts(updatedAlerts)
         
-        if (anyEnabled) {
+        if (anyEnabled && notificationsEnabled) {
             onAskPermission()
         }
 
