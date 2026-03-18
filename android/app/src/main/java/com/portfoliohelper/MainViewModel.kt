@@ -10,6 +10,7 @@ import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.SyncRepository
 import com.portfoliohelper.data.repository.SyncServerInfo
@@ -79,6 +80,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val displayCurrency: StateFlow<String> = settings.displayCurrency
         .stateIn(viewModelScope, SharingStarted.Eagerly, "USD")
+    
+    val marginCheckStats: StateFlow<MarginCheckStats?> = settings.marginCheckStats
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 

@@ -117,7 +117,7 @@ fun PortfolioScreen(vm: MainViewModel) {
     val cashTotals by vm.cashTotals.collectAsState()
     val pnlMode by vm.pnlDisplayMode.collectAsState()
     val displayCcy by vm.displayCurrency.collectAsState()
-    val cashEntries by vm.cashEntries.collectAsState()
+    val marginStats by vm.marginCheckStats.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -229,13 +229,15 @@ fun PortfolioScreen(vm: MainViewModel) {
                         .padding(start = layout.horizontalOffset),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    // ── Summary cards ─────────────────────────────────────
+                    // ── Margin Status & Summary cards ─────────────────────
                     item {
-                        Column {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            marginStats?.let { stats ->
+                                MarginStatsWidget(stats, ext)
+                            }
+
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 val totalValue = totals.stockGrossValue + cashTotals.totalUsd

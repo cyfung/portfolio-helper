@@ -8,6 +8,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,8 +27,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.ui.theme.ext
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
@@ -490,6 +496,114 @@ fun DynamicCurrencySwitcher(
                                 expanded = false
                             }
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Margin Stats Widget ──────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MarginStatsWidget(stats: MarginCheckStats, ext: com.portfoliohelper.ui.theme.ExtendedColors) {
+    val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val dateFmt = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
+    val isError = stats.errorMessage != null
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isError) ext.negative.copy(alpha = 0.05f) else ext.bgElevated,
+        border = if (isError) androidx.compose.foundation.BorderStroke(1.dp, ext.negative.copy(alpha = 0.2f)) else null,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isError) Icons.Default.Warning else Icons.Default.History,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = if (isError) ext.negative else ext.textTertiary
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (isError) "Margin Check Failed" else "Last Margin Check",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = if (isError) ext.negative else ext.textPrimary
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = timeFmt.format(Date(stats.runTime)),
+                    fontSize = 11.sp,
+                    color = ext.textTertiary,
+                    fontFamily = DataFont
+                )
+            }
+
+            if (isError) {
+                Text(
+                    text = stats.errorMessage ?: "Check failed. Using cached data.",
+                    color = ext.negative,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column {
+                        Text("Data freshness", fontSize = 10.sp, color = ext.textTertiary)
+                        if (stats.oldestDataTime > 0) {
+                            val dataAgeMinutes = (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
+                            val dataColor = when {
+                                dataAgeMinutes < 15 -> ext.positive
+                                dataAgeMinutes < 60 -> ext.warning
+                                else -> ext.negative
+                            }
+                            Text(
+                                dateFmt.format(Date(stats.oldestDataTime)),
+                                fontSize = 14.sp,
+                                fontFamily = DataFont,
+                                fontWeight = FontWeight.Medium,
+                                color = dataColor
+                            )
+                        } else {
+                            Text("No data used", fontSize = 14.sp, fontFamily = DataFont, color = ext.textTertiary)
+                        }
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Result", fontSize = 10.sp, color = ext.textTertiary)
+                        if (stats.triggeredPortfolios.isNotEmpty()) {
+                            Text("THRESHOLD REACHED", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ext.negative)
+                        } else {
+                            Text("All Secure", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ext.positive)
+                        }
+                    }
+                }
+
+                if (stats.triggeredPortfolios.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        stats.triggeredPortfolios.forEach { name ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = ext.negative.copy(alpha = 0.1f),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, ext.negative.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    name,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 11.sp,
+                                    color = ext.negative,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }

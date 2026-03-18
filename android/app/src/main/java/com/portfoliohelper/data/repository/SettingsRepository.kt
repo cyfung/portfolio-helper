@@ -25,7 +25,20 @@ object PrefsKeys {
     val PNL_DISPLAY_MODE        = stringPreferencesKey("pnl_display_mode") // "NATIVE" or "DISPLAY"
     val DISPLAY_CURRENCY        = stringPreferencesKey("display_currency")
     val SELECTED_PORTFOLIO_ID   = intPreferencesKey("selected_portfolio_id")
+    
+    // Margin check stats
+    val LAST_MARGIN_CHECK_TIME  = longPreferencesKey("last_margin_check_time")
+    val LAST_MARGIN_CHECK_DATA_OLD  = longPreferencesKey("last_margin_check_data_old")
+    val LAST_MARGIN_CHECK_TRIGGERED = stringPreferencesKey("last_margin_check_triggered") // comma-separated names
+    val LAST_MARGIN_CHECK_ERROR     = stringPreferencesKey("last_margin_check_error")
 }
+
+data class MarginCheckStats(
+    val runTime: Long,
+    val oldestDataTime: Long,
+    val triggeredPortfolios: List<String>,
+    val errorMessage: String? = null
+)
 
 class SettingsRepository(private val context: Context) {
 
@@ -109,6 +122,30 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[PrefsKeys.SELECTED_PORTFOLIO_ID] = id }
     }
 
+    // ── Margin check stats ──────────────────────────────────────────────────
+
+    val marginCheckStats: Flow<MarginCheckStats?> = context.dataStore.data.map { prefs ->
+        val runTime = prefs[PrefsKeys.LAST_MARGIN_CHECK_TIME] ?: return@map null
+        MarginCheckStats(
+            runTime = runTime,
+            oldestDataTime = prefs[PrefsKeys.LAST_MARGIN_CHECK_DATA_OLD] ?: 0L,
+            triggeredPortfolios = prefs[PrefsKeys.LAST_MARGIN_CHECK_TRIGGERED]?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
+            errorMessage = prefs[PrefsKeys.LAST_MARGIN_CHECK_ERROR]
+        )
+    }
+
+    suspend fun updateMarginCheckStats(stats: MarginCheckStats) {
+        context.dataStore.edit { prefs ->
+            prefs[PrefsKeys.LAST_MARGIN_CHECK_TIME] = stats.runTime
+            prefs[PrefsKeys.LAST_MARGIN_CHECK_DATA_OLD] = stats.oldestDataTime
+            prefs[PrefsKeys.LAST_MARGIN_CHECK_TRIGGERED] = stats.triggeredPortfolios.joinToString(",")
+            if (stats.errorMessage != null) {
+                prefs[PrefsKeys.LAST_MARGIN_CHECK_ERROR] = stats.errorMessage
+            } else {
+                prefs.remove(PrefsKeys.LAST_MARGIN_CHECK_ERROR)
+            }
+        }
+    }
 }
 
 data class SyncServerInfo(val name: String, val host: String, val port: Int)

@@ -8,9 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +22,7 @@ import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.SyncStatus
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
+import com.portfoliohelper.ui.components.*
 import com.portfoliohelper.ui.theme.ext
 import kotlinx.coroutines.delay
 
@@ -36,6 +35,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val pnlMode by vm.pnlDisplayMode.collectAsState()
     val portfolios by vm.portfolios.collectAsState()
     val portfolioAlerts by vm.portfolioAlerts.collectAsState()
+    val marginStats by vm.marginCheckStats.collectAsState()
 
     Column(
         modifier = Modifier
@@ -45,6 +45,11 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // ── Margin Alert Status Widget ───────────────────────────────────────
+        marginStats?.let { stats ->
+            MarginStatsWidget(stats, ext)
+        }
+
         // ── Data Sync Section ──────────────────────────────────────────────
         Surface(
             shape = RoundedCornerShape(10.dp),

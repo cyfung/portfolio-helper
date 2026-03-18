@@ -25,6 +25,7 @@ import com.portfoliohelper.PortfolioHelperApp
 import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import java.util.concurrent.TimeUnit
 
@@ -97,6 +98,7 @@ class MarginCheckWorker(
 
     override suspend fun doWork(): Result {
         Log.d(TAG, "Worker execution started")
+        val app = context.applicationContext as PortfolioHelperApp
         
         // Promote to foreground to ensure network reliability in background/Doze mode
         try {
@@ -105,10 +107,26 @@ class MarginCheckWorker(
             Log.w(TAG, "Could not run in foreground: ${e.message}")
         }
 
+        try {
+            return runMarginCheck(app)
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error in worker: ${e.message}", e)
+            app.settingsRepo.updateMarginCheckStats(
+                MarginCheckStats(
+                    runTime = System.currentTimeMillis(),
+                    oldestDataTime = 0L,
+                    triggeredPortfolios = emptyList(),
+                    errorMessage = e.message ?: "Unknown error"
+                )
+            )
+            return Result.success() // Return success so WorkManager doesn't retry unnecessarily if it's a code error
+        }
+    }
+
+    private suspend fun runMarginCheck(app: PortfolioHelperApp): Result {
         // Small delay to let DNS/Network stabilize
         kotlinx.coroutines.delay(1000)
 
-        val app = context.applicationContext as PortfolioHelperApp
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Read all portfolio margin alerts and portfolio names from DB
@@ -179,10 +197,12 @@ class MarginCheckWorker(
             p
         } catch (e: Exception) {
             Log.e(TAG, "Fatal error during batch market data fetch: ${e.message}", e)
-            // fetchAndCacheMarketData already falls back to DB cache for individual symbols.
-            // If it throws, we continue with whatever we might have or skip this run.
-            return Result.success()
+            throw e
         }
+
+        // Stats tracking
+        val triggeredPortfolioNames = mutableListOf<String>()
+        var oldestDataTime = Long.MAX_VALUE
 
         // 4. Process alerts using the fetched prices
         enabledAlerts.forEach { alert ->
@@ -200,6 +220,14 @@ class MarginCheckWorker(
             }
 
             val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices)
+
+            // Update oldest timestamp seen
+            positions.forEach { pos ->
+                prices[pos.symbol]?.timestamp?.let { if (it < oldestDataTime) oldestDataTime = it }
+            }
+            cashEntries.map { "${it.currency}USD=X" }.forEach { sym ->
+                prices[sym]?.timestamp?.let { if (it < oldestDataTime) oldestDataTime = it }
+            }
 
             if (!totals.isReady) {
                 val symbols = positions.map { it.symbol }.distinct()
@@ -223,6 +251,7 @@ class MarginCheckWorker(
 
             when {
                 isLowerTriggered -> {
+                    triggeredPortfolioNames.add(portfolioName)
                     Log.i(TAG, "[$portfolioName] TRIGGER: Margin low (%.2f%% < %.1f%%)".format(marginPct, alert.lowerPct))
                     notify(
                         alertNotifId,
@@ -231,6 +260,7 @@ class MarginCheckWorker(
                     )
                 }
                 isUpperTriggered -> {
+                    triggeredPortfolioNames.add(portfolioName)
                     Log.i(TAG, "[$portfolioName] TRIGGER: Margin high (%.2f%% > %.1f%%)".format(marginPct, alert.upperPct))
                     notify(
                         alertNotifId,
@@ -244,6 +274,16 @@ class MarginCheckWorker(
                 }
             }
         }
+
+        // Save stats
+        app.settingsRepo.updateMarginCheckStats(
+            MarginCheckStats(
+                runTime = System.currentTimeMillis(),
+                oldestDataTime = if (oldestDataTime == Long.MAX_VALUE) 0L else oldestDataTime,
+                triggeredPortfolios = triggeredPortfolioNames,
+                errorMessage = null
+            )
+        )
 
         return Result.success()
     }
