@@ -31,23 +31,31 @@ import com.portfoliohelper.data.repository.PortfolioCalculator
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
+/**
+ * Periodically fetches latest market data from Yahoo Finance and performs margin checks.
+ * This worker serves two critical purposes:
+ * 1. Price Update: Refreshes cached stock/FX prices so the UI and Home Screen widgets are up-to-date.
+ * 2. Margin Check: Evaluates margin thresholds and sends notifications if thresholds are breached.
+ *
+ * It runs every 15 minutes as long as at least one portfolio exists.
+ */
 class MarginCheckWorker(
     private val context: Context,
     workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
 
     companion object {
-        const val WORK_NAME = "margin_check"
+        const val WORK_NAME = "margin_check_and_price_sync"
         const val CHANNEL_ID = "margin_alerts"
         const val CHANNEL_SYSTEM_ID = "system_tasks"
         const val NOTIF_ID_ALERT_BASE = 10000
         const val NOTIF_ID_ERROR_BASE = 20000
         const val NOTIF_ID_FOREGROUND = 30000
         private const val INTERVAL_MINUTES = 15L
-        private const val TAG = "MarginCheckWorker"
+        private const val TAG = "MarginPriceWorker"
 
         fun schedule(context: Context, shouldRun: Boolean) {
-            Log.d(TAG, "Scheduling worker. ShouldRun: $shouldRun")
+            Log.d(TAG, "Scheduling worker (Price Sync + Margin Check). ShouldRun: $shouldRun")
             val wm = WorkManager.getInstance(context)
 
             if (!shouldRun) {
@@ -72,7 +80,7 @@ class MarginCheckWorker(
             )
 
             // Trigger a one-time run immediately for testing
-            Log.d(TAG, "Enqueuing one-time test run with NetworkType.CONNECTED")
+            Log.d(TAG, "Enqueuing immediate run for price refresh")
             wm.enqueue(
                 OneTimeWorkRequestBuilder<MarginCheckWorker>()
                     .setConstraints(constraints)
@@ -85,8 +93,8 @@ class MarginCheckWorker(
         ensureChannels()
         val notification = NotificationCompat.Builder(context, CHANNEL_SYSTEM_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("Checking Margins")
-            .setContentText("Syncing latest market data...")
+            .setContentTitle("Updating Market Data")
+            .setContentText("Refreshing prices and checking margins...")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .build()
@@ -99,7 +107,7 @@ class MarginCheckWorker(
     }
 
     override suspend fun doWork(): Result {
-        Log.d(TAG, "Worker execution started")
+        Log.d(TAG, "Worker execution started: Price Sync + Margin Check")
         val app = context.applicationContext as PortfolioHelperApp
         
         try {
@@ -110,6 +118,7 @@ class MarginCheckWorker(
 
         try {
             val result = runMarginCheck(app)
+            // Update widget to show new prices and margin status
             MarginCheckWidget().updateAll(context)
             return result
         } catch (e: Exception) {
@@ -136,10 +145,13 @@ class MarginCheckWorker(
         val allAlerts = app.database.portfolioMarginAlertDao().getAll()
         val portfolios = app.database.portfolioDao().getAll().associateBy { it.serialId }
         
-        if (allAlerts.isEmpty()) return Result.success()
+        if (allAlerts.isEmpty()) {
+            Log.d(TAG, "No alerts or portfolios found to sync.")
+            return Result.success()
+        }
 
         try {
-            Log.d(TAG, "Attempting background sync...")
+            Log.d(TAG, "Attempting background sync with data server...")
             app.syncRepo.sync()
         } catch (e: Exception) {
             Log.w(TAG, "Background sync failed: ${e.message}")
@@ -159,11 +171,13 @@ class MarginCheckWorker(
         }
 
         if (allPositions.isEmpty() && allCashEntries.isEmpty()) {
-            Log.d(TAG, "No data to check.")
+            Log.d(TAG, "No positions/cash to update.")
             return Result.success()
         }
 
+        Log.d(TAG, "Fetching latest market prices from Yahoo Finance...")
         val prices = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
+        Log.i(TAG, "Successfully updated prices for ${prices.size} symbols.")
 
         val triggeredPortfolioNames = mutableListOf<String>()
         var oldestDataTime = Long.MAX_VALUE
