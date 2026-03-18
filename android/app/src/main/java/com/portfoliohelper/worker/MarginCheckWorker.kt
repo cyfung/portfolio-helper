@@ -12,6 +12,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -108,7 +109,10 @@ class MarginCheckWorker(
         }
 
         try {
-            return runMarginCheck(app)
+            val result = runMarginCheck(app)
+            // Update widget after every run
+            MarginCheckWidget().updateAll(context)
+            return result
         } catch (e: Exception) {
             Log.e(TAG, "Fatal error in worker: ${e.message}", e)
             app.settingsRepo.updateMarginCheckStats(
@@ -119,6 +123,7 @@ class MarginCheckWorker(
                     errorMessage = e.message ?: "Unknown error"
                 )
             )
+            MarginCheckWidget().updateAll(context)
             return Result.success() // Return success so WorkManager doesn't retry unnecessarily if it's a code error
         }
     }

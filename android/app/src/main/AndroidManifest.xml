@@ -38,6 +38,17 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name="com.portfoliohelper.worker.MarginCheckWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/margin_check_widget_info" />
+        </receiver>
+
         <!-- Explicitly define WorkManager's Foreground Service to include dataSync type -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

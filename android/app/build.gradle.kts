@@ -67,4 +67,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.bundles.ktor)
+
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
 }
