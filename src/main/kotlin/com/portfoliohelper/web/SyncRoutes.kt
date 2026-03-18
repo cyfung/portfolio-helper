@@ -107,10 +107,10 @@ fun Route.configureSyncRoutes() {
             val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
                 ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
 
-            val roots = ManagedPortfolio.getAll().associate { entry ->
-                entry.serialId to BackupService.exportRoot(entry)
+            val entries = ManagedPortfolio.getAll().map { entry ->
+                BackupService.exportSyncEntry(entry)
             }
-            val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(roots))
+            val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(entries))
             val encrypted = AesGcm.encrypt(payload.toByteArray(Charsets.UTF_8), aesKey, nonce)
             call.respondBytes(encrypted, ContentType.Application.OctetStream)
         }

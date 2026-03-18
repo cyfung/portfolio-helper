@@ -27,7 +27,16 @@ import java.util.concurrent.*
 import java.util.zip.*
 
 @Serializable
-data class AllSyncResponse(val portfolios: Map<Int, BackupRoot>)
+data class PortfolioSyncEntry(
+    val serialId: Int,
+    val name: String,
+    val slug: String,
+    val stocks: List<BackupStock>,
+    val cash: List<BackupCash>
+)
+
+@Serializable
+data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>)
 
 @Serializable
 data class BackupRoot(
@@ -167,6 +176,17 @@ object BackupService {
 
     fun exportRoot(portfolio: ManagedPortfolio): BackupRoot =
         root(portfolio, true)
+
+    fun exportSyncEntry(portfolio: ManagedPortfolio): PortfolioSyncEntry {
+        val r = root(portfolio, resolveUsd = true)
+        return PortfolioSyncEntry(
+            serialId = portfolio.serialId,
+            name = portfolio.name,
+            slug = portfolio.slug,
+            stocks = r.stocks,
+            cash = r.cash
+        )
+    }
 
     fun parseImportFile(bytes: ByteArray, filename: String): ImportResult {
         val lower = filename.lowercase()

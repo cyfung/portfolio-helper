@@ -221,8 +221,7 @@ class SyncRepository(
 
             val encryptedBytes = response.readBytes()
             val jsonBytes = AesGcm.decrypt(encryptedBytes, aesKey)
-            val allSync = json
-                .decodeFromString<AllSyncResponse>(jsonBytes.toString(Charsets.UTF_8))
+            val allSync = json.decodeFromString<AllSyncResponse>(jsonBytes.toString(Charsets.UTF_8))
 
             parseAndSave(allSync)
             Log.i("SyncRepository", "Sync successful: ${allSync.portfolios.size} portfolios")
@@ -252,20 +251,21 @@ class SyncRepository(
 
             var maxSerialId = 0
 
-            for ((serialId, root) in response.portfolios) {
+            for (entry in response.portfolios) {
+                val serialId = entry.serialId
                 if (serialId > maxSerialId) maxSerialId = serialId
 
                 db.portfolioDao().upsert(
-                    Portfolio(serialId = serialId, displayName = root.portfolioSlug.replaceFirstChar { it.uppercase() })
+                    Portfolio(serialId = serialId, displayName = entry.name)
                 )
 
-                root.stocks.forEach { s ->
+                entry.stocks.forEach { s ->
                     db.positionDao().upsert(
                         Position(portfolioId = serialId, symbol = s.symbol, quantity = s.amount, targetWeight = s.targetWeight, groups = s.groups)
                     )
                 }
 
-                root.cash.mapNotNull { c ->
+                entry.cash.mapNotNull { c ->
                     when {
                         c.currency == "P" -> c.snapshotUsd?.let {
                             CashEntry(portfolioId = serialId, label = c.label, currency = "USD", amount = it, isMargin = c.marginFlag)
@@ -297,15 +297,16 @@ class SyncRepository(
 // ── Sync response models ───────────────────────────────────────────────────────
 
 @kotlinx.serialization.Serializable
-data class AllSyncResponse(val portfolios: Map<Int, BackupRoot>)
-
-@kotlinx.serialization.Serializable
-data class BackupRoot(
-    val version: Int = 1,
-    val portfolioSlug: String,
+data class PortfolioSyncEntry(
+    val serialId: Int,
+    val name: String,
+    val slug: String,
     val stocks: List<BackupStock>,
     val cash: List<BackupCash>
 )
+
+@kotlinx.serialization.Serializable
+data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>)
 
 @kotlinx.serialization.Serializable
 data class BackupStock(
