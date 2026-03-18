@@ -11,9 +11,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountTree
@@ -38,7 +41,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.portfoliohelper.data.model.Portfolio
+import com.portfoliohelper.data.repository.YahooQuote
 import com.portfoliohelper.ui.components.DynamicCurrencySwitcher
+import com.portfoliohelper.ui.components.UpdateTimestamp
 import com.portfoliohelper.ui.screens.CashScreen
 import com.portfoliohelper.ui.screens.GroupsScreen
 import com.portfoliohelper.ui.screens.PortfolioScreen
@@ -114,7 +119,9 @@ val navItems = listOf(
 fun PortfolioSelectorTitle(
     portfolios: List<Portfolio>,
     selectedId: Int,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    marketData: Map<String, YahooQuote>,
+    relatedSymbols: Set<String>
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = portfolios.find { it.serialId == selectedId } ?: portfolios.firstOrNull()
@@ -133,6 +140,8 @@ fun PortfolioSelectorTitle(
                 maxLines = 1
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            UpdateTimestamp(marketData, relatedSymbols)
         }
         DropdownMenu(
             expanded = expanded,
@@ -161,6 +170,8 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
     val allCashEntries by vm.allCashEntries.collectAsState()
     val portfolios by vm.portfolios.collectAsState()
     val selectedPortfolioId by vm.selectedPortfolioId.collectAsState()
+    val marketData by vm.marketData.collectAsState()
+    val activeSymbols by vm.activeSymbols.collectAsState()
 
     // Dynamic list taking currency from Cash across all portfolios, with USD always first
     val currencies = (listOf("USD") + allCashEntries.map { it.currency }).distinct()
@@ -182,15 +193,26 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
                         PortfolioSelectorTitle(
                             portfolios = portfolios,
                             selectedId = selectedPortfolioId,
-                            onSelect = vm::selectPortfolio
+                            onSelect = vm::selectPortfolio,
+                            marketData = marketData,
+                            relatedSymbols = activeSymbols
                         )
                     } else {
-                        Text(
-                            text = currentItem?.label ?: "Portfolio Helper",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Start
+                        ) {
+                            Text(
+                                text = currentItem?.label ?: "Portfolio Helper",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            if (!isSettingsScreen) {
+                                Spacer(Modifier.width(8.dp))
+                                UpdateTimestamp(marketData, activeSymbols)
+                            }
+                        }
                     }
                 },
                 actions = {

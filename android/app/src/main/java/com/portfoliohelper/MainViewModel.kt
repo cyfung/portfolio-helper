@@ -97,6 +97,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    // ── Active Symbols ────────────────────────────────────────────────────────
+
+    val activeSymbols: StateFlow<Set<String>> = combine(
+        positions,
+        allCashEntries,
+        marketData,
+        displayCurrency
+    ) { pos, cash, data, displayCcy ->
+        val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
+
+        val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" }
+        cashCurrencies.forEach { symbols.add("${it}USD=X") }
+
+        data.values.forEach { quote ->
+            val ccy = quote.currency
+            if (ccy != null && ccy != "USD" && !quote.symbol.endsWith("=X")) {
+                val isPence = ccy.length == 3 && ccy[2].isLowerCase()
+                val normalizedCcy = if (isPence) ccy.uppercase() else ccy
+                symbols.add("${normalizedCcy}USD=X")
+            }
+        }
+
+        if (displayCcy != "USD") {
+            symbols.add("${displayCcy}USD=X")
+        }
+        symbols
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
     // ── Discovery ─────────────────────────────────────────────────────────────
 
     val discoveredServers: StateFlow<List<NsdServiceInfo>> = syncRepo.discoverServers()
@@ -303,29 +331,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         viewModelScope.launch {
-            combine(positions, allCashEntries, marketData, displayCurrency) { pos, cash, data, displayCcy ->
-                val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
-
-                val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" }
-                cashCurrencies.forEach { symbols.add("${it}USD=X") }
-
-                data.values.forEach { quote ->
-                    val ccy = quote.currency
-                    if (ccy != null && ccy != "USD" && !quote.symbol.endsWith("=X")) {
-                        val isPence = ccy.length == 3 && ccy[2].isLowerCase()
-                        val normalizedCcy = if (isPence) ccy.uppercase() else ccy
-                        symbols.add("${normalizedCcy}USD=X")
-                    }
-                }
-
-                if (displayCcy != "USD") {
-                    symbols.add("${displayCcy}USD=X")
-                }
-
-                symbols.toList()
-            }.collect { activeSymbols ->
-                if (activeSymbols.isNotEmpty()) {
-                    YahooMarketDataService.start(activeSymbols)
+            activeSymbols.collect { symbols ->
+                if (symbols.isNotEmpty()) {
+                    YahooMarketDataService.start(symbols.toList())
                 }
             }
         }
@@ -339,24 +347,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun refreshMarketData() {
-        val posSymbols = positions.value.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
-        val cashFxSymbols = allCashEntries.value.map { it.currency }.distinct().filter { it != "USD" }.map { "${it}USD=X" }
-        posSymbols.addAll(cashFxSymbols)
-
-        marketData.value.values.forEach { quote ->
-            val ccy = quote.currency
-            if (ccy != null && ccy != "USD" && !quote.symbol.endsWith("=X")) {
-                val isPence = ccy.length == 3 && ccy[2].isLowerCase()
-                val normalizedCcy = if (isPence) ccy.uppercase() else ccy
-                posSymbols.add("${normalizedCcy}USD=X")
-            }
-        }
-
-        if (displayCurrency.value != "USD") {
-            posSymbols.add("${displayCurrency.value}USD=X")
-        }
-
-        val all = posSymbols.toList()
+        val all = activeSymbols.value.toList()
         if (all.isNotEmpty()) {
             YahooMarketDataService.start(all)
         }
