@@ -174,7 +174,14 @@ object PortfolioCalculator {
         val marketPrices = results.values.mapNotNull { quote ->
             val price = quote.regularMarketPrice ?: quote.previousClose
             if (price != null) {
-                MarketPrice(quote.symbol, price, quote.previousClose, quote.isMarketClosed, currency = quote.currency)
+                MarketPrice(
+                    quote.symbol,
+                    price,
+                    quote.previousClose,
+                    quote.isMarketClosed,
+                    timestamp = quote.timestamp,
+                    currency = quote.currency
+                )
             } else null
         }
         
@@ -192,7 +199,14 @@ object PortfolioCalculator {
      */
     suspend fun loadCachedMarketData(db: AppDatabase): Map<String, YahooQuote> {
         return db.marketPriceDao().getAll().associate { cached ->
-            cached.symbol to YahooQuote(cached.symbol, cached.price, cached.previousClose, cached.isMarketClosed, cached.currency)
+            cached.symbol to YahooQuote(
+                cached.symbol,
+                cached.price,
+                cached.previousClose,
+                cached.isMarketClosed,
+                cached.currency,
+                cached.timestamp
+            )
         }
     }
 

@@ -85,7 +85,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
         .map { list ->
             list.associate {
-                it.symbol to YahooQuote(it.symbol, it.price, it.previousClose, it.isMarketClosed, it.currency)
+                it.symbol to YahooQuote(
+                    it.symbol,
+                    it.price,
+                    it.previousClose,
+                    it.isMarketClosed,
+                    it.currency,
+                    it.timestamp
+                )
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -284,6 +291,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             price,
                             quote.previousClose,
                             quote.isMarketClosed,
+                            timestamp = quote.timestamp,
                             currency = quote.currency
                         )
                     } else null

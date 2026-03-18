@@ -16,7 +16,8 @@ data class YahooQuote(
     val regularMarketPrice: Double?,
     val previousClose: Double?,
     val isMarketClosed: Boolean = false,
-    val currency: String? = null
+    val currency: String? = null,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 object YahooFinanceClient {
@@ -115,6 +116,6 @@ object YahooFinanceClient {
             beforeOpen || afterClose
         }
 
-        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency)
+        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency, System.currentTimeMillis())
     }
 }
