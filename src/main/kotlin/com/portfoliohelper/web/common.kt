@@ -38,6 +38,22 @@ fun DIV.renderConfigButton() {
 internal fun formatQty(amount: Double) =
     if (amount == amount.toLong().toDouble()) amount.toLong().toString() else amount.toString()
 
+internal fun HEAD.renderChartToolPageHead(title: String, pageScripts: List<String>) {
+    title { +title }
+    meta(charset = "UTF-8")
+    meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
+    renderCommonHeadElements()
+    script {
+        src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
+        async = true
+    }
+    script { src = "/static/common/theme.js" }
+    script { src = "/static/common/stats-formatters.js" }
+    script { src = "/static/backtest/backtest-blocks.js" }
+    script { src = "/static/backtest/backtest-saved.js" }
+    for (s in pageScripts) script { src = s }
+}
+
 fun HEAD.renderCommonHeadElements() {
     link(rel = "stylesheet", href = "/static/styles.css")
     link(rel = "icon", type = "image/png", href = "/static/favicon-96x96.png") {

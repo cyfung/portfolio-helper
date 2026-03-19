@@ -1,7 +1,8 @@
 // ── main.js — Application bootstrap (DOMContentLoaded only) ──────────────────
 // Load order for <script> tags:
 //   utils.js → ui-helpers.js → letf.js → cash.js → rebalance.js →
-//   portfolio.js → edit-mode.js → controls.js → backup.js → sse.js → main.js
+//   display-worker.js → portfolio.js → rebalance-ga.js → groups.js →
+//   edit-mode.js → controls.js → backup.js → sse.js → main.js
 
 document.addEventListener('DOMContentLoaded', () => {
     initSseConnection();
@@ -12,18 +13,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initPasteHandler();
     initCurrencyControls();
     initRebalanceControls();
-    initBackupPanel();
+initBackupPanel();
     initTwsSync();
     initSaveToBacktest();
     initThemeToggle();
 
-    // Initialize cash totals on page load (USD entries are pre-filled server-side).
-    // Must run before restoring targets so lastMarginUsd is correct.
-    updateCashTotals();
-
-    // Populate lastPortfolioVal from server-rendered DOM prices before restoring targets,
-    // so delta is correct and alloc columns don't flash wrong values on load.
-    updateTotalValue();
+    // Compute display values (including cash totals) from server-rendered DOM data.
+    // The worker reads cash entries from DOM and sets lastMarginUsd/lastCashTotalUsd globals.
+    scheduleDisplayUpdate();
 
     // Restore saved rebalance/margin targets — margin % takes priority
     const marginTargetInput = document.getElementById('margin-target-input');
@@ -49,7 +46,5 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshDisplayCurrency();
     }
 
-    updateRebalTargetPlaceholder();
-    updateMarginTargetDisplay();
     updateTargetWeightTotal();
 });

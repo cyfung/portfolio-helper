@@ -25,7 +25,7 @@ function buildDayChangeHTML(changeDollars, changePercent, changeClass) {
 // Sets a price cell to a formatted dollar value (or '—'), adding 'loaded' when set
 function setPriceCell(cell, price) {
     if (!cell) return;
-    cell.textContent = price !== null ? '$' + price.toFixed(2) : '—';
+    cell.textContent = price !== null ? price.toFixed(2) : '—';
     if (price !== null) cell.classList.add('loaded');
 }
 
@@ -47,7 +47,7 @@ function updateGlobalTimestamp(timestamp) {
 
 // Updates the grand total element
 function updateGrandTotal() {
-    const grandEl = document.getElementById('grand-total-value');
-    if (grandEl) grandEl.textContent = (portfolioValueKnown && cashTotalKnown)
-        ? formatDisplayCurrency(lastPortfolioVal + lastCashTotalUsd) : 'N/A';
+    const grandEl = document.getElementById('portfolio-total');
+    if (grandEl) grandEl.textContent = (stockGrossValueKnown && cashTotalKnown)
+        ? formatDisplayCurrency(lastStockGrossVal + lastCashTotalUsd) : 'N/A';
 }

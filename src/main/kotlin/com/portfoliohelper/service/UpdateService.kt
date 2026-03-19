@@ -9,8 +9,8 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.*
+import java.util.concurrent.atomic.*
 import kotlin.system.exitProcess
 
 object UpdateService {
@@ -57,7 +57,11 @@ object UpdateService {
         }
         installDir = detected
         isJpackageInstall = detected != null
-        logger.debug("UpdateService: isJpackageInstall=$isJpackageInstall, installDir=$installDir")
+        logger.debug(
+            "UpdateService: isJpackageInstall={}, installDir={}",
+            isJpackageInstall,
+            installDir
+        )
     }
 
     private val httpClient = OkHttpClient.Builder()
@@ -92,7 +96,8 @@ object UpdateService {
                     .onFailure { logger.warn("Update check failed: ${it.message}") }
                 val current = state.get()
                 if (AppConfig.autoUpdate && current.hasUpdate && isJpackageInstall &&
-                    current.download.phase == DownloadPhase.IDLE) {
+                    current.download.phase == DownloadPhase.IDLE
+                ) {
                     launch {
                         runCatching { downloadUpdate() }
                             .onFailure { logger.warn("Auto-download failed: ${it.message}") }
@@ -141,7 +146,10 @@ object UpdateService {
         val current = state.get()
         if (current.download.phase != DownloadPhase.IDLE) error("Download already in progress (phase=${current.download.phase})")
 
-        state.set(state.get().copy(download = DownloadProgress(DownloadPhase.DOWNLOADING), lastCheckError = null))
+        state.set(
+            state.get()
+                .copy(download = DownloadProgress(DownloadPhase.DOWNLOADING), lastCheckError = null)
+        )
         try {
             val url = state.get().jpackageAssetUrl ?: error("No jpackage asset URL available")
             withContext(Dispatchers.IO) {
@@ -163,7 +171,11 @@ object UpdateService {
                                 received += n
                                 state.set(
                                     state.get().copy(
-                                        download = DownloadProgress(DownloadPhase.DOWNLOADING, received, totalBytes)
+                                        download = DownloadProgress(
+                                            DownloadPhase.DOWNLOADING,
+                                            received,
+                                            totalBytes
+                                        )
                                     )
                                 )
                             }
@@ -181,7 +193,12 @@ object UpdateService {
             onDownloadReady?.invoke()
         } catch (e: Exception) {
             logger.error("Download failed: ${e.message}", e)
-            state.set(state.get().copy(download = DownloadProgress(DownloadPhase.IDLE), lastCheckError = e.message))
+            state.set(
+                state.get().copy(
+                    download = DownloadProgress(DownloadPhase.IDLE),
+                    lastCheckError = e.message
+                )
+            )
             throw e
         }
     }
@@ -211,7 +228,9 @@ object UpdateService {
 
     fun applyUpdate() {
         val dir = installDir ?: error("Not a jpackage install")
-        state.set(state.get().copy(download = state.get().download.copy(phase = DownloadPhase.APPLYING)))
+        state.set(
+            state.get().copy(download = state.get().download.copy(phase = DownloadPhase.APPLYING))
+        )
 
         val pid = ProcessHandle.current().pid().toString()
         val isWindows = System.getProperty("os.name").lowercase().contains("win")
@@ -240,14 +259,14 @@ object UpdateService {
             val scriptPath = dir.resolve("portfolio-helper-update.sh")
             Files.writeString(scriptPath, buildString {
                 appendLine("#!/bin/sh")
-                appendLine("D=\"\$(cd \"\$(dirname \"\$0\")\" && pwd)\"")
-                appendLine("PENDING=\"\$D/app/portfolio-helper-pending.jar\"")
-                appendLine("DEST=\"\$D/app/portfolio-helper-all.jar\"")
-                appendLine("while kill -0 \"\$1\" 2>/dev/null; do sleep 0.5; done")
-                appendLine("rm -f \"\$DEST\"")
-                appendLine("mv \"\$PENDING\" \"\$DEST\"")
-                appendLine("\"\$D/bin/Portfolio Helper\" &")
-                appendLine("rm -f \"\$0\"")
+                appendLine($$"D=\"$(cd \"$(dirname \"$0\")\" && pwd)\"")
+                appendLine($$"PENDING=\"$D/app/portfolio-helper-pending.jar\"")
+                appendLine($$"DEST=\"$D/app/portfolio-helper-all.jar\"")
+                appendLine($$"while kill -0 \"$1\" 2>/dev/null; do sleep 0.5; done")
+                appendLine($$"rm -f \"$DEST\"")
+                appendLine($$"mv \"$PENDING\" \"$DEST\"")
+                appendLine($$"\"$D/bin/Portfolio Helper\" &")
+                appendLine($$"rm -f \"$0\"")
             })
             scriptPath.toFile().setExecutable(true)
             ProcessBuilder("sh", scriptPath.toString(), pid)
@@ -267,7 +286,7 @@ object UpdateService {
             ?.replace("\\\\", "\\")
 
     private fun parseAssetsForJpackage(json: String): String? {
-        val assetsSection = Regex("\"assets\"\\s*:\\s*\\[(.*?)\\]", RegexOption.DOT_MATCHES_ALL)
+        val assetsSection = Regex("\"assets\"\\s*:\\s*\\[(.*?)]", RegexOption.DOT_MATCHES_ALL)
             .find(json)?.groupValues?.get(1) ?: return null
         // Match name→browser_download_url pairs across each asset object.
         // Splitting at '{' was wrong: the uploader sub-object pushes browser_download_url
@@ -279,7 +298,7 @@ object UpdateService {
         var fallbackUrl: String? = null
         for (match in pairRx.findAll(assetsSection)) {
             val name = match.groupValues[1]
-            val url  = match.groupValues[2]
+            val url = match.groupValues[2]
             if ("jpackage" in name.lowercase()) {
                 if (name.endsWith(".jar")) return url  // prefer JAR for in-place update
                 if (fallbackUrl == null) fallbackUrl = url

@@ -309,7 +309,7 @@ function _dispatchFromLiveState(callback) {
     });
 
     const rebalTotal = getRebalTotal();
-    const delta = rebalTotal - lastPortfolioVal;
+    const delta = rebalTotal - lastStockGrossVal;
     const mode = delta >= 0 ? allocAddMode : allocReduceMode;
 
     if (mode !== 'WATERFALL') {

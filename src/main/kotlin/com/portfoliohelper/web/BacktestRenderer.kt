@@ -8,23 +8,11 @@ import kotlinx.html.*
 internal suspend fun ApplicationCall.renderBacktestPage() {
     respondHtml(HttpStatusCode.OK) {
         head {
-            title { +"Portfolio Backtester" }
-            meta(charset = "UTF-8")
-            meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
-
-            renderCommonHeadElements()
-
-            script {
-                src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
-                async = true
-            }
-            script { src = "/static/common/theme.js" }
-            script { src = "/static/common/stats-formatters.js" }
-            script { src = "/static/backtest/backtest-blocks.js" }
-            script { src = "/static/backtest/backtest-saved.js" }
-            script { src = "/static/backtest/backtest-chart.js" }
-            script { src = "/static/backtest/backtest-run.js" }
-            script { src = "/static/backtest/backtest-main.js" }
+            renderChartToolPageHead("Portfolio Backtester", listOf(
+                "/static/backtest/backtest-chart.js",
+                "/static/backtest/backtest-run.js",
+                "/static/backtest/backtest-main.js"
+            ))
         }
         body {
             div(classes = "container") {

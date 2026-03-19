@@ -286,8 +286,8 @@ document.addEventListener('DOMContentLoaded', function() {
         var container = document.getElementById('loan-history');
         if (container && container._history && container._history.length > 0) {
             loadParams(container._history[0]);
+            calculate();
         }
-        calculate();
     });
 
     document.getElementById('calculate-btn').addEventListener('click', calculate);

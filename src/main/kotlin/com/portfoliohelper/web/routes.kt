@@ -1,86 +1,227 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
-import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.*
-import com.portfoliohelper.service.UpdateService
 import com.portfoliohelper.service.UpdateService.toJson
+import com.portfoliohelper.service.db.GlobalSettingsTable
+import com.portfoliohelper.service.db.PortfolioCfgTable
+import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
+import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.http.content.*
+import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import io.ktor.server.sse.*
+import io.ktor.sse.*
+import io.ktor.utils.io.*
+import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
-import org.apache.commons.csv.CSVFormat
-import org.apache.commons.csv.CSVPrinter
-import java.io.File
-import java.io.FileWriter
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.transactions.transaction
+import kotlin.time.Duration.Companion.milliseconds
 
-private val backtestDir get() = AppDirs.dataDir.resolve(".backtest").toFile()
+private fun loadBacktestSettings(settingsKey: String): String = transaction {
+    fun get(k: String) = GlobalSettingsTable.selectAll()
+        .where { GlobalSettingsTable.key eq k }
+        .firstOrNull()?.get(GlobalSettingsTable.value)
 
-private fun loadBacktestSettings(filename: String): String {
-    val dir = backtestDir
-    val settings = dir.resolve(filename).let { if (it.exists()) Json.parseToJsonElement(it.readText()).jsonObject else JsonObject(emptyMap()) }
-    val portfolios = dir.resolve("portfolios.json").let { if (it.exists()) Json.parseToJsonElement(it.readText()) else JsonArray(emptyList()) }
-    return buildJsonObject { settings.forEach { (k, v) -> put(k, v) }; put("portfolios", portfolios) }.toString()
-}
-
-private fun saveBacktestSettings(json: JsonObject, filename: String) {
-    val dir = backtestDir; dir.mkdirs()
-    File(dir, "portfolios.json").writeText((json["portfolios"] ?: JsonArray(emptyList())).toString())
-    File(dir, filename).writeText(buildJsonObject { json.forEach { (k, v) -> if (k != "portfolios") put(k, v) } }.toString())
-}
-
-private val cashKeyKnownFlags = setOf("M")
-
-private val LOAN_COMPARE_FIELDS =
-    listOf(
-        "loanAmount",
-        "numPeriods",
-        "periodLength",
-        "payment",
-        "rateApy",
-        "rateFlat",
-        "extraCashflows"
+    val settings =
+        get(settingsKey)?.let { Json.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap())
+    val portfolios =
+        get("backtest.portfolios")?.let { Json.parseToJsonElement(it) } ?: JsonArray(emptyList())
+    buildJsonObject {
+        settings.forEach { (k, v) -> put(k, v) }; put(
+        "portfolios",
+        portfolios
     )
+    }.toString()
+}
+
+private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transaction {
+    fun upsert(k: String, v: String) = GlobalSettingsTable.upsert {
+        it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
+    }
+    upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
+    upsert(
+        settingsKey,
+        buildJsonObject { json.forEach { (k, v) -> if (k != "portfolios") put(k, v) } }.toString()
+    )
+}
+
+private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNull { el ->
+    val obj = el.jsonObject
+    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
+    val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
+    BackupStock(
+        symbol = symbol,
+        amount = amount,
+        targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
+        letf = obj["letf"]?.jsonPrimitive?.content ?: "",
+        groups = obj["groups"]?.jsonPrimitive?.content ?: ""
+    )
+}
+
+private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
+    json["portfolios"]?.jsonArray?.map { pel ->
+        val pObj = pel.jsonObject
+        PortfolioConfig(
+            label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
+            tickers = pObj["tickers"]?.jsonArray?.map { el ->
+                val obj = el.jsonObject
+                TickerWeight(
+                    ticker = obj["ticker"]!!.jsonPrimitive.content,
+                    weight = obj["weight"]!!.jsonPrimitive.double
+                )
+            } ?: emptyList(),
+            rebalanceStrategy = runCatching {
+                RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
+            }.getOrDefault(RebalanceStrategy.YEARLY),
+            marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
+                val mObj = mel.jsonObject
+                MarginConfig(
+                    marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                    marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+                    marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                    marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                    upperRebalanceMode = runCatching {
+                        MarginRebalanceMode.valueOf(
+                            mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                        )
+                    }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
+                    lowerRebalanceMode = runCatching {
+                        MarginRebalanceMode.valueOf(
+                            mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
+                        )
+                    }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
+                )
+            } ?: emptyList(),
+            includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
+        )
+    } ?: emptyList()
+
+private suspend fun ApplicationCall.respondOk() =
+    respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+
+private suspend fun ApplicationCall.respondApiError(
+    e: Exception,
+    status: HttpStatusCode = HttpStatusCode.InternalServerError
+) = respondText(
+    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+    ContentType.Application.Json,
+    status
+)
+
+private fun String.toSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+private fun String.jsonEscape() = replace("\\", "\\\\").replace("\"", "\\\"")
+private fun JsonObject.parseSlug() =
+    this["name"]?.jsonPrimitive?.contentOrNull?.trim()
+        ?.takeIf { it.isNotBlank() }?.toSlug()?.takeIf { it.isNotBlank() }
+private fun JsonArray.parseCashEntries() = mapNotNull { el ->
+    val obj = el.jsonObject
+    val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+    val currency = obj["currency"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase() ?: return@mapNotNull null
+    val marginFlag = obj["marginFlag"]?.jsonPrimitive?.booleanOrNull ?: false
+    if (currency == "P") {
+        val ref = obj["portfolioRef"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val sign = if ((obj["amount"]?.jsonPrimitive?.doubleOrNull ?: 1.0) < 0) -1.0 else 1.0
+        com.portfoliohelper.model.CashEntry(label, "P", marginFlag, sign, portfolioRef = ref)
+    } else {
+        val amount = obj["amount"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+        com.portfoliohelper.model.CashEntry(label, currency, marginFlag, amount)
+    }
+}
+
+private val LOAN_COMPARE_FIELDS = listOf(
+    "loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows"
+)
 
 private fun loanEntryKey(obj: JsonObject): String =
     LOAN_COMPARE_FIELDS.joinToString("|") { obj[it]?.toString() ?: "" }
 
-private fun normalizeCashKey(raw: String): String {
-    val parts = raw.split(".").toMutableList()
-    val flags = mutableListOf<String>()
-    while (parts.isNotEmpty() && parts.last().uppercase() in cashKeyKnownFlags) {
-        flags.add(0, parts.removeLast().uppercase())
-    }
-    if (parts.isNotEmpty()) {
-        parts[parts.size - 1] = parts[parts.size - 1].uppercase()
-    }
-    return (parts + flags).joinToString(".")
-}
-
+@OptIn(DelicateCoroutinesApi::class)
 fun Application.configureRouting() {
+    val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
+    val httpPort = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
+
+    install(SSE)
+
+    intercept(ApplicationCallPipeline.Plugins) {
+        if (call.request.local.localPort == httpPort) {
+            val host = call.request.host()
+            val path = call.request.uri
+            call.respondRedirect("https://$host:$httpsPort$path", permanent = true)
+            return@intercept finish()
+        }
+    }
+
+    intercept(ApplicationCallPipeline.Plugins) {
+        val path = call.request.path()
+        val exempt = path == "/admin" ||
+                path == "/api/admin/login" ||
+                path.startsWith("/api/sync/") ||
+                path.startsWith("/static/")
+        if (exempt) return@intercept
+
+        // First-run: no sessions exist yet — auto-claim for this browser
+        if (!AdminService.hasAnySessions()) {
+            val ip = call.request.origin.remoteHost
+            val ua = call.request.headers[HttpHeaders.UserAgent] ?: ""
+            val token = AdminService.tryClaimFirstSession(ip, ua)
+            if (token != null) {
+                call.response.cookies.append(
+                    Cookie(
+                        name = AdminService.SESSION_COOKIE, value = token,
+                        httpOnly = true, secure = true, path = "/",
+                        maxAge = 10 * 365 * 24 * 60 * 60,
+                        extensions = mapOf("SameSite" to "Strict")
+                    )
+                )
+                return@intercept  // allow through with new cookie
+            }
+            // Another thread/browser beat us — fall through to normal cookie check
+        }
+
+        val token = call.request.cookies[AdminService.SESSION_COOKIE]
+        if (token == null || !AdminService.validateSession(token)) {
+            if (call.request.headers[HttpHeaders.Accept]?.contains("text/html") == true) {
+                call.respondRedirect("/admin")
+            } else {
+                call.respond(HttpStatusCode.Unauthorized, "Session required")
+            }
+            return@intercept finish()
+        }
+    }
+
+    // Load persisted state from DB so it survives server restarts
+    AdminService.loadSessionState()
+    PairingService.loadFromDb()
+
     routing {
+
+        // Android Sync Endpoints
+        configureSyncRoutes()
+
+        // Admin Endpoints
+        configureAdminRoutes()
+
         get("/") {
-            call.renderPortfolioPage(
-                PortfolioRegistry.main(),
-                PortfolioRegistry.entries,
-                "main"
-            )
+            val all = ManagedPortfolio.getAll()
+            val default = all.first()
+            DividendService.maybeScheduleCalculation(default)
+            call.renderPortfolioPage(default, all, default.slug)
         }
 
         get("/portfolio/{name}") {
-            val id = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
+            val slug = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val entry =
-                PortfolioRegistry.get(id) ?: return@get call.respond(HttpStatusCode.NotFound)
-            call.renderPortfolioPage(entry, PortfolioRegistry.entries, id)
+                ManagedPortfolio.getBySlug(slug) ?: return@get call.respond(HttpStatusCode.NotFound)
+            DividendService.maybeScheduleCalculation(entry)
+            call.renderPortfolioPage(entry, ManagedPortfolio.getAll(), slug)
         }
 
         get("/loan") {
@@ -100,54 +241,66 @@ fun Application.configureRouting() {
         }
 
         get("/api/backtest/settings") {
-            call.respondText(loadBacktestSettings("settings.json"), ContentType.Application.Json)
+            call.respondText(
+                loadBacktestSettings("backtest.settings"),
+                ContentType.Application.Json
+            )
         }
 
         get("/api/montecarlo/settings") {
-            call.respondText(loadBacktestSettings("mc-settings.json"), ContentType.Application.Json)
+            call.respondText(
+                loadBacktestSettings("backtest.mc-settings"),
+                ContentType.Application.Json
+            )
         }
 
         get("/api/backtest/savedPortfolios") {
-            val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
-            call.respondText(if (f.exists()) f.readText() else "[]", ContentType.Application.Json)
+            val rows = transaction {
+                SavedBacktestPortfoliosTable.selectAll()
+                    .orderBy(SavedBacktestPortfoliosTable.createdAt)
+                    .map {
+                        buildJsonObject {
+                            put("name", it[SavedBacktestPortfoliosTable.name])
+                            put(
+                                "config",
+                                Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config])
+                            )
+                        }
+                    }
+            }
+            call.respondText(JsonArray(rows).toString(), ContentType.Application.Json)
         }
 
         delete("/api/backtest/savedPortfolios") {
-            val name = call.request.queryParameters["name"]
-                ?: return@delete call.respond(HttpStatusCode.BadRequest)
-            val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
-            if (f.exists()) {
-                val remaining = Json.parseToJsonElement(f.readText()).jsonArray
-                    .filter { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull != name }
-                f.writeText(JsonArray(remaining).toString())
-            }
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+            val name = call.request.queryParameters["name"] ?: return@delete call.respond(
+                HttpStatusCode.BadRequest
+            )
+            transaction { SavedBacktestPortfoliosTable.deleteWhere { SavedBacktestPortfoliosTable.name eq name } }
+            call.respondOk()
         }
 
         post("/api/backtest/savedPortfolios") {
             val body = call.receiveText()
             val entry = Json.parseToJsonElement(body).jsonObject
-            val name = entry["name"]?.jsonPrimitive?.contentOrNull
-                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val name = entry["name"]?.jsonPrimitive?.contentOrNull ?: return@post call.respond(
+                HttpStatusCode.BadRequest
+            )
             val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-
-            val f = AppDirs.dataDir.resolve(".backtest/saved-portfolios.json").toFile()
-            f.parentFile.mkdirs()
-            val existing =
-                if (f.exists()) Json.parseToJsonElement(f.readText()).jsonArray.toMutableList()
-                else mutableListOf()
-
-            val takenNames =
-                existing.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }.toSet()
-            var finalName = name
-            var counter = 2
-            while (finalName in takenNames) {
-                finalName = "$name ($counter)"; counter++
+            val saved = transaction {
+                val takenNames = SavedBacktestPortfoliosTable.selectAll()
+                    .map { it[SavedBacktestPortfoliosTable.name] }.toSet()
+                var finalName = name
+                var counter = 2
+                while (finalName in takenNames) {
+                    finalName = "$name ($counter)"; counter++
+                }
+                SavedBacktestPortfoliosTable.insert {
+                    it[SavedBacktestPortfoliosTable.name] = finalName
+                    it[SavedBacktestPortfoliosTable.config] = config.toString()
+                    it[SavedBacktestPortfoliosTable.createdAt] = System.currentTimeMillis()
+                }
+                buildJsonObject { put("name", finalName); put("config", config) }
             }
-
-            val saved = buildJsonObject { put("name", finalName); put("config", config) }
-            existing.add(saved)
-            f.writeText(JsonArray(existing).toString())
             call.respondText(saved.toString(), ContentType.Application.Json)
         }
 
@@ -155,55 +308,14 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                runCatching { saveBacktestSettings(json, "settings.json") }
+                runCatching { saveBacktestSettings(json, "backtest.settings") }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate =
                     json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
-                val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
-                    val pObj = pel.jsonObject
-                    PortfolioConfig(
-                        label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
-                        tickers = pObj["tickers"]?.jsonArray?.map { el ->
-                            val obj = el.jsonObject
-                            TickerWeight(
-                                ticker = obj["ticker"]!!.jsonPrimitive.content,
-                                weight = obj["weight"]!!.jsonPrimitive.double
-                            )
-                        } ?: emptyList(),
-                        rebalanceStrategy = runCatching {
-                            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
-                        }.getOrDefault(RebalanceStrategy.YEARLY),
-                        marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
-                            val mObj = mel.jsonObject
-                            MarginConfig(
-                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.0,
-                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.015,
-                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.05,
-                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull
-                                    ?: 0.05,
-                                upperRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull
-                                            ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-                                lowerRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull
-                                            ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
-                            )
-                        } ?: emptyList(),
-                        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
-                    )
-                } ?: emptyList()
+                val portfolios = parsePortfolioConfigs(json)
 
                 val result =
                     BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
@@ -225,13 +337,10 @@ fun Application.configureRouting() {
                     append("{\"portfolios\":[")
                     result.portfolios.forEachIndexed { pi, pr ->
                         if (pi > 0) append(",")
-                        val escapedLabel = pr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                        append("{\"label\":\"$escapedLabel\",\"curves\":[")
+                        append("{\"label\":\"${pr.label.jsonEscape()}\",\"curves\":[")
                         pr.curves.forEachIndexed { ci, cr ->
                             if (ci > 0) append(",")
-                            val escapedCurveLabel =
-                                cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                            append("{\"label\":\"$escapedCurveLabel\",")
+                            append("{\"label\":\"${cr.label.jsonEscape()}\",")
                             append("\"points\":${serializePoints(cr.points)},")
                             append("\"stats\":${serializeStats(cr.stats)}}")
                         }
@@ -251,7 +360,9 @@ fun Application.configureRouting() {
 
         get("/api/montecarlo/progress") {
             val (completed, total) = MonteCarloService.getProgress()
-            call.respondText("""{"completed":$completed,"total":$total}""", ContentType.Application.Json)
+            call.respondText(
+                """{"completed":$completed,"total":$total}""", ContentType.Application.Json
+            )
         }
 
         post("/api/montecarlo/run") {
@@ -259,55 +370,27 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
 
-                runCatching { saveBacktestSettings(json, "mc-settings.json") }
+                runCatching { saveBacktestSettings(json, "backtest.mc-settings") }
 
-                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                val minChunkYears  = json["minChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 3.0
-                val maxChunkYears  = json["maxChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 8.0
+                val fromDate =
+                    json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate =
+                    json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val minChunkYears = json["minChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 3.0
+                val maxChunkYears = json["maxChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 8.0
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
 
-                val portfolios = json["portfolios"]?.jsonArray?.map { pel ->
-                    val pObj = pel.jsonObject
-                    PortfolioConfig(
-                        label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
-                        tickers = pObj["tickers"]?.jsonArray?.map { el ->
-                            val obj = el.jsonObject
-                            TickerWeight(
-                                ticker = obj["ticker"]!!.jsonPrimitive.content,
-                                weight = obj["weight"]!!.jsonPrimitive.double
-                            )
-                        } ?: emptyList(),
-                        rebalanceStrategy = runCatching {
-                            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
-                        }.getOrDefault(RebalanceStrategy.YEARLY),
-                        marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
-                            val mObj = mel.jsonObject
-                            MarginConfig(
-                                marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-                                marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
-                                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                                upperRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-                                lowerRebalanceMode = runCatching {
-                                    MarginRebalanceMode.valueOf(
-                                        mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
-                                    )
-                                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
-                            )
-                        } ?: emptyList(),
-                        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
-                    )
-                } ?: emptyList()
+                val portfolios = parsePortfolioConfigs(json)
 
                 val request = MonteCarloRequest(
-                    fromDate, toDate, minChunkYears, maxChunkYears,
-                    simulatedYears, numSimulations, portfolios
+                    fromDate,
+                    toDate,
+                    minChunkYears,
+                    maxChunkYears,
+                    simulatedYears,
+                    numSimulations,
+                    portfolios
                 )
                 val result = MonteCarloService.runMonteCarlo(request)
 
@@ -320,12 +403,10 @@ fun Application.configureRouting() {
                     append(",\"portfolios\":[")
                     result.portfolios.forEachIndexed { pi, pr ->
                         if (pi > 0) append(",")
-                        val pLabel = pr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                        append("{\"label\":\"$pLabel\",\"curves\":[")
+                        append("{\"label\":\"${pr.label.jsonEscape()}\",\"curves\":[")
                         pr.curves.forEachIndexed { ci, cr ->
                             if (ci > 0) append(",")
-                            val cLabel = cr.label.replace("\\", "\\\\").replace("\"", "\\\"")
-                            append("{\"label\":\"$cLabel\",\"percentilePaths\":[")
+                            append("{\"label\":\"${cr.label.jsonEscape()}\",\"percentilePaths\":[")
                             cr.percentilePaths.forEachIndexed { ppi, pp ->
                                 if (ppi > 0) append(",")
                                 append("{\"percentile\":${pp.percentile}")
@@ -361,194 +442,218 @@ fun Application.configureRouting() {
             }
         }
 
-        // Update portfolio CSV — client sends full state: [{symbol, amount, targetWeight, letf}]
+        // Update portfolio positions — client sends full state: [{symbol, amount, targetWeight, letf, groups}]
         post("/api/portfolio/update") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
 
-                val body = call.receiveText()
-                val updates = Json.parseToJsonElement(body).jsonArray
+                val rows = parsePositionRows(Json.parseToJsonElement(call.receiveText()).jsonArray)
 
-                val csvPath = portfolioEntry.csvPath
-                FileWriter(File(csvPath)).use { writer ->
-                    val csvFormat = CSVFormat.DEFAULT.builder()
-                        .setHeader("stock_label", "amount", "target_weight", "letf", "groups")
-                        .build()
-                    CSVPrinter(writer, csvFormat).use { printer ->
-                        for (element in updates) {
-                            val obj = element.jsonObject
-                            val symbol = obj["symbol"]?.jsonPrimitive?.content ?: continue
-                            val amount = obj["amount"]?.jsonPrimitive?.double ?: continue
-                            val targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0
-                            val letf = obj["letf"]?.jsonPrimitive?.content ?: ""
-                            val groups = obj["groups"]?.jsonPrimitive?.content ?: ""
-                            val weightStr =
-                                if (targetWeight > 0) "%.2f".format(targetWeight) else ""
-                            printer.printRecord(symbol, formatQty(amount), weightStr, letf, groups)
-                        }
-                    }
-                }
+                transaction { portfolioEntry.replacePositions(rows) }
 
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                DividendService.invalidate(portfolioEntry)
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
-        // Update cash.txt — full-state write: [{key, value}]; preserves comments; deletes unlisted entries
+        // Update cash — full-state write: [{key, value}]; replaces all existing entries for the portfolio
         post("/api/cash/update") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
 
-                val body = call.receiveText()
-                val updates = Json.parseToJsonElement(body).jsonArray
-                val cashPath = portfolioEntry.cashPath
-                val file = File(cashPath)
+                val entries = Json.parseToJsonElement(call.receiveText()).jsonArray.parseCashEntries()
 
-                // Build update map: normalizedKey -> (payloadKey, rawValue)
-                val updateMap = mutableMapOf<String, Pair<String, String>>()
-                for (el in updates) {
-                    val obj = el.jsonObject
-                    val key = obj["key"]!!.jsonPrimitive.content
-                    val value = obj["value"]!!.jsonPrimitive.content
-                    updateMap[normalizeCashKey(key)] = key to value
-                }
+                transaction { portfolioEntry.replaceCash(entries) }
 
-                val keysSeen = mutableSetOf<String>()
-                val outputLines = mutableListOf<String>()
-
-                if (file.exists()) {
-                    file.readLines().forEach { line ->
-                        val trimmed = line.trim()
-                        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                            outputLines.add(line)
-                            return@forEach
-                        }
-                        val eqIdx = trimmed.indexOf('=')
-                        if (eqIdx < 0) {
-                            outputLines.add(line)
-                            return@forEach
-                        }
-                        val rawKey = trimmed.substring(0, eqIdx).trim()
-                        val normalizedKey = normalizeCashKey(rawKey)
-                        val entry = updateMap[normalizedKey]
-                        if (entry != null) {
-                            outputLines.add("$rawKey=${entry.second}")
-                            keysSeen.add(normalizedKey)
-                        }
-                        // else: not in update list → deleted → skip
-                    }
-                }
-
-                // Append new entries (key not seen in existing file)
-                for ((normalizedKey, pair) in updateMap) {
-                    if (normalizedKey !in keysSeen) {
-                        outputLines.add("${pair.first}=${pair.second}")
-                    }
-                }
-
-                file.writeText(outputLines.joinToString("\n") + if (outputLines.isNotEmpty()) "\n" else "")
-                // File watcher detects change → SSE reload → page refresh
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json,
-                    HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
-        // Loan calculation history — stored in .loan/history.json under dataDir (newest first, max 5 entries)
+        // Save stocks + cash + dividendStartDate in a single transaction
+        post("/api/portfolio/save-all") {
+            try {
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+
+                val root = Json.parseToJsonElement(call.receiveText()).jsonObject
+                val stockRows = root["stocks"]?.jsonArray?.let { parsePositionRows(it) } ?: emptyList()
+                val cashEntries = root["cash"]?.jsonArray?.parseCashEntries() ?: emptyList()
+
+                val dividendStartDate = root["dividendStartDate"]?.jsonPrimitive?.contentOrNull
+
+                val pid = portfolioEntry.serialId
+                transaction {
+                    portfolioEntry.replacePositions(stockRows)
+                    portfolioEntry.replaceCash(cashEntries)
+                    if (!dividendStartDate.isNullOrBlank()) {
+                        PortfolioCfgTable.upsert {
+                            it[PortfolioCfgTable.portfolioId] = pid
+                            it[PortfolioCfgTable.cfgKey] = "dividendStartDate"
+                            it[PortfolioCfgTable.cfgValue] = dividendStartDate
+                        }
+                    } else if (dividendStartDate != null) {
+                        PortfolioCfgTable.deleteWhere {
+                            (PortfolioCfgTable.portfolioId eq pid) and (PortfolioCfgTable.cfgKey eq "dividendStartDate")
+                        }
+                    }
+                }
+
+                DividendService.invalidate(portfolioEntry)
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        // Loan calculation history — stored in global_settings DB table (newest first, max 5 entries)
         get("/api/loan/history") {
-            val histFile = AppDirs.dataDir.resolve(".loan/history.json").toFile()
-            call.respondText(
-                if (histFile.exists()) histFile.readText() else "[]",
-                ContentType.Application.Json
-            )
+            val value = transaction {
+                GlobalSettingsTable.selectAll().where { GlobalSettingsTable.key eq "loan.history" }
+                    .firstOrNull()?.get(GlobalSettingsTable.value)
+            }
+            call.respondText(value ?: "[]", ContentType.Application.Json)
         }
 
         post("/api/loan/save") {
             try {
                 val body = call.receiveText()
                 val newEntry = Json.parseToJsonElement(body)
-                val histFile = AppDirs.dataDir.resolve(".loan/history.json").toFile()
-                histFile.parentFile.mkdirs()
                 val newKey = loanEntryKey(newEntry.jsonObject)
-                val existing = if (histFile.exists())
-                    Json.parseToJsonElement(histFile.readText()).jsonArray
-                        .filter { it is JsonObject && loanEntryKey(it.jsonObject) != newKey }
-                        .toMutableList()
-                else mutableListOf()
-                existing.add(0, newEntry)
-                histFile.writeText(JsonArray(existing.take(5)).toString())
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                transaction {
+                    val existing = GlobalSettingsTable.selectAll()
+                        .where { GlobalSettingsTable.key eq "loan.history" }
+                        .firstOrNull()?.get(GlobalSettingsTable.value)
+                        ?.let { raw ->
+                            Json.parseToJsonElement(raw).jsonArray
+                                .filter { el -> el is JsonObject && loanEntryKey(el.jsonObject) != newKey }
+                                .toMutableList()
+                        }
+                        ?: mutableListOf()
+                    existing.add(0, newEntry)
+                    GlobalSettingsTable.upsert {
+                        it[GlobalSettingsTable.key] = "loan.history"
+                        it[GlobalSettingsTable.value] = JsonArray(existing.take(5)).toString()
+                    }
+                }
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
         }
 
         // Generic per-portfolio config store: POST /api/portfolio-config/save?portfolio=X&key=<key>
-        // Persists to portfolio.conf (key=value lines) alongside the portfolio CSV.
+        // Persists to PortfolioCfgTable in SQLite (previously portfolio.conf file).
         // rebalTarget (USD) and marginTarget (%) are mutually exclusive — setting one clears the other.
         // Also accepts JSON body (no key param) for batch updates (e.g. twsAccount from config page).
         post("/api/portfolio-config/save") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
                 val key = call.request.queryParameters["key"]
-                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val body = call.receiveText().trim()
-                val confFile = File(portfolioEntry.csvPath).resolveSibling("portfolio.conf")
-                // Parse existing conf
-                val props = if (confFile.exists())
-                    confFile.readLines()
-                        .filter { '=' in it && !it.startsWith('#') }
-                        .associate {
-                            it.substringBefore('=').trim() to it.substringAfter('=').trim()
-                        }
-                        .toMutableMap()
-                else mutableMapOf()
 
                 if (key != null) {
                     // Single-key mode: plain text body
-                    val value = body
-                    if (value.isEmpty()) props.remove(key)
-                    else {
-                        props[key] = value
-                        if (key == "rebalTarget") props.remove("marginTarget")
-                        else if (key == "marginTarget") props.remove("rebalTarget")
+                    if (body.isEmpty()) {
+                        portfolioEntry.saveConfig(key, "")
+                    } else {
+                        portfolioEntry.saveConfig(key, body)
+                        if (key == "rebalTarget") portfolioEntry.saveConfig("marginTarget", "")
+                        else if (key == "marginTarget") portfolioEntry.saveConfig("rebalTarget", "")
                     }
+                    if (key == "dividendStartDate") DividendService.invalidate(portfolioEntry)
                 } else {
                     // Batch JSON mode (from config page)
                     val json = Json.parseToJsonElement(body).jsonObject
                     for ((k, v) in json) {
-                        val sv = v.jsonPrimitive.contentOrNull ?: ""
-                        if (sv.isEmpty()) props.remove(k) else props[k] = sv
+                        portfolioEntry.saveConfig(k, v.jsonPrimitive.contentOrNull ?: "")
                     }
+                    if (json.containsKey("dividendStartDate")) DividendService.invalidate(portfolioEntry)
                 }
-                // Migrate old rebal-target.txt if present
-                File(portfolioEntry.csvPath).resolveSibling("rebal-target.txt").delete()
-                // Write back
-                if (props.isEmpty()) confFile.delete()
-                else confFile.writeText(props.entries.joinToString("\n") { "${it.key}=${it.value}" })
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        // Create a new portfolio
+        post("/api/portfolio/create") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+                val slug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                if (ManagedPortfolio.getBySlug(slug) != null) {
+                    return@post call.respondText(
+                        "{\"status\":\"error\",\"message\":\"A portfolio named '${slug}' already exists.\"}",
+                        ContentType.Application.Json, HttpStatusCode.Conflict
+                    )
+                }
+                val portfolio = ManagedPortfolio.create(slug)
                 call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                    "{\"status\":\"ok\",\"slug\":\"${portfolio.slug}\"}",
+                    ContentType.Application.Json
                 )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        // Rename a portfolio
+        post("/api/portfolio/rename") {
+            try {
+                val portfolio = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+                val newSlug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                if (newSlug != portfolio.slug && ManagedPortfolio.getBySlug(newSlug) != null) {
+                    return@post call.respondText(
+                        "{\"status\":\"error\",\"message\":\"A portfolio named '$newSlug' already exists.\"}",
+                        ContentType.Application.Json, HttpStatusCode.Conflict
+                    )
+                }
+                portfolio.rename(newSlug)
+                PortfolioUpdateBroadcaster.broadcastReload()
+                call.respondText(
+                    "{\"status\":\"ok\",\"slug\":\"$newSlug\"}",
+                    ContentType.Application.Json
+                )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        // Remove a portfolio (first portfolio cannot be removed)
+        delete("/api/portfolio/remove") {
+            try {
+                val portfolioId = call.request.queryParameters["portfolio"]
+                    ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val portfolio = ManagedPortfolio.getBySlug(portfolioId)
+                    ?: return@delete call.respond(HttpStatusCode.NotFound)
+                if (portfolio.serialId == ManagedPortfolio.firstSerialId()) {
+                    return@delete call.respondText(
+                        "{\"status\":\"error\",\"message\":\"The default portfolio cannot be removed.\"}",
+                        ContentType.Application.Json, HttpStatusCode.Forbidden
+                    )
+                }
+                portfolio.delete()
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
+            } catch (e: Exception) {
+                call.respondApiError(e)
             }
         }
 
@@ -557,64 +662,168 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                val updates = json.entries.associate { (k, v) -> k to (v.jsonPrimitive.contentOrNull ?: "") }
+                val updates =
+                    json.entries.associate { (k, v) -> k to (v.jsonPrimitive.contentOrNull ?: "") }
                 AppConfig.save(updates)
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                call.respondOk()
             } catch (e: Exception) {
-                call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
-                )
+                call.respondApiError(e)
             }
+        }
+
+        // Generate a PIN to display in the server UI — user enters it on their Android device to pair
+        post("/api/pairing/generate") {
+            val pin = PairingService.generatePin()
+            call.respondText("{\"pin\":\"$pin\"}", ContentType.Application.Json)
+        }
+
+        // Check whether a previously generated PIN is still active, was used, or has expired
+        get("/api/pairing/status") {
+            val pin = call.request.queryParameters["pin"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing pin parameter")
+            val status = PairingService.getPinStatus(pin)
+            call.respondText("{\"status\":\"${status.name.lowercase()}\"}", ContentType.Application.Json)
         }
 
         // Server-Sent Events (SSE) endpoint for streaming price updates
-        get("/api/prices/stream") { call.handleSseStream() }
-
-        // Trigger an immediate backup for a portfolio (called before opening the restore UI or virtual rebalance)
-        post("/api/backup/trigger") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = PortfolioRegistry.get(portfolioId)
-                ?: return@post call.respond(HttpStatusCode.NotFound)
-            val prefix = call.request.queryParameters["prefix"]?.takeIf { it.isNotBlank() }
-            val subfolder = call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
-            BackupService.backupNow(portfolioEntry, prefix, subfolder)
-            call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+        sse("/api/prices/stream") {
+            heartbeat {
+                period = 100.milliseconds
+                event = ServerSentEvent("heartbeat")
+            }
+            handleSseStream()
         }
 
-        // List available backups grouped by subfolder ("default" = root .backup/ dir)
-        get("/api/backup/list") {
-            val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-            val portfolioEntry = PortfolioRegistry.get(portfolioId)
+        // Trigger an immediate DB backup for a portfolio
+        post("/api/backup/trigger") {
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val label = call.request.queryParameters["label"]?.takeIf { it.isNotBlank() } ?: ""
+            BackupService.saveToDb(portfolioEntry, label)
+            call.respondOk()
+        }
+
+        // List DB backups for a portfolio — [{id, savedAt, label}, ...] newest first
+        get("/api/backup/list-db") {
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
-            val all = BackupService.listAllBackups(portfolioEntry)
-            val json = buildString {
-                append("{")
-                all.entries.forEachIndexed { i, (key, dates) ->
-                    if (i > 0) append(",")
-                    append("\"$key\":[${dates.joinToString(",") { "\"$it\"" }}]")
-                }
-                append("}")
-            }
+            val entries = BackupService.listDbBackups(portfolioEntry)
+            val json = "[" + entries.joinToString(",") {
+                "{\"id\":${it.id},\"createdAt\":${it.createdAt},\"label\":\"${it.label}\"}"
+            } + "]"
             call.respondText(json, ContentType.Application.Json)
         }
 
-        // Restore a portfolio from a dated backup ZIP (optional subfolder param)
-        post("/api/backup/restore") {
+        // Restore a portfolio from a DB backup row
+        post("/api/backup/restore-db") {
             try {
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val portfolioEntry = PortfolioRegistry.get(portfolioId)
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
-                val date = call.request.queryParameters["date"]
-                    ?: return@post call.respond(HttpStatusCode.BadRequest, "Missing date parameter")
-                val subfolder =
-                    call.request.queryParameters["subfolder"]?.takeIf { it.isNotBlank() }
-                BackupService.restoreBackup(portfolioEntry, date, subfolder)
-                call.respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
+                val id = call.request.queryParameters["id"]?.toIntOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                BackupService.restoreFromDb(portfolioEntry, id)
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        // Delete a single DB backup by id
+        delete("/api/backup/delete-db") {
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                ?: return@delete call.respond(HttpStatusCode.NotFound)
+            val id = call.request.queryParameters["id"]?.toIntOrNull()
+                ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            BackupService.deleteFromDb(portfolioEntry, id)
+            call.respondOk()
+        }
+
+        // Delete all DB backups for a portfolio
+        delete("/api/backup/delete-all") {
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                ?: return@delete call.respond(HttpStatusCode.NotFound)
+            BackupService.deleteAllFromDb(portfolioEntry)
+            call.respondOk()
+        }
+
+        // Export portfolio as JSON download (includes snapshotUsd for P entries)
+        get("/api/backup/export-json") {
+            val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val json = BackupService.exportJson(portfolioEntry)
+            val filename = "backup-${portfolioEntry.slug}.json"
+            call.response.headers.append(
+                HttpHeaders.ContentDisposition,
+                "attachment; filename=\"$filename\""
+            )
+            call.respondText(json, ContentType.Application.Json)
+        }
+
+        // Import CSV / TXT / ZIP / JSON file — validates and returns parsed data for edit-mode population
+        post("/api/backup/import-file") {
+            ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            try {
+                val multipart = call.receiveMultipart()
+                var bytes: ByteArray? = null
+                var filename = "upload"
+                multipart.forEachPart { part ->
+                    if (part is PartData.FileItem && part.name == "file") {
+                        filename = part.originalFileName ?: "upload"
+                        bytes = part.provider().toByteArray()
+                    }
+                    part.dispose()
+                }
+                val fileBytes = bytes
+                    ?: return@post call.respondText(
+                        "{\"error\":\"No file uploaded\"}",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest
+                    )
+                val result = BackupService.parseImportFile(fileBytes, filename)
+                if (result.error != null) {
+                    call.respondText(
+                        "{\"error\":\"${result.error.replace("\"", "\\\"")}\"}",
+                        ContentType.Application.Json
+                    )
+                } else {
+                    val json = buildString {
+                        append("{")
+                        var first = true
+                        if (result.stocks != null) {
+                            first = false
+                            append("\"stocks\":[")
+                            result.stocks.forEachIndexed { i, s ->
+                                if (i > 0) append(",")
+                                val sym = (s["symbol"] as String).replace("\"", "\\\"")
+                                val letf = (s["letf"] as String).replace("\"", "\\\"")
+                                val grp = (s["groups"] as String).replace("\"", "\\\"")
+                                append("{\"symbol\":\"$sym\",\"amount\":${s["amount"]},\"targetWeight\":${s["targetWeight"]},\"letf\":\"$letf\",\"groups\":\"$grp\"}")
+                            }
+                            append("]")
+                        }
+                        if (result.cashKeys != null) {
+                            if (!first) append(",")
+                            append("\"cash\":[")
+                            result.cashKeys.forEachIndexed { i, c ->
+                                if (i > 0) append(",")
+                                val k = (c["key"] ?: "").replace("\"", "\\\"")
+                                val v = (c["value"] ?: "").replace("\"", "\\\"")
+                                append("{\"key\":\"$k\",\"value\":\"$v\"}")
+                            }
+                            append("]")
+                        }
+                        append("}")
+                    }
+                    call.respondText(json, ContentType.Application.Json)
+                }
             } catch (e: Exception) {
                 call.respondText(
-                    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
-                    ContentType.Application.Json, HttpStatusCode.InternalServerError
+                    "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
                 )
             }
         }
@@ -636,9 +845,12 @@ fun Application.configureRouting() {
             try {
                 val host = AppConfig.twsHost
                 val port = AppConfig.twsPort
-                val portfolioId = call.request.queryParameters["portfolio"] ?: "main"
-                val account = PortfolioRegistry.get(portfolioId)?.getTwsAccount()
-                val snapshot = withContext(Dispatchers.IO) { PortfolioSnapshot.fetch(host, port, account = account) }
+                val account = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])?.getTwsAccount()
+                val snapshot = withContext(Dispatchers.IO) {
+                    PortfolioSnapshot.fetch(
+                        host, port, account = account
+                    )
+                }
 
                 val exchangeSuffixMap = AppConfig.exchangeSuffixes
 
@@ -680,7 +892,7 @@ fun Application.configureRouting() {
             try {
                 UpdateService.checkForUpdate()
                 call.respondText(UpdateService.getInfo().toJson(), ContentType.Application.Json)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 call.respondText(
                     UpdateService.getInfo().toJson(),
                     ContentType.Application.Json,
@@ -691,11 +903,19 @@ fun Application.configureRouting() {
 
         post("/api/admin/download-update") {
             if (!UpdateService.isJpackageInstall) {
-                call.respondText("""{"status":"not-supported"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
+                call.respondText(
+                    """{"status":"not-supported"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.Conflict
+                )
                 return@post
             }
             if (UpdateService.getInfo().download.phase != UpdateService.DownloadPhase.IDLE) {
-                call.respondText("""{"status":"already-downloading"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
+                call.respondText(
+                    """{"status":"already-downloading"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.Conflict
+                )
                 return@post
             }
             GlobalScope.launch(Dispatchers.IO) {
@@ -706,7 +926,11 @@ fun Application.configureRouting() {
 
         post("/api/admin/apply-update") {
             if (!UpdateService.isJpackageInstall) {
-                call.respondText("""{"status":"not-supported"}""", ContentType.Application.Json, HttpStatusCode.Conflict)
+                call.respondText(
+                    """{"status":"not-supported"}""",
+                    ContentType.Application.Json,
+                    HttpStatusCode.Conflict
+                )
                 return@post
             }
             call.respondText("""{"status":"applying"}""", ContentType.Application.Json)

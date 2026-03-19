@@ -1,10 +1,9 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.AppDirs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.ImageIcon
@@ -67,7 +66,7 @@ object NewTrayService {
         return tempIcon.absolutePath
     }
 
-    fun createTray(url: String, scope: CoroutineScope): Boolean {
+    fun createTray(url: String): Boolean {
         if (!SystemTray.isSupported()) {
             return false
         }
@@ -77,12 +76,14 @@ object NewTrayService {
         val popup = PopupMenu()
         val openItem = MenuItem("Open")
         val openDirItem = MenuItem("Open Data Directory")
-        val checkUpdateItem = MenuItem("Check for Updates")
+        val copyAdminCodeItem = MenuItem("Copy Admin Code")
+        val restartItem = MenuItem("Restart")
         val exitItem = MenuItem("Exit")
         popup.add(openItem)
         popup.add(openDirItem)
-        popup.add(checkUpdateItem)
+        popup.add(copyAdminCodeItem)
         popup.addSeparator()
+        popup.add(restartItem)
         popup.add(exitItem)
 
         // Create the tray icon
@@ -108,9 +109,19 @@ object NewTrayService {
             }
         }
 
-        checkUpdateItem.addActionListener {
-            scope.launch { UpdateService.checkForUpdate() }
-            BrowserService.openBrowser("$url/config")
+        copyAdminCodeItem.addActionListener {
+            try {
+                val code = AdminService.getCurrentOrGenerate()
+                Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(code), null)
+                logger.info("Admin code copied to clipboard")
+            } catch (e: Exception) {
+                logger.warn("Failed to copy admin code to clipboard: ${e.message}")
+            }
+        }
+
+        restartItem.addActionListener {
+            tray.remove(trayIcon)
+            UpdateService.relaunchSelf()
         }
 
         exitItem.addActionListener {

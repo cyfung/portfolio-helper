@@ -7,7 +7,7 @@ function initMoreInfoToggle() {
     const btn = document.getElementById('more-info-toggle');
     if (!btn) return;
     const body = document.body;
-    const visible = localStorage.getItem('ib-viewer-more-info-visible') === 'true';
+    const visible = (localStorage.getItem('portfolio-helper-more-info-visible') || localStorage.getItem('ib-viewer-more-info-visible')) === 'true';
     if (visible) {
         body.classList.add('more-info-visible');
         btn.classList.add('active');
@@ -15,7 +15,7 @@ function initMoreInfoToggle() {
     btn.addEventListener('click', () => {
         const isVisible = body.classList.toggle('more-info-visible');
         btn.classList.toggle('active', isVisible);
-        localStorage.setItem('ib-viewer-more-info-visible', isVisible);
+        localStorage.setItem('portfolio-helper-more-info-visible', isVisible);
     });
 }
 
@@ -23,7 +23,7 @@ function initColumnVisibility() {
     const rebalToggle = document.getElementById('rebal-toggle');
     const body = document.body;
 
-    const rebalVisible = localStorage.getItem('ib-viewer-rebal-visible') === 'true';
+    const rebalVisible = (localStorage.getItem('portfolio-helper-rebal-visible') || localStorage.getItem('ib-viewer-rebal-visible')) === 'true';
     if (rebalVisible) {
         body.classList.add('rebalancing-visible');
         rebalToggle.classList.add('active');
@@ -32,7 +32,7 @@ function initColumnVisibility() {
     rebalToggle.addEventListener('click', () => {
         const isVisible = body.classList.toggle('rebalancing-visible');
         rebalToggle.classList.toggle('active');
-        localStorage.setItem('ib-viewer-rebal-visible', isVisible);
+        localStorage.setItem('portfolio-helper-rebal-visible', isVisible);
         updateTargetWeightTotal();
     });
 }
@@ -40,6 +40,7 @@ function initColumnVisibility() {
 // ── Currency controls ─────────────────────────────────────────────────────────
 
 function refreshDisplayCurrency() {
+    // Convert saved rebal target to new display currency
     const rebalInput = document.getElementById('rebal-target-input');
     if (rebalInput) {
         if (marginTargetPct !== null) {
@@ -54,65 +55,26 @@ function refreshDisplayCurrency() {
         }
     }
 
-    const totalCell = document.getElementById('portfolio-total');
-    if (totalCell) totalCell.textContent = portfolioValueKnown
-        ? formatDisplayCurrency(lastPortfolioVal) : 'N/A';
-
-    const changeDollars = lastPortfolioDayChangeUsd;
-    const changePercent = lastPrevPortfolioVal > 0 ? (changeDollars / lastPrevPortfolioVal) * 100 : 0;
-    const changeClass = changeDollars > 0 ? 'positive' : changeDollars < 0 ? 'negative' : 'neutral';
-    const portfolioChangeCell = document.getElementById('portfolio-day-change');
-    if (portfolioChangeCell) {
-        portfolioChangeCell.innerHTML = !portfolioValueKnown ? 'N/A'
-            : buildDayChangeHTML(changeDollars, changePercent, changeClass);
-    }
-
-    document.querySelectorAll('[data-cash-entry]').forEach(row => {
-        const ccy = row.dataset.currency;
-        const amount = parseFloat(row.dataset.amount);
-        const rate = fxRates[ccy];
-        const span = document.getElementById('cash-usd-' + row.dataset.entryId);
-        if (span) span.textContent = rate !== undefined ? formatDisplayCurrency(amount * rate) : 'N/A';
-    });
-
-    const cashTotalEl = document.getElementById('cash-total-usd');
-    if (cashTotalEl) cashTotalEl.textContent = cashTotalKnown ? formatDisplayCurrency(lastCashTotalUsd) : 'N/A';
-    updateMarginDisplay(lastMarginUsd);
-    updateGrandTotal();
-
-    const totalChangeCell = document.getElementById('total-day-change');
-    if (totalChangeCell) {
-        if (!portfolioValueKnown) {
-            totalChangeCell.innerHTML = 'N/A';
-        } else {
-            const prevGrand = lastPrevPortfolioVal + lastCashTotalUsd;
-            const totalChangePct = prevGrand !== 0 ? (changeDollars / Math.abs(prevGrand)) * 100 : 0;
-            totalChangeCell.innerHTML = buildDayChangeHTML(changeDollars, totalChangePct, changeClass);
-        }
-    }
-
-    updateRebalTargetPlaceholder();
-    updateRebalancingColumns(getRebalTotal());
-    updateAllocColumns(getAllocRebalTotal());
-    updateMarginTargetDisplay();
-    updateIbkrDailyInterest();
+    // All cells (stock, cash, margin, IBKR interest) re-rendered via worker
+    scheduleDisplayUpdate();
 }
 
 function initCurrencyControls() {
     function setDisplayCurrency(ccy) {
         currentDisplayCurrency = ccy;
-        localStorage.setItem('ib-viewer-display-currency', ccy);
+        localStorage.setItem('portfolio-helper-display-currency', ccy);
         refreshDisplayCurrency();
     }
 
     const currencyToggle = document.getElementById('currency-toggle');
     if (currencyToggle) {
         const currencies = currencyToggle.getAttribute('data-currencies').split(',');
-        const saved = localStorage.getItem('ib-viewer-display-currency');
+        const saved = localStorage.getItem('portfolio-helper-display-currency') || localStorage.getItem('ib-viewer-display-currency');
         if (saved && currencies.includes(saved)) {
             currentDisplayCurrency = saved;
             currencyToggle.querySelector('.toggle-label').textContent = saved;
         }
+        currencyToggle.classList.add('active');
         currencyToggle.addEventListener('click', () => {
             const next = currencies[(currencies.indexOf(currentDisplayCurrency) + 1) % currencies.length];
             currencyToggle.querySelector('.toggle-label').textContent = next;
@@ -122,7 +84,7 @@ function initCurrencyControls() {
 
     const currencySelect = document.getElementById('currency-select');
     if (currencySelect) {
-        const savedSel = localStorage.getItem('ib-viewer-display-currency');
+        const savedSel = localStorage.getItem('portfolio-helper-display-currency') || localStorage.getItem('ib-viewer-display-currency');
         if (savedSel) { currentDisplayCurrency = savedSel; currencySelect.value = savedSel; }
         currencySelect.addEventListener('change', () => setDisplayCurrency(currencySelect.value));
     }
@@ -189,7 +151,7 @@ function initRebalanceControls() {
         allocAddSelect.addEventListener('change', () => {
             allocAddMode = allocAddSelect.value;
             fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocAddMode`, { method: 'POST', body: allocAddMode });
-            updateAllocColumns(getAllocRebalTotal());
+            scheduleDisplayUpdate();
         });
     }
     if (allocReduceSelect) {
@@ -197,7 +159,8 @@ function initRebalanceControls() {
         allocReduceSelect.addEventListener('change', () => {
             allocReduceMode = allocReduceSelect.value;
             fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=allocReduceMode`, { method: 'POST', body: allocReduceMode });
-            updateAllocColumns(getAllocRebalTotal());
+            scheduleDisplayUpdate();
         });
     }
 }
+

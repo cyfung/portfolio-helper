@@ -12,11 +12,84 @@ const STOCK_ROW_HTML =
     '<td><input type="text" class="edit-input" data-column="groups" placeholder="e.g. 1 Equity" style="text-align:left;width:180px" /></td>' +
     '<td><button type="button" class="delete-row-btn">\u00d7</button></td>';
 
-const CASH_ROW_HTML =
-    '<td><input type="text" class="edit-input cash-edit-key" placeholder="Cash.USD.M" /></td>' +
-    '<td><input type="text" class="edit-input cash-edit-value" placeholder="0" /></td>' +
-    '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>' +
-    '<td class="cash-type-badge-cell"><span class="cash-type-badge"></span></td>';
+function makeCashRowHtml() {
+    const portfolioOptions = (window.allPortfolioOptions || [])
+        .map(p => `<option value="${p.slug}">${p.name}</option>`)
+        .join('');
+    return (
+        '<td><input type="text" class="edit-input cash-edit-label" placeholder="Label" /></td>' +
+        '<td><label class="cash-ref-toggle-label"><input type="checkbox" class="cash-edit-is-ref" />Ref</label></td>' +
+        '<td class="cash-normal-fields">' +
+            '<input type="text" class="edit-input cash-edit-currency" placeholder="USD" autocomplete="off" />' +
+            '<input type="number" class="edit-input cash-edit-amount" placeholder="0" step="any" />' +
+        '</td>' +
+        '<td class="cash-ref-fields" style="display:none">' +
+            '<select class="cash-edit-portfolio-ref">' + portfolioOptions + '</select>' +
+            '<input type="number" class="edit-input cash-edit-multiplier" value="1" step="any" placeholder="1" />' +
+        '</td>' +
+        '<td><label class="cash-margin-toggle"><input type="checkbox" class="cash-edit-margin" />M</label></td>' +
+        '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>'
+    );
+}
+
+function syncCashRowVisibility(tr) {
+    const isRef = tr.querySelector('.cash-edit-is-ref')?.checked ?? false;
+    const normalFields = tr.querySelector('.cash-normal-fields');
+    const refFields = tr.querySelector('.cash-ref-fields');
+    const marginCb = tr.querySelector('.cash-edit-margin');
+    if (normalFields) normalFields.style.display = isRef ? 'none' : '';
+    if (refFields) refFields.style.display = isRef ? '' : 'none';
+    tr.dataset.entryType = isRef ? (marginCb?.checked ? 'ref-margin' : 'ref') : (marginCb?.checked ? 'margin' : 'normal');
+}
+
+function initCashRowControls(tr) {
+    tr.querySelector('.cash-edit-is-ref')?.addEventListener('change', () => syncCashRowVisibility(tr));
+    tr.querySelector('.cash-edit-margin')?.addEventListener('change', () => syncCashRowVisibility(tr));
+}
+
+/** Parse old key=value format and populate structured fields. Used by TWS sync and backup import. */
+function populateCashRowFromKeyValue(tr, key, value) {
+    const allParts = key.split('.');
+    const parts = [...allParts];
+    let marginFlag = false;
+    while (parts.length > 0 && parts[parts.length - 1].toUpperCase() === 'M') {
+        marginFlag = true;
+        parts.pop();
+    }
+    if (parts.length < 2) return;
+    const currency = parts[parts.length - 1].toUpperCase();
+    const label = parts.slice(0, -1).join('.');
+
+    const labelInp = tr.querySelector('.cash-edit-label');
+    if (labelInp) labelInp.value = label;
+
+    if (currency === 'P') {
+        const isRefCb = tr.querySelector('.cash-edit-is-ref');
+        if (isRefCb) isRefCb.checked = true;
+        syncCashRowVisibility(tr);
+        const trimmed = String(value).trim();
+        const signNeg = trimmed.startsWith('-');
+        const slug = trimmed.replace(/^[+-]/, '').toLowerCase();
+        const sel = tr.querySelector('.cash-edit-portfolio-ref');
+        if (sel) {
+            const opt = Array.from(sel.options).find(o => o.value === slug);
+            if (opt) sel.value = slug;
+        }
+        const multiplierInp = tr.querySelector('.cash-edit-multiplier');
+        if (multiplierInp) multiplierInp.value = signNeg ? '-1' : '1';
+    } else {
+        const isRefCb = tr.querySelector('.cash-edit-is-ref');
+        if (isRefCb) isRefCb.checked = false;
+        syncCashRowVisibility(tr);
+        const ccyInp = tr.querySelector('.cash-edit-currency');
+        if (ccyInp) ccyInp.value = currency;
+        const amtInp = tr.querySelector('.cash-edit-amount');
+        if (amtInp) amtInp.value = value;
+        const marginCb = tr.querySelector('.cash-edit-margin');
+        if (marginCb) marginCb.checked = marginFlag;
+    }
+    syncCashRowVisibility(tr);
+}
 
 function addStockRow() {
     const tbody = document.querySelector('#stock-edit-table tbody');
@@ -34,8 +107,9 @@ function addCashRow() {
     const tr = document.createElement('tr');
     tr.setAttribute('data-cash-edit-row', 'true');
     tr.setAttribute('data-new-cash', 'true');
-    tr.innerHTML = CASH_ROW_HTML;
+    tr.innerHTML = makeCashRowHtml();
     tbody.appendChild(tr);
+    initCashRowControls(tr);
     return tr;
 }
 
@@ -61,26 +135,29 @@ function getStockColIndex(el) {
     return -1;
 }
 
-function updateCashRowTypeBadge(tr) {
-    const key = (tr.querySelector('.cash-edit-key')?.value || '').trim();
-    const parts = key.split('.');
-    const suffix = parts[parts.length - 1]?.toUpperCase();
-    const currency = parts[parts.length - 2]?.toUpperCase();
-    let type = 'normal', badgeText = '';
-    if (suffix === 'M') { type = 'margin'; badgeText = 'M'; }
-    else if (currency === 'P' || suffix === 'P') { type = 'ref'; badgeText = '\u2197'; }
-    tr.dataset.entryType = type;
-    const badge = tr.querySelector('.cash-type-badge');
-    if (badge) badge.textContent = badgeText;
-}
-
 // Resets all cash edit row inputs to their original (data-attribute) values
 function resetCashEditInputs() {
     document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
-        const keyInput = tr.querySelector('.cash-edit-key');
-        const valInput = tr.querySelector('.cash-edit-value');
-        if (keyInput) keyInput.value = keyInput.getAttribute('data-original-key') || '';
-        if (valInput) valInput.value = valInput.getAttribute('data-original-value') || '';
+        if (tr.dataset.newCash) return; // skip newly added rows — they'll be removed by the cancel path
+        const labelInp = tr.querySelector('.cash-edit-label');
+        if (labelInp) labelInp.value = tr.dataset.originalLabel || '';
+        const isRef = tr.dataset.originalIsRef === 'true';
+        const isRefCb = tr.querySelector('.cash-edit-is-ref');
+        if (isRefCb) isRefCb.checked = isRef;
+        const marginCb = tr.querySelector('.cash-edit-margin');
+        if (marginCb) marginCb.checked = tr.dataset.originalMargin === 'true';
+        if (isRef) {
+            const sel = tr.querySelector('.cash-edit-portfolio-ref');
+            if (sel) sel.value = tr.dataset.originalPortfolioRef || '';
+            const multiplierInp = tr.querySelector('.cash-edit-multiplier');
+            if (multiplierInp) multiplierInp.value = tr.dataset.originalMultiplier ?? '1';
+        } else {
+            const ccyInp = tr.querySelector('.cash-edit-currency');
+            if (ccyInp) ccyInp.value = tr.dataset.originalCurrency || '';
+            const amtInp = tr.querySelector('.cash-edit-amount');
+            if (amtInp) amtInp.value = tr.dataset.originalAmount || '';
+        }
+        syncCashRowVisibility(tr);
     });
 }
 
@@ -224,6 +301,9 @@ function showEditTable() {
         const tr = addStockRow();
         if (tr) tr.querySelector('.new-symbol-input').focus();
     }
+
+    const divInput = document.getElementById('dividend-from-input');
+    if (divInput) divInput.value = divInput.dataset.originalValue ?? '';
 }
 
 function removeEditTable() {
@@ -255,7 +335,10 @@ function initEditMode() {
             if (cashTbody && cashTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
                 addCashRow();
             }
-            document.querySelectorAll('[data-cash-edit-row]').forEach(tr => updateCashRowTypeBadge(tr));
+            document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
+                initCashRowControls(tr);
+                syncCashRowVisibility(tr);
+            });
         } else {
             if (allocControls) allocControls.style.display = '';
             removeEditTable();
@@ -290,29 +373,34 @@ function initEditMode() {
         const cashUpdates = [];
         document.querySelectorAll('[data-cash-edit-row]').forEach(tr => {
             if (tr.dataset.deleted) return;
-            const key = (tr.querySelector('.cash-edit-key')?.value || '').trim();
-            const value = (tr.querySelector('.cash-edit-value')?.value || '').trim();
-            if (!key) return;
-            cashUpdates.push({ key, value });
+            const label = (tr.querySelector('.cash-edit-label')?.value ?? '').trim();
+            if (!label) return;
+            const isRef = tr.querySelector('.cash-edit-is-ref')?.checked ?? false;
+            const marginFlag = tr.querySelector('.cash-edit-margin')?.checked ?? false;
+            if (isRef) {
+                const portfolioRef = tr.querySelector('.cash-edit-portfolio-ref')?.value ?? '';
+                const multiplier = parseFloat(tr.querySelector('.cash-edit-multiplier')?.value) || 1.0;
+                cashUpdates.push({ label, currency: 'P', marginFlag, amount: multiplier, portfolioRef });
+            } else {
+                const currency = (tr.querySelector('.cash-edit-currency')?.value ?? '').trim().toUpperCase() || 'USD';
+                const amount = parseFloat(tr.querySelector('.cash-edit-amount')?.value) || 0;
+                cashUpdates.push({ label, currency, marginFlag, amount });
+            }
         });
+
+        const dividendInput = document.getElementById('dividend-from-input');
+        const dividendStartDate = dividendInput ? dividendInput.value : null;
 
         saveBtn.disabled = true;
         editToggle.disabled = true;
         saveBtn.querySelector('.toggle-label').textContent = 'Saving...';
 
-        Promise.all([
-            fetch('/api/portfolio/update?portfolio=' + portfolioId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updates)
-            }),
-            fetch('/api/cash/update?portfolio=' + portfolioId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(cashUpdates)
-            })
-        ]).then(results => {
-            if (!results.every(r => r.ok)) throw new Error('Save failed');
+        fetch('/api/portfolio/save-all?portfolio=' + portfolioId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stocks: updates, cash: cashUpdates, dividendStartDate })
+        }).then(r => {
+            if (!r.ok) throw new Error('Save failed');
         }).catch(err => {
             alert('Failed to save: ' + err.message);
             saveBtn.disabled = false;
@@ -337,10 +425,6 @@ function initEditMode() {
             if (e.target.value.includes('%')) e.target.value = e.target.value.replace(/%/g, '');
             updateTargetWeightTotal();
         }
-        if (e.target.classList.contains('cash-edit-key')) {
-            const tr = e.target.closest('tr');
-            if (tr) updateCashRowTypeBadge(tr);
-        }
     });
 
     document.getElementById('add-stock-btn')?.addEventListener('click', () => {
@@ -350,7 +434,7 @@ function initEditMode() {
 
     document.getElementById('add-cash-btn')?.addEventListener('click', () => {
         const tr = addCashRow();
-        if (tr) tr.querySelector('.cash-edit-key').focus();
+        if (tr) tr.querySelector('.cash-edit-label').focus();
     });
 
     document.getElementById('virtual-rebal-btn')?.addEventListener('click', async () => {
@@ -360,6 +444,13 @@ function initEditMode() {
 
         if (!body.classList.contains('editing-active')) {
             editToggle.click();
+        }
+
+        if (dividendCalcUpToDate) {
+            const divInput = document.getElementById('dividend-from-input');
+            if (divInput) {
+                divInput.value = dividendCalcUpToDate;
+            }
         }
 
         const portfolioTotal = getRebalTotal();
@@ -460,44 +551,7 @@ function initPasteHandler() {
         const rows = lines.map(l => l.split('\t'));
         const isMultiCol = rows.some(r => r.length >= 2);
 
-        const isCashKey   = activeEl.classList.contains('cash-edit-key');
-        const isCashValue = activeEl.classList.contains('cash-edit-value');
-
-        if (isCashKey || isCashValue) {
-            if (isMultiCol) {
-                const tbody = document.querySelector('.cash-edit-table tbody');
-                if (!tbody) return;
-                let allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])'));
-                const startRow = activeEl.closest('tr');
-                let startIdx = allRows.indexOf(startRow);
-                if (startIdx < 0) startIdx = allRows.length;
-                rows.forEach((cols, i) => {
-                    let tr = allRows[startIdx + i];
-                    if (!tr) { tr = addCashRow(); allRows = Array.from(tbody.querySelectorAll('tr:not([data-deleted])')); }
-                    if (!tr) return;
-                    const k = tr.querySelector('.cash-edit-key');
-                    const v = tr.querySelector('.cash-edit-value');
-                    if (k) k.value = cols[0].trim();
-                    if (v && cols[1] !== undefined) v.value = cols[1].trim();
-                });
-            } else {
-                const sel = isCashKey ? '.cash-edit-key' : '.cash-edit-value';
-                let allInputs = Array.from(document.querySelectorAll(sel));
-                const startIdx = allInputs.indexOf(activeEl);
-                if (startIdx < 0) return;
-                lines.forEach((line, i) => {
-                    if (startIdx + i < allInputs.length) {
-                        allInputs[startIdx + i].value = line.trim();
-                    } else {
-                        const tr = addCashRow();
-                        if (!tr) return;
-                        allInputs = Array.from(document.querySelectorAll(sel));
-                        const inp = tr.querySelector(sel);
-                        if (inp) inp.value = line.trim();
-                    }
-                });
-            }
-        } else {
+        {
             const startColIdx = getStockColIndex(activeEl);
             if (startColIdx < 0) return;
 

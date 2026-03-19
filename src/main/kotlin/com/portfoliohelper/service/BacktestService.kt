@@ -11,6 +11,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
 import java.time.temporal.IsoFields
+import java.util.*
 import java.util.concurrent.*
 import kotlin.math.abs
 import kotlin.math.ln
@@ -152,7 +153,8 @@ object BacktestService {
 
 
     internal fun getResourceFiles(path: String): List<String> {
-        val url = object {}.javaClass.classLoader.getResource(path) ?: return emptyList()
+        val url = object {}.javaClass.classLoader.getResource(path)
+        if (url == null) return emptyList()
         val uri = url.toURI()
         val dirPath: Path = if (uri.scheme == "jar") {
             val fs = try {
@@ -190,26 +192,17 @@ object BacktestService {
         val simPattern = Regex("${upperTicker}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
         val today = LocalDate.now()
 
-        // Quick guard: if local file is already dated today, return it without any network call.
         val localFiles = findFiles(simPattern)
-        if (localFiles.isNotEmpty()) {
-            val filenameDate = LocalDate.parse(simPattern.find(localFiles.first().name)!!.groupValues[1])
-            if (filenameDate >= today) {
-                logger.info("Loading up-to-date SIM file for $upperTicker: ${localFiles.first().name}")
-                return readSimCsv(localFiles.first())
-            }
-        }
-
-        // Quick guard: if we wrote this file recently (within the last hour), trust it as-is
-        // and skip any network extension — it's fresh from our own pipeline.
-        if (localFiles.isNotEmpty() && recentlyWrittenByUs(localFiles.first())) {
-            logger.info("Skipping Yahoo fetch for $upperTicker — CSV was written by us recently (${localFiles.first().name})")
-            return readSimCsv(localFiles.first())
-        }
 
         // Tier 1 — local file
         if (localFiles.isNotEmpty()) {
-            val extended = tryExtendAndValidate(ticker, upperTicker, localFiles, simPattern, neededFromDate, today)
+            val extended = tryExtendAndValidate(
+                ticker,
+                upperTicker,
+                localFiles,
+                today,
+                neededFromDate
+            )
             if (extended != null) return extended
             localFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
@@ -218,7 +211,13 @@ object BacktestService {
         // Tier 2 — resource file
         val resourceFiles = copyFromResources(simPattern)
         if (resourceFiles.isNotEmpty()) {
-            val extended = tryExtendAndValidate(ticker, upperTicker, resourceFiles, simPattern, neededFromDate, today)
+            val extended = tryExtendAndValidate(
+                ticker,
+                upperTicker,
+                resourceFiles,
+                today,
+                neededFromDate
+            )
             if (extended != null) return extended
             resourceFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, rebuilding from scratch")
@@ -235,85 +234,82 @@ object BacktestService {
     }
 
     /**
-     * Attempts to extend [files] with Yahoo data and validate sanity checks.
-     * Returns the extended series on success, or null if extension/validation fails
+     * Attempts to prepend and/or extend [files] with Yahoo data, validating chain-link consistency
+     * in the overlap region. Returns the updated series on success, or null on any failure
      * (caller is responsible for deleting the files in that case).
+     *
+     * Prepend (if neededFromDate < firstDate): fetches Yahoo from neededFromDate to firstDate+10 days.
+     *   If Yahoo has dates before firstDate, calls chainPrepend to backfill; otherwise skips silently.
+     * Extend (if lastKnownDate < neededToDate): fetches Yahoo from lastKnownDate−10 days to neededToDate,
+     *   then calls chainExtend to append new entries.
+     * Both operations throw on overlap mismatch (caught here → returns null).
      */
     private fun tryExtendAndValidate(
         ticker: String,
         upperTicker: String,
         files: List<File>,
-        simPattern: Regex,
-        neededFromDate: LocalDate,
-        today: LocalDate
+        neededToDate: LocalDate,
+        neededFromDate: LocalDate
     ): Map<LocalDate, Double>? {
         val file = files.first()
         logger.info("Loading SIM file for $upperTicker: ${file.name}")
         val existing = readSimCsv(file)
-        val lastKnownDate = existing.keys.maxOrNull()
-            ?: LocalDate.parse(simPattern.find(file.name)!!.groupValues[1])
+        if (existing.isEmpty()) return null
+        val firstDate = existing.firstKey()
+        val lastKnownDate = existing.lastKey()
+        if (lastKnownDate >= neededToDate && firstDate <= neededFromDate) return existing
+        if (existing.size < 20) return null
 
-        if (lastKnownDate >= today) return existing  // data already up to date
+        var current: Map<LocalDate, Double> = existing
 
-        logger.info("Extending $upperTicker SIM from $lastKnownDate to $today via Yahoo")
-        return try {
-            val yahoo = YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate, today)
-            if (!passesSanityChecks(existing, yahoo, lastKnownDate, neededFromDate, upperTicker)) return null
-            val extended = chainExtend(existing, yahoo, lastKnownDate)
-            val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
-            writeSimCsv(newFile, extended)
-            files.forEach { it.delete() }
-            extended
-        } catch (e: Exception) {
-            logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * Sanity-checks an existing SIM series against freshly-fetched Yahoo data.
-     *
-     * Check A (tail consistency): over the overlap window (yahoo dates <= lastKnownDate),
-     * if >= 2 dates overlap, compares the cumulative return ratio; fails if divergence > 0.5%.
-     *
-     * Check B (history start): fails if the existing series starts more than 7 days after neededFromDate.
-     */
-    private fun passesSanityChecks(
-        existing: Map<LocalDate, Double>,
-        yahoo: Map<LocalDate, Double>,
-        lastKnownDate: LocalDate,
-        neededFromDate: LocalDate,
-        label: String
-    ): Boolean {
-        // Check B — history start
-        val firstDate = existing.keys.minOrNull()
-        if (firstDate != null && firstDate > neededFromDate.plusDays(7)) {
-            logger.warn("$label sanity B failed: history starts $firstDate, needed from $neededFromDate")
-            return false
-        }
-        // Check A — tail consistency
-        val overlap = yahoo.keys.filter { it <= lastKnownDate }.sorted()
-        if (overlap.size >= 2) {
-            val first = overlap.first(); val last = overlap.last()
-            val exFirst = existing[first]; val exLast = existing[last]
-            val yhFirst = yahoo[first]!!; val yhLast = yahoo[last]!!
-            if (exFirst != null && exLast != null && yhFirst != 0.0) {
-                val exReturn = exLast / exFirst
-                val yhReturn = yhLast / yhFirst
-                if (yhReturn != 0.0 && Math.abs(exReturn - yhReturn) / yhReturn > 0.005) {
-                    logger.warn("$label sanity A failed: existing return $exReturn vs yahoo $yhReturn over [$first..$last]")
-                    return false
+        // Prepend if needed
+        if (neededFromDate < firstDate) {
+            val earlyYahoo = try {
+                YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, firstDate.plusDays(10))
+            } catch (e: Exception) {
+                logger.warn("$upperTicker early probe fetch failed: ${e.message}")
+                return null
+            }
+            if (earlyYahoo.keys.any { it < firstDate }) {
+                current = try {
+                    chainPrepend(current, earlyYahoo, firstDate)
+                } catch (e: Exception) {
+                    logger.warn("Failed to prepend $upperTicker via Yahoo: ${e.message}")
+                    return null
                 }
+            } else {
+                logger.info("$upperTicker: Yahoo has no data before $firstDate, skipping prepend")
             }
         }
-        return true
+
+        // Extend forward if needed
+        if (lastKnownDate < neededToDate) {
+            logger.info("Extending $upperTicker SIM from $lastKnownDate to $neededToDate via Yahoo")
+            val yahoo = try {
+                YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate.minusDays(10), neededToDate)
+            } catch (e: Exception) {
+                logger.warn("$upperTicker extend fetch failed: ${e.message}")
+                return null
+            }
+            current = try {
+                chainExtend(current, yahoo, lastKnownDate)
+            } catch (e: Exception) {
+                logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}")
+                return null
+            }
+        }
+
+        val newFile = File(tickerDir, "${upperTicker}-${neededToDate}.csv")
+        writeSimCsv(newFile, current)
+        files.forEach { it.delete() }
+        return current
     }
 
     private fun copyFromResources(simPattern: Regex): List<File> {
-        val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
+        val allResourceFiles = getResourceFiles("data/.ticker")
+        val resourcesFile = allResourceFiles.firstOrNull {
             simPattern.matches(it)
         } ?: return emptyList()
-        logger.info("ticker {} found in resource", resourcesFile)
         val cl = object {}::class.java.classLoader
         cl.getResourceAsStream("data/.ticker/$resourcesFile")
             ?.use { Files.copy(it, tickerDir.toPath().resolve(resourcesFile)) }
@@ -327,13 +323,6 @@ object BacktestService {
         ?.filter { simPattern.matches(it.name) }
         ?.sortedByDescending { it.name }
         ?: emptyList())
-
-    /**
-     * Returns true if [file] was last modified within the past hour, which indicates it was
-     * written by our own pipeline and can be trusted without a network refetch.
-     */
-    private fun recentlyWrittenByUs(file: File, thresholdMs: Long = 60 * 60 * 1_000L): Boolean =
-        (System.currentTimeMillis() - file.lastModified()) < thresholdMs
 
     /** Loads EFFRX, extending via FRED EFFR if the file is outdated. Returns empty map if not found. */
     internal fun loadEffrxSeries(): Map<LocalDate, Double> {
@@ -532,8 +521,8 @@ object BacktestService {
 
     // ── CSV helpers ───────────────────────────────────────────────────────────
 
-    internal fun readSimCsv(file: File): Map<LocalDate, Double> {
-        val result = mutableMapOf<LocalDate, Double>()
+    internal fun readSimCsv(file: File): TreeMap<LocalDate, Double> {
+        val result = TreeMap<LocalDate, Double>()
         file.bufferedReader().use { br ->
             br.readLine() // skip header
             br.forEachLine { line ->
@@ -561,43 +550,93 @@ object BacktestService {
         logger.info("Saved SIM file: ${file.name} (${series.size} rows)")
     }
 
-    // ── Chain-link extension ──────────────────────────────────────────────────
+    // ── Chain-link extension / prepend ───────────────────────────────────────
 
     /**
-     * Extends [existing] (date → normalised value) by chaining returns from [yahoo] (date → raw adj-close).
-     * The last date in [existing] is used as the pivot.
+     * Extends [existing] (date → normalised value) forward by chaining returns from [yahoo] (date → raw adj-close).
+     * Anchors at yahoo's first date (must exist in [existing]), validates the overlap region (< [lastSimDate]),
+     * and writes new entries only for dates >= [lastSimDate].
      */
     internal fun chainExtend(
         existing: Map<LocalDate, Double>,
         yahoo: Map<LocalDate, Double>,
         lastSimDate: LocalDate
     ): Map<LocalDate, Double> {
+        val sortedYahooDates = yahoo.keys.sorted()
+        require(sortedYahooDates.isNotEmpty()) { "Yahoo data is empty" }
+
+        val firstYahooDate = sortedYahooDates.first()
+        val startExistingValue = existing[firstYahooDate]
+            ?: throw IllegalStateException("No overlap: existing has no entry for yahoo's first date $firstYahooDate")
+
         val result = existing.toMutableMap()
-        val sortedYahooDates = yahoo.keys.filter { it > lastSimDate }.sorted()
-        if (sortedYahooDates.isEmpty()) return result
+        var prevYahoo = yahoo[firstYahooDate]!!
+        var prevValue = startExistingValue
 
-        // Find the pivot yahoo price (last date in sim range that has a yahoo price)
-        val pivotDate = yahoo.keys.filter { it <= lastSimDate }.maxOrNull() ?: return result
-        val pivotYahooPrice = yahoo[pivotDate] ?: return result
-
-        // Find the last sim value
-        val lastSimValue =
-            existing[lastSimDate] ?: existing.keys.filter { it <= lastSimDate }.maxOrNull()
-                ?.let { existing[it] } ?: return result
-
-        var prevYahoo = pivotYahooPrice
-        var prevValue = lastSimValue
-
-        for (date in sortedYahooDates) {
+        for (date in sortedYahooDates.drop(1)) {
             val currentYahoo = yahoo[date] ?: continue
-            if (prevYahoo == 0.0) {
-                prevYahoo = currentYahoo; continue
+            if (prevYahoo == 0.0) { prevYahoo = currentYahoo; continue }
+            val newValue = prevValue * (currentYahoo / prevYahoo)
+
+            if (date < lastSimDate) {
+                val existingValue = existing[date]
+                    ?: throw IllegalStateException("Overlap date $date missing from existing series")
+                if (existingValue != 0.0 && abs(newValue - existingValue) / existingValue > 1e-6)
+                    throw IllegalStateException(
+                        "Chain-link mismatch at $date: computed $newValue but existing has $existingValue"
+                    )
+            } else {
+                // >= lastSimDate: write unconditionally. lastSimDate itself is included because the
+                // SIM file's last entry may be a partial trading day; Yahoo's adj-close for that same
+                // date is the authoritative final close, so we let it overwrite.
+                result[date] = newValue
             }
-            val ret = currentYahoo / prevYahoo
-            val newValue = prevValue * ret
-            result[date] = newValue
+
             prevYahoo = currentYahoo
             prevValue = newValue
+        }
+        return result
+    }
+
+    /**
+     * Extends [existing] (date → normalised value) backward by chaining returns from [yahoo] (date → raw adj-close).
+     * Anchors at yahoo's last date (must exist in [existing]), validates the overlap region (>= [firstSimDate]),
+     * and writes new entries only for dates strictly before [firstSimDate].
+     */
+    internal fun chainPrepend(
+        existing: Map<LocalDate, Double>,
+        yahoo: Map<LocalDate, Double>,
+        firstSimDate: LocalDate
+    ): Map<LocalDate, Double> {
+        val sortedYahooDates = yahoo.keys.sorted()
+        require(sortedYahooDates.isNotEmpty()) { "Yahoo data is empty" }
+
+        val lastYahooDate = sortedYahooDates.last()
+        val startExistingValue = existing[lastYahooDate]
+            ?: throw IllegalStateException("No overlap: existing has no entry for yahoo's last date $lastYahooDate")
+
+        val result = existing.toMutableMap()
+        var nextYahoo = yahoo[lastYahooDate]!!
+        var nextValue = startExistingValue
+
+        for (date in sortedYahooDates.dropLast(1).reversed()) {
+            val currentYahoo = yahoo[date] ?: continue
+            if (nextYahoo == 0.0) { nextYahoo = currentYahoo; continue }
+            val newValue = nextValue * (currentYahoo / nextYahoo)
+
+            if (date >= firstSimDate) {
+                val existingValue = existing[date]
+                    ?: throw IllegalStateException("Overlap date $date missing from existing series")
+                if (existingValue != 0.0 && abs(newValue - existingValue) / existingValue > 1e-6)
+                    throw IllegalStateException(
+                        "Chain-link mismatch at $date: computed $newValue but existing has $existingValue"
+                    )
+            } else {
+                result[date] = newValue
+            }
+
+            nextYahoo = currentYahoo
+            nextValue = newValue
         }
         return result
     }
@@ -633,12 +672,7 @@ object BacktestService {
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>
     ): List<Double> {
-        val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val mergedWeights = mutableMapOf<String, Double>()
-        for (tw in pConfig.tickers) mergedWeights[tw.ticker] =
-            (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
-        val tickers = mergedWeights.keys.toList()
-        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
+        val (tickers, targetWeights) = pConfig.mergeWeights()
 
         // Initial allocation: weights × start value
         val startValue = 10_000.0
@@ -662,18 +696,27 @@ object BacktestService {
                 }
             }
 
-            // Apply daily returns
-            for (ticker in tickers) {
-                val s = seriesMap[ticker] ?: continue
-                val prev = s[prevDate] ?: continue
-                val cur = s[curDate] ?: continue
-                if (prev == 0.0) continue
-                holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
-            }
+            applyDailyReturns(tickers, holdings, seriesMap, prevDate, curDate)
 
             values.add(holdings.values.sum())
         }
         return values
+    }
+
+    private fun applyDailyReturns(
+        tickers: List<String>,
+        holdings: MutableMap<String, Double>,
+        seriesMap: Map<String, Map<LocalDate, Double>>,
+        prevDate: LocalDate,
+        curDate: LocalDate
+    ) {
+        for (ticker in tickers) {
+            val s = seriesMap[ticker] ?: continue
+            val prev = s[prevDate] ?: continue
+            val cur = s[curDate] ?: continue
+            if (prev == 0.0) continue
+            holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
+        }
     }
 
     private fun shouldRebalance(
@@ -831,12 +874,7 @@ object BacktestService {
         effrx: Map<LocalDate, Double>,
         mc: MarginConfig
     ): MarginApplyResult {
-        val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val mergedWeights = mutableMapOf<String, Double>()
-        for (tw in pConfig.tickers) mergedWeights[tw.ticker] =
-            (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
-        val tickers = mergedWeights.keys.toList()
-        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
+        val (tickers, targetWeights) = pConfig.mergeWeights()
 
         val startEquity = 10_000.0
         var borrowed = startEquity * mc.marginRatio
@@ -862,14 +900,7 @@ object BacktestService {
                 }
             }
 
-            // Apply each ticker's daily return
-            for (ticker in tickers) {
-                val s = seriesMap[ticker] ?: continue
-                val prev = s[prevDate] ?: continue
-                val cur = s[curDate] ?: continue
-                if (prev == 0.0) continue
-                holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
-            }
+            applyDailyReturns(tickers, holdings, seriesMap, prevDate, curDate)
 
             // Daily loan cost from EFFRX
             val effrxPrev = effrx[prevDate]

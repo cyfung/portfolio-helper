@@ -233,6 +233,19 @@ h1 {
 .sse-dot--ok  { background: var(--color-positive); }
 .sse-dot--err { background: var(--color-negative); }
 
+.ga-spinner {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid var(--color-text-tertiary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: ga-spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-left: 5px;
+}
+@keyframes ga-spin { to { transform: rotate(360deg); } }
+
 /* ============================================
    Header Right Group (version + buttons)
    ============================================ */
@@ -312,10 +325,10 @@ h1 {
     align-items: center;
     justify-content: center;
     padding: var(--spacing-sm) var(--spacing-xl);
-    border: 1px solid var(--color-border-medium);
+    border: 1px solid color-mix(in srgb, var(--color-positive) 40%, transparent);
     border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
+    background-color: color-mix(in srgb, var(--color-positive) 15%, transparent);
+    color: var(--color-positive);
     cursor: pointer;
     transition: all var(--transition-fast);
     font-size: var(--font-size-sm);
@@ -325,23 +338,39 @@ h1 {
 }
 
 .currency-toggle:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
+    background-color: color-mix(in srgb, var(--color-positive) 25%, transparent);
+    border-color: color-mix(in srgb, var(--color-positive) 55%, transparent);
 }
 
 .currency-toggle:focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-positive) 30%, transparent);
 }
 
 [data-theme="dark"] .currency-toggle:focus {
-    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-positive) 30%, transparent);
 }
 
 .currency-toggle-icon {
     font-size: 0.85em;
     margin-right: 4px;
-    opacity: 0.7;
+    opacity: 0.85;
+}
+
+.currency-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--spacing-sm) var(--spacing-xl);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background-color: color-mix(in srgb, var(--color-positive) 15%, transparent);
+    color: var(--color-positive);
+    border: 1px solid color-mix(in srgb, var(--color-positive) 40%, transparent);
+    cursor: default;
+    user-select: none;
 }
 
 .currency-select {
@@ -659,6 +688,27 @@ h1 {
     cursor: not-allowed;
 }
 
+.pairing-pin-container {
+    display: flex;
+    justify-content: flex-end;
+    grid-row: 1/5;
+}
+
+.pin-display-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--spacing-md);
+}
+
+.pin-number-display {
+    font-size: 1.8rem;
+    font-family: var(--font-family-mono);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.25em;
+    color: var(--color-text-primary);
+}
+
 .config-env-override-note {
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
@@ -846,21 +896,167 @@ h1 {
     text-align: center;
 }
 
-.config-status {
+.portfolio-config-table-actions-col {
+    white-space: nowrap;
+}
+
+.portfolio-config-table-actions-col > div {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.portfolio-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.portfolio-name-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.portfolio-name-input {
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
     font-size: var(--font-size-sm);
-    min-height: 1.5em;
+    width: 120px;
+}
+
+.portfolio-name-input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+.portfolio-rename-confirm-btn {
+    padding: 2px 8px;
+    border: 1px solid var(--color-accent-primary);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-accent-primary);
+    font-size: var(--font-size-md);
+    cursor: pointer;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.portfolio-rename-confirm-btn:hover { background: var(--color-accent-primary); color: var(--color-text-inverse); }
+.portfolio-rename-confirm-btn:disabled { opacity: 0.5; cursor: default; }
+
+.portfolio-rename-error {
+    font-size: var(--font-size-xs);
+    color: var(--color-error, #e05252);
+}
+
+.add-portfolio-form {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-lg);
+}
+
+.add-portfolio-form input[type="text"] {
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    width: 200px;
+}
+
+.management-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-md);
+}
+
+.management-table th,
+.management-table td {
+    padding: var(--spacing-md) var(--spacing-lg);
+    text-align: left;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.management-table th {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+    background-color: var(--color-bg-secondary);
+}
+
+.management-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.management-table-action-col {
+    text-align: right;
+}
+
+.management-table-remove-btn {
+    padding: var(--spacing-xs) var(--spacing-lg);
+    background: transparent;
+    border: 1px solid var(--color-negative);
+    border-radius: var(--radius-sm);
+    color: var(--color-negative);
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.management-table-remove-btn:hover:not(:disabled) {
+    background: var(--color-negative);
+    color: #fff;
+}
+
+.management-table-remove-btn:disabled {
+    border-color: var(--color-border-medium);
+    color: var(--color-text-muted);
+    cursor: default;
+}
+
+.config-status {
+    position: fixed;
+    top: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(-0.5rem);
+    padding: 0.5rem 1.1rem;
+    border-radius: 6px;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    z-index: 9999;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.config-status.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
 }
 
 .config-status-ok {
     color: var(--color-positive);
+    border-color: var(--color-positive);
 }
 
 .config-status-warn {
     color: var(--color-warning);
+    border-color: var(--color-warning);
 }
 
 .config-status-error {
     color: var(--color-negative);
+    border-color: var(--color-negative);
 }
 
 /* ============================================
@@ -907,6 +1103,11 @@ h1 {
     flex-direction: column;
     align-items: center;
     width: 100%;
+}
+
+.tws-sync-error {
+    color: var(--color-negative);
+    margin-bottom: 12px;
 }
 
 .summary-and-rates {
@@ -1122,11 +1323,15 @@ h1 {
 .price-change.negative { color: var(--color-negative); }
 .price-change.neutral { color: var(--color-text-tertiary); }
 
-/* After-hours styling - use secondary text color */
-.price-change.after-hours,
+/* After-hours styling - mark price goes grey */
 .price.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 0.8;
+}
+
+/* After-hours styling - chg preserves positive/negative color, just dimmed */
+.price-change.after-hours {
+    opacity: 0.75;
 }
 
 /* Weight Difference Display */
@@ -2032,21 +2237,7 @@ h1 {
     border-color: var(--color-accent-primary);
 }
 
-.cf-remove {
-    background: none;
-    border: none;
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    padding: var(--spacing-sm);
-    line-height: 1;
-    transition: color var(--transition-fast);
-    flex-shrink: 0;
-}
-
-.cf-remove:hover {
-    color: var(--color-negative);
-}
+/* cf-remove — base from .btn-remove, overrides in button utilities */
 
 .calculate-btn {
     width: 100%;
@@ -2307,27 +2498,7 @@ a.loan-calc-link:hover {
     opacity: 0.35;
 }
 
-/* ============================================
-   Delete Row / Cash Buttons
-   ============================================ */
-.delete-row-btn,
-.delete-cash-btn {
-    background: none;
-    border: none;
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-    padding: 2px 5px;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-}
-
-.delete-row-btn:hover,
-.delete-cash-btn:hover {
-    background: var(--color-negative);
-    color: var(--color-text-inverse);
-}
+/* Delete Row / Cash Buttons — base from .btn-remove, overrides in button utilities */
 
 /* ============================================
    Add Stock / Add Entry Buttons
@@ -2380,6 +2551,31 @@ body.editing-active .portfolio-cash-table {
     display: none;
 }
 
+.dividend-from-section {
+    display: none;
+}
+
+body.editing-active .dividend-from-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.dividend-from-section input[type="date"] {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    color-scheme: light;
+}
+
+[data-theme="dark"] .dividend-from-section input[type="date"] {
+    color-scheme: dark;
+}
+
 body.editing-active .cash-edit-table-wrapper {
     display: flex;
     flex-direction: column;
@@ -2395,7 +2591,7 @@ body.editing-active .cash-edit-table-wrapper {
 }
 
 .cash-edit-table td {
-    padding: var(--spacing-xs) var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-lg);
     vertical-align: middle;
 }
 
@@ -2405,10 +2601,52 @@ body.editing-active .edit-symbol {
     width: 80px;
 }
 
-/* Cash key input: wider, left-aligned */
-body.editing-active .cash-edit-key {
+/* Cash structured field inputs */
+body.editing-active .cash-edit-label {
     text-align: left;
-    width: 160px;
+    width: 120px;
+}
+body.editing-active .cash-edit-currency {
+    width: 52px;
+    text-transform: uppercase;
+}
+body.editing-active .cash-edit-amount {
+    width: 110px;
+    text-align: right;
+}
+body.editing-active .cash-edit-multiplier {
+    width: 52px;
+    text-align: right;
+}
+.cash-normal-fields,
+.cash-ref-fields {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cash-normal-fields td,
+.cash-ref-fields td {
+    padding: 0;
+}
+.cash-edit-portfolio-ref {
+    padding: 2px 4px;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    width: 110px;
+}
+.cash-margin-toggle,
+.cash-ref-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
 }
 
 /* ============================================
@@ -2510,11 +2748,33 @@ body.rebalancing-visible .virtual-rebal-btn {
     gap: var(--spacing-xl);
 }
 
+.backup-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
 .backup-modal-title {
     font-size: var(--font-size-md);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-primary);
     margin: 0;
+}
+
+.backup-modal-remove-all {
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.backup-modal-remove-all:hover {
+    border-color: var(--color-negative);
+    color: var(--color-negative);
 }
 
 .backup-modal-body {
@@ -2575,7 +2835,7 @@ body.rebalancing-visible .virtual-rebal-btn {
     background: var(--color-bg-secondary);
 }
 
-.backup-modal-item button {
+.backup-modal-item button:not(.backup-modal-item-del) {
     padding: var(--spacing-xs) var(--spacing-lg);
     border: 1px solid var(--color-accent-primary);
     border-radius: var(--radius-sm);
@@ -2589,10 +2849,18 @@ body.rebalancing-visible .virtual-rebal-btn {
     transition: all var(--transition-fast);
 }
 
-.backup-modal-item button:hover {
+.backup-modal-item button:not(.backup-modal-item-del):hover {
     background: var(--color-accent-primary);
     color: var(--color-text-inverse);
 }
+
+.backup-modal-item-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* backup-modal-item-del — base from .btn-remove */
 
 .backup-modal-empty {
     font-size: var(--font-size-sm);
@@ -2604,6 +2872,12 @@ body.rebalancing-visible .virtual-rebal-btn {
 .backup-modal-footer {
     display: flex;
     justify-content: flex-end;
+    gap: var(--spacing-md);
+}
+
+.backup-modal-import,
+.backup-modal-export {
+    padding: var(--spacing-sm) var(--spacing-xl);
 }
 
 .backup-modal-close {
@@ -2621,12 +2895,6 @@ body.rebalancing-visible .virtual-rebal-btn {
 .backup-modal-close:hover {
     background: var(--color-bg-hover);
     border-color: var(--color-border-strong);
-}
-
-/* Cash value input */
-body.editing-active .cash-edit-value {
-    width: 100px;
-    text-align: right;
 }
 
 /* ============================================
@@ -2654,21 +2922,6 @@ body.editing-active .cash-edit-value {
     border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
 }
 .cash-badge-ref {
-    background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
-    color: var(--color-accent-primary);
-    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
-}
-
-/* Cash edit mode: type badge column */
-.cash-edit-table .cash-type-badge-cell {
-    padding-left: 4px;
-}
-.cash-edit-table tr[data-entry-type="margin"] .cash-type-badge {
-    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-    color: var(--color-warning);
-    border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
-}
-.cash-edit-table tr[data-entry-type="ref"] .cash-type-badge {
     background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
     color: var(--color-accent-primary);
     border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
@@ -2761,23 +3014,12 @@ body.editing-active .cash-edit-value {
     width: 200px;
 }
 
+/* Backtest config button — size override for .btn-outline-accent */
 .backtest-config-btn {
     padding: 0.375rem 0.625rem;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    border: 1px solid var(--color-accent-primary);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--color-accent-primary);
-    cursor: pointer;
     letter-spacing: 0.03em;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-}
-
-.backtest-config-btn:hover {
-    background: var(--color-accent-primary);
-    color: var(--color-text-inverse);
 }
 
 .backtest-config-error {
@@ -2866,21 +3108,7 @@ body.editing-active .cash-edit-value {
     color: var(--color-text-tertiary);
 }
 
-.backtest-ticker-row .remove-ticker-btn {
-    background: none;
-    border: none;
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-size: var(--font-size-sm);
-    padding: 0.25rem 0.375rem;
-    border-radius: 3px;
-    line-height: 1;
-}
-
-.backtest-ticker-row .remove-ticker-btn:hover {
-    background: var(--color-bg-hover);
-    color: var(--color-negative);
-}
+/* remove-ticker-btn — base from .btn-remove */
 
 .add-ticker-btn {
     background: none;
@@ -3194,21 +3422,7 @@ body.editing-active .cash-edit-value {
     border-color: var(--color-accent-primary);
 }
 
-.remove-margin-btn {
-    background: none;
-    border: none;
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-size: var(--font-size-xs);
-    padding: 0.25rem 0.375rem;
-    border-radius: 3px;
-    line-height: 1;
-}
-
-.remove-margin-btn:hover {
-    background: var(--color-bg-hover);
-    color: var(--color-negative);
-}
+/* remove-margin-btn — base from .btn-remove, xs override in button utilities */
 
 .margin-header-btns {
     display: flex;
@@ -3311,26 +3525,89 @@ body.editing-active .cash-edit-value {
     min-height: 2rem;
 }
 
-/* Save button */
-.save-portfolio-btn {
-    font-size: 0.78rem;
-    padding: 0.2rem 0.6rem;
-    border-radius: 4px;
+/* ── Standard outlined-accent button ────────────────────────────────────────
+   Use .btn-outline-accent for any new small action button that has a
+   transparent background with accent-coloured border and fills on hover.
+   Existing classes (.save-portfolio-btn, .backtest-config-btn) are grouped
+   here so they share the same base without needing HTML changes.          */
+.btn-outline-accent,
+.save-portfolio-btn,
+.backtest-config-btn {
     border: 1px solid var(--color-accent-primary);
+    border-radius: 4px;
     background: transparent;
     color: var(--color-accent-primary);
     cursor: pointer;
     white-space: nowrap;
+    transition: all var(--transition-fast);
 }
 
+.btn-outline-accent:hover,
+.save-portfolio-btn:not(:disabled):hover,
+.backtest-config-btn:hover {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.btn-outline-accent:disabled,
 .save-portfolio-btn:disabled {
     opacity: 0.35;
     cursor: not-allowed;
 }
 
-.save-portfolio-btn:not(:disabled):hover {
-    background: var(--color-accent-primary);
-    color: var(--color-text-inverse);
+/* ── Standard remove/delete button ──────────────────────────────────────────
+   Use .btn-remove for any new icon-style delete/remove button.
+   Existing classes are grouped here so they share the same base.
+   Size overrides (font-size, padding) follow below each rule.              */
+.btn-remove,
+.remove-ticker-btn,
+.remove-margin-btn,
+.delete-row-btn,
+.delete-cash-btn,
+.cf-remove,
+.backup-modal-item-del {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: 0.25rem 0.375rem;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.btn-remove:hover,
+.remove-ticker-btn:hover,
+.remove-margin-btn:hover,
+.delete-row-btn:hover,
+.delete-cash-btn:hover,
+.cf-remove:hover,
+.backup-modal-item-del:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-negative);
+}
+
+/* remove-margin-btn — xs font */
+.remove-margin-btn { font-size: var(--font-size-xs); }
+
+/* delete-row/cash — larger icon, tighter horizontal padding */
+.delete-row-btn,
+.delete-cash-btn {
+    font-size: 1rem;
+    padding: 2px 5px;
+    flex-shrink: 0;
+}
+
+/* cf-remove — extra padding, no shrink */
+.cf-remove {
+    padding: var(--spacing-sm);
+    flex-shrink: 0;
+}
+
+/* Save button — size override */
+.save-portfolio-btn {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.6rem;
 }
 
 .clear-portfolio-btn {
@@ -3414,9 +3691,9 @@ td[id^="est-val-"].loaded {
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border-medium);
     border-radius: var(--radius-lg);
-    padding: 28px 32px 24px;
-    min-width: 320px;
-    max-width: 440px;
+    padding: 20px 24px 16px;
+    min-width: 280px;
+    max-width: 400px;
     box-shadow: var(--shadow-lg);
     animation: confirm-slide-up 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
     font-family: var(--font-family-base);
@@ -3427,33 +3704,21 @@ td[id^="est-val-"].loaded {
     to   { transform: translateY(0)    scale(1);    opacity: 1; }
 }
 
-#confirm-overlay-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: rgba(250, 173, 20, 0.15);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 14px;
-    font-size: 20px;
-}
-
 #confirm-overlay-message {
     color: var(--color-text-primary);
     font-size: var(--font-size-md);
     line-height: 1.5;
-    margin: 0 0 22px;
+    margin: 0 0 16px;
 }
 
 #confirm-overlay-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     justify-content: flex-end;
 }
 
 .confirm-overlay-btn {
-    padding: 8px 20px;
+    padding: 6px 16px;
     border-radius: var(--radius-md);
     border: none;
     font-size: var(--font-size-sm);

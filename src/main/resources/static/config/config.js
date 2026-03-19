@@ -1,7 +1,6 @@
-const RESTART_KEYS = new Set(['bindHost', 'navUpdateInterval', 'dataDir']);
+const RESTART_KEYS = new Set(['navUpdateInterval']);
 
 const GLOBAL_DEFAULTS = {
-    bindHost: 'localhost',
     openBrowser: 'true',
     dataDir: '',
     navUpdateInterval: '',
@@ -16,59 +15,163 @@ const GLOBAL_DEFAULTS = {
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initUpdates();
+    initPairing();
+    loadSessions();
+    loadPairedDevices();
 
-    // Snapshot originals for restart detection
-    document.querySelectorAll('[data-config-key]').forEach(el => {
-        el.dataset.originalValue = el.type === 'checkbox' ? String(el.checked) : el.value;
-    });
+    // --- Auto-save on change ---
+    let _saveDebounceTimers = new Map();
 
-    document.getElementById('config-save-btn').addEventListener('click', async () => {
-        const globalUpdates = {};
-        const portfolioUpdates = {};  // { portfolioId: { twsAccount: "...", virtualBalance: "..." } }
-        let requiresRestart = false;
-
-        document.querySelectorAll('[data-config-key]').forEach(el => {
-            if (el.disabled) return;
-            const key = el.dataset.configKey;
-            const portfolioId = el.dataset.portfolioId;
-            const value = el.type === 'checkbox' ? String(el.checked) : el.value.trim();
-
-            if (portfolioId) {
-                portfolioUpdates[portfolioId] = portfolioUpdates[portfolioId] || {};
-                portfolioUpdates[portfolioId][key] = value;
-            } else {
-                globalUpdates[key] = value;
-                if (RESTART_KEYS.has(key) && value !== el.dataset.originalValue) requiresRestart = true;
-            }
-        });
+    async function saveField(el) {
+        if (el.disabled) return;
+        const key = el.dataset.configKey;
+        const portfolioId = el.dataset.portfolioId;
+        const value = el.type === 'checkbox' ? String(el.checked) : el.value.trim();
+        const requiresRestart = !portfolioId && RESTART_KEYS.has(key) && value !== el.dataset.originalValue;
 
         try {
-            // Save global config
-            await fetch('/api/config/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(globalUpdates)
-            }).then(r => { if (!r.ok) throw new Error(`Global save failed: ${r.statusText}`); });
-
-            // Save per-portfolio configs
-            for (const [pid, updates] of Object.entries(portfolioUpdates)) {
-                await fetch(`/api/portfolio-config/save?portfolio=${encodeURIComponent(pid)}`, {
+            if (portfolioId) {
+                await fetch(`/api/portfolio-config/save?portfolio=${encodeURIComponent(portfolioId)}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updates)
-                }).then(r => { if (!r.ok) throw new Error(`Portfolio save failed: ${r.statusText}`); });
+                    body: JSON.stringify({ [key]: value })
+                }).then(r => { if (!r.ok) throw new Error(`Save failed: ${r.statusText}`); });
+            } else {
+                await fetch('/api/config/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [key]: value })
+                }).then(r => { if (!r.ok) throw new Error(`Save failed: ${r.statusText}`); });
             }
-
             showStatus(
-                requiresRestart ? 'Saved. Restart required for some changes to take effect.' : 'Settings saved.',
+                requiresRestart ? 'Saved. Restart required for some changes to take effect.' : 'Saved.',
                 requiresRestart ? 'warn' : 'ok'
             );
         } catch (err) {
             showStatus('Error: ' + err.message, 'error');
         }
+    }
+
+    function attachAutoSave(el) {
+        const isText = el.type !== 'checkbox';
+        if (isText) {
+            el.addEventListener('input', () => {
+                clearTimeout(_saveDebounceTimers.get(el));
+                _saveDebounceTimers.set(el, setTimeout(() => saveField(el), 600));
+            });
+        } else {
+            el.addEventListener('change', () => saveField(el));
+        }
+    }
+
+    document.querySelectorAll('[data-config-key]').forEach(el => {
+        el.dataset.originalValue = el.type === 'checkbox' ? String(el.checked) : el.value;
+        attachAutoSave(el);
     });
 
-    document.getElementById('config-restore-btn').addEventListener('click', () => {
+    const addPortfolioBtn = document.getElementById('add-portfolio-btn');
+    if (addPortfolioBtn) {
+        addPortfolioBtn.addEventListener('click', async () => {
+            const nameInput = document.getElementById('new-portfolio-name');
+            const statusEl = document.getElementById('add-portfolio-status');
+            const name = nameInput.value.trim();
+            if (!name) { statusEl.textContent = 'Enter a portfolio name.'; return; }
+            addPortfolioBtn.disabled = true;
+            statusEl.textContent = '';
+            try {
+                const r = await fetch('/api/portfolio/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    statusEl.textContent = data.message || 'Failed to create portfolio.';
+                    addPortfolioBtn.disabled = false;
+                } else {
+                    location.reload();
+                }
+            } catch (err) {
+                statusEl.textContent = 'Error: ' + err.message;
+                addPortfolioBtn.disabled = false;
+            }
+        });
+    }
+
+    document.querySelectorAll('.portfolio-name-input').forEach(input => {
+        const confirmBtn = input.closest('.portfolio-name-input-row').querySelector('.portfolio-rename-confirm-btn');
+        const errorEl = input.closest('.portfolio-name-cell').querySelector('.portfolio-rename-error');
+
+        input.addEventListener('input', () => {
+            const changed = input.value.trim() !== input.dataset.originalName;
+            confirmBtn.hidden = !changed;
+            errorEl.hidden = true;
+            errorEl.textContent = '';
+        });
+
+        async function applyRename() {
+            const slug = input.dataset.slug;
+            const newName = input.value.trim();
+            if (!newName || newName === input.dataset.originalName) return;
+            confirmBtn.disabled = true;
+            errorEl.hidden = true;
+            try {
+                const r = await fetch(`/api/portfolio/rename?portfolio=${encodeURIComponent(slug)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName })
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    errorEl.textContent = data.message || 'Rename failed.';
+                    errorEl.hidden = false;
+                    confirmBtn.disabled = false;
+                } else {
+                    location.reload();
+                }
+            } catch (err) {
+                errorEl.textContent = 'Error: ' + err.message;
+                errorEl.hidden = false;
+                confirmBtn.disabled = false;
+            }
+        }
+
+        confirmBtn.addEventListener('click', applyRename);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') applyRename(); });
+    });
+
+    document.querySelectorAll('.portfolio-remove-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const slug = btn.dataset.slug;
+            const row = btn.closest('tr');
+            const name = row.querySelector('.portfolio-name-input').value;
+            const confirmed = await window.showConfirmOverlay(
+                `Remove portfolio "${name}"? All positions, cash, and config will be deleted.`,
+                'Remove'
+            );
+            if (!confirmed) return;
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/portfolio/remove?portfolio=${encodeURIComponent(slug)}`, {
+                    method: 'DELETE'
+                });
+                const data = await r.json();
+                if (!r.ok) {
+                    alert(data.message || 'Remove failed.');
+                    btn.disabled = false;
+                } else {
+                    location.reload();
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                btn.disabled = false;
+            }
+        });
+    });
+
+    document.getElementById('config-restore-btn').addEventListener('click', async () => {
+        const confirmed = await window.showConfirmOverlay('Restore all settings to defaults?', 'Restore');
+        if (!confirmed) return;
         // Reset global inputs to defaults
         document.querySelectorAll('[data-config-key]:not([data-portfolio-id])').forEach(el => {
             if (el.disabled) return;
@@ -82,15 +185,207 @@ document.addEventListener('DOMContentLoaded', () => {
             if (el.type === 'checkbox') el.checked = false;
             else el.value = '';
         });
-        // Trigger save
-        document.getElementById('config-save-btn').click();
+        // Save all at once (batch)
+        const globalUpdates = {};
+        const portfolioUpdates = {};
+        document.querySelectorAll('[data-config-key]').forEach(el => {
+            if (el.disabled) return;
+            const key = el.dataset.configKey;
+            const portfolioId = el.dataset.portfolioId;
+            const value = el.type === 'checkbox' ? String(el.checked) : el.value.trim();
+            if (portfolioId) {
+                portfolioUpdates[portfolioId] = portfolioUpdates[portfolioId] || {};
+                portfolioUpdates[portfolioId][key] = value;
+            } else {
+                globalUpdates[key] = value;
+            }
+        });
+        try {
+            await fetch('/api/config/save', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(globalUpdates)
+            }).then(r => { if (!r.ok) throw new Error(`Global save failed: ${r.statusText}`); });
+            for (const [pid, updates] of Object.entries(portfolioUpdates)) {
+                await fetch(`/api/portfolio-config/save?portfolio=${encodeURIComponent(pid)}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                }).then(r => { if (!r.ok) throw new Error(`Portfolio save failed: ${r.statusText}`); });
+            }
+            showStatus('Defaults restored.', 'ok');
+        } catch (err) {
+            showStatus('Error: ' + err.message, 'error');
+        }
     });
 });
 
+async function refreshPairingUI() {
+    await loadPairedDevices();
+}
+
+function initPairing() {
+    const container = document.getElementById('pairing-pin-display');
+    if (!container) return;
+
+    container.innerHTML = `<button class="config-restore-btn" id="generate-pin-btn">Generate Pairing Code</button>`;
+    container.addEventListener('click', async (e) => {
+        if (e.target.id === 'generate-pin-btn') generateAndShowPin(container);
+    });
+
+    const unpairAllBtn = document.getElementById('unpair-all-btn');
+    if (unpairAllBtn) {
+        unpairAllBtn.addEventListener('click', async () => {
+            if (!confirm('Remove all paired devices?')) return;
+            try {
+                await fetch('/api/unpair-all', { method: 'POST' });
+                await loadPairedDevices();
+            } catch (err) {
+                console.error('Failed to unpair all', err);
+            }
+        });
+    }
+}
+
+function formatDate(ms) {
+    return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+async function loadSessions() {
+    const container = document.getElementById('sessions-list');
+    if (!container) return;
+    try {
+        const r = await fetch('/api/admin/sessions');
+        const sessions = await r.json();
+        if (!sessions.length) {
+            container.innerHTML = `<p class="config-env-override-note">No sessions found.</p>`;
+            return;
+        }
+        const rows = sessions.map(s => {
+            const ua = s.userAgent.length > 60 ? s.userAgent.slice(0, 60) + '…' : s.userAgent;
+            const action = s.isCurrent
+                ? `<span class="config-badge config-badge-live">this browser</span>`
+                : `<button class="management-table-remove-btn" data-token="${s.token}">Remove</button>`;
+            return `<tr>
+                <td title="${s.userAgent.replace(/"/g, '&quot;')}">${ua}</td>
+                <td>${s.ip}</td>
+                <td>${formatDate(s.createdAt)}</td>
+                <td class="management-table-action-col">${action}</td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<table class="management-table">
+            <thead><tr><th>Trusted Browser</th><th>IP</th><th>Added</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+        container.querySelectorAll('.management-table-remove-btn[data-token]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/admin/session?token=${encodeURIComponent(btn.dataset.token)}`, { method: 'DELETE' });
+                    if (res.ok) await loadSessions();
+                    else btn.disabled = false;
+                } catch (err) {
+                    btn.disabled = false;
+                    console.error('Failed to remove session', err);
+                }
+            });
+        });
+    } catch (err) {
+        container.innerHTML = `<p class="config-env-override-note">Failed to load sessions.</p>`;
+        console.error('Failed to load sessions', err);
+    }
+}
+
+async function loadPairedDevices() {
+    const container = document.getElementById('paired-devices-list');
+    if (!container) return;
+    try {
+        const r = await fetch('/api/paired-devices');
+        const devices = await r.json();
+        if (!devices.length) {
+            container.innerHTML = `<p class="config-env-override-note">No devices paired.</p>`;
+            return;
+        }
+        const rows = devices.map(d => {
+            return `<tr>
+                <td>${d.name || '(unnamed)'}</td>
+                <td>${d.lastIp || '—'}</td>
+                <td>${formatDate(d.pairedAt)}</td>
+                <td class="management-table-action-col">
+                    <button class="management-table-remove-btn" data-id="${d.serverAssignedId}">Remove</button>
+                </td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<table class="management-table">
+            <thead><tr><th>Paired Device</th><th>Last IP</th><th>Paired</th><th></th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+        container.querySelectorAll('.management-table-remove-btn[data-id]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/unpair?id=${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE' });
+                    if (res.ok) await loadPairedDevices();
+                    else btn.disabled = false;
+                } catch (err) {
+                    btn.disabled = false;
+                    console.error('Failed to remove device', err);
+                }
+            });
+        });
+    } catch (err) {
+        container.innerHTML = `<p class="config-env-override-note">Failed to load devices.</p>`;
+        console.error('Failed to load paired devices', err);
+    }
+}
+
+let _pinPollTimer = null;
+
+function stopPinPoll() {
+    if (_pinPollTimer) {
+        clearInterval(_pinPollTimer);
+        _pinPollTimer = null;
+    }
+}
+
+async function generateAndShowPin(container) {
+    stopPinPoll();
+    try {
+        container.innerHTML = `<span class="config-env-override-note">Generating…</span>`;
+        const r = await fetch('/api/pairing/generate', { method: 'POST' });
+        const { pin } = await r.json();
+        container.innerHTML = `
+            <div class="pin-display-group">
+                <div class="pin-number-display">${pin}</div>
+                <button class="config-restore-btn" id="generate-pin-btn" type="button">Generate New PIN</button>
+            </div>
+        `;
+
+        _pinPollTimer = setInterval(async () => {
+            try {
+                const sr = await fetch(`/api/pairing/status?pin=${encodeURIComponent(pin)}`);
+                const { status } = await sr.json();
+                if (status === 'active') return;
+                stopPinPoll();
+                if (status === 'used') await loadPairedDevices();
+                container.innerHTML = `<button class="config-restore-btn" id="generate-pin-btn">Generate Pairing Code</button>`;
+            } catch (_) {}
+        }, 3000);
+    } catch (err) {
+        container.innerHTML = `
+            <span class="config-env-override-note">Failed to generate PIN.</span>
+            <button class="config-restore-btn" id="generate-pin-btn" type="button">Retry</button>
+        `;
+        console.error('Failed to generate PIN', err);
+    }
+}
+
+let _statusHideTimer = null;
 function showStatus(msg, type) {
     const el = document.getElementById('config-status');
     el.textContent = msg;
-    el.className = 'config-status config-status-' + type;
+    el.className = 'config-status config-status-' + type + ' visible';
+    clearTimeout(_statusHideTimer);
+    const delay = type === 'ok' ? 2500 : 5000;
+    _statusHideTimer = setTimeout(() => el.classList.remove('visible'), delay);
 }
 
 function showUpdateStatus(msg, type) {

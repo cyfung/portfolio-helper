@@ -1,14 +1,11 @@
 package com.portfoliohelper
 
-import java.io.File
-import java.util.Properties
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.read
-import kotlin.concurrent.write
+import com.portfoliohelper.service.db.GlobalSettingsTable
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.upsert
 
 object AppConfig {
-    const val KEY_DATA_DIR            = "dataDir"
-    const val KEY_BIND_HOST           = "bindHost"
     const val KEY_OPEN_BROWSER        = "openBrowser"
     const val KEY_NAV_UPDATE_INTERVAL = "navUpdateInterval"
     const val KEY_EXCHANGE_SUFFIXES   = "exchangeSuffixes"
@@ -16,81 +13,46 @@ object AppConfig {
     const val KEY_TWS_PORT            = "twsPort"
     const val KEY_IBKR_RATE_INTERVAL  = "ibkrRateInterval"
     const val KEY_GITHUB_REPO         = "githubRepo"
-    const val KEY_AUTO_UPDATE              = "autoUpdate"
-    const val KEY_UPDATE_CHECK_INTERVAL   = "updateCheckInterval"
+    const val KEY_AUTO_UPDATE         = "autoUpdate"
+    const val KEY_UPDATE_CHECK_INTERVAL = "updateCheckInterval"
+    const val KEY_SHOW_STOCK_DISPLAY_CURRENCY = "showStockDisplayCurrency"
+    const val KEY_DIVIDEND_SAFE_LAG_DAYS = "dividendSafeLagDays"
 
-    // Fixed OS config path (NOT inside dataDir — avoids circular dependency)
-    val userConfigFile: File = run {
-        val home = System.getProperty("user.home")
-        when {
-            System.getProperty("os.name").lowercase().contains("win") ->
-                File(System.getenv("APPDATA") ?: "$home/AppData/Roaming", "PortfolioHelper/app.conf")
-            System.getProperty("os.name").lowercase().contains("mac") ->
-                File("$home/Library/Application Support/PortfolioHelper/app.conf")
-            else -> {
-                val xdg = System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() } ?: "$home/.config"
-                File("$xdg/PortfolioHelper/app.conf")
-            }
-        }
-    }
-    private val localConfigFile = File("app.conf")
-    private val readFile: File get() = if (localConfigFile.exists()) localConfigFile else userConfigFile
-    private val saveFile: File get() = if (localConfigFile.exists()) localConfigFile else userConfigFile
-
-    private val ENV_MAP = mapOf(
-        KEY_BIND_HOST           to "PORTFOLIO_HELPER_BIND_HOST",
-        KEY_NAV_UPDATE_INTERVAL to "NAV_UPDATE_INTERVAL",
-        KEY_TWS_HOST            to "TWS_HOST",
-        KEY_TWS_PORT            to "TWS_PORT"
-    )
     private val DEFAULTS = mapOf(
-        KEY_BIND_HOST           to "localhost",
         KEY_OPEN_BROWSER        to "true",
-        KEY_DATA_DIR            to "",
         KEY_NAV_UPDATE_INTERVAL to "",
         KEY_EXCHANGE_SUFFIXES   to "SBF=.PA,LSEETF=.L",
         KEY_TWS_HOST            to "127.0.0.1",
         KEY_TWS_PORT            to "7496",
         KEY_IBKR_RATE_INTERVAL  to "3600",
         KEY_GITHUB_REPO         to "cyfung/portfolio-helper",
-        KEY_AUTO_UPDATE              to "true",
-        KEY_UPDATE_CHECK_INTERVAL   to "86400"
+        KEY_AUTO_UPDATE         to "true",
+        KEY_UPDATE_CHECK_INTERVAL to "86400",
+        KEY_SHOW_STOCK_DISPLAY_CURRENCY to "false",
+        KEY_DIVIDEND_SAFE_LAG_DAYS to "5"
     )
 
-    private val lock = ReentrantReadWriteLock()
-    private var fileProps = Properties()
-
-    init { reload() }
-
-    fun reload() {
-        lock.write {
-            fileProps = Properties()
-            val f = readFile
-            if (f.exists()) f.inputStream().use { fileProps.load(it) }
-        }
-    }
-
-    fun getRaw(key: String): String? = lock.read { fileProps.getProperty(key) }
-    fun isEnvOverridden(key: String) = ENV_MAP[key]?.let { !System.getenv(it).isNullOrBlank() } ?: false
-
     fun get(key: String): String {
-        ENV_MAP[key]?.let { envName -> System.getenv(envName)?.takeIf { it.isNotBlank() }?.let { return it } }
-        return lock.read { fileProps.getProperty(key) } ?: DEFAULTS[key] ?: ""
+        transaction {
+            GlobalSettingsTable.selectAll()
+                .where { GlobalSettingsTable.key eq key }
+                .firstOrNull()?.get(GlobalSettingsTable.value)
+        }?.let { return it }
+        return DEFAULTS[key] ?: ""
     }
 
     fun save(updates: Map<String, String>) {
-        lock.write {
-            val f = saveFile
-            f.parentFile?.mkdirs()
-            val current = Properties().also { if (f.exists()) f.inputStream().use { s -> it.load(s) } }
-            updates.forEach { (k, v) -> if (v.isBlank()) current.remove(k) else current[k] = v }
-            f.outputStream().use { current.store(it, "Portfolio Helper app config") }
-            fileProps = current
+        transaction {
+            updates.forEach { (k, v) ->
+                GlobalSettingsTable.upsert {
+                    it[GlobalSettingsTable.key] = k
+                    it[GlobalSettingsTable.value] = v
+                }
+            }
         }
     }
 
     // Typed accessors
-    val bindHost: String get() = get(KEY_BIND_HOST).ifBlank { "localhost" }
     val openBrowser: Boolean get() = get(KEY_OPEN_BROWSER).lowercase() != "false"
     val navUpdateInterval: Long? get() = get(KEY_NAV_UPDATE_INTERVAL).toLongOrNull()?.takeIf { it > 0 }
     val twsHost: String get() = get(KEY_TWS_HOST).ifBlank { "127.0.0.1" }
@@ -101,6 +63,8 @@ object AppConfig {
     val autoUpdate: Boolean get() = get(KEY_AUTO_UPDATE).lowercase() != "false"
     val updateCheckIntervalMs: Long get() =
         (get(KEY_UPDATE_CHECK_INTERVAL).toLongOrNull()?.takeIf { it >= 60 } ?: 86400L) * 1000L
+    val showStockDisplayCurrency: Boolean get() = get(KEY_SHOW_STOCK_DISPLAY_CURRENCY).lowercase() == "true"
+    val dividendSafeLagDays: Long get() = get(KEY_DIVIDEND_SAFE_LAG_DAYS).toLongOrNull()?.takeIf { it >= 0 } ?: 5L
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

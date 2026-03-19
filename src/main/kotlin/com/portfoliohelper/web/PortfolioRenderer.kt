@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.AppConfig
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
 import com.portfoliohelper.service.ManagedPortfolio
@@ -18,6 +19,12 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     val portfolio = YahooMarketDataService.getCurrentPortfolio(entry.getStocks())
     val cashEntries = entry.getCash()
 
+    // Build per-stock currency map from cached Yahoo quotes
+    val stockCurrenciesMap: Map<String, String> = portfolio.stocks.associate { s ->
+        s.label to (YahooMarketDataService.getQuote(s.label)?.currency ?: "USD")
+    }
+    val showStockDisplayCurrency = AppConfig.showStockDisplayCurrency
+
     // Build FX rate map for non-USD currencies from cached Yahoo quotes (e.g. HKDUSD=X → 0.1286)
     val fxRateMap: Map<String, Double> = cashEntries
         .map { it.currency }.distinct()
@@ -34,40 +41,39 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             "USD" -> e.amount
             "P" -> {
                 val ref =
-                    com.portfoliohelper.service.PortfolioRegistry.get(e.portfolioRef ?: return null)
+                    ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
                         ?: return null
-                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).totalValue
+                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
             }
 
             else -> fxRateMap[e.currency]?.let { e.amount * it }
         }
     }
 
-    // Load per-portfolio config (portfolio.conf); fall back to legacy rebal-target.txt
-    val portfolioConf: Map<String, String> = runCatching {
-        val f = java.io.File(entry.csvPath).resolveSibling("portfolio.conf")
-        if (f.exists()) f.readLines()
-            .filter { '=' in it && !it.startsWith('#') }
-            .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
-        else emptyMap()
-    }.getOrDefault(emptyMap())
-    val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull()
-        ?: runCatching {
-            val legacy = java.io.File(entry.csvPath).resolveSibling("rebal-target.txt")
-            if (legacy.exists()) legacy.readText().trim().toDoubleOrNull() else null
-        }.getOrNull() ?: 0.0
+    // Load per-portfolio config from SQLite (PortfolioCfgTable)
+    val portfolioConf: Map<String, String> = entry.getAllConfig()
+    val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
     val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
     val savedAllocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL"
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
     val virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true"
 
+    // Inject dividend total as a virtual cash entry when virtualBalance is enabled and total is available
+    val dividendTotal = if (virtualBalanceEnabled) portfolioConf["dividendTotal"]?.toDoubleOrNull() else null
+    val effectiveCashEntries = if (dividendTotal != null) {
+        cashEntries + CashEntry(label = "Dividend", currency = "USD", marginFlag = false, amount = dividendTotal)
+    } else {
+        cashEntries
+    }
+
     // Compute totals and display currencies at function level so they can be used in both head and body
-    val cashTotalUsd = cashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
+    val cashTotalUsd = effectiveCashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
     val displayCurrencies: List<String> = buildList {
         add("USD")
-        cashEntries.map { it.currency.uppercase() }
+        allPortfolios.asSequence().flatMap { it.getCash() }
+            .map { it.currency.uppercase() }
             .distinct().filter { it != "P" && it != "USD" }
-            .sorted().forEach { add(it) }
+            .sorted().toList().forEach { add(it) }
     }
 
     respondHtml(HttpStatusCode.OK) {
@@ -83,7 +89,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 unsafe {
                     raw(
                         """
-                        var portfolioId = "${entry.id}";
+                        var portfolioId = "${entry.slug}";
                         var portfolioName = "${entry.name}";
                         var fxRates = ${
                             buildString {
@@ -104,6 +110,24 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         var savedAllocAddMode = "$savedAllocAddMode";
                         var savedAllocReduceMode = "$savedAllocReduceMode";
                         var virtualBalanceEnabled = $virtualBalanceEnabled;
+                        var dividendCalcUpToDate = "${portfolioConf["dividendCalcUpToDate"] ?: ""}";
+                        var stockCurrencies = ${
+                            buildString {
+                                append("{")
+                                stockCurrenciesMap.entries.joinTo(this, ", ") { (sym, ccy) -> "\"$sym\": \"$ccy\"" }
+                                append("}")
+                            }
+                        };
+                        var savedShowStockDisplayCurrency = $showStockDisplayCurrency;
+                        var allPortfolioOptions = ${
+                            buildString {
+                                append("[")
+                                allPortfolios.joinTo(this, ",") { p ->
+                                    "{\"slug\":\"${p.slug.replace("\"", "\\\"")}\",\"name\":\"${p.name.replace("\"", "\\\"")}\"}"
+                                }
+                                append("]")
+                            }
+                        };
                         """.trimIndent()
                     )
                 }
@@ -116,6 +140,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
             script { src = "/static/viewer/letf.js" }
             script { src = "/static/viewer/cash.js" }
             script { src = "/static/viewer/rebalance.js" }
+            script { src = "/static/viewer/display-worker.js" }
             script { src = "/static/viewer/portfolio.js" }
             script { src = "/static/viewer/rebalance-ga.js" }
             script { src = "/static/viewer/groups.js" }
@@ -147,8 +172,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         button(classes = "restore-backup-btn") {
                             attributes["id"] = "restore-backup-btn"
                             attributes["type"] = "button"
-                            attributes["title"] = "Restore from a previous backup"
-                            span(classes = "toggle-label") { +"Restore" }
+                            attributes["title"] = "Backup and restore portfolio"
+                            span(classes = "toggle-label") { +"Backups" }
+                        }
+                        input(type = InputType.file) {
+                            id = "import-file-input"
+                            attributes["accept"] = ".csv,.txt,.zip,.json"
+                            style = "display:none"
                         }
 
                         button(classes = "save-btn") {
@@ -166,16 +196,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Edit" }
                         }
 
-                        if (virtualBalanceEnabled) {
-                            button(classes = "virtual-rebal-btn") {
-                                attributes["id"] = "virtual-rebal-btn"
-                                attributes["type"] = "button"
-                                attributes["title"] =
-                                    "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
-                                span(classes = "toggle-label") { +"Virtual Rebalance" }
-                            }
-                        }
-
                         button(classes = "more-info-toggle") {
                             attributes["id"] = "more-info-toggle"
                             attributes["type"] = "button"
@@ -190,6 +210,16 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Groups" }
                         }
 
+                        if (virtualBalanceEnabled) {
+                            button(classes = "virtual-rebal-btn") {
+                                attributes["id"] = "virtual-rebal-btn"
+                                attributes["type"] = "button"
+                                attributes["title"] =
+                                    "Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+                                span(classes = "toggle-label") { +"Virtual Rebalance" }
+                            }
+                        }
+
                         button(classes = "rebal-toggle") {
                             attributes["aria-label"] = "Toggle rebalancing columns"
                             attributes["id"] = "rebal-toggle"
@@ -198,25 +228,25 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             span(classes = "toggle-label") { +"Rebal" }
                         }
 
-                        if (displayCurrencies.size > 1) {
-                            if (displayCurrencies.size <= 3) {
-                                button(classes = "currency-toggle") {
-                                    attributes["id"] = "currency-toggle"
-                                    attributes["type"] = "button"
-                                    attributes["data-currencies"] =
-                                        displayCurrencies.joinToString(",")
-                                    attributes["title"] = "Switch display currency"
-                                    span(classes = "currency-toggle-icon") { +"\u21C4" }
-                                    span(classes = "toggle-label") { +"USD" }
-                                }
-                            } else {
-                                select(classes = "currency-select") {
-                                    attributes["id"] = "currency-select"
-                                    for (ccy in displayCurrencies) {
-                                        option {
-                                            attributes["value"] = ccy
-                                            +ccy
-                                        }
+                        if (displayCurrencies.size == 1) {
+                            span(classes = "currency-pill") { +displayCurrencies[0] }
+                        } else if (displayCurrencies.size <= 3) {
+                            button(classes = "currency-toggle") {
+                                attributes["id"] = "currency-toggle"
+                                attributes["type"] = "button"
+                                attributes["data-currencies"] =
+                                    displayCurrencies.joinToString(",")
+                                attributes["title"] = "Switch display currency"
+                                span(classes = "currency-toggle-icon") { +"\u21C4" }
+                                span(classes = "toggle-label") { +"USD" }
+                            }
+                        } else {
+                            select(classes = "currency-select") {
+                                attributes["id"] = "currency-select"
+                                for (ccy in displayCurrencies) {
+                                    option {
+                                        attributes["value"] = ccy
+                                        +ccy
                                     }
                                 }
                             }
@@ -230,10 +260,10 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 // Tab bar — always rendered
                 div(classes = "portfolio-tabs") {
                     for (p in allPortfolios) {
-                        val href = if (p.id == "main") "/" else "/portfolio/${p.id}"
+                        val href = if (p.slug == "main") "/" else "/portfolio/${p.slug}"
                         a(
                             href = href,
-                            classes = "tab-link${if (p.id == activePortfolioId) " active" else ""}"
+                            classes = "tab-link${if (p.slug == activePortfolioId) " active" else ""}"
                         ) { +p.name }
                     }
                     button(classes = "save-portfolio-btn") {
@@ -249,7 +279,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         table(classes = "portfolio-cash-table") {
                             tbody {
                                 buildSummaryRows(
-                                    cashEntries,
+                                    effectiveCashEntries,
                                     ::resolveEntryUsd,
                                     portfolio,
                                     cashTotalUsd
@@ -257,9 +287,21 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
-                        buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() })
+                        buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() }, allPortfolios.toList())
 
-                        if (cashEntries.any { it.marginFlag }) {
+                        if (virtualBalanceEnabled) {
+                            div(classes = "dividend-from-section") {
+                                label { attributes["for"] = "dividend-from-input"; +"Dividend From" }
+                                input(type = InputType.date, classes = "dividend-from-input") {
+                                    id = "dividend-from-input"
+                                    value = portfolioConf["dividendStartDate"] ?: ""
+                                    attributes["data-original-value"] = portfolioConf["dividendStartDate"] ?: ""
+                                    attributes["autocomplete"] = "off"
+                                }
+                            }
+                        }
+
+                        if (effectiveCashEntries.any { it.marginFlag }) {
                             buildIbkrRatesTable()
                         }
                     }
@@ -322,16 +364,16 @@ private fun TBODY.buildSummaryRows(
     portfolio: Portfolio,
     cashTotalUsd: Double
 ) {
-    // Total Value row — at the top of the summary table
+    // Portfolio Value row — at the top of the summary table (stocks + cash grand total)
     // Day change innerHTML is fully owned by JS (updateTotalValue); render empty
     tr(classes = "grand-total-row") {
-        td { +"Total Value" }
+        td { +"Portfolio Value" }
         td {}
         td {}
         td {
             span {
-                id = "grand-total-value"
-                +"$%,.2f".format(portfolio.totalValue + cashTotalUsd)
+                id = "portfolio-total"
+                +"%,.2f".format(portfolio.stockGrossValue + cashTotalUsd)
             }
             div(classes = "summary-subvalue") { id = "total-day-change" }
         }
@@ -387,7 +429,7 @@ private fun TBODY.buildSummaryRows(
                 span {
                     id = "cash-usd-${entry.label}-${entry.currency}"
                     val resolvedUsd = resolveEntryUsd(entry)
-                    if (resolvedUsd != null) +"$%,.2f".format(resolvedUsd) else +"---"
+                    if (resolvedUsd != null) +"%,.2f".format(resolvedUsd) else +"---"
                 }
             }
         }
@@ -404,7 +446,7 @@ private fun TBODY.buildSummaryRows(
             td {
                 span {
                     id = "cash-total-usd"
-                    +"$%,.2f".format(cashTotalUsd)
+                    +"%,.2f".format(cashTotalUsd)
                 }
             }
         }
@@ -414,7 +456,7 @@ private fun TBODY.buildSummaryRows(
         if (hasMarginEntries) {
             val marginUsd = cashEntries.filter { it.marginFlag }
                 .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-            val marginDenominator = portfolio.totalValue + marginUsd
+            val marginDenominator = portfolio.stockGrossValue + marginUsd
             tr(classes = "margin-row") {
                 attributes["data-margin-row"] = "true"
                 if (marginUsd >= 0) style = "display:none;"
@@ -424,7 +466,7 @@ private fun TBODY.buildSummaryRows(
                 td {
                     span {
                         id = "margin-total-usd"
-                        +"$%,.2f".format(abs(marginUsd))
+                        +"%,.2f".format(abs(marginUsd))
                     }
                     val marginPct = if (marginDenominator != 0.0 && marginUsd < 0)
                         (marginUsd / marginDenominator) * 100.0 else 0.0
@@ -441,15 +483,15 @@ private fun TBODY.buildSummaryRows(
             td { attributes["colspan"] = "4" }
         }
 
-        // Portfolio Value row — day change innerHTML owned by JS (updateTotalValue); render empty
+        // Stock Gross Value row — day change innerHTML owned by JS (updateTotalValue); render empty
         tr {
-            td { +"Portfolio Value" }
+            td { +"Stock Gross Value" }
             td {}
             td {}
             td {
                 div {
-                    id = "portfolio-total"
-                    +"$%,.2f".format(portfolio.totalValue)
+                    id = "stock-gross-total"
+                    +"%,.2f".format(portfolio.stockGrossValue)
                 }
                 div(classes = "summary-subvalue") { id = "portfolio-day-change" }
             }
@@ -464,7 +506,7 @@ private fun TBODY.buildSummaryRows(
         td {
             input(type = InputType.text, classes = "rebal-target-input") {
                 attributes["id"] = "rebal-target-input"
-                attributes["placeholder"] = "%,.2f".format(portfolio.totalValue)
+                attributes["placeholder"] = "%,.2f".format(portfolio.stockGrossValue)
                 attributes["autocomplete"] = "off"
             }
         }
@@ -473,7 +515,7 @@ private fun TBODY.buildSummaryRows(
     // Margin Target row — only rendered when margin entries are configured
     if (cashEntries.any { it.marginFlag }) {
         val mUsd = cashEntries.filter { it.marginFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-        val mDenom = portfolio.totalValue + mUsd
+        val mDenom = portfolio.stockGrossValue + mUsd
         val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"
@@ -502,7 +544,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 th(classes = "col-num col-market-data col-moreinfo") { +"Last NAV" }
                 th(classes = "col-num col-market-data") {
                     id = "th-est-val"
-                    +"Est Val "
+                    +"EST "
                     span(classes = "col-info-hint") {
                         title = "Hover a cell to see price targets"
                         +"ⓘ"
@@ -510,16 +552,16 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 }
                 th(classes = "col-num col-market-data col-moreinfo") { +"Last" }
                 th(classes = "col-num col-market-data") { +"Mark" }
-                th(classes = "col-num col-market-data") { +"Day Chg" }
-                th(classes = "col-num col-market-data") { +"Mkt Val Chg" }
+                th(classes = "col-num col-market-data") { +"CHG" }
+                th(classes = "col-num col-market-data") { +"P&L" }
                 th(classes = "col-num col-market-data col-moreinfo") { +"Mkt Val" }
                 th(classes = "col-num") {
                     +"Weight "
                     span(classes = "th-sub") { +"Cur / Tgt / Dev" }
                 }
-                th(classes = "rebal-column") { +"Rebal $" }
+                th(classes = "rebal-column") { +"Rebal" }
                 th(classes = "rebal-column col-moreinfo") { +"Rebal Qty" }
-                th(classes = "alloc-column") { +"Alloc \$" }
+                th(classes = "alloc-column") { +"Alloc" }
                 th(classes = "alloc-column col-moreinfo") { +"Alloc Qty" }
             }
         }
@@ -551,10 +593,10 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Last NAV — kept server-side as it comes from a separate NAV feed, not SSE
                     td(classes = if (stock.lastNav != null) "col-market-data price loaded muted col-moreinfo" else "col-market-data price muted col-moreinfo") {
                         id = "nav-${stock.label}"
-                        +(if (stock.lastNav != null) "$%.2f".format(stock.lastNav) else "—")
+                        +(if (stock.lastNav != null) "%.2f".format(stock.lastNav) else "—")
                     }
 
-                    // Est Val — always blank; fully owned by letf.js via SSE component prices
+                    // EST — always blank; fully owned by letf.js via SSE component prices
                     td(classes = "col-market-data price") {
                         id = "est-val-${stock.label}"
                         +"—"
@@ -563,26 +605,26 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Last Close Price — kept for first paint; SSE overwrites immediately
                     td(classes = if (stock.lastClosePrice != null) "col-market-data price loaded col-moreinfo" else "col-market-data price col-moreinfo") {
                         id = "close-${stock.label}"
-                        +(if (stock.lastClosePrice != null) "$%.2f".format(stock.lastClosePrice) else "—")
+                        +(if (stock.lastClosePrice != null) "%.2f".format(stock.lastClosePrice) else "—")
                     }
 
                     // Mark Price — kept for first paint; SSE overwrites immediately
                     td(classes = if (stock.markPrice != null) "col-market-data price loaded" else "col-market-data price") {
                         id = "mark-${stock.label}"
                         span(classes = "mark-price-value") {
-                            +(if (stock.markPrice != null) "$%.2f".format(stock.markPrice) else "—")
+                            +(if (stock.markPrice != null) "%.2f".format(stock.markPrice) else "—")
                         }
                         span(classes = "mark-day-pct") {
                             id = "day-percent-${stock.label}"
                         }
                     }
 
-                    // Day Chg / Mkt Val Chg — owned by JS (updatePriceInUI); render empty
+                    // CHG / P&L — owned by JS (updatePriceInUI); render empty
                     td(classes = "col-market-data price-change neutral") {
                         id = "day-change-${stock.label}"
                     }
 
-                    // Mkt Val Chg — owned by JS; render empty
+                    // P&L — owned by JS; render empty
                     td(classes = "col-market-data price-change neutral") {
                         id = "position-change-${stock.label}"
                     }
@@ -590,7 +632,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Mkt Val — kept for first paint; SSE overwrites immediately
                     td(classes = if (stock.value != null) "col-market-data value loaded col-moreinfo" else "col-market-data value col-moreinfo") {
                         id = "value-${stock.label}"
-                        +(if (stock.value != null) "$%,.2f".format(stock.value) else "—")
+                        +(if (stock.value != null) "%,.2f".format(stock.value) else "—")
                     }
 
                     // Weight — owned by JS (updateCurrentWeights); render empty
@@ -598,7 +640,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         id = "current-weight-${stock.label}"
                     }
 
-                    // Rebal $ / Rebal Qty — owned by JS (updateRebalancingColumns); render empty
+                    // Rebal / Rebal Qty — owned by JS (updateRebalancingColumns); render empty
                     td(classes = "action-neutral rebal-column") {
                         id = "rebal-dollars-${stock.label}"
                     }
@@ -606,7 +648,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                         id = "rebal-qty-${stock.label}"
                     }
 
-                    // Alloc $ / Alloc Qty — owned by JS (updateAllocColumns); always empty
+                    // Alloc / Alloc Qty — owned by JS (updateAllocColumns); always empty
                     td(classes = "action-neutral alloc-column") {
                         id = "alloc-dollars-${stock.label}"
                     }

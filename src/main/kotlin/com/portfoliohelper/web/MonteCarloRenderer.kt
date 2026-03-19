@@ -8,23 +8,11 @@ import kotlinx.html.*
 internal suspend fun ApplicationCall.renderMonteCarloPage() {
     respondHtml(HttpStatusCode.OK) {
         head {
-            title { +"Monte Carlo Simulator" }
-            meta(charset = "UTF-8")
-            meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
-
-            renderCommonHeadElements()
-
-            script {
-                src = "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"
-                async = true
-            }
-            script { src = "/static/common/theme.js" }
-            script { src = "/static/common/stats-formatters.js" }
-            script { src = "/static/backtest/backtest-blocks.js" }
-            script { src = "/static/backtest/backtest-saved.js" }
-            script { src = "/static/montecarlo/montecarlo-chart.js" }
-            script { src = "/static/montecarlo/montecarlo-run.js" }
-            script { src = "/static/montecarlo/montecarlo-main.js" }
+            renderChartToolPageHead("Monte Carlo Simulator", listOf(
+                "/static/montecarlo/montecarlo-chart.js",
+                "/static/montecarlo/montecarlo-run.js",
+                "/static/montecarlo/montecarlo-main.js"
+            ))
         }
         body {
             div(classes = "container") {

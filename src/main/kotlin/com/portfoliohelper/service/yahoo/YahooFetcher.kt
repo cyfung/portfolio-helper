@@ -28,7 +28,7 @@ import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.*
 
 // ── Reusable historical fetcher ───────────────────────────────────────────────
 
@@ -40,7 +40,10 @@ object YahooHistoricalFetcher {
         .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val req = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                )
                 .header("Accept", "application/json")
                 .build()
             chain.proceed(req)
@@ -91,14 +94,54 @@ object YahooHistoricalFetcher {
         logger.info("Fetched ${prices.size} trading days for $ticker")
         return prices
     }
+
+    /** Fetches dividend events for [ticker] in the given date range. Returns ex-date → amount per share. */
+    fun fetchDividends(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): Map<LocalDate, Double> {
+        val p1 = startDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+                "?period1=$p1&period2=$p2&interval=1d&events=div"
+
+        logger.info("Fetching dividends for $ticker from $startDate to $endDate")
+
+        val request = Request.Builder().url(url).build()
+        val body = http.newCall(request).execute().use { resp ->
+            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker dividends" }
+            resp.body!!.string()
+        }
+
+        val root = JSONObject(body)
+        val result = root.getJSONObject("chart").getJSONArray("result").getJSONObject(0)
+        val events = result.optJSONObject("events") ?: return emptyMap()
+        val dividends = events.optJSONObject("dividends") ?: return emptyMap()
+
+        val out = mutableMapOf<LocalDate, Double>()
+        for (key in dividends.keys()) {
+            val entry = dividends.getJSONObject(key)
+            val ts = entry.getLong("date")
+            val amount = entry.getDouble("amount")
+            val date = Instant.ofEpochSecond(ts).atZone(ZoneOffset.UTC).toLocalDate()
+            if (date in startDate..endDate) {
+                out[date] = amount
+            }
+        }
+
+        logger.info("Fetched ${out.size} dividend events for $ticker")
+        return out
+    }
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-val TICKERS    = listOf("SPY")
-val START_DATE = LocalDate.of(2007, 1, 1)   // CTA inception date
-val END_DATE   = LocalDate.now()
-val OUTPUT_CSV = "portfolio_prices.csv"
+val TICKERS = listOf("SPY")
+val START_DATE: LocalDate = LocalDate.of(2007, 1, 1)   // CTA inception date
+val END_DATE: LocalDate = LocalDate.now()
+const val OUTPUT_CSV = "portfolio_prices.csv"
 
 // ── HTTP client (standalone use) ──────────────────────────────────────────────
 
@@ -152,7 +195,7 @@ fun writeCsv(series: List<PriceSeries>, outputPath: String) {
 
         // Rows
         for (date in commonDates) {
-            val row = mutableListOf<String>(date.toString())
+            val row = mutableListOf(date.toString())
             for (s in series) {
                 val price = s.prices[date]!!
                 row.add("%.6f".format(price))
@@ -190,7 +233,7 @@ fun main() {
     println("date,vti_adj_close,cta_adj_close,dbmf_adj_close")
     File(OUTPUT_CSV).bufferedReader().use { br ->
         br.readLine() // skip header
-        repeat(5) { line -> br.readLine()?.let { println(it) } }
+        repeat(5) { br.readLine()?.let { println(it) } }
     }
 
     println()

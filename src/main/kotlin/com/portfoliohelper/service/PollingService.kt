@@ -1,16 +1,33 @@
 package com.portfoliohelper.service
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 abstract class PollingService<TData : Any>(private val serviceName: String) {
-    protected val logger = LoggerFactory.getLogger(this::class.java)
+    protected val logger: Logger = LoggerFactory.getLogger(this::class.java)
     protected val cache = ConcurrentHashMap<String, TData>()
-    private val updateCallbacks = mutableListOf<(String, TData) -> Unit>()
-    private val postBatchCallbacks = mutableListOf<() -> Unit>()
     private var updateJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val _updates = MutableSharedFlow<Pair<String, TData>>(
+        extraBufferCapacity = 128,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val updates: SharedFlow<Pair<String, TData>> = _updates
+
+    private val _batchComplete = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val batchComplete: SharedFlow<Unit> = _batchComplete
+
+    fun snapshotAll(): Map<String, TData> = HashMap(cache)
 
     @Volatile
     protected var isInitialized = false
@@ -43,7 +60,7 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
         updateJob = serviceScope.launch {
             while (isActive) {
                 val delayMs = nextDelayMs()
-                val nextAt = java.time.Instant.ofEpochMilli(System.currentTimeMillis() + delayMs)
+                val nextAt = Instant.ofEpochMilli(System.currentTimeMillis() + delayMs)
                 logger.info("$serviceName: next fetch scheduled at $nextAt (in ${delayMs / 60_000} min)")
                 delay(delayMs)
                 if (isActive) fetchAll(symbols)
@@ -60,18 +77,14 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
                     try {
                         val data = fetchItem(symbol) ?: return@async
                         cache[symbol] = data
-                        synchronized(updateCallbacks) {
-                            updateCallbacks.forEach { it(symbol, data) }
-                        }
+                        _updates.tryEmit(symbol to data)
                     } catch (e: Exception) {
                         logger.warn("Failed to fetch $symbol: ${e.message}, retrying once...")
                         delay(3_000)
                         try {
                             val data = fetchItem(symbol) ?: return@async
                             cache[symbol] = data
-                            synchronized(updateCallbacks) {
-                                updateCallbacks.forEach { it(symbol, data) }
-                            }
+                            _updates.tryEmit(symbol to data)
                             logger.info("Retry succeeded for $symbol")
                         } catch (e2: Exception) {
                             logger.warn("Retry also failed for $symbol: ${e2.message}")
@@ -80,30 +93,13 @@ abstract class PollingService<TData : Any>(private val serviceName: String) {
                 }
             }.awaitAll()
         }
-        synchronized(postBatchCallbacks) { postBatchCallbacks.toList() }.forEach { it() }
+        _batchComplete.tryEmit(Unit)
         logger.info("Completed fetching for ${symbols.size} symbols")
     }
 
-    fun onUpdate(callback: (String, TData) -> Unit): () -> Unit {
-        synchronized(updateCallbacks) { updateCallbacks.add(callback) }
-        return { synchronized(updateCallbacks) { updateCallbacks.remove(callback) } }
-    }
-
-    fun onBatchComplete(callback: () -> Unit): () -> Unit {
-        synchronized(postBatchCallbacks) { postBatchCallbacks.add(callback) }
-        return { synchronized(postBatchCallbacks) { postBatchCallbacks.remove(callback) } }
-    }
-
-    /** Registers [callback] and immediately replays all cached entries so new clients
-     *  don't miss data that was fetched before their SSE connection was established.
-     *  Returns an unregister function — call it when the SSE connection closes. */
-    fun onUpdateWithReplay(callback: (String, TData) -> Unit): () -> Unit {
-        synchronized(updateCallbacks) { updateCallbacks.add(callback) }
-        cache.forEach { (symbol, data) -> callback(symbol, data) }
-        return { synchronized(updateCallbacks) { updateCallbacks.remove(callback) } }
-    }
-
     fun get(symbol: String): TData? = cache[symbol]
+
+    fun cachedSymbols(): Set<String> = cache.keys
 
     open fun shutdown() {
         logger.info("Shutting down $serviceName...")

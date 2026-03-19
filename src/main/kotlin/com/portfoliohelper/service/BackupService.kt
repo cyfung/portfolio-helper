@@ -1,23 +1,82 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.model.CashEntry
+import com.portfoliohelper.service.db.CashTable
+import com.portfoliohelper.service.db.PortfolioBackupsTable
+import com.portfoliohelper.service.db.PortfoliosTable
+import com.portfoliohelper.service.db.PositionsTable
+import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.util.appJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
+import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
-import java.time.LocalDate
+import java.io.ByteArrayInputStream
+import java.io.InputStreamReader
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
+import java.util.concurrent.*
+import java.util.zip.*
+
+@Serializable
+data class PortfolioSyncEntry(
+    val serialId: Int,
+    val name: String,
+    val slug: String,
+    val stocks: List<BackupStock>,
+    val cash: List<BackupCash>
+)
+
+@Serializable
+data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>)
+
+@Serializable
+data class BackupRoot(
+    val version: Int = 1,
+    val portfolioSlug: String,
+    val stocks: List<BackupStock>,
+    val cash: List<BackupCash>
+)
+
+@Serializable
+data class BackupStock(
+    val symbol: String,
+    val amount: Double,
+    val targetWeight: Double = 0.0,
+    val letf: String = "",
+    val groups: String = ""
+)
+
+@Serializable
+data class BackupCash(
+    val key: String,
+    val label: String,
+    val currency: String,
+    val marginFlag: Boolean,
+    val amount: Double,
+    val portfolioRef: String? = null,
+    val snapshotUsd: Double? = null   // P entries only; ignored on restore/import
+)
+
+data class DbBackupEntry(val id: Int, val createdAt: Long, val label: String)
+
+data class ImportResult(
+    val stocks: List<Map<String, Any>>?,      // null = not present in file
+    val cashKeys: List<Map<String, String>>?, // [{key, value}, ...]; null = not present
+    val error: String?
+)
 
 object BackupService {
     private val logger = LoggerFactory.getLogger(BackupService::class.java)
+    private val lastSavedHash = ConcurrentHashMap<Int, String>()
 
     fun start(scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
@@ -27,118 +86,357 @@ object BackupService {
     }
 
     private fun performBackups() {
-        PortfolioRegistry.entries.forEach { backupPortfolio(it) }
+        ManagedPortfolio.getAll().forEach { saveToDb(it, label = "") }
     }
 
-    fun backupNow(portfolio: ManagedPortfolio, prefix: String? = null, subfolder: String? = null) {
-        backupPortfolio(portfolio, prefix, subfolder)
-    }
-
-    private fun backupPortfolio(portfolio: ManagedPortfolio, prefix: String? = null, subfolder: String? = null) {
-        val dataDir = Paths.get(portfolio.csvPath).parent
-        val backupDir = dataDir.resolve(".backup").let { if (subfolder != null) it.resolve(subfolder) else it }
-        Files.createDirectories(backupDir)
-
-        val csvFile  = Paths.get(portfolio.csvPath)
-        val cashFile = Paths.get(portfolio.cashPath)
-        val backupCsv  = backupDir.resolve("stocks.csv")
-        val backupCash = backupDir.resolve("cash.txt")
-
-        val csvChanged  = contentDiffers(csvFile, backupCsv)
-        val cashChanged = contentDiffers(cashFile, backupCash)
-        if (!csvChanged && !cashChanged) {
-            logger.debug("No changes for '${portfolio.id}'${if (subfolder != null) " [$subfolder]" else ""}, backup skipped")
+    fun saveToDb(
+        portfolio: ManagedPortfolio,
+        label: String = "",
+        resolveUsd: Boolean = false
+    ) {
+        // Hash computed without snapshotUsd so P-entry price fluctuations don't trigger spurious backups
+        val hashJson = serializeToJson(portfolio, resolveUsd = false)
+        val hash = sha256(hashJson)
+        // On first call after startup, seed the cache from the most recent DB backup so we don't
+        // create a duplicate row just because the in-memory map was empty.
+        val lastHash =
+            lastSavedHash.getOrPut(portfolio.serialId) { loadLastHashFromDb(portfolio.serialId) }
+        if (lastHash == hash) {
+            logger.debug("No changes for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}, backup skipped")
             return
         }
-
-        val date = LocalDate.now().toString()  // yyyy-MM-dd
-        val stem = if (prefix != null) "$prefix-$date" else date
-        val zipPath = generateZipPath(backupDir, stem)
-        ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
-            if (Files.exists(csvFile))  zos.addFile("stocks.csv", csvFile)
-            if (Files.exists(cashFile)) zos.addFile("cash.txt",  cashFile)
-        }
-
-        // Update change-detection snapshots in the backup dir (each subfolder has its own snapshots)
-        if (Files.exists(csvFile))  Files.copy(csvFile,  backupCsv,  REPLACE_EXISTING)
-        else                        Files.deleteIfExists(backupCsv)
-        if (Files.exists(cashFile)) Files.copy(cashFile, backupCash, REPLACE_EXISTING)
-        else                        Files.deleteIfExists(backupCash)
-
-        logger.info("Backup created for '${portfolio.id}'${if (subfolder != null) " [$subfolder]" else ""}: ${zipPath.fileName}")
-    }
-
-    private fun generateZipPath(backupDir: Path, date: String): Path {
-        val base = backupDir.resolve("$date.zip")
-        if (!Files.exists(base)) return base
-        var n = 1
-        while (true) {
-            val candidate = backupDir.resolve("${date}_$n.zip")
-            if (!Files.exists(candidate)) return candidate
-            n++
-        }
-    }
-
-    private fun contentDiffers(current: Path, backup: Path): Boolean {
-        val currExists   = Files.exists(current)
-        val backupExists = Files.exists(backup)
-        return when {
-            !currExists && !backupExists -> false
-            currExists != backupExists   -> true
-            else -> !Files.readAllBytes(current).contentEquals(Files.readAllBytes(backup))
-        }
-    }
-
-    private fun ZipOutputStream.addFile(entryName: String, source: Path) {
-        putNextEntry(ZipEntry(entryName))
-        Files.copy(source, this)
-        closeEntry()
-    }
-
-    /** Returns all backups grouped by subfolder. Key "default" = root .backup/ dir. */
-    fun listAllBackups(portfolio: ManagedPortfolio): Map<String, List<String>> {
-        val baseDir = Paths.get(portfolio.csvPath).parent.resolve(".backup")
-        if (!Files.exists(baseDir)) return emptyMap()
-        val result = linkedMapOf<String, List<String>>()
-        val rootZips = listZipsIn(baseDir)
-        if (rootZips.isNotEmpty()) result["default"] = rootZips
-        Files.list(baseDir)
-            .filter { Files.isDirectory(it) }
-            .sorted()
-            .forEach { subDir ->
-                val zips = listZipsIn(subDir)
-                if (zips.isNotEmpty()) result[subDir.fileName.toString()] = zips
+        val storeJson = if (resolveUsd) serializeToJson(portfolio, true) else hashJson
+        val nowMillis = System.currentTimeMillis()
+        transaction {
+            PortfolioBackupsTable.insert {
+                it[portfolioId] = portfolio.serialId
+                it[createdAt] = nowMillis
+                it[PortfolioBackupsTable.label] = label
+                it[data] = storeJson
             }
-        return result
+        }
+        lastSavedHash[portfolio.serialId] = hash
+        logger.info("DB backup saved for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}")
     }
 
-    private fun listZipsIn(dir: Path): List<String> =
-        Files.list(dir)
-            .filter { it.fileName.toString().endsWith(".zip") }
-            .map { it.fileName.toString().removeSuffix(".zip") }
-            .sorted().toList().reversed()
+    fun deleteFromDb(portfolio: ManagedPortfolio, backupId: Int) {
+        transaction {
+            PortfolioBackupsTable.deleteWhere {
+                (PortfolioBackupsTable.id eq backupId) and
+                        (PortfolioBackupsTable.portfolioId eq portfolio.serialId)
+            }
+        }
+        logger.info("Deleted DB backup $backupId for '${portfolio.slug}'")
+    }
 
-    fun restoreBackup(portfolio: ManagedPortfolio, date: String, subfolder: String? = null) {
-        require(date.matches(Regex("[a-zA-Z0-9_-]+"))) { "Invalid backup name: $date" }
-        if (subfolder != null) require(subfolder.matches(Regex("[a-zA-Z0-9_-]+"))) { "Invalid subfolder: $subfolder" }
-        val baseDir = Paths.get(portfolio.csvPath).parent.resolve(".backup")
-        val backupDir = if (subfolder != null) baseDir.resolve(subfolder) else baseDir
-        val zipPath = backupDir.resolve("$date.zip")
-        require(Files.exists(zipPath)) { "Backup not found: $date" }
-        ZipInputStream(Files.newInputStream(zipPath)).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val target = when (entry.name) {
-                    "stocks.csv" -> Paths.get(portfolio.csvPath)
-                    "cash.txt"   -> Paths.get(portfolio.cashPath)
-                    else         -> null
+    fun deleteAllFromDb(portfolio: ManagedPortfolio) {
+        transaction {
+            PortfolioBackupsTable.deleteWhere { PortfolioBackupsTable.portfolioId eq portfolio.serialId }
+        }
+        lastSavedHash.remove(portfolio.serialId)
+        logger.info("Deleted all DB backups for '${portfolio.slug}'")
+    }
+
+    fun listDbBackups(portfolio: ManagedPortfolio): List<DbBackupEntry> = transaction {
+        PortfolioBackupsTable.selectAll()
+            .where { PortfolioBackupsTable.portfolioId eq portfolio.serialId }
+            .orderBy(PortfolioBackupsTable.createdAt, SortOrder.DESC)
+            .limit(50)
+            .map { row ->
+                DbBackupEntry(
+                    id = row[PortfolioBackupsTable.id],
+                    createdAt = row[PortfolioBackupsTable.createdAt],
+                    label = row[PortfolioBackupsTable.label]
+                )
+            }
+    }
+
+    fun restoreFromDb(portfolio: ManagedPortfolio, backupId: Int) {
+        val json = transaction {
+            PortfolioBackupsTable.selectAll()
+                .where {
+                    (PortfolioBackupsTable.id eq backupId) and
+                            (PortfolioBackupsTable.portfolioId eq portfolio.serialId)
                 }
-                if (target != null) Files.copy(zis, target, REPLACE_EXISTING)
-                zis.closeEntry()
-                entry = zis.nextEntry
-            }
+                .firstOrNull()?.get(PortfolioBackupsTable.data)
         }
-        logger.info("Restored '${portfolio.id}' from backup${if (subfolder != null) " [$subfolder]" else ""}: $date")
+            ?: throw IllegalArgumentException("Backup $backupId not found for portfolio '${portfolio.slug}'")
+
+        val root = appJson.decodeFromString<BackupRoot>(json)
+        val cashEntries = root.cash.map { c -> CashEntry(c.label, c.currency, c.marginFlag, c.amount, c.portfolioRef) }
+        transaction {
+            portfolio.replacePositions(root.stocks)
+            portfolio.replaceCash(cashEntries)
+        }
+        logger.info("Restored '${portfolio.slug}' from DB backup $backupId")
+    }
+
+    fun exportJson(portfolio: ManagedPortfolio): String =
+        serializeToJson(portfolio, true)
+
+    fun exportRoot(portfolio: ManagedPortfolio): BackupRoot =
+        root(portfolio, true)
+
+    fun exportSyncEntry(portfolio: ManagedPortfolio): PortfolioSyncEntry {
+        val r = root(portfolio, resolveUsd = true)
+        return PortfolioSyncEntry(
+            serialId = portfolio.serialId,
+            name = portfolio.name,
+            slug = portfolio.slug,
+            stocks = r.stocks,
+            cash = r.cash
+        )
+    }
+
+    fun parseImportFile(bytes: ByteArray, filename: String): ImportResult {
+        val lower = filename.lowercase()
+        return when {
+            lower.endsWith(".json") -> parseJsonImport(bytes)
+            lower.endsWith(".csv") -> parseCsvImport(bytes)
+            lower.endsWith(".txt") -> parseTxtImport(bytes)
+            lower.endsWith(".zip") -> parseZipImport(bytes)
+            else -> ImportResult(null, null, "Unsupported file type: $filename")
+        }
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────────
+
+    /** Loads the most recent backup from DB and returns a hash of its content without snapshotUsd.
+     *  Returns an empty string if no backup exists yet (guaranteeing a first-ever backup is saved). */
+    private fun loadLastHashFromDb(portfolioSerialId: Int): String {
+        val data = transaction {
+            PortfolioBackupsTable.selectAll()
+                .where { PortfolioBackupsTable.portfolioId eq portfolioSerialId }
+                .orderBy(PortfolioBackupsTable.createdAt, SortOrder.DESC)
+                .limit(1)
+                .firstOrNull()?.get(PortfolioBackupsTable.data)
+        } ?: return ""
+        return try {
+            val root = appJson.decodeFromString<BackupRoot>(data)
+            // snapshotUsd is already excluded from hash since serializeToJson(resolveUsd=null) doesn't set it
+            val stripped = root.copy(cash = root.cash.map { it.copy(snapshotUsd = null) })
+            sha256(appJson.encodeToString(stripped))
+        } catch (_: Exception) {
+            "" // unparseable old backup → treat as no prior backup
+        }
+    }
+
+    private fun serializeToJson(
+        portfolio: ManagedPortfolio,
+        resolveUsd: Boolean = false
+    ): String {
+        val root = root(portfolio, resolveUsd)
+        return appJson.encodeToString(root)
+    }
+
+    private fun resolveUsd(e: CashEntry): Double? {
+        return when (e.currency) {
+            "USD" -> e.amount
+            "P" -> {
+                val ref = ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
+                    ?: return null
+                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
+            }
+
+            else -> YahooMarketDataService.getQuote("${e.currency}USD=X")
+                ?.let { q ->
+                    (q.regularMarketPrice ?: q.previousClose
+                    ?: return null) * e.amount
+                }
+        }
+    }
+
+    private fun root(
+        portfolio: ManagedPortfolio,
+        resolveUsd: Boolean = false
+    ): BackupRoot {
+        val pid = portfolio.serialId
+        val stocks = transaction {
+            PositionsTable.selectAll()
+                .where { PositionsTable.portfolioId eq pid }
+                .map { row ->
+                    BackupStock(
+                        symbol = row[PositionsTable.symbol],
+                        amount = row[PositionsTable.amount],
+                        targetWeight = row[PositionsTable.targetWeight],
+                        letf = row[PositionsTable.letf],
+                        groups = row[PositionsTable.groups]
+                    )
+                }
+        }
+        val cashEntries = transaction {
+            CashTable.leftJoin(PortfoliosTable, { CashTable.portfolioRefId }, { PortfoliosTable.id })
+                .selectAll().where { CashTable.portfolioId eq pid }
+                .map { row ->
+                    CashEntry(
+                        label = row[CashTable.label],
+                        currency = row[CashTable.currency],
+                        marginFlag = row[CashTable.marginFlag],
+                        amount = row[CashTable.amount],
+                        portfolioRef = row.getOrNull(PortfoliosTable.slug)
+                    )
+                }
+        }
+        val cashBackup = cashEntries.map { e ->
+            val snapshotUsd = if (e.currency == "P" && resolveUsd) resolveUsd(e) else null
+            BackupCash(
+                key = e.key,
+                label = e.label,
+                currency = e.currency,
+                marginFlag = e.marginFlag,
+                amount = e.amount,
+                portfolioRef = e.portfolioRef,
+                snapshotUsd = snapshotUsd
+            )
+        }
+        val root = BackupRoot(
+            portfolioSlug = portfolio.slug,
+            stocks = stocks,
+            cash = cashBackup
+        )
+        return root
+    }
+
+    private fun sha256(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun parseJsonImport(bytes: ByteArray): ImportResult {
+        return try {
+            val root = appJson.decodeFromString<BackupRoot>(String(bytes))
+            val stocks = root.stocks.map { s ->
+                mapOf<String, Any>(
+                    "symbol" to s.symbol, "amount" to s.amount,
+                    "targetWeight" to s.targetWeight, "letf" to s.letf, "groups" to s.groups
+                )
+            }
+            val cash = root.cash.map { c ->
+                val value = if (c.currency == "P") {
+                    (if (c.amount < 0) "-" else "") + (c.portfolioRef ?: "")
+                } else c.amount.toString()
+                mapOf("key" to c.key, "value" to value)
+            }
+            if (stocks.isEmpty() && cash.isEmpty())
+                ImportResult(null, null, "JSON backup has no stocks or cash entries")
+            else
+                ImportResult(stocks, cash, null)
+        } catch (e: Exception) {
+            ImportResult(null, null, "Invalid JSON: ${e.message}")
+        }
+    }
+
+    private fun parseCsvImport(bytes: ByteArray): ImportResult {
+        return try {
+            val reader = InputStreamReader(ByteArrayInputStream(bytes))
+            val csvFormat = CSVFormat.DEFAULT.builder()
+                .setHeader().setSkipHeaderRecord(true).build()
+            val rows = mutableListOf<Map<String, Any>>()
+            CSVParser(reader, csvFormat).use { parser ->
+                for (record in parser) {
+                    try {
+                        val symbol = record.get("stock_label").trim()
+                        val amount = record.get("amount").toDouble()
+                        if (symbol.isEmpty()) continue
+                        val targetWeight = try {
+                            record.get("target_weight")?.toDoubleOrNull() ?: 0.0
+                        } catch (_: Exception) {
+                            0.0
+                        }
+                        val letf = try {
+                            record.get("letf")?.trim() ?: ""
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        val groups = try {
+                            record.get("groups")?.trim() ?: ""
+                        } catch (_: Exception) {
+                            ""
+                        }
+                        rows.add(
+                            mapOf(
+                                "symbol" to symbol as Any, "amount" to amount,
+                                "targetWeight" to targetWeight, "letf" to letf, "groups" to groups
+                            )
+                        )
+                    } catch (_: Exception) { /* skip bad rows */
+                    }
+                }
+            }
+            if (rows.isEmpty())
+                ImportResult(
+                    null,
+                    null,
+                    "CSV has no valid rows (need 'stock_label' and 'amount' columns)"
+                )
+            else
+                ImportResult(rows, null, null)
+        } catch (e: Exception) {
+            ImportResult(null, null, "Invalid CSV: ${e.message}")
+        }
+    }
+
+    private fun parseTxtImport(bytes: ByteArray): ImportResult {
+        return try {
+            val entries = mutableListOf<Map<String, String>>()
+            String(bytes).lines().forEach { rawLine ->
+                val line = rawLine.trim()
+                if (line.isEmpty() || line.startsWith("#")) return@forEach
+                val eqIdx = line.indexOf('=')
+                if (eqIdx < 0) return@forEach
+                val key = line.substring(0, eqIdx).trim()
+                val value = line.substring(eqIdx + 1).trim()
+                if (key.split(".").size < 2) return@forEach
+                // Accept numeric values or non-empty portfolio refs
+                if (value.toDoubleOrNull() != null || value.trimStart('+', '-').isNotEmpty()) {
+                    entries.add(mapOf("key" to key, "value" to value))
+                }
+            }
+            if (entries.isEmpty())
+                ImportResult(null, null, "TXT file has no valid cash entries")
+            else
+                ImportResult(null, entries, null)
+        } catch (e: Exception) {
+            ImportResult(null, null, "Invalid TXT: ${e.message}")
+        }
+    }
+
+    private fun parseZipImport(bytes: ByteArray): ImportResult {
+        return try {
+            var csvBytes: ByteArray? = null
+            var txtBytes: ByteArray? = null
+            ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    when (entry.name) {
+                        "stocks.csv" -> csvBytes = zis.readBytes()
+                        "cash.txt" -> txtBytes = zis.readBytes()
+                    }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+            val csvResult = csvBytes?.let { parseCsvImport(it) }
+            val txtResult = txtBytes?.let { parseTxtImport(it) }
+            if (csvResult?.error != null) return ImportResult(
+                null,
+                null,
+                "stocks.csv in ZIP: ${csvResult.error}"
+            )
+            if (txtResult?.error != null) return ImportResult(
+                null,
+                null,
+                "cash.txt in ZIP: ${txtResult.error}"
+            )
+            val stocks = csvResult?.stocks
+            val cash = txtResult?.cashKeys
+            if (stocks == null && cash == null)
+                ImportResult(null, null, "ZIP contains no stocks.csv or cash.txt")
+            else
+                ImportResult(stocks, cash, null)
+        } catch (e: Exception) {
+            ImportResult(null, null, "Invalid ZIP: ${e.message}")
+        }
     }
 
     private fun scheduleDaily(scope: CoroutineScope) {

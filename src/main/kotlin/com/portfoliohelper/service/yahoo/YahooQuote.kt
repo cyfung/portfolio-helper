@@ -9,7 +9,8 @@ data class YahooQuote(
     // Market hours data for determining if market is open
     val tradingPeriodStart: Long? = null,    // Regular session start (Unix seconds)
     val tradingPeriodEnd: Long? = null,      // Regular session end (Unix seconds)
-    val isMarketClosed: Boolean = false      // Whether market is currently closed
+    val isMarketClosed: Boolean = false,     // Whether market is currently closed
+    val currency: String? = null             // Trading currency (e.g. "USD", "HKD")
 )
 
 class YahooFinanceException(message: String, cause: Throwable? = null) : Exception(message, cause)

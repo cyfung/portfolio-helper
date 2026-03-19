@@ -5,3 +5,4 @@ plugins {
 rootProject.name = "portfolio-helper"
 
 include("tws-client")
+include("db-schema")

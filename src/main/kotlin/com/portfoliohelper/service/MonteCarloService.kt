@@ -189,30 +189,10 @@ object MonteCarloService {
         }
 
         // ── Per-metric independent percentile values ───────────────────────────
-        val maxDdPctValues = allMetrics.map { portMetrics ->
-            portMetrics.map { simMetrics ->
-                val sorted = (0 until numSims).sortedBy { -simMetrics[it].maxDD }
-                pctIdxList.map { simMetrics[sorted[it]].maxDD }
-            }
-        }
-        val sharpePctValues = allMetrics.map { portMetrics ->
-            portMetrics.map { simMetrics ->
-                val sorted = (0 until numSims).sortedBy { simMetrics[it].sharpe }
-                pctIdxList.map { simMetrics[sorted[it]].sharpe }
-            }
-        }
-        val ulcerPctValues = allMetrics.map { portMetrics ->
-            portMetrics.map { simMetrics ->
-                val sorted = (0 until numSims).sortedBy { -simMetrics[it].ulcerIndex }
-                pctIdxList.map { simMetrics[sorted[it]].ulcerIndex }
-            }
-        }
-        val upiPctValues = allMetrics.map { portMetrics ->
-            portMetrics.map { simMetrics ->
-                val sorted = (0 until numSims).sortedBy { simMetrics[it].upi }
-                pctIdxList.map { simMetrics[sorted[it]].upi }
-            }
-        }
+        val maxDdPctValues  = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.maxDD }
+        val sharpePctValues = metricPercentiles(allMetrics, numSims, pctIdxList) { it.sharpe }
+        val ulcerPctValues  = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.ulcerIndex }
+        val upiPctValues    = metricPercentiles(allMetrics, numSims, pctIdxList) { it.upi }
 
         // ── Pass 2: re-run needed sims with full paths ────────────────────────
         val neededSimIndices = pctSimIndices.flatten().flatten().toSet()
@@ -248,6 +228,21 @@ object MonteCarloService {
         }
 
         return MonteCarloResult(request.simulatedYears, numSims, portfolioResults, masterSeed)
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun metricPercentiles(
+        allMetrics: Array<Array<Array<SimPassMetrics>>>,
+        numSims: Int,
+        pctIdxList: List<Int>,
+        descending: Boolean = false,
+        selector: (SimPassMetrics) -> Double
+    ): List<List<List<Double>>> = allMetrics.map { portMetrics ->
+        portMetrics.map { simMetrics ->
+            val sorted = (0 until numSims).sortedBy { if (descending) -selector(simMetrics[it]) else selector(simMetrics[it]) }
+            pctIdxList.map { selector(simMetrics[sorted[it]]) }
+        }
     }
 
     // ── Path assembly ─────────────────────────────────────────────────────────
@@ -306,12 +301,7 @@ object MonteCarloService {
                       else simulateWithMargin(pConfig, mc, path)
 
     private fun simulateNoMargin(pConfig: PortfolioConfig, path: List<AssembledDay>): List<Double> {
-        val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val mergedWeights = mutableMapOf<String, Double>()
-        for (tw in pConfig.tickers)
-            mergedWeights[tw.ticker] = (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
-        val tickers = mergedWeights.keys.toList()
-        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
+        val (tickers, targetWeights) = pConfig.mergeWeights()
 
         val startValue = 10_000.0
         val holdings = tickers.associateWith { startValue * (targetWeights[it] ?: 0.0) }
@@ -343,12 +333,7 @@ object MonteCarloService {
         mc: MarginConfig,
         path: List<AssembledDay>
     ): List<Double> {
-        val totalWeight = pConfig.tickers.sumOf { it.weight }
-        val mergedWeights = mutableMapOf<String, Double>()
-        for (tw in pConfig.tickers)
-            mergedWeights[tw.ticker] = (mergedWeights[tw.ticker] ?: 0.0) + tw.weight
-        val tickers = mergedWeights.keys.toList()
-        val targetWeights = mergedWeights.mapValues { (_, w) -> w / totalWeight }
+        val (tickers, targetWeights) = pConfig.mergeWeights()
 
         val startEquity = 10_000.0
         var borrowed = startEquity * mc.marginRatio
@@ -371,8 +356,6 @@ object MonteCarloService {
                     val newTotal = currentEquity + borrowed
                     for (ticker in tickers) holdings[ticker] = newTotal * (targetWeights[ticker] ?: 0.0)
                 }
-            } else {
-                rebalanceDay = false
             }
 
             for (ticker in tickers) {

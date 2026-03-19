@@ -31,6 +31,10 @@ function buildGroupMap() {
 
         const mktVal = markPrice !== null ? markPrice * qty : null;
         const prevMktVal = closePrice !== null ? closePrice * qty : null;
+        const stockCcy = stockCurrencies[symbol] ?? 'USD';
+        const fxRate = getStockFxRate(stockCcy);
+        const mktValUsd = (mktVal !== null && fxRate !== null) ? mktVal * fxRate : mktVal;
+        const prevMktValUsd = (prevMktVal !== null && fxRate !== null) ? prevMktVal * fxRate : prevMktVal;
 
         for (const { multiplier, name } of groupEntries) {
             if (!groups.has(name)) {
@@ -41,8 +45,8 @@ function buildGroupMap() {
                 });
             }
             const g = groups.get(name);
-            if (mktVal !== null)     g.mktVal     += mktVal     * multiplier;
-            if (prevMktVal !== null) g.prevMktVal += prevMktVal * multiplier;
+            if (mktValUsd !== null)     g.mktVal     += mktValUsd     * multiplier;
+            if (prevMktValUsd !== null) g.prevMktVal += prevMktValUsd * multiplier;
             g.targetWeight += targetWeight * multiplier;
             g.stockCount++;
             if (!g.members.includes(symbol)) g.members.push(symbol);
@@ -53,38 +57,27 @@ function buildGroupMap() {
     return groups;
 }
 
+function _addAllocSpinner() {
+    const allocTh = document.querySelector('#group-view-table thead th.alloc-column');
+    if (allocTh && !allocTh.querySelector('.ga-spinner')) {
+        allocTh.insertAdjacentHTML('afterbegin', '<span class="ga-spinner"></span>');
+    }
+}
+
+let _groupTableVersion = 0;
+
 function updateGroupTable() {
     const container = document.getElementById('group-table-container');
     if (!container) return;
-
     const groups = buildGroupMap();
     if (groups.size === 0) { container.innerHTML = ''; return; }
-
-    computeGAAllocations((perSymbolAlloc) => {
-        // Re-read rebalTotal at render time — it's cheap and avoids a stale closure
-        _renderGroupTable(container, groups, perSymbolAlloc, getRebalTotal());
-    });
+    const version = ++_groupTableVersion;
+    _renderGroupTableBase(container, groups, getRebalTotal());
+    _fillGroupAllocColumn(version);
 }
 
-function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
+function _renderGroupTableBase(container, groups, rebalTotal) {
     container.innerHTML = '';
-
-    // Aggregate per-symbol alloc into groups (respecting multipliers)
-    // Also track per-symbol contributions per group for tooltip
-    const groupAllocMap = new Map();
-    const groupAllocMembersMap = new Map(); // groupName -> {symbol: contribution}
-    document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
-        if (row.dataset.deleted) return;
-        const symbol = row.dataset.symbol;
-        if (!symbol || !row.dataset.groups) return;
-        const symAlloc = perSymbolAlloc[symbol];
-        if (symAlloc == null) return;
-        for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
-            groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAlloc * multiplier);
-            if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
-            groupAllocMembersMap.get(name)[symbol] = symAlloc * multiplier;
-        }
-    });
 
     const table = document.createElement('table');
     table.className = 'portfolio-table';
@@ -93,12 +86,12 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     const hRow = table.createTHead().insertRow();
     [
         ['Group', '', false],
-        ['Day %', 'col-num col-market-data', false],
-        ['Mkt Val Chg', 'col-num col-market-data', false],
+        ['CHG %', 'col-num col-market-data', false],
+        ['P&L', 'col-num col-market-data', false],
         ['Mkt Val', 'col-num col-market-data col-moreinfo', false],
         ['Weight <span class="th-sub">Cur / Tgt / Dev</span>', 'col-num', true],
-        ['Rebal $', 'rebal-column', false],
-        ['Alloc $', 'alloc-column', false],
+        ['Rebal', 'rebal-column', false],
+        ['Alloc', 'alloc-column', false],
     ].forEach(([text, cls, isHtml]) => {
         const th = document.createElement('th');
         if (cls) th.className = cls;
@@ -109,19 +102,18 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     const tbody = table.createTBody();
     groups.forEach((g, name) => {
         const mktValChg = g.mktVal - g.prevMktVal;
-        const weightPct = lastPortfolioVal > 0 ? (g.mktVal / lastPortfolioVal) * 100 : 0;
+        const weightPct = lastStockGrossVal > 0 ? (g.mktVal / lastStockGrossVal) * 100 : 0;
         const targetWeightPct = g.targetWeight;
         const weightDiff = weightPct - targetWeightPct;
         const rebalDollars = (targetWeightPct / 100) * rebalTotal - g.mktVal;
-        const allocDollars = groupAllocMap.get(name) ?? 0;
 
         const isZeroChg = Math.abs(mktValChg) < 0.01;
         const chgCls = isZeroChg ? 'neutral' : mktValChg > 0 ? 'positive' : 'negative';
 
         const tr = tbody.insertRow();
+        tr.dataset.groupName = name;
         tr.dataset.groupMembers = g.members.join(',');
-        const memberAllocs = groupAllocMembersMap.get(name) ?? {};
-        tr.dataset.groupMemberAllocs = JSON.stringify(memberAllocs);
+        tr.dataset.groupMemberAllocs = '{}';
         tr.addEventListener('mouseenter', _showGroupTooltip);
         tr.addEventListener('mousemove',  _moveGroupTooltip);
         tr.addEventListener('mouseleave', _hideGroupTooltip);
@@ -131,29 +123,22 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             if (isHtml) td.innerHTML = html; else td.textContent = html;
             tr.appendChild(td);
         };
-        const dayPct = g.prevMktVal > 0 ? (mktValChg / g.prevMktVal) * 100 : null;
-        const dayPctText = (isZeroChg || dayPct === null) ? '—' : (dayPct >= 0 ? '+' : '') + dayPct.toFixed(2) + '%';
-
-        const isNeutral = dayPct !== null && Math.abs(dayPct) < 0.1;
-        const dayPctColorClass = (isZeroChg || dayPct === null) ? 'neutral'
-            : isNeutral ? 'neutral'
-            : dayPct > 0 ? 'positive' : 'negative';
-        const dayPctHtml = (isZeroChg || dayPct === null)
-            ? ''
-            : `<span class="mark-day-pct ${dayPctColorClass}">${dayPct >= 0 ? '+' : '−'}${Math.abs(dayPct).toFixed(2)}%</span>`;
+        const dayPct = g.prevMktVal > 0 ? (mktValChg / g.prevMktVal) * 100 : 0;
+        const isNeutral = Math.abs(dayPct) < 0.1;
+        const dayPctColorClass = isNeutral ? 'neutral' : dayPct > 0 ? 'positive' : 'negative';
+        const dayPctHtml = `<span class="mark-day-pct ${dayPctColorClass}">${dayPct >= 0 ? '+' : '−'}${Math.abs(dayPct).toFixed(2)}%</span>`;
 
         mk(name, '');
         mk(dayPctHtml, 'col-num col-market-data', true);
-        mk(isZeroChg ? '—' : formatSignedCurrency(mktValChg), 'price-change ' + chgCls);
-        mk(formatCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
+        mk(isZeroChg ? '—' : formatSignedDisplayCurrency(mktValChg), 'price-change ' + chgCls);
+        mk(formatDisplayCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
 
-        if (!portfolioValueKnown) {
+        if (!stockGrossValueKnown) {
             mk('N/A', 'col-num value');
             mk('N/A', 'action-neutral rebal-column');
             mk('N/A', 'action-neutral alloc-column');
         } else {
             const rebalDir = Math.abs(rebalDollars) > 0.50 ? (rebalDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
-            const allocDir = Math.abs(allocDollars) > 0.50 ? (allocDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
             const diffClass = Math.abs(weightDiff) > 1.0 ? (weightDiff > 0 ? 'alert-over' : 'alert-under')
                             : Math.abs(weightDiff) > 0.2 ? 'warning' : 'good';
             const pillSign  = weightDiff >= 0 ? '+' : '';
@@ -162,8 +147,8 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
             const tgtHtml   = `<span class="weight-tgt">${targetWeightPct.toFixed(1)}%</span>`;
             const pillHtml  = `<span class="weight-diff ${diffClass}">${pillSign}${weightDiff.toFixed(1)}%</span>`;
             mk(curHtml + sepHtml + tgtHtml + pillHtml, 'col-num value', true);
-            mk(formatSignedCurrency(rebalDollars), 'action-neutral ' + rebalDir + ' rebal-column');
-            mk(formatSignedCurrency(allocDollars), 'action-neutral ' + allocDir + ' alloc-column');
+            mk(formatSignedDisplayCurrency(rebalDollars), 'action-neutral ' + rebalDir + ' rebal-column');
+            mk('\u2014', 'action-neutral alloc-column');
         }
     });
 
@@ -172,6 +157,60 @@ function _renderGroupTable(container, groups, perSymbolAlloc, rebalTotal) {
     warning.textContent = '\u26A0\uFE0E Group values should be interpreted cautiously — their meaning depends heavily on how groups are defined.';
     container.appendChild(warning);
     container.appendChild(table);
+}
+
+function _fillGroupAllocColumn(version) {
+    if (_gaRunning) _addAllocSpinner();
+
+    computeGAAllocations((perSymbolAlloc) => {
+        if (version !== _groupTableVersion) return; // newer updateGroupTable() call supersedes this
+        const table = document.getElementById('group-view-table');
+        if (!table) return;
+
+        // Aggregate per-symbol alloc → per-group (respecting multipliers)
+        const groupAllocMap = new Map();
+        const groupAllocMembersMap = new Map();
+        document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
+            if (row.dataset.deleted) return;
+            const symbol = row.dataset.symbol;
+            if (!symbol || !row.dataset.groups) return;
+            const symAlloc = perSymbolAlloc[symbol];
+            if (symAlloc == null) return;
+            const allocStockCcy = stockCurrencies[symbol] ?? 'USD';
+            const allocFxRate = getStockFxRate(allocStockCcy);
+            const symAllocUsd = (allocFxRate !== null && allocFxRate > 0) ? symAlloc * allocFxRate : symAlloc;
+            for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
+                groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAllocUsd * multiplier);
+                if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
+                groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
+            }
+        });
+
+        // Remove spinner now that GA has finished
+        const spinner = table.querySelector('thead th.alloc-column .ga-spinner');
+        if (spinner) spinner.remove();
+
+        // Patch alloc cells in the existing table
+        table.querySelectorAll('tbody tr[data-group-name]').forEach(tr => {
+            const name = tr.dataset.groupName;
+            const allocDollars = groupAllocMap.get(name) ?? 0;
+            tr.dataset.groupMemberAllocs = JSON.stringify(groupAllocMembersMap.get(name) ?? {});
+            const allocTd = tr.querySelector('td.alloc-column');
+            if (!allocTd) return;
+            if (!stockGrossValueKnown) {
+                allocTd.textContent = 'N/A';
+                allocTd.className = 'action-neutral alloc-column';
+            } else {
+                const allocDir = Math.abs(allocDollars) > 0.50
+                    ? (allocDollars > 0 ? 'action-positive' : 'action-negative')
+                    : 'action-neutral';
+                allocTd.textContent = formatSignedDisplayCurrency(allocDollars);
+                allocTd.className = 'action-neutral ' + allocDir + ' alloc-column';
+            }
+        });
+
+        if (_gaPending) _addAllocSpinner();
+    });
 }
 
 // ── Group row hover tooltip ──────────────────────────────────────────────────
@@ -248,7 +287,7 @@ function _showGroupTooltip(e) {
                 valHtml = `<span class="group-tooltip-na">—</span>`;
             } else {
                 const cls = amt > 0.5 ? 'action-positive' : amt < -0.5 ? 'action-negative' : 'action-neutral';
-                valHtml = `<span class="${cls}">${formatSignedCurrency(amt)}</span>`;
+                valHtml = `<span class="${cls}">${formatSignedDisplayCurrency(amt)}</span>`;
             }
         }
 
@@ -310,16 +349,18 @@ function initGroupViewToggle() {
     const hasGroups = Array.from(document.querySelectorAll('#stock-view-table tbody tr'))
         .some(row => row.dataset.groups);
     if (!hasGroups) { btn.style.display = 'none'; return; }
-    groupViewActive = localStorage.getItem('ib-viewer-group-view') === 'true';
+    groupViewActive = (localStorage.getItem('portfolio-helper-group-view') || localStorage.getItem('ib-viewer-group-view')) === 'true';
     if (groupViewActive) {
         btn.classList.add('active');
         applyGroupViewState();
-        updateGroupTable();
+        // Don't call updateGroupTable() here: lastStockGrossVal = 0 at this point,
+        // which would render 0 weights and negative rebal values.
+        // The display worker calls updateGroupTable() once it has computed real values.
     }
     btn.addEventListener('click', () => {
         groupViewActive = !groupViewActive;
         btn.classList.toggle('active', groupViewActive);
-        localStorage.setItem('ib-viewer-group-view', groupViewActive);
+        localStorage.setItem('portfolio-helper-group-view', groupViewActive);
         applyGroupViewState();
         if (groupViewActive) updateGroupTable();
     });

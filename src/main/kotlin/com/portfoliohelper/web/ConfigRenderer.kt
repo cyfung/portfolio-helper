@@ -1,10 +1,8 @@
 package com.portfoliohelper.web
 
-import com.portfoliohelper.AppConfig
-import com.portfoliohelper.AppDirs
 import com.portfoliohelper.APP_VERSION
+import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.ManagedPortfolio
-import com.portfoliohelper.service.PortfolioRegistry
 import com.portfoliohelper.service.UpdateService
 import com.portfoliohelper.service.UpdateService.DownloadPhase
 import io.ktor.http.*
@@ -35,36 +33,122 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                 main(classes = "config-page") {
                     h1 { +"App Settings" }
 
-                    // IB Connection
-                    renderConfigSection("IB Connection") {
+                    // Android Sync Pairing
+                    renderConfigSection("Authorized Devices") {
+                        div(classes = "config-field") {
+                            div(classes = "config-field-label-row") {
+                                span { +"Authorize New Device" }
+                                span(classes = "config-badge config-badge-live") { +"live" }
+                            }
+                            span(classes = "config-field-description") {
+                                +"Show this PIN on your screen and enter it in the Android app. "
+                                br()
+                                +"Expires in 5 minutes."
+                            }
+                            div(classes = "pairing-pin-container") {
+                                id = "pairing-pin-display"
+                                // Populated by JS
+                                p(classes = "config-env-override-note") { +"Waiting for requests..." }
+                            }
+                        }
+
+                        div(classes = "paired-devices-list config-field") {
+                            id = "paired-devices-list"
+                            // Populated by JS
+                            p(classes = "config-env-override-note") { +"Loading devices..." }
+                        }
+
+                        div(classes ="config-field") {
+                            id = "sessions-list"
+                            p(classes = "config-env-override-note") { +"Loading…" }
+                        }
+                    }
+
+                    renderConfigSection("Display") {
+                        renderConfigField(
+                            label = "P&L and Market Value in display currency",
+                            description = "Convert per-stock P&L and Mkt Val columns to the selected display currency. Default: off (show in stock's native currency).",
+                            inputId = "show-stock-display-currency",
+                            badge = null
+                        ) {
+                            input(type = InputType.checkBox) {
+                                id = "show-stock-display-currency"
+                                checked = AppConfig.showStockDisplayCurrency
+                                attributes["data-config-key"] = AppConfig.KEY_SHOW_STOCK_DISPLAY_CURRENCY
+                            }
+                        }
+                    }
+
+                    renderConfigSection("Portfolio Settings") {
                         // Per-portfolio table
+                        val allPortfolios = ManagedPortfolio.getAll()
+                        val firstSerialId = allPortfolios.firstOrNull()?.serialId
                         table(classes = "portfolio-config-table") {
                             thead {
                                 tr {
                                     th { +"Portfolio" }
                                     th { +"TWS Account" }
                                     th { +"Virtual Balance" }
+                                    th { }
                                 }
                             }
                             tbody {
-                                for (entry in PortfolioRegistry.entries) {
+                                for (entry in allPortfolios) {
                                     val virtualBalance =
-                                        getPortfolioConfValue(entry, "virtualBalance") == "true"
+                                        entry.getConfig("virtualBalance") == "true"
                                     tr {
-                                        td { +entry.name }
+                                        attributes["data-portfolio-slug"] = entry.slug
+                                        td {
+                                            div(classes = "portfolio-name-cell") {
+                                                div(classes = "portfolio-name-input-row") {
+                                                    input(type = InputType.text) {
+                                                        classes = setOf("portfolio-name-input")
+                                                        value = entry.name
+                                                        attributes["data-original-name"] = entry.name
+                                                        attributes["data-slug"] = entry.slug
+                                                        attributes["autocomplete"] = "off"
+                                                        attributes["maxlength"] = "64"
+                                                    }
+                                                    button(classes = "portfolio-rename-confirm-btn") {
+                                                        attributes["type"] = "button"
+                                                        attributes["data-slug"] = entry.slug
+                                                        attributes["hidden"] = "hidden"
+                                                        attributes["title"] = "Apply rename"
+                                                        +"✓"
+                                                    }
+                                                }
+                                                span(classes = "portfolio-rename-error") {
+                                                    attributes["hidden"] = "hidden"
+                                                }
+                                            }
+                                        }
                                         td {
                                             input(type = InputType.text) {
                                                 placeholder = "e.g. U1234567"
                                                 value = entry.getTwsAccount() ?: ""
                                                 attributes["data-config-key"] = "twsAccount"
-                                                attributes["data-portfolio-id"] = entry.id
+                                                attributes["data-portfolio-id"] = entry.slug
+                                                attributes["autocomplete"] = "off"
                                             }
                                         }
                                         td(classes = "portfolio-config-table-checkbox-col") {
                                             input(type = InputType.checkBox) {
                                                 checked = virtualBalance
                                                 attributes["data-config-key"] = "virtualBalance"
-                                                attributes["data-portfolio-id"] = entry.id
+                                                attributes["data-portfolio-id"] = entry.slug
+                                            }
+                                        }
+                                        td(classes = "portfolio-config-table-actions-col") {
+                                            div {
+                                                button(classes = "management-table-remove-btn portfolio-remove-btn") {
+                                                    attributes["type"] = "button"
+                                                    attributes["data-slug"] = entry.slug
+                                                    if (entry.serialId == firstSerialId) {
+                                                        disabled = true
+                                                        style = "visibility: hidden"
+                                                    }
+                                                    +"Remove"
+                                                }
                                             }
                                         }
                                     }
@@ -72,7 +156,24 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        val twsHostEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_TWS_HOST)
+                        // Add Portfolio form
+                        div(classes = "add-portfolio-form") {
+                            input(type = InputType.text) {
+                                id = "new-portfolio-name"
+                                placeholder = "New portfolio name"
+                                attributes["maxlength"] = "64"
+                            }
+                            button(classes = "config-restore-btn") {
+                                id = "add-portfolio-btn"
+                                attributes["type"] = "button"
+                                +"Add Portfolio"
+                            }
+                            span(classes = "config-env-override-note") {
+                                id = "add-portfolio-status"
+                            }
+                        }
+
+                        val twsHostEnvOverridden = false
                         renderConfigField(
                             label = "TWS Host",
                             description = "Hostname or IP address of the TWS / IB Gateway.",
@@ -93,7 +194,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             }
                         }
 
-                        val twsPortEnvOverridden = AppConfig.isEnvOverridden(AppConfig.KEY_TWS_PORT)
+                        val twsPortEnvOverridden = false
                         renderConfigField(
                             label = "TWS Port",
                             description = "Port of the TWS / IB Gateway. Default: 7496 (live), 7497 (paper), 4001 (IB Gateway live).",
@@ -119,48 +220,6 @@ internal suspend fun ApplicationCall.renderConfigPage() {
 
                     // Server
                     renderConfigSection("Server") {
-                        val bindHostEnvOverridden =
-                            AppConfig.isEnvOverridden(AppConfig.KEY_BIND_HOST)
-                        renderConfigField(
-                            label = "Bind Host",
-                            description = "Network interface to listen on. Use 0.0.0.0 for LAN access.",
-                            inputId = "bind-host",
-                            badge = "restart"
-                        ) {
-                            input(type = InputType.text) {
-                                id = "bind-host"
-                                placeholder = "localhost"
-                                value = AppConfig.get(AppConfig.KEY_BIND_HOST)
-                                disabled = bindHostEnvOverridden
-                                attributes["data-config-key"] = AppConfig.KEY_BIND_HOST
-                            }
-                            if (bindHostEnvOverridden) {
-                                span(classes = "config-env-override-note") {
-                                    +"Set by PORTFOLIO_HELPER_BIND_HOST env var"
-                                }
-                            }
-                        }
-
-                        renderReadOnlyField(
-                            label = "Active Data Directory",
-                            description = "Currently active data directory (read-only — change below, restart to apply)",
-                            value = AppDirs.dataDir.toAbsolutePath().toString()
-                        )
-
-                        renderConfigField(
-                            label = "Data Directory",
-                            description = "Path to the data directory. Leave blank to use the OS default. Takes effect on restart.",
-                            inputId = "data-dir",
-                            badge = "restart"
-                        ) {
-                            input(type = InputType.text) {
-                                id = "data-dir"
-                                placeholder = AppDirs.osDefaultDataDir.toAbsolutePath().toString()
-                                value = AppConfig.getRaw(AppConfig.KEY_DATA_DIR) ?: ""
-                                attributes["data-config-key"] = AppConfig.KEY_DATA_DIR
-                            }
-                        }
-
                         renderConfigField(
                             label = "Open Browser on Start",
                             description = "Automatically open the browser when the app starts.",
@@ -209,7 +268,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                         }
 
                         val navEnvOverridden =
-                            AppConfig.isEnvOverridden(AppConfig.KEY_NAV_UPDATE_INTERVAL)
+                            false
                         renderConfigField(
                             label = "NAV Update Interval (seconds)",
                             description = "How often to fetch NAV data. Leave blank to use the trading-day schedule.",
@@ -219,7 +278,7 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             input(type = InputType.number) {
                                 id = "nav-update-interval"
                                 placeholder = "trading-day schedule"
-                                value = AppConfig.getRaw(AppConfig.KEY_NAV_UPDATE_INTERVAL) ?: ""
+                                value = AppConfig.get(AppConfig.KEY_NAV_UPDATE_INTERVAL)
                                 disabled = navEnvOverridden
                                 attributes["data-config-key"] = AppConfig.KEY_NAV_UPDATE_INTERVAL
                                 attributes["min"] = "10"
@@ -240,20 +299,30 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                             input(type = InputType.number) {
                                 id = "ibkr-rate-interval"
                                 placeholder = "3600"
-                                value = AppConfig.getRaw(AppConfig.KEY_IBKR_RATE_INTERVAL) ?: ""
+                                value = AppConfig.get(AppConfig.KEY_IBKR_RATE_INTERVAL)
                                 attributes["data-config-key"] = AppConfig.KEY_IBKR_RATE_INTERVAL
                                 attributes["min"] = "60"
+                            }
+                        }
+
+                        renderConfigField(
+                            label = "Dividend Safe Lag Days",
+                            description = "Days before today to use as the safe end date for dividend calculations (avoids unreported recent events). Default: 5.",
+                            inputId = "dividend-safe-lag-days",
+                            badge = null
+                        ) {
+                            input(type = InputType.number) {
+                                id = "dividend-safe-lag-days"
+                                placeholder = "5"
+                                value = AppConfig.get(AppConfig.KEY_DIVIDEND_SAFE_LAG_DAYS)
+                                attributes["data-config-key"] = AppConfig.KEY_DIVIDEND_SAFE_LAG_DAYS
+                                attributes["min"] = "0"
                             }
                         }
                     }
 
                     // Actions
                     div(classes = "config-actions") {
-                        button(classes = "config-save-btn") {
-                            id = "config-save-btn"
-                            attributes["type"] = "button"
-                            +"Save All"
-                        }
                         button(classes = "config-restore-btn") {
                             id = "config-restore-btn"
                             attributes["type"] = "button"
@@ -269,17 +338,6 @@ internal suspend fun ApplicationCall.renderConfigPage() {
         }
     }
 }
-
-private fun getPortfolioConfValue(entry: ManagedPortfolio, key: String): String? = runCatching {
-    val f = java.io.File(entry.portfolioConfigPath)
-    if (!f.exists()) return@runCatching null
-    f.readLines().asSequence()
-        .filter { '=' in it && !it.startsWith('#') }.firstNotNullOfOrNull {
-            val k = it.substringBefore('=').trim()
-            val v = it.substringAfter('=').trim()
-            if (k == key && v.isNotEmpty()) v else null
-        }
-}.getOrNull()
 
 private fun FlowContent.renderUpdatesSection() {
     val info = UpdateService.getInfo()
@@ -353,7 +411,7 @@ private fun FlowContent.renderUpdatesSection() {
             input(type = InputType.number) {
                 id = "update-check-interval"
                 placeholder = "86400"
-                value = AppConfig.getRaw(AppConfig.KEY_UPDATE_CHECK_INTERVAL) ?: ""
+                value = AppConfig.get(AppConfig.KEY_UPDATE_CHECK_INTERVAL)
                 attributes["data-config-key"] = AppConfig.KEY_UPDATE_CHECK_INTERVAL
                 attributes["min"] = "60"
             }

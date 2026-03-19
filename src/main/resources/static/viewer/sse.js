@@ -31,6 +31,7 @@ function initSseConnection() {
     eventSource.onmessage = (event) => {
         sseLastActivity = Date.now();
         try {
+            if(event.data == 'heartbeat') return;
             const data = JSON.parse(event.data);
 
             if (data.type === 'reload') {
@@ -40,21 +41,26 @@ function initSseConnection() {
                 updateNavInUI(data.symbol, data.nav);
             } else if (data.type === 'portfolio-value') {
                 updatePortfolioRefValues(data.portfolioId, data.value);
+            } else if (data.type === 'dividend') {
+                updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
             } else if (data.type === 'ibkr-rates') {
                 buildIbkrRatesTable(data);
-                updateIbkrDailyInterest();
+                lastIbkrRatesData = data;
+                scheduleDisplayUpdate();
             } else {
                 // FX rate update
                 if (data.symbol && data.symbol.endsWith('USD=X')) {
                     const ccy = data.symbol.replace('USD=X', '');
                     if (data.markPrice !== null && data.markPrice !== undefined) {
                         fxRates[ccy] = data.markPrice;
-                        updateCashTotals();
-                        updateIbkrDailyInterest();
+                        scheduleDisplayUpdate();
                     }
                     return;
                 }
 
+                if (data.currency) {
+                    stockCurrencies[data.symbol] = data.currency;
+                }
                 updateGlobalTimestamp(data.timestamp);
                 updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
             }
@@ -67,6 +73,16 @@ function initSseConnection() {
         console.error('SSE connection error:', error);
         setSseStatus(false);
     };
+
+    const closeSSE = () => {
+        if (eventSource) {
+            eventSource.close();
+        }
+    };
+
+    // Use both for maximum coverage
+    window.addEventListener('pagehide', closeSSE);
+    window.addEventListener('beforeunload', closeSSE);
 
     // Reload page if SSE has been broken for 5 minutes
     setInterval(() => {

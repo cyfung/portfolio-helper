@@ -1,8 +1,10 @@
+import com.github.jk1.license.render.ReportRenderer
 import com.github.jk1.license.render.TextReportRenderer
+import org.gradle.api.tasks.bundling.Jar
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import org.panteleyev.jpackage.ImageType
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import java.net.URLEncoder
 import java.util.Properties
 
@@ -28,6 +30,7 @@ dependencies {
     implementation("io.ktor:ktor-server-core:3.4.0")
     implementation("io.ktor:ktor-server-netty:3.4.0")
     implementation("io.ktor:ktor-server-html-builder:3.4.0")
+    implementation("io.ktor:ktor-server-sse:3.4.0")
 
     // Ktor HTTP Client for Yahoo Finance API
     implementation("io.ktor:ktor-client-core:3.4.0")
@@ -57,11 +60,26 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.json:json:20240303")
 
+    // mDNS for Android Sync
+    implementation("org.jmdns:jmdns:3.6.3")
+
+    // DB schema, table definitions, and initialization
+    implementation(project(":db-schema"))
+
+    // TLS — Bouncy Castle for self-signed cert generation
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.83")
+
+    // Native BoringSSL — replaces JDK TLS in Netty for fast HTTPS handshakes
+    implementation("io.netty:netty-tcnative-boringssl-static:2.0.75.Final")
+
     implementation(project(":tws-client"))
+    testImplementation(kotlin("test"))
+    testImplementation(project(":db-schema"))
 }
 
 application {
     mainClass.set("com.portfoliohelper.ApplicationKt")
+    applicationDefaultJvmArgs = listOf("-Djava.net.preferIPv4Stack=true")
 }
 
 // Java Toolchain Configuration (replaces sourceCompatibility/targetCompatibility)
@@ -73,7 +91,7 @@ kotlin {
 // No need for explicit kotlinOptions.jvmTarget when using toolchains
 
 // Generate AppVersion.kt so the version constant is always in sync with build.gradle.kts
-val generateVersionFile: TaskProvider<Task?>? = tasks.register("generateVersionFile") {
+val generateVersionFile: TaskProvider<Task?> = tasks.register("generateVersionFile") {
     val outputDir = layout.buildDirectory.dir("generated/version")
     outputs.dir(outputDir)
     inputs.property("version", version)
@@ -85,6 +103,30 @@ val generateVersionFile: TaskProvider<Task?>? = tasks.register("generateVersionF
 }
 tasks.named("compileKotlin") { dependsOn(generateVersionFile) }
 kotlin.sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/version")) }
+
+// Generate bundled app.db from DBBuilder
+val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
+    group = "build"
+    description = "Generates the bundled app.db SQLite database via DBBuilder"
+
+    val dbSchema = project(":db-schema")
+    val dbJarTask = dbSchema.tasks.named<Jar>("jar")
+
+    // classpath is @Classpath-annotated on JavaExec — both entries are tracked as inputs,
+    // and the Provider<RegularFile> from dbJarTask implicitly adds a task dependency on :db-schema:jar.
+    classpath(
+        dbSchema.configurations.named("runtimeClasspath"),
+        dbJarTask.map { it.archiveFile }
+    )
+    mainClass.set("com.portfoliohelper.service.db.DBBuilderKt")
+
+    val outFile = layout.buildDirectory.file("generated/db/data/app.db")
+    outputs.file(outFile)
+    argumentProviders.add(CommandLineArgumentProvider { listOf(outFile.get().asFile.absolutePath) })
+    doFirst { outFile.get().asFile.parentFile.mkdirs() }
+}
+sourceSets.main { resources.srcDir(layout.buildDirectory.dir("generated/db")) }
+tasks.named("processResources") { dependsOn(generateAppDb) }
 
 // Shadow JAR Configuration
 tasks {
@@ -146,7 +188,8 @@ tasks.jpackage {
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
         "--add-opens", "java.base/java.nio=ALL-UNNAMED",
         "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
-        "-Dfile.encoding=UTF-8"
+        "-Dfile.encoding=UTF-8",
+        "-Djava.net.preferIPv4Stack=true"
     )
 
     // Platform-specific icons
@@ -177,6 +220,7 @@ launch4j {
     companyName.set("Portfolio Helper")
     icon.set("${projectDir}/src/main/resources/static/images/favicon.ico")
     setJarTask(tasks.shadowJar.get())
+    jvmOptions = listOf("-Djava.net.preferIPv4Stack=true")
 }
 
 //// Configure createExe to use shadowJar instead of regular jar
@@ -201,15 +245,15 @@ tasks.register<Zip>("portableDistZip") {
     dependsOn(tasks.named("generateLicenseReport"))
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from(tasks.shadowJar) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from("docs") {
-        into("${project.name}")
+        into(project.name)
         include("RUNNING.md")
         rename("RUNNING.md", "README.md")
     }
@@ -232,15 +276,15 @@ tasks.register<Tar>("portableDistTar") {
     dependsOn(tasks.named("generateLicenseReport"))
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from(tasks.shadowJar) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from("docs") {
-        into("${project.name}")
+        into(project.name)
         include("RUNNING.md")
         rename("RUNNING.md", "README.md")
     }
@@ -260,11 +304,11 @@ tasks.register<Zip>("windowsDistZip") {
     dependsOn(tasks.named("createExe"), tasks.named("generateLicenseReport"))
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into("${project.name}")
+        into(project.name)
     }
 
     from(layout.buildDirectory.dir("launch4j")) {
-        into("${project.name}")
+        into(project.name)
         include("portfolio-helper.exe")
     }
 
@@ -273,7 +317,7 @@ tasks.register<Zip>("windowsDistZip") {
     }
 
     from("docs") {
-        into("${project.name}")
+        into(project.name)
         include("RUNNING.md")
         rename("RUNNING.md", "README.md")
     }
@@ -299,7 +343,7 @@ tasks.register<Zip>("jpackageDistZip") {
 
 // License report configuration
 licenseReport {
-    renderers = arrayOf(
+    renderers = arrayOf<ReportRenderer>(
         TextReportRenderer("THIRD_PARTY_NOTICES.txt"),
         InventoryHtmlReportRenderer("index.html", "Third Party Licenses")
     )
@@ -331,12 +375,12 @@ tasks.register("githubRelease") {
         val releaseBody = """## Portfolio Helper $tagName
 
 ### Downloads
-- **Self-contained app** (no Java required): `ib-viewer-jpackage-$ver.zip`"""
+- **Self-contained app** (no Java required): `portfolio-helper-jpackage-$ver.zip`"""
 
         // Step 1: Create release
         println("Creating GitHub release $tagName on $repo...")
         val releasePayload = """{"tag_name":"$tagName","name":"Portfolio Helper $tagName","body":"${releaseBody.escapeJson()}","draft":false,"prerelease":false}"""
-        val releaseConn = URL("https://api.github.com/repos/$repo/releases").openConnection() as HttpURLConnection
+        val releaseConn = URI("https://api.github.com/repos/$repo/releases").toURL().openConnection() as HttpURLConnection
         releaseConn.requestMethod = "POST"
         releaseConn.setRequestProperty("Authorization", "Bearer $token")
         releaseConn.setRequestProperty("Content-Type", "application/json")
@@ -369,7 +413,7 @@ tasks.register("githubRelease") {
         for ((file, contentType, uploadName) in artifacts) {
             if (!file.exists()) error("Artifact not found: ${file.absolutePath}")
             println("Uploading $uploadName (${"%.1f".format(file.length() / 1024.0 / 1024.0)} MB)...")
-            val uploadUrl = URL("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}")
+            val uploadUrl = URI("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}").toURL()
             val uploadConn = uploadUrl.openConnection() as HttpURLConnection
             uploadConn.requestMethod = "POST"
             uploadConn.setRequestProperty("Authorization", "Bearer $token")

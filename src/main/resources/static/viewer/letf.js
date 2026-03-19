@@ -50,7 +50,7 @@ function updateAllEstVals() {
 
         if (estValCell && allAvailable) {
             const estVal = (1 + sumComponent) * basePrice;
-            estValCell.textContent = '$' + estVal.toFixed(2);
+            estValCell.textContent = estVal.toFixed(2);
             estValCell.dataset.estVal = estVal;
             estValCell.classList.add('loaded');
         }
@@ -86,7 +86,7 @@ document.addEventListener('mouseenter', e => {
             const sign = d > 0 ? '+' : '−';
             const label = sign + Math.abs(d * 100).toFixed(1) + '%';
             const cls = d > 0 ? 'ladder-up' : 'ladder-down';
-            html += `<span class="${cls}">${label}  $${price.toFixed(2)}</span>\n`;
+            html += `<span class="${cls}">${label}  ${price.toFixed(2)}</span>\n`;
         }
     }
 

@@ -4,30 +4,27 @@
 function getRebalTotal() {
     if (marginTargetPct !== null) return deriveRebalFromMarginPct(marginTargetPct);
     if (rebalTargetUsd !== null && rebalTargetUsd > 0) return rebalTargetUsd;
-    return lastPortfolioVal + Math.max(lastMarginUsd, 0);
+    return lastStockGrossVal + Math.max(lastMarginUsd, 0);
 }
 
 // getAllocRebalTotal uses same logic as getRebalTotal
 const getAllocRebalTotal = getRebalTotal;
 
 function deriveMarginPct(rebalTotal) {
-    const ec = lastPortfolioVal + lastMarginUsd;
+    const ec = lastStockGrossVal + lastMarginUsd;
     if (ec <= 0) return 0;
-    const marginPct = (lastMarginUsd - (rebalTotal - lastPortfolioVal)) / ec * 100;
+    const marginPct = (lastMarginUsd - (rebalTotal - lastStockGrossVal)) / ec * 100;
     if (marginPct >= 0) return 0;
     return -marginPct;
 }
 
 function deriveRebalFromMarginPct(pct) {
-    const ec = lastPortfolioVal + lastMarginUsd;
-    return (pct / 100) * ec + lastPortfolioVal + lastMarginUsd;
+    const ec = lastStockGrossVal + lastMarginUsd;
+    return (pct / 100) * ec + lastStockGrossVal + lastMarginUsd;
 }
 
 function refreshRebalUI() {
-    updateRebalancingColumns(getRebalTotal());
-    updateAllocColumns(getAllocRebalTotal());
-    updateMarginTargetDisplay();
-    updateRebalTargetPlaceholder();
+    scheduleDisplayUpdate();
 }
 
 function updateRebalTargetPlaceholder() {
@@ -36,7 +33,7 @@ function updateRebalTargetPlaceholder() {
     const marginInput = document.getElementById('margin-target-input');
     const baseUsd = (marginInput && marginInput.value.trim() !== '')
         ? getRebalTotal()
-        : lastPortfolioVal + Math.max(lastMarginUsd, 0);
+        : lastStockGrossVal + Math.max(lastMarginUsd, 0);
     const converted = toDisplayCurrency(baseUsd);
     input.placeholder = Math.abs(converted).toLocaleString('en-US', {
         minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -56,7 +53,7 @@ function updateMarginTargetDisplay() {
 
     const marginTargetEl = document.getElementById('margin-target-usd');
     const rebalTotal = getRebalTotal();
-    const marginTargetUsd = lastMarginUsd - (rebalTotal - lastPortfolioVal);
+    const marginTargetUsd = lastMarginUsd - (rebalTotal - lastStockGrossVal);
     if (marginTargetEl) {
         marginTargetEl.textContent = marginTargetUsd < 0 ? formatDisplayCurrency(-marginTargetUsd) : '';
     }
@@ -64,111 +61,12 @@ function updateMarginTargetDisplay() {
     updateMarginInputPlaceholder();
 }
 
-function updateRebalancingColumns(portfolioTotal) {
-    if (!portfolioValueKnown) {
-        document.querySelectorAll('[id^="rebal-dollars-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'action-neutral rebal-column';
-        });
-        document.querySelectorAll('[id^="rebal-qty-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'action-neutral rebal-column col-moreinfo';
-        });
-        return;
-    }
-    if (portfolioTotal <= 0) return;
-
-    document.querySelectorAll('.value.loaded').forEach(valueCell => {
-        const symbol = valueCell.id.replace('value-', '');
-        const amountCell = document.getElementById('amount-' + symbol);
-        const amount = amountCell ? parseFloat(amountCell.textContent) : null;
-
-        const markCell = document.getElementById('mark-' + symbol);
-        const markPrice = rawMarkPrices[symbol] ?? parsePrice(markCell ? markCell.textContent : null);
-        const effectivePrice = markPrice ?? (rawClosePrices[symbol] ?? null);
-
-        const value = (amount !== null && effectivePrice !== null)
-            ? amount * effectivePrice
-            : parsePrice(valueCell.textContent);
-        if (value === null) return;
-
-        const weightCell = document.getElementById('current-weight-' + symbol);
-        const viewRow = weightCell ? weightCell.closest('tr') : null;
-        const targetWeight = viewRow ? parseFloat(viewRow.dataset.weight) : null;
-
-        if (targetWeight !== null) {
-            const targetValue = (targetWeight / 100) * portfolioTotal;
-            const rebalDollars = targetValue - value;
-            const direction = Math.abs(rebalDollars) > 0.50 ?
-                (rebalDollars > 0 ? 'action-positive' : 'action-negative') : 'action-neutral';
-
-            const rebalDollarsCell = document.getElementById('rebal-dollars-' + symbol);
-            if (rebalDollarsCell) {
-                rebalDollarsCell.textContent = formatSignedCurrency(rebalDollars);
-                rebalDollarsCell.className = 'action-neutral loaded rebal-column ' + direction;
-            }
-
-            if (markPrice !== null && markPrice > 0) {
-                const rebalShares = rebalDollars / markPrice;
-                const rebalQtyCell = document.getElementById('rebal-qty-' + symbol);
-                if (rebalQtyCell) {
-                    rebalQtyCell.textContent = (rebalShares >= 0 ? '+' : '-') + Math.abs(rebalShares).toFixed(2);
-                    rebalQtyCell.className = 'action-neutral loaded rebal-column col-moreinfo ' + direction;
-                }
-            }
-        }
-    });
+function updateRebalancingColumns(_portfolioTotal) {
+    // No-op: display worker handles rebal column updates
 }
 
-function updateAllocColumns(rebalTotal) {
-    if (!portfolioValueKnown) {
-        document.querySelectorAll('[id^="alloc-dollars-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'action-neutral alloc-column';
-        });
-        document.querySelectorAll('[id^="alloc-qty-"]').forEach(c => {
-            c.textContent = 'N/A'; c.className = 'action-neutral alloc-column col-moreinfo';
-        });
-        if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
-        return;
-    }
-    const delta = rebalTotal - lastPortfolioVal;
-
-    const stocks = [];
-    let totalStockValue = 0;
-    document.querySelectorAll('.value.loaded').forEach(valueCell => {
-        const symbol = valueCell.id.replace('value-', '');
-        const markPrice = rawMarkPrices[symbol] ??
-            parsePrice(document.getElementById('mark-' + symbol)?.textContent);
-        const weightCell = document.getElementById('current-weight-' + symbol);
-        const viewRow = weightCell?.closest('tr');
-        const targetWeight = viewRow ? parseFloat(viewRow.dataset.weight) : null;
-        const currentValue = parsePrice(valueCell.textContent) ?? 0;
-        stocks.push({ symbol, markPrice, targetWeight, currentValue });
-        totalStockValue += currentValue;
-    });
-
-    const mode = delta >= 0 ? allocAddMode : allocReduceMode;
-    const allocations = computeAllocations(delta, stocks, totalStockValue, mode);
-
-    for (const s of stocks) {
-        const dollarsCell = document.getElementById('alloc-dollars-' + s.symbol);
-        const qtyCell = document.getElementById('alloc-qty-' + s.symbol);
-        const amt = allocations[s.symbol];
-        if (amt == null) {
-            if (dollarsCell) dollarsCell.textContent = '';
-            if (qtyCell) qtyCell.textContent = '';
-            continue;
-        }
-        const dir = amt > 0.50 ? 'action-positive' : amt < -0.50 ? 'action-negative' : 'action-neutral';
-        if (dollarsCell) {
-            dollarsCell.textContent = formatSignedCurrency(amt);
-            dollarsCell.className = 'action-neutral loaded alloc-column ' + dir;
-        }
-        if (qtyCell && s.markPrice > 0) {
-            const qty = amt / s.markPrice;
-            qtyCell.textContent = (qty >= 0 ? '+' : '-') + Math.abs(qty).toFixed(2);
-            qtyCell.className = 'action-neutral loaded alloc-column col-moreinfo ' + dir;
-        }
-    }
-    if (groupViewActive && typeof updateGroupTable === 'function') updateGroupTable();
+function updateAllocColumns(_rebalTotal) {
+    // No-op: display worker handles alloc column updates
 }
 
 // ── Allocation computation strategies ────────────────────────────────────────

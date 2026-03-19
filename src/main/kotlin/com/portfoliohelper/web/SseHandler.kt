@@ -1,124 +1,106 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.service.CurrencyConventions
+import com.portfoliohelper.service.DividendService
 import com.portfoliohelper.service.IbkrMarginRateService
-import com.portfoliohelper.service.PortfolioRegistry
+import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.nav.NavData
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.service.yahoo.YahooQuote
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.response.*
-import io.ktor.utils.io.*
-import kotlinx.coroutines.CoroutineScope
+import io.ktor.server.sse.*
+import io.ktor.sse.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
-internal suspend fun ApplicationCall.handleSseStream() {
-    val scope = CoroutineScope(coroutineContext)
-    response.cacheControl(CacheControl.NoCache(null))
-    response.headers.append(HttpHeaders.ContentType, "text/event-stream")
-    response.headers.append(HttpHeaders.CacheControl, "no-cache")
-    response.headers.append(HttpHeaders.Connection, "keep-alive")
-
+internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
 
-    // Register callback for price updates; replay cached quotes immediately so
-    // clients that connect after the first fetch don't wait for the next poll cycle
-    val callback: (String, YahooQuote) -> Unit = { symbol, quote ->
-        if (quote.regularMarketPrice != null) {
-            val json = buildString {
-                append("{")
-                append("\"symbol\":\"$symbol\",")
-                append("\"markPrice\":${quote.regularMarketPrice},")
-                append("\"lastClosePrice\":${quote.previousClose},")
-                append("\"isMarketClosed\":${quote.isMarketClosed},")
-                append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
-                append("\"timestamp\":${quote.lastUpdateTime}")
-                append("}")
+    launch {
+        YahooMarketDataService.snapshotAll().forEach { (symbol, quote) ->
+            if (quote.regularMarketPrice != null) channel.trySend(buildPriceJson(symbol, quote))
+        }
+        YahooMarketDataService.updates.collect { (symbol, quote) ->
+            if (quote.regularMarketPrice != null) channel.trySend(buildPriceJson(symbol, quote))
+        }
+    }
+
+    launch {
+        NavService.snapshotAll().forEach { (symbol, navData) ->
+            channel.trySend(buildNavJson(symbol, navData))
+        }
+        NavService.updates.collect { (symbol, navData) ->
+            channel.trySend(buildNavJson(symbol, navData))
+        }
+    }
+
+    launch {
+        IbkrMarginRateService.updates.collect {
+            channel.trySend(buildIbkrJson())
+        }
+    }
+
+    launch {
+        YahooMarketDataService.batchComplete.collect {
+            ManagedPortfolio.getAll().forEach { p ->
+                val total = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).stockGrossValue
+                channel.trySend("""{"type":"portfolio-value","portfolioId":"${p.slug}","value":${"%.2f".format(total)}}""")
             }
-            channel.trySend("data: $json\n\n")
         }
     }
 
-    val unregisterPrice = YahooMarketDataService.onUpdateWithReplay(callback)
-
-    // Register callback for NAV updates; replay cached NAV immediately so
-    // clients that connect after a slow NAV fetch don't miss it until next poll
-    val navCallback: (String, NavData) -> Unit = { symbol, navData ->
-        val json = buildString {
-            append("{")
-            append("\"type\":\"nav\",")
-            append("\"symbol\":\"$symbol\",")
-            append("\"nav\":${navData.nav},")
-            append("\"timestamp\":${navData.lastFetchTime}")
-            append("}")
-        }
-        channel.trySend("data: $json\n\n")
-    }
-
-    val unregisterNav = NavService.onUpdateWithReplay(navCallback)
-
-    val ibkrCallback: () -> Unit = {
-        val rates = buildString {
-            append("{\"type\":\"ibkr-rates\",\"currencies\":[")
-            val entries = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
-                val tiers = r.tiers.joinToString(",", "[", "]") { t ->
-                    if (t.upTo != null) "{\"upTo\":${t.upTo},\"rate\":${t.rate}}"
-                    else "{\"upTo\":null,\"rate\":${t.rate}}"
-                }
-                "{\"currency\":\"$ccy\",\"baseRate\":${r.baseRate},\"days\":${CurrencyConventions.getDaysInYear(ccy)},\"tiers\":$tiers}"
-            }
-            append(entries.joinToString(","))
-            append("],\"lastFetch\":${IbkrMarginRateService.getLastFetchMillis()}}")
-        }
-        channel.trySend("data: $rates\n\n")
-    }
-    val unregisterIbkr = IbkrMarginRateService.onUpdateWithReplay(ibkrCallback)
-
-    // Register callback to emit each portfolio's total value after every price poll batch
-    val portfolioValueCallback: () -> Unit = {
-        for (p in PortfolioRegistry.entries) {
-            val pTotal = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).totalValue
-            val pvJson = buildString {
-                append("{\"type\":\"portfolio-value\",")
-                append("\"portfolioId\":\"${p.id}\",")
-                append("\"value\":${"%.2f".format(pTotal)}")
-                append("}")
-            }
-            channel.trySend("data: $pvJson\n\n")
-        }
-    }
-    val unregisterPortfolioValue = YahooMarketDataService.onBatchComplete(portfolioValueCallback)
-    portfolioValueCallback()  // replay initial values on connect
-
-    // Listen for portfolio reload events
-    val collectJob = scope.launch {
+    launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
-            val json = "{\"type\":\"reload\",\"timestamp\":${it.timestamp}}"
-            channel.send("data: $json\n\n")
+            channel.trySend("{\"type\":\"reload\",\"timestamp\":${it.timestamp}}")
         }
     }
 
-    // Stream updates to client
-    try {
-        respondBytesWriter(contentType = ContentType.Text.EventStream) {
-            writeFully(":keepalive\n\n".toByteArray(Charsets.UTF_8))
-            flush()
+    launch {
+        DividendService.updates.collect { update ->
+            channel.trySend("{\"type\":\"dividend\",\"portfolioId\":\"${update.portfolioSlug}\",\"total\":${update.total},\"calcUpToDate\":\"${update.calcUpToDate}\"}")
+        }
+    }
 
-            for (message in channel) {
-                writeFully(message.toByteArray(Charsets.UTF_8))
-                flush()
-            }
+    try {
+        for (json in channel) {
+            send(ServerSentEvent(json))
         }
     } finally {
-        collectJob.cancel()
-        unregisterPrice()
-        unregisterNav()
-        unregisterIbkr()
-        unregisterPortfolioValue()
         channel.close()
     }
+}
+
+private fun buildPriceJson(symbol: String, quote: YahooQuote): String = buildString {
+    append("{")
+    append("\"symbol\":\"$symbol\",")
+    append("\"markPrice\":${quote.regularMarketPrice},")
+    append("\"lastClosePrice\":${quote.previousClose},")
+    append("\"isMarketClosed\":${quote.isMarketClosed},")
+    append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
+    if (quote.currency != null) append("\"currency\":\"${quote.currency}\",")
+    append("\"timestamp\":${quote.lastUpdateTime}")
+    append("}")
+}
+
+private fun buildNavJson(symbol: String, navData: NavData): String = buildString {
+    append("{")
+    append("\"type\":\"nav\",")
+    append("\"symbol\":\"$symbol\",")
+    append("\"nav\":${navData.nav},")
+    append("\"timestamp\":${navData.lastFetchTime}")
+    append("}")
+}
+
+private fun buildIbkrJson(): String = buildString {
+    append("{\"type\":\"ibkr-rates\",\"currencies\":[")
+    val entries = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
+        val tiers = r.tiers.joinToString(",", "[", "]") { t ->
+            if (t.upTo != null) "{\"upTo\":${t.upTo},\"rate\":${t.rate}}"
+            else "{\"upTo\":null,\"rate\":${t.rate}}"
+        }
+        "{\"currency\":\"$ccy\",\"baseRate\":${r.baseRate},\"days\":${CurrencyConventions.getDaysInYear(ccy)},\"tiers\":$tiers}"
+    }
+    append(entries.joinToString(","))
+    append("],\"lastFetch\":${IbkrMarginRateService.getLastFetchMillis()}}")
 }

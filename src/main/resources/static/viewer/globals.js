@@ -16,23 +16,28 @@
 
 // Price/market state
 var componentDayPercents = {};  // symbol → intraday % (for LETF est val)
+var navValues = {};             // symbol → last NAV value (for LETF est val)
 var rawMarkPrices = {};         // symbol → raw mark price
 var rawClosePrices = {};        // symbol → raw close price
 var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
 var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
 
+// Per-stock currency (server-rendered + updated via SSE)
+var stockCurrencies = {};          // symbol → currency code (e.g. 'USD', 'HKD')
+
 // Display state
 var currentDisplayCurrency = 'USD';
+var showStockDisplayCurrency = (typeof savedShowStockDisplayCurrency !== 'undefined') ? savedShowStockDisplayCurrency : false;
 
 // Portfolio totals (updated live)
-var lastPortfolioVal = 0;
+var lastStockGrossVal = 0;
 var lastPrevPortfolioVal = 0;
 var lastPortfolioDayChangeUsd = 0;
 var lastCashTotalUsd = 0;
 var lastMarginUsd = 0;
 
 // Data quality flags
-var portfolioValueKnown = true;
+var stockGrossValueKnown = true;
 var cashTotalKnown = true;
 var marginKnown = false;
 
@@ -42,9 +47,16 @@ var marginTargetPct = null;
 
 // Allocation modes (server-rendered values take priority, then localStorage)
 var allocAddMode = (typeof savedAllocAddMode !== 'undefined' ? savedAllocAddMode : null)
-    || localStorage.getItem('ib-viewer-alloc-add-mode') || 'PROPORTIONAL';
+    || localStorage.getItem('portfolio-helper-alloc-add-mode')
+    || localStorage.getItem('ib-viewer-alloc-add-mode')
+    || 'PROPORTIONAL';
 var allocReduceMode = (typeof savedAllocReduceMode !== 'undefined' ? savedAllocReduceMode : null)
-    || localStorage.getItem('ib-viewer-alloc-reduce-mode') || 'PROPORTIONAL';
+    || localStorage.getItem('portfolio-helper-alloc-reduce-mode')
+    || localStorage.getItem('ib-viewer-alloc-reduce-mode')
+    || 'PROPORTIONAL';
 
 // Group view state
 var groupViewActive = false;
+
+// IBKR rates data (set on ibkr-rates SSE, read by display-worker)
+var lastIbkrRatesData = null;
