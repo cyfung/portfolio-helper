@@ -42,6 +42,7 @@ private data class StockDisplayData(
     val fmtMark: String,
     val fmtPnl: String,
     val pnlColor: Color,
+    val isMarketClosed: Boolean,
 )
 
 @Composable
@@ -103,6 +104,7 @@ private fun buildStockDisplayData(
             if (displayCurrency == "USD") formatSignedCurrency(pnl) else formatSigned(pnl)
         },
         pnlColor = changeColor(pnl),
+        isMarketClosed = quote?.isMarketClosed ?: false,
     )
 }
 
@@ -144,6 +146,7 @@ fun PortfolioScreen(vm: MainViewModel) {
             fmtMark = "888.88",
             fmtPnl = "-888.88",
             pnlColor = Color.Green,
+            isMarketClosed = false,
         )
 
         val sampleSymbol = widthMeasureData.maxBy { it.symbol.length }.symbol
@@ -369,18 +372,18 @@ private fun PositionRow(
                 ) {
                     MonoText(
                         text = display.fmtMark,
-                        color = ext.textPrimary,
+                        color = if (display.isMarketClosed) ext.textSecondary else ext.textPrimary,
                         fontWeight = FontWeight.Normal,
                         fontSize = 16.sp,
                     )
                     Spacer(Modifier.width(4.dp))
-                    DayPctPill(display.dayPct)
+                    DayPctPill(display.dayPct, afterHours = display.isMarketClosed)
                 }
 
                 // P&L
                 MonoText(
                     text = display.fmtPnl,
-                    color = display.pnlColor,
+                    color = if (display.isMarketClosed) display.pnlColor.copy(alpha = 0.6f) else display.pnlColor,
                     fontWeight = FontWeight.Light,
                     fontSize = 15.sp,
                     modifier = Modifier.width(pnlW),

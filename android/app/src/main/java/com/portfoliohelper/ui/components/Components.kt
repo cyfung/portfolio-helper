@@ -283,7 +283,7 @@ fun MonoText(
 }
 
 @Composable
-fun DayPctPill(pct: Double, isStale: Boolean = false) {
+fun DayPctPill(pct: Double, afterHours: Boolean = false) {
     val ext    = MaterialTheme.ext
     val isZero = abs(pct) < 0.1
     val color  = when {
@@ -291,7 +291,7 @@ fun DayPctPill(pct: Double, isStale: Boolean = false) {
         pct > 0  -> ext.positive
         else     -> ext.negative
     }
-    val alpha  = if (isStale) 0.55f else 1f
+    val alpha  = if (afterHours) 0.55f else 1f
     val text   = formatSignedPct(pct)
     Box(
         modifier = Modifier
