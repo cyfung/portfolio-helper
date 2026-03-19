@@ -15,6 +15,7 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
+import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
@@ -34,6 +35,21 @@ import kotlinx.coroutines.flow.firstOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// ── Color helpers ────────────────────────────────────────────────────────────
+// ColorProvider(Color) is restricted to the Glance library group.
+// The public API requires day/night variants. Since this widget is dark-only,
+// we pass the same color for both via this helper.
+private fun fixedColor(color: Color): ColorProvider =
+    ColorProvider(day = color, night = color)
+
+private val BgColor          = fixedColor(Color(0xFF1C1B1F))
+private val TextPrimaryColor = fixedColor(Color(0xFFE6E1E5))
+private val TextMutedColor   = fixedColor(Color(0xFF938F99))
+private val PositiveColor    = fixedColor(Color(0xFF4CAF50))
+private val WarningColor     = fixedColor(Color(0xFFFFC107))
+private val NegativeColor    = fixedColor(Color(0xFFF44336))
+private val DividerColor     = fixedColor(Color(0x1AFFFFFF))
 
 class MarginCheckWidget : GlanceAppWidget() {
 
@@ -61,44 +77,36 @@ class MarginCheckWidget : GlanceAppWidget() {
 
     @Composable
     private fun WidgetContent(stats: MarginCheckStats?) {
-        val bg          = Color(0xFF1C1B1F)
-        val textPrimary = Color(0xFFE6E1E5)
-        val textMuted   = Color(0xFF938F99)
-        val positive    = Color(0xFF4CAF50)
-        val warning     = Color(0xFFFFC107)
-        val negative    = Color(0xFFF44336)
-
         val size = LocalSize.current
         val hPad = if (size.width >= 150.dp) 20.dp else 10.dp
         val isMedium = size.height >= 120.dp
 
         if (isMedium) {
-            MediumLayout(stats, bg, textPrimary, textMuted, positive, warning, negative, hPad)
+            MediumLayout(stats, hPad)
         } else {
-            SmallLayout(stats, bg, textPrimary, textMuted, positive, warning, negative, hPad)
+            SmallLayout(stats, hPad)
         }
     }
 
     @Composable
     private fun SmallLayout(
         stats: MarginCheckStats?,
-        bg: Color, textPrimary: Color, textMuted: Color,
-        positive: Color, warning: Color, negative: Color,
         hPad: androidx.compose.ui.unit.Dp
     ) {
-        Column(modifier = GlanceModifier
-            .fillMaxSize()
-            .background(bg)
-            .padding(horizontal = hPad, vertical = 8.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalAlignment = Alignment.Start
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .background(BgColor)
+                .padding(horizontal = hPad, vertical = 8.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalAlignment = Alignment.Start
         ) {
             if (stats == null) {
                 // ── No data yet ──────────────────────────────────────────
                 Text(
                     text = "MARGIN CHECK",
                     style = TextStyle(
-                        color = ColorProvider(textMuted),
+                        color = TextMutedColor,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -109,7 +117,7 @@ class MarginCheckWidget : GlanceAppWidget() {
                 ) {
                     Text(
                         text = "No data yet",
-                        style = TextStyle(color = ColorProvider(textMuted), fontSize = 10.sp)
+                        style = TextStyle(color = TextMutedColor, fontSize = 10.sp)
                     )
                 }
                 return@Column
@@ -119,17 +127,13 @@ class MarginCheckWidget : GlanceAppWidget() {
             val isError = stats.errorMessage != null
             val isAlert = !isError && stats.triggeredPortfolios.isNotEmpty()
 
-            val statusColor = when {
-                isError -> negative
-                isAlert -> negative
-                else    -> positive
-            }
+            val statusColor = if (isError || isAlert) NegativeColor else PositiveColor
             val statusLabel = when {
-                isError -> "● Failed"
+                isError -> "● Fail"
                 isAlert -> "● Alert"
                 else    -> "● OK"
             }
-            val timeColor = if (isError || isAlert) negative else textPrimary
+            val timeColor = if (isError || isAlert) NegativeColor else TextPrimaryColor
 
             // ── Header: label + status badge ─────────────────────────────
             Row(
@@ -139,7 +143,7 @@ class MarginCheckWidget : GlanceAppWidget() {
                 Text(
                     text = "MARGIN CHECK",
                     style = TextStyle(
-                        color = ColorProvider(textMuted),
+                        color = TextMutedColor,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -148,19 +152,19 @@ class MarginCheckWidget : GlanceAppWidget() {
                 Text(
                     text = statusLabel,
                     style = TextStyle(
-                        color = ColorProvider(statusColor),
+                        color = statusColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
                 )
             }
 
-            // ── Row 2: time + data age (or error snippet) ────────────────
+            // ── Row 2: time + data age ────────────────────────────────────
             val dataAgeMinutes = (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
             val ageColor = when {
-                dataAgeMinutes < 15 -> positive
-                dataAgeMinutes < 60 -> warning
-                else                -> negative
+                dataAgeMinutes < 15 -> PositiveColor
+                dataAgeMinutes < 60 -> WarningColor
+                else                -> NegativeColor
             }
 
             Row(
@@ -170,17 +174,16 @@ class MarginCheckWidget : GlanceAppWidget() {
                 Text(
                     text = timeFmt.format(Date(stats.runTime)),
                     style = TextStyle(
-                        color = ColorProvider(timeColor),
+                        color = timeColor,
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Medium
                     )
                 )
                 Spacer(GlanceModifier.defaultWeight())
-                // Right side: data age (ok/alert) or stale indicator (error)
                 Text(
                     text = "${dataAgeMinutes}m old",
                     style = TextStyle(
-                        color = ColorProvider(if (isError) negative else ageColor),
+                        color = if (isError) NegativeColor else ageColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -191,14 +194,14 @@ class MarginCheckWidget : GlanceAppWidget() {
             Spacer(GlanceModifier.height(2.dp))
             when {
                 isError -> Text(
-                    text = stats.errorMessage ?: "Unknown error",
-                    style = TextStyle(color = ColorProvider(negative), fontSize = 9.sp),
+                    text = stats.errorMessage,
+                    style = TextStyle(color = NegativeColor, fontSize = 9.sp),
                     maxLines = 1
                 )
                 isAlert -> Text(
                     text = stats.triggeredPortfolios.joinToString(", "),
                     style = TextStyle(
-                        color = ColorProvider(negative),
+                        color = NegativeColor,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Medium
                     ),
@@ -212,14 +215,12 @@ class MarginCheckWidget : GlanceAppWidget() {
     @Composable
     private fun MediumLayout(
         stats: MarginCheckStats?,
-        bg: Color, textPrimary: Color, textMuted: Color,
-        positive: Color, warning: Color, negative: Color,
         hPad: androidx.compose.ui.unit.Dp
     ) {
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(bg)
+                .background(BgColor)
                 .padding(horizontal = hPad, vertical = 12.dp),
             verticalAlignment = Alignment.Top,
             horizontalAlignment = Alignment.Start
@@ -227,10 +228,10 @@ class MarginCheckWidget : GlanceAppWidget() {
             if (stats == null) {
                 Text(
                     text = "MARGIN CHECK",
-                    style = TextStyle(color = ColorProvider(textMuted), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    style = TextStyle(color = TextMutedColor, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                 )
                 Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No data yet", style = TextStyle(color = ColorProvider(textMuted), fontSize = 10.sp))
+                    Text("No data yet", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
                 }
                 return@Column
             }
@@ -238,28 +239,32 @@ class MarginCheckWidget : GlanceAppWidget() {
             val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
             val isError = stats.errorMessage != null
             val isAlert = !isError && stats.triggeredPortfolios.isNotEmpty()
-            val statusColor = when { isError -> negative; isAlert -> negative; else -> positive }
+            val statusColor = if (isError || isAlert) NegativeColor else PositiveColor
             val statusLabel = when { isError -> "● Failed"; isAlert -> "● Alert"; else -> "● OK" }
-            val timeColor = if (isError || isAlert) negative else textPrimary
+            val timeColor = if (isError || isAlert) NegativeColor else TextPrimaryColor
             val dataAgeMinutes = (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
-            val ageColor = when { dataAgeMinutes < 15 -> positive; dataAgeMinutes < 60 -> warning; else -> negative }
+            val ageColor = when {
+                dataAgeMinutes < 15 -> PositiveColor
+                dataAgeMinutes < 60 -> WarningColor
+                else                -> NegativeColor
+            }
 
             // ── Header ───────────────────────────────────────────────────
             Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("MARGIN CHECK", style = TextStyle(color = ColorProvider(textMuted), fontSize = 11.sp, fontWeight = FontWeight.Medium))
+                Text("MARGIN CHECK", style = TextStyle(color = TextMutedColor, fontSize = 11.sp, fontWeight = FontWeight.Medium))
                 Spacer(GlanceModifier.defaultWeight())
-                Text(statusLabel, style = TextStyle(color = ColorProvider(statusColor), fontSize = 10.sp, fontWeight = FontWeight.Medium))
+                Text(statusLabel, style = TextStyle(color = statusColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
             }
 
             // ── Hero time ────────────────────────────────────────────────
             Text(
                 text = timeFmt.format(Date(stats.runTime)),
-                style = TextStyle(color = ColorProvider(timeColor), fontSize = 28.sp, fontWeight = FontWeight.Medium),
+                style = TextStyle(color = timeColor, fontSize = 28.sp, fontWeight = FontWeight.Medium),
                 modifier = GlanceModifier.padding(top = 6.dp, bottom = 6.dp)
             )
 
             // ── Divider ──────────────────────────────────────────────────
-            Box(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(Color(0x1AFFFFFF))) {}
+            Box(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(DividerColor)) {}
 
             Spacer(GlanceModifier.height(10.dp))
 
@@ -267,40 +272,40 @@ class MarginCheckWidget : GlanceAppWidget() {
             when {
                 isError -> {
                     Text(
-                        text = stats.errorMessage ?: "Unknown error",
-                        style = TextStyle(color = ColorProvider(negative), fontSize = 10.sp),
+                        text = stats.errorMessage,
+                        style = TextStyle(color = NegativeColor, fontSize = 10.sp),
                         maxLines = 2,
                         modifier = GlanceModifier.padding(bottom = 8.dp)
                     )
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data age", style = TextStyle(color = ColorProvider(textMuted), fontSize = 10.sp))
+                        Text("Data age", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
                         Spacer(GlanceModifier.defaultWeight())
-                        Text("${dataAgeMinutes}m", style = TextStyle(color = ColorProvider(negative), fontSize = 10.sp, fontWeight = FontWeight.Medium))
+                        Text("${dataAgeMinutes}m", style = TextStyle(color = NegativeColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
                     }
                 }
                 isAlert -> {
                     Text(
                         text = stats.triggeredPortfolios.joinToString(", "),
-                        style = TextStyle(color = ColorProvider(negative), fontSize = 10.sp, fontWeight = FontWeight.Medium),
+                        style = TextStyle(color = NegativeColor, fontSize = 10.sp, fontWeight = FontWeight.Medium),
                         maxLines = 2,
                         modifier = GlanceModifier.padding(bottom = 8.dp)
                     )
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data age", style = TextStyle(color = ColorProvider(textMuted), fontSize = 10.sp))
+                        Text("Data age", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
                         Spacer(GlanceModifier.defaultWeight())
-                        Text("${dataAgeMinutes}m", style = TextStyle(color = ColorProvider(ageColor), fontSize = 10.sp, fontWeight = FontWeight.Medium))
+                        Text("${dataAgeMinutes}m", style = TextStyle(color = ageColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
                     }
                 }
                 else -> {
                     Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data age", style = TextStyle(color = ColorProvider(textMuted), fontSize = 10.sp))
+                        Text("Data age", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
                         Spacer(GlanceModifier.defaultWeight())
-                        Text("${dataAgeMinutes}m", style = TextStyle(color = ColorProvider(ageColor), fontSize = 10.sp, fontWeight = FontWeight.Medium))
+                        Text("${dataAgeMinutes}m", style = TextStyle(color = ageColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
                     }
                     Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Portfolios", style = TextStyle(color = ColorProvider(textMuted), fontSize = 10.sp))
+                        Text("Portfolios", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
                         Spacer(GlanceModifier.defaultWeight())
-                        Text("${stats.triggeredPortfolios.size} triggered", style = TextStyle(color = ColorProvider(positive), fontSize = 10.sp, fontWeight = FontWeight.Medium))
+                        Text("${stats.triggeredPortfolios.size} triggered", style = TextStyle(color = PositiveColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
                     }
                 }
             }
