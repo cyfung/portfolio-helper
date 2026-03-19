@@ -16,6 +16,8 @@ import java.util.concurrent.*
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
@@ -257,7 +259,10 @@ object BacktestService {
         if (existing.isEmpty()) return null
         val firstDate = existing.firstKey()
         val lastKnownDate = existing.lastKey()
-        if (lastKnownDate >= neededToDate && firstDate <= neededFromDate) return existing
+        val fileAge = (System.currentTimeMillis() - file.lastModified()).milliseconds
+        if (fileAge <= 5.minutes && lastKnownDate >= neededToDate && firstDate <= neededFromDate) {
+            return existing
+        }
         if (existing.size < 20) return null
 
         var current: Map<LocalDate, Double> = existing

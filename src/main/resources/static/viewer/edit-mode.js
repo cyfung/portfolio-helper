@@ -20,7 +20,7 @@ function makeCashRowHtml() {
         '<td><input type="text" class="edit-input cash-edit-label" placeholder="Label" /></td>' +
         '<td><label class="cash-ref-toggle-label"><input type="checkbox" class="cash-edit-is-ref" />Ref</label></td>' +
         '<td class="cash-normal-fields">' +
-            '<input type="text" class="edit-input cash-edit-currency" placeholder="USD" autocomplete="off" />' +
+            '<input type="text" class="edit-input cash-edit-currency" value="USD" placeholder="USD" autocomplete="off" />' +
             '<input type="number" class="edit-input cash-edit-amount" placeholder="0" step="any" />' +
         '</td>' +
         '<td class="cash-ref-fields" style="display:none">' +
@@ -383,7 +383,7 @@ function initEditMode() {
                 cashUpdates.push({ label, currency: 'P', marginFlag, amount: multiplier, portfolioRef });
             } else {
                 const currency = (tr.querySelector('.cash-edit-currency')?.value ?? '').trim().toUpperCase() || 'USD';
-                const amount = parseFloat(tr.querySelector('.cash-edit-amount')?.value) || 0;
+                const amount = parseFloat((tr.querySelector('.cash-edit-amount')?.value ?? '').replace(/,/g, '')) || 0;
                 cashUpdates.push({ label, currency, marginFlag, amount });
             }
         });

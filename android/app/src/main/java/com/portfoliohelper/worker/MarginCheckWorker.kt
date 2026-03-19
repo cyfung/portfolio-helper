@@ -24,7 +24,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.portfoliohelper.PortfolioHelperApp
 import com.portfoliohelper.data.model.CashEntry
-import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
@@ -77,14 +76,6 @@ class MarginCheckWorker(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 request
-            )
-
-            // Trigger a one-time run immediately for testing
-            Log.d(TAG, "Enqueuing immediate run for price refresh")
-            wm.enqueue(
-                OneTimeWorkRequestBuilder<MarginCheckWorker>()
-                    .setConstraints(constraints)
-                    .build()
             )
         }
     }
@@ -150,11 +141,13 @@ class MarginCheckWorker(
             return Result.success()
         }
 
+        // sync() connects to the local desktop server, which is expected to be offline most of the
+        // time (e.g. server not running, or unreachable from the device). Failures are intentionally
+        // swallowed — the margin check continues with locally cached DB data.
         try {
-            Log.d(TAG, "Attempting background sync with data server...")
             app.syncRepo.sync()
         } catch (e: Exception) {
-            Log.w(TAG, "Background sync failed: ${e.message}")
+            Log.w(TAG, "Background sync skipped (local server unavailable): ${e.message}")
         }
 
         ensureChannels()
@@ -176,8 +169,15 @@ class MarginCheckWorker(
         }
 
         Log.d(TAG, "Fetching latest market prices from Yahoo Finance...")
-        val prices = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
-        Log.i(TAG, "Successfully updated prices for ${prices.size} symbols.")
+        val fetchedPrices = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
+        Log.i(TAG, "Successfully updated prices for ${fetchedPrices.size} symbols.")
+
+        // Fill in any symbols Yahoo failed to return with last-known DB cached prices.
+        // This avoids false "Missing data" error notifications on transient network failures.
+        val cachedPrices = PortfolioCalculator.loadCachedMarketData(app.database)
+        val prices = fetchedPrices.toMutableMap().apply {
+            cachedPrices.forEach { (sym, quote) -> putIfAbsent(sym, quote) }
+        }
 
         val triggeredPortfolioNames = mutableListOf<String>()
         var oldestDataTime = Long.MAX_VALUE
