@@ -10,6 +10,8 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.LocalSize
+import androidx.glance.action.actionStartActivity
+import androidx.glance.action.clickable
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -29,6 +31,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.portfoliohelper.MainActivity
 import com.portfoliohelper.PortfolioHelperApp
 import com.portfoliohelper.data.repository.MarginCheckStats
 import kotlinx.coroutines.flow.firstOrNull
@@ -97,7 +100,8 @@ class MarginCheckWidget : GlanceAppWidget() {
             modifier = GlanceModifier
                 .fillMaxSize()
                 .background(BgColor)
-                .padding(horizontal = hPad, vertical = 8.dp),
+                .padding(horizontal = hPad, vertical = 8.dp)
+                .clickable(actionStartActivity<MainActivity>()),
             verticalAlignment = Alignment.Top,
             horizontalAlignment = Alignment.Start
         ) {
@@ -221,7 +225,8 @@ class MarginCheckWidget : GlanceAppWidget() {
             modifier = GlanceModifier
                 .fillMaxSize()
                 .background(BgColor)
-                .padding(horizontal = hPad, vertical = 12.dp),
+                .padding(horizontal = hPad, vertical = 12.dp)
+                .clickable(actionStartActivity<MainActivity>()),
             verticalAlignment = Alignment.Top,
             horizontalAlignment = Alignment.Start
         ) {
