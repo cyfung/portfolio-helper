@@ -27,20 +27,15 @@ object PortfolioCalculator {
     )
 
     /**
-     * Computes portfolio totals in the specified [displayCurrency].
-     * Logic:
-     * 1. Calculate everything in USD first.
-     * 2. Convert final results to [displayCurrency] using the rates in [prices].
+     * Computes the gross value of all stock positions in USD.
      */
-    fun computeTotals(
+    fun computeStockGrossValue(
         positions: List<Position>,
-        cashEntries: List<CashEntry>,
         prices: Map<String, YahooQuote>,
-        displayCurrency: String = "USD"
-    ): PortfolioTotals {
-        var allReady = true
+        previous: Boolean = false
+    ): Pair<Double, Boolean> {
         var totalUsd = 0.0
-        var prevTotalUsd = 0.0
+        var allReady = true
 
         for (pos in positions) {
             val quote = prices[pos.symbol]
@@ -70,32 +65,64 @@ object PortfolioCalculator {
             }
 
             val multiplier = if (isPence) rate / 100.0 else rate
-
-            val markUsd = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
-            val prevUsd = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier
-            totalUsd += markUsd * pos.quantity
-            prevTotalUsd += prevUsd * pos.quantity
+            val price = if (previous) {
+                quote.previousClose ?: quote.regularMarketPrice ?: 0.0
+            } else {
+                quote.regularMarketPrice ?: quote.previousClose ?: 0.0
+            }
+            
+            totalUsd += price * multiplier * pos.quantity
         }
+        return totalUsd to allReady
+    }
+
+    /**
+     * Computes portfolio totals in the specified [displayCurrency].
+     * Logic:
+     * 1. Calculate everything in USD first.
+     * 2. Convert final results to [displayCurrency] using the rates in [prices].
+     */
+    fun computeTotals(
+        positions: List<Position>,
+        cashEntries: List<CashEntry>,
+        prices: Map<String, YahooQuote>,
+        displayCurrency: String = "USD",
+        portfolioStockValues: Map<String, Pair<Double, Boolean>> = emptyMap()
+    ): PortfolioTotals {
+        val (totalUsd, stocksReady) = computeStockGrossValue(positions, prices, false)
+        val (prevTotalUsd, prevStocksReady) = computeStockGrossValue(positions, prices, true)
+        var allReady = stocksReady && prevStocksReady
 
         var cashTotalUsd = 0.0
         var marginUsd = 0.0
         for (e in cashEntries) {
-            val rate = if (e.currency == "USD") 1.0 else {
-                val pair = "${e.currency}USD=X"
-                val quote = prices[pair]
-                if (quote == null) {
+            val usdValue = if (e.currency == "P") {
+                val refData = portfolioStockValues[e.portfolioRef]
+                if (refData == null || !refData.second) {
                     allReady = false
-                    null
+                }
+                val refValue = refData?.first ?: 0.0
+                refValue * e.amount // amount stores the multiplier for portfolio refs
+            } else {
+                val rate = if (e.currency == "USD") 1.0 else {
+                    val pair = "${e.currency}USD=X"
+                    val quote = prices[pair]
+                    if (quote == null) {
+                        allReady = false
+                        null
+                    } else {
+                        quote.regularMarketPrice ?: quote.previousClose
+                    }
+                }
+                
+                if (rate == null) {
+                    allReady = false
+                    0.0
                 } else {
-                    quote.regularMarketPrice ?: quote.previousClose
+                    e.amount * rate
                 }
             }
             
-            if (rate == null) {
-                allReady = false
-                continue
-            }
-            val usdValue = e.amount * rate
             cashTotalUsd += usdValue
             if (e.isMargin) {
                 marginUsd += usdValue
@@ -143,7 +170,7 @@ object PortfolioCalculator {
         cashEntries: List<CashEntry>
     ): Map<String, YahooQuote> {
         val initialSymbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableSet()
-        val cashCurrencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+        val cashCurrencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
         cashCurrencies.forEach { initialSymbols.add("${it}USD=X") }
 
         // Step 1: Fetch initial symbols in parallel
@@ -218,21 +245,7 @@ object PortfolioCalculator {
         prices: Map<String, YahooQuote>,
         mode: AllocMode
     ): Map<String, Double> {
-        val totalVal = positions.sumOf { pos ->
-            val quote = prices[pos.symbol]
-            if (quote == null) return@sumOf 0.0
-            
-            val currency = quote.currency ?: "USD"
-            val isPence = currency.length == 3 && currency[2].isLowerCase()
-            val normalizedCcy = if (isPence) currency.uppercase() else currency
-
-            val rate = if (normalizedCcy == "USD") 1.0 else {
-                val pair = "${normalizedCcy}USD=X"
-                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
-            }
-            val multiplier = if (isPence) rate / 100.0 else rate
-            (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
-        }
+        val totalVal = computeStockGrossValue(positions, prices).first
 
         return when (mode) {
             AllocMode.PROPORTIONAL -> positions.associate { pos ->

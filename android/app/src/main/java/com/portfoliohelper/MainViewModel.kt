@@ -65,6 +65,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { pid -> db.positionDao().observeAll(pid) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val allPositions: StateFlow<List<Position>> = db.positionDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     val cashEntries: StateFlow<List<CashEntry>> = selectedPortfolioId
         .flatMapLatest { pid -> db.cashDao().observeAll(pid) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -107,14 +110,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Active Symbols ────────────────────────────────────────────────────────
 
     val activeSymbols: StateFlow<Set<String>> = combine(
-        positions,
+        allPositions,
         allCashEntries,
         marketData,
         displayCurrency
-    ) { pos, cash, data, displayCcy ->
-        val symbols = pos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
+    ) { allPos, cash, data, displayCcy ->
+        val symbols = allPos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
 
-        val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" }
+        val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
         cashCurrencies.forEach { symbols.add("${it}USD=X") }
 
         data.values.forEach { quote ->
@@ -141,7 +144,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val fxRates: StateFlow<Map<String, Double>> = marketData.combine(cashEntries) { data, entries ->
         val rates = mutableMapOf<String, Double>()
-        val currencies = entries.map { it.currency }.distinct().filter { it != "USD" }
+        val currencies = entries.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
         for (ccy in currencies) {
             val pair = "${ccy}USD=X"
             val quote = data[pair]
@@ -153,18 +156,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         rates
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    // ── Derived: All Portfolio Stock Values (USD) ──────────────────────────────
+
+    val allPortfolioStockValuesUsd: StateFlow<Map<String, Pair<Double, Boolean>>> =
+        combine(allPositions, marketData, portfolios) { allPos, prices, allPortfolios ->
+            allPortfolios.associate { p ->
+                val pPositions = allPos.filter { it.portfolioId == p.serialId }
+                p.slug to PortfolioCalculator.computeStockGrossValue(pPositions, prices)
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     // ── Derived: cash totals ──────────────────────────────────────────────────
 
-    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData, displayCurrency) { entries, prices, displayCcy ->
-        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices, displayCcy)
+    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData, displayCurrency, allPortfolioStockValuesUsd) { entries, prices, displayCcy, stockValues ->
+        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices, displayCcy, stockValues)
         CashTotals(totals.cashTotal, totals.margin, totals.isReady)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0, false))
 
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
-        combine(positions, cashEntries, marketData, displayCurrency) { pos, cash, prices, displayCcy ->
-            PortfolioCalculator.computeTotals(pos, cash, prices, displayCcy)
+        combine(positions, cashEntries, marketData, displayCurrency, allPortfolioStockValuesUsd) { pos, cash, prices, displayCcy, stockValues ->
+            PortfolioCalculator.computeTotals(pos, cash, prices, displayCcy, stockValues)
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
             PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false)

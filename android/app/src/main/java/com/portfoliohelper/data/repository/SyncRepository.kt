@@ -256,7 +256,7 @@ class SyncRepository(
                 if (serialId > maxSerialId) maxSerialId = serialId
 
                 db.portfolioDao().upsert(
-                    Portfolio(serialId = serialId, displayName = entry.name)
+                    Portfolio(serialId = serialId, displayName = entry.name, slug = entry.slug)
                 )
 
                 entry.stocks.forEach { s ->
@@ -265,14 +265,26 @@ class SyncRepository(
                     )
                 }
 
-                entry.cash.mapNotNull { c ->
-                    when {
-                        c.currency == "P" -> c.snapshotUsd?.let {
-                            CashEntry(portfolioId = serialId, label = c.label, currency = "USD", amount = it, isMargin = c.marginFlag)
-                        }
-                        else -> CashEntry(portfolioId = serialId, label = c.label, currency = c.currency, amount = c.amount, isMargin = c.marginFlag)
+                entry.cash.forEach { c ->
+                    val cashEntry = when (c.currency) {
+                        "P" -> CashEntry(
+                            portfolioId = serialId,
+                            label = c.label,
+                            currency = "P",
+                            amount = c.amount, // multiplier
+                            isMargin = c.marginFlag,
+                            portfolioRef = c.portfolioRef
+                        )
+                        else -> CashEntry(
+                            portfolioId = serialId,
+                            label = c.label,
+                            currency = c.currency,
+                            amount = c.amount,
+                            isMargin = c.marginFlag
+                        )
                     }
-                }.forEach { db.cashDao().upsert(it) }
+                    db.cashDao().upsert(cashEntry)
+                }
 
                 if (db.portfolioMarginAlertDao().getAll().none { it.portfolioId == serialId }) {
                     db.portfolioMarginAlertDao().upsert(PortfolioMarginAlert(portfolioId = serialId))

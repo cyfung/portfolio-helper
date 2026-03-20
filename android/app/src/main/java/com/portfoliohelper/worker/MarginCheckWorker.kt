@@ -135,6 +135,7 @@ class MarginCheckWorker(
 
         val allAlerts = app.database.portfolioMarginAlertDao().getAll()
         val portfolios = app.database.portfolioDao().getAll().associateBy { it.serialId }
+        val allPortfoliosList = app.database.portfolioDao().getAll()
         
         if (allAlerts.isEmpty()) {
             Log.d(TAG, "No alerts or portfolios found to sync.")
@@ -152,21 +153,8 @@ class MarginCheckWorker(
 
         ensureChannels()
 
-        val allPositions = mutableListOf<Position>()
-        val allCashEntries = mutableListOf<CashEntry>()
-        val portfolioBundles = allAlerts.map { alert ->
-            val pid = alert.portfolioId
-            val pos = app.database.positionDao().getAll(pid)
-            val cash = app.database.cashDao().getAll(pid)
-            allPositions.addAll(pos)
-            allCashEntries.addAll(cash)
-            Triple(alert, pos, cash)
-        }
-
-        if (allPositions.isEmpty() && allCashEntries.isEmpty()) {
-            Log.d(TAG, "No positions/cash to update.")
-            return Result.success()
-        }
+        val allPositions = app.database.positionDao().getAllPositions()
+        val allCashEntries = app.database.cashDao().getAllEntries()
 
         Log.d(TAG, "Fetching latest market prices from Yahoo Finance...")
         val fetchedPrices = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
@@ -179,14 +167,23 @@ class MarginCheckWorker(
             cachedPrices.forEach { (sym, quote) -> putIfAbsent(sym, quote) }
         }
 
+        // Pre-calculate all portfolio stock values for reference entries
+        val stockValuesUsd = allPortfoliosList.associate { p ->
+            val pPositions = allPositions.filter { it.portfolioId == p.serialId }
+            p.slug to PortfolioCalculator.computeStockGrossValue(pPositions, prices)
+        }
+
         val triggeredPortfolioNames = mutableListOf<String>()
         var oldestDataTime = Long.MAX_VALUE
 
-        portfolioBundles.forEach { (alert, positions, cashEntries) ->
+        allAlerts.forEach { alert ->
             val pid = alert.portfolioId
             val name = portfolios[pid]?.displayName ?: "Portfolio $pid"
             val alertNotifId = NOTIF_ID_ALERT_BASE + pid
             val errorNotifId = NOTIF_ID_ERROR_BASE + pid
+
+            val positions = allPositions.filter { it.portfolioId == pid }
+            val cashEntries = allCashEntries.filter { it.portfolioId == pid }
 
             if (positions.isEmpty() && cashEntries.isEmpty()) {
                 nm.cancel(alertNotifId)
@@ -194,12 +191,12 @@ class MarginCheckWorker(
                 return@forEach
             }
 
-            val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices)
+            val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices, "USD", stockValuesUsd)
 
             positions.forEach { pos ->
                 prices[pos.symbol]?.timestamp?.let { if (it < oldestDataTime) oldestDataTime = it }
             }
-            cashEntries.map { "${it.currency}USD=X" }.forEach { sym ->
+            cashEntries.filter { it.currency != "P" }.map { "${it.currency}USD=X" }.forEach { sym ->
                 prices[sym]?.timestamp?.let { if (it < oldestDataTime) oldestDataTime = it }
             }
 
@@ -207,7 +204,7 @@ class MarginCheckWorker(
                 val hasThresholds = alert.lowerPct > 0 || alert.upperPct > 0
                 if (hasThresholds && notificationsEnabled) {
                     val symbols = positions.map { it.symbol }.distinct()
-                    val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" }
+                    val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
                     val missing = (symbols.filter { it !in prices } + currencies.filter { "${it}USD=X" !in prices }).joinToString(", ")
                     notify(errorNotifId, "⚠️ Margin Check Error ($name)", "Missing data: $missing")
                 }

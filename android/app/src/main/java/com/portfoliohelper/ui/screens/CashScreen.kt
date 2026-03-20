@@ -62,6 +62,7 @@ fun CashScreen(vm: MainViewModel) {
     val cashTotals by vm.cashTotals.collectAsState()
     val totals by vm.portfolioTotals.collectAsState()
     val fxRates by vm.fxRates.collectAsState()
+    val stockValues by vm.allPortfolioStockValuesUsd.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<CashEntry?>(null) }
@@ -156,6 +157,7 @@ fun CashScreen(vm: MainViewModel) {
                 CashEntryRow(
                     entry = entry,
                     fxRates = fxRates,
+                    stockValues = stockValues,
                     onEdit = { editEntry = entry },
                     onDelete = { vm.deleteCashEntry(entry) }
                 )
@@ -185,12 +187,17 @@ fun CashScreen(vm: MainViewModel) {
 fun CashEntryRow(
     entry: CashEntry,
     fxRates: Map<String, Double>,
+    stockValues: Map<String, Pair<Double, Boolean>>,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val ext = MaterialTheme.ext
-    val rate = if (entry.currency == "USD") 1.0 else fxRates[entry.currency]
-    val usd = rate?.let { entry.amount * it }
+    val usd = if (entry.currency == "P") {
+        stockValues[entry.portfolioRef]?.let { it.first * entry.amount }
+    } else {
+        val rate = if (entry.currency == "USD") 1.0 else fxRates[entry.currency]
+        rate?.let { entry.amount * it }
+    }
 
     var showActions by remember { mutableStateOf(false) }
 
@@ -204,13 +211,21 @@ fun CashEntryRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Label
-            Text(
-                text = entry.label,
-                modifier = Modifier.weight(1.5f),
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = ext.textPrimary
-            )
+            Column(modifier = Modifier.weight(1.5f)) {
+                Text(
+                    text = entry.label,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ext.textPrimary
+                )
+                if (entry.currency == "P") {
+                    Text(
+                        text = "Ref: ${entry.portfolioRef ?: "None"}",
+                        fontSize = 11.sp,
+                        color = ext.textTertiary
+                    )
+                }
+            }
 
             // Margin Badge
             Box(modifier = Modifier.weight(0.4f), contentAlignment = Alignment.CenterStart) {
@@ -224,14 +239,14 @@ fun CashEntryRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MonoText(
-                    text = "%,.2f".format(Locale.US, entry.amount),
+                    text = if (entry.currency == "P") "%.2fx".format(entry.amount) else "%,.2f".format(Locale.US, entry.amount),
                     color = ext.textTertiary,
                     fontWeight = FontWeight.Normal,
                     fontSize = 16.sp
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = entry.currency,
+                    text = if (entry.currency == "P") "PORT" else entry.currency,
                     fontSize = 11.sp,
                     color = ext.textTertiary,
                     fontWeight = FontWeight.Medium
@@ -284,16 +299,15 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
     var label by remember { mutableStateOf(initial?.label ?: "") }
     var currency by remember { mutableStateOf(initial?.currency ?: "USD") }
     
-    // Format the initial amount for display (e.g. "1,234.56")
     val formattedInitialAmount = remember(initial) {
         initial?.amount?.let { 
-            "%,.2f".format(Locale.US, it) 
-        } ?: ""
+            if (initial.currency == "P") "%.2f".format(it) else "%,.2f".format(Locale.US, it)
+        } ?: if (currency == "P") "1.00" else ""
     }
     var amount by remember { mutableStateOf(formattedInitialAmount) }
     var isMargin by remember { mutableStateOf(initial?.isMargin ?: false) }
+    var portfolioRef by remember { mutableStateOf(initial?.portfolioRef ?: "") }
 
-    // Validation
     val isValidAmount = remember(amount) {
         amount.isEmpty() || amount == "-" || amount.replace(",", "").toDoubleOrNull() != null
     }
@@ -313,24 +327,32 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
                 OutlinedTextField(
                     value = currency,
                     onValueChange = { currency = it.uppercase() },
-                    label = { Text("Currency") },
+                    label = { Text("Currency (ISO or 'P')") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (currency == "P") {
+                    OutlinedTextField(
+                        value = portfolioRef,
+                        onValueChange = { portfolioRef = it.lowercase() },
+                        label = { Text("Portfolio Reference (Slug)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { input -> 
-                        // Allow digits, dots, commas, and a leading minus sign
                         if (input.all { it.isDigit() || it == '.' || it == ',' || it == '-' }) {
                             amount = input
                         }
                     },
-                    label = { Text("Amount (negative = loan)") },
-                    placeholder = { Text("0.00") },
+                    label = { Text(if (currency == "P") "Multiplier" else "Amount (negative = loan)") },
+                    placeholder = { Text(if (currency == "P") "1.00" else "0.00") },
                     singleLine = true,
                     isError = !isValidAmount,
                     modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text) // Text allows commas and minus
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(isMargin, { isMargin = it })
@@ -341,17 +363,18 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
         confirmButton = {
             TextButton(
                 onClick = {
-                    val parsedAmount = amount.replace(",", "").toDoubleOrNull() ?: 0.0
+                    val parsedAmount = amount.replace(",", "").toDoubleOrNull() ?: (if (currency == "P") 1.0 else 0.0)
                     val entry = CashEntry(
                         id = initial?.id ?: 0,
                         label = label.trim(),
                         currency = currency.trim().uppercase(),
                         amount = parsedAmount,
-                        isMargin = isMargin
+                        isMargin = isMargin,
+                        portfolioRef = if (currency == "P") portfolioRef.trim() else null
                     )
                     if (entry.label.isNotEmpty() && isValidAmount) onSave(entry)
                 },
-                enabled = label.isNotBlank() && isValidAmount
+                enabled = label.isNotBlank() && isValidAmount && (currency != "P" || portfolioRef.isNotBlank())
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

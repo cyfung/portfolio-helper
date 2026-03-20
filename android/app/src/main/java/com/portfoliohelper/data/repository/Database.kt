@@ -61,6 +61,9 @@ interface PositionDao {
     @Query("SELECT * FROM positions WHERE portfolioId = :portfolioId AND isDeleted = 0 ORDER BY symbol")
     fun observeAll(portfolioId: Int): Flow<List<Position>>
 
+    @Query("SELECT * FROM positions WHERE isDeleted = 0 ORDER BY symbol")
+    fun observeAll(): Flow<List<Position>>
+
     @Query("SELECT * FROM positions WHERE portfolioId = :portfolioId AND isDeleted = 0 ORDER BY symbol")
     suspend fun getAll(portfolioId: Int): List<Position>
 
@@ -145,7 +148,7 @@ interface MarketPriceDao {
         MarketPrice::class,
         PortfolioMarginAlert::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
