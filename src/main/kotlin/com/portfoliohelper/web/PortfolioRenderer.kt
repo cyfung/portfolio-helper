@@ -406,14 +406,17 @@ private fun TBODY.buildSummaryRows(
                 attributes["data-portfolio-ref"] = entry.portfolioRef
                 attributes["data-portfolio-multiplier"] = entry.amount.toString()
             }
-            if (entry.marginFlag) classes = setOf("cash-margin-entry")
-            else if (entry.portfolioRef != null) classes = setOf("cash-ref-entry")
+            classes = buildSet {
+                if (entry.marginFlag) add("cash-margin-entry")
+                if (entry.portfolioRef != null) add("cash-ref-entry")
+            }
 
             td { +displayLabel }
             td(classes = "cash-badge-col") {
                 if (entry.marginFlag) {
                     span(classes = "cash-type-badge cash-badge-margin") { +"M" }
-                } else if (entry.portfolioRef != null) {
+                }
+                if (entry.portfolioRef != null) {
                     span(classes = "cash-type-badge cash-badge-ref") { +"\u2197" }
                 }
             }
