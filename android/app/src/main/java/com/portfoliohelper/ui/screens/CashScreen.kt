@@ -1,50 +1,30 @@
 package com.portfoliohelper.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.data.model.CashEntry
-import com.portfoliohelper.ui.components.CashTypeBadge
 import com.portfoliohelper.ui.components.Divider
 import com.portfoliohelper.ui.components.MonoText
 import com.portfoliohelper.ui.components.SummaryCard
@@ -63,12 +43,13 @@ fun CashScreen(vm: MainViewModel) {
     val totals by vm.portfolioTotals.collectAsState()
     val fxRates by vm.fxRates.collectAsState()
     val stockValues by vm.allPortfolioStockValuesUsd.collectAsState()
+    val displayCurrency by vm.displayCurrency.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<CashEntry?>(null) }
 
     Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0), // handled by Scaffold in MainActivity
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
@@ -88,7 +69,6 @@ fun CashScreen(vm: MainViewModel) {
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // ── Summary cards ────────────────────────────────────────────────
             item {
                 Row(
                     modifier = Modifier
@@ -106,25 +86,14 @@ fun CashScreen(vm: MainViewModel) {
                             modifier = Modifier.weight(1f)
                         )
                     } else {
-                        SummaryCard(
-                            "Cash Total",
-                            "N/A",
-                            subValue = "",
-                            modifier = Modifier.weight(1f)
-                        )
+                        SummaryCard("Cash Total", "N/A", subValue = "", modifier = Modifier.weight(1f))
                     }
 
                     if (totals.isReady) {
                         val marginUsd = cashTotals.marginUsd
                         val marginPct = totals.marginPct
                         if (marginUsd >= 0) {
-                            SummaryCard(
-                                "Margin",
-                                "-",
-                                valueColor = ext.textPrimary,
-                                subValue = "",
-                                modifier = Modifier.weight(1f)
-                            )
+                            SummaryCard("Margin", "-", valueColor = ext.textPrimary, subValue = "", modifier = Modifier.weight(1f))
                         } else {
                             SummaryCard(
                                 "Margin",
@@ -136,28 +105,21 @@ fun CashScreen(vm: MainViewModel) {
                             )
                         }
                     } else {
-                        SummaryCard(
-                            "Margin",
-                            "N/A",
-                            valueColor = ext.textPrimary,
-                            subValue = "",
-                            modifier = Modifier.weight(1f)
-                        )
+                        SummaryCard("Margin", "N/A", valueColor = ext.textPrimary, subValue = "", modifier = Modifier.weight(1f))
                     }
                 }
             }
 
-            // ── Table header ──────────────────────────────────────────────────
-            item {
-                Divider()
-            }
+            item { Divider() }
 
-            // ── Cash rows ─────────────────────────────────────────────────────
-            items(cashEntries, key = { it.id }) { entry ->
+            itemsIndexed(cashEntries, key = { _, it -> it.id }) { index, entry ->
+                val showLabel = index == 0 || entry.label != cashEntries[index - 1].label
                 CashEntryRow(
                     entry = entry,
                     fxRates = fxRates,
                     stockValues = stockValues,
+                    displayCurrency = displayCurrency,
+                    showLabel = showLabel,
                     onEdit = { editEntry = entry },
                     onDelete = { vm.deleteCashEntry(entry) }
                 )
@@ -188,15 +150,30 @@ fun CashEntryRow(
     entry: CashEntry,
     fxRates: Map<String, Double>,
     stockValues: Map<String, Pair<Double, Boolean>>,
+    displayCurrency: String,
+    showLabel: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val ext = MaterialTheme.ext
-    val usd = if (entry.currency == "P") {
-        stockValues[entry.portfolioRef]?.let { it.first * entry.amount }
+    
+    // 1. Calculate USD Value
+    val valueUsd = if (entry.currency == "P") {
+        (stockValues[entry.portfolioRef]?.first ?: 0.0) * entry.amount
     } else {
-        val rate = if (entry.currency == "USD") 1.0 else fxRates[entry.currency]
-        rate?.let { entry.amount * it }
+        val rateToUsd = if (entry.currency == "USD") 1.0 else fxRates[entry.currency] ?: 1.0
+        entry.amount * rateToUsd
+    }
+    
+    // 2. Calculate Display Value
+    val rateDisplayToUsd = if (displayCurrency == "USD") 1.0 else fxRates[displayCurrency] ?: 1.0
+    val valueDisplay = valueUsd / rateDisplayToUsd
+    
+    // 3. Original Amount & Currency for Col 3
+    val (actualAmount, actualCcy) = if (entry.currency == "P") {
+        valueUsd to "USD"
+    } else {
+        entry.amount to entry.currency
     }
 
     var showActions by remember { mutableStateOf(false) }
@@ -207,55 +184,56 @@ fun CashEntryRow(
                 .fillMaxWidth()
                 .background(ext.bgPrimary)
                 .clickable { showActions = !showActions }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Label
-            Column(modifier = Modifier.weight(1.5f)) {
-                Text(
-                    text = entry.label,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = ext.textPrimary
-                )
+            // Col 1: Label
+            Text(
+                text = if (showLabel) entry.label else "",
+                modifier = Modifier.weight(1.5f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = ext.textSecondary
+            )
+
+            // Col 2: Icons (Margin + Ref)
+            Row(
+                modifier = Modifier.weight(0.4f),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (entry.isMargin) {
+                    SquareBadge("M", ext.warning)
+                }
                 if (entry.currency == "P") {
-                    Text(
-                        text = "Ref: ${entry.portfolioRef ?: "None"}",
-                        fontSize = 11.sp,
-                        color = ext.textTertiary
-                    )
+                    SquareIconBadge(Icons.Default.NorthEast, Color(0xFF42A5F5))
                 }
             }
 
-            // Margin Badge
-            Box(modifier = Modifier.weight(0.4f), contentAlignment = Alignment.CenterStart) {
-                if (entry.isMargin) CashTypeBadge("M")
-            }
-
-            // Raw Amount + Currency on same line
+            // Col 3: Actual Amount + Currency
             Row(
                 modifier = Modifier.weight(1.5f),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MonoText(
-                    text = if (entry.currency == "P") "%.2fx".format(entry.amount) else "%,.2f".format(Locale.US, entry.amount),
+                    text = formatCurrency(actualAmount),
                     color = ext.textTertiary,
                     fontWeight = FontWeight.Normal,
-                    fontSize = 16.sp
+                    fontSize = 15.sp
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = if (entry.currency == "P") "PORT" else entry.currency,
+                    text = actualCcy,
                     fontSize = 11.sp,
                     color = ext.textTertiary,
                     fontWeight = FontWeight.Medium
                 )
             }
 
-            // USD Converted
+            // Col 4: Display Amount
             MonoText(
-                text = if (usd != null) formatCurrency(usd) else "—",
+                text = formatCurrency(valueDisplay),
                 color = ext.textSecondary,
                 fontWeight = FontWeight.Normal,
                 fontSize = 16.sp,
@@ -273,24 +251,55 @@ fun CashEntryRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = { onEdit(); showActions = false }) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Edit", fontSize = 12.sp)
                 }
                 TextButton(onClick = { onDelete(); showActions = false }) {
-                    Icon(
-                        Icons.Default.Delete, contentDescription = null,
-                        modifier = Modifier.size(16.dp), tint = ext.negative
-                    )
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp), tint = ext.negative)
                     Spacer(Modifier.width(4.dp))
                     Text("Delete", fontSize = 12.sp, color = ext.negative)
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SquareBadge(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .size(18.dp)
+            .background(color.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
+            )
+        )
+    }
+}
+
+@Composable
+fun SquareIconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, color: Color) {
+    Box(
+        modifier = Modifier
+            .size(18.dp)
+            .background(color.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(4.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(12.dp),
+            tint = color
+        )
     }
 }
 
