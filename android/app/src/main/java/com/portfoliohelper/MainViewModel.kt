@@ -117,7 +117,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     ) { allPos, cash, data, displayCcy ->
         val symbols = allPos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
 
-        val cashCurrencies = cash.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
+        val cashCurrencies = cash.filter { it.portfolioRef == null }.map { it.currency }.distinct().filter { it != "USD" }
         cashCurrencies.forEach { symbols.add("${it}USD=X") }
 
         data.values.forEach { quote ->
@@ -144,7 +144,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val fxRates: StateFlow<Map<String, Double>> = marketData.combine(cashEntries) { data, entries ->
         val rates = mutableMapOf<String, Double>()
-        val currencies = entries.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
+        val currencies = entries.filter { it.portfolioRef == null }.map { it.currency }.distinct().filter { it != "USD" }
         for (ccy in currencies) {
             val pair = "${ccy}USD=X"
             val quote = data[pair]

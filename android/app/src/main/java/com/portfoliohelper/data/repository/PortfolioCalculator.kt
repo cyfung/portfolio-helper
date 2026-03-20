@@ -96,7 +96,7 @@ object PortfolioCalculator {
         var cashTotalUsd = 0.0
         var marginUsd = 0.0
         for (e in cashEntries) {
-            val usdValue = if (e.currency == "P") {
+            val usdValue = if (e.portfolioRef != null) {
                 val refData = portfolioStockValues[e.portfolioRef]
                 if (refData == null || !refData.second) {
                     allReady = false
@@ -170,7 +170,9 @@ object PortfolioCalculator {
         cashEntries: List<CashEntry>
     ): Map<String, YahooQuote> {
         val initialSymbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableSet()
-        val cashCurrencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
+        val cashCurrencies = cashEntries.mapNotNull { if (it.portfolioRef == null) it.currency else null }
+            .distinct()
+            .filter { it != "USD" }
         cashCurrencies.forEach { initialSymbols.add("${it}USD=X") }
 
         // Step 1: Fetch initial symbols in parallel

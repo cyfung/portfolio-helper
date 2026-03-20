@@ -158,7 +158,7 @@ fun CashEntryRow(
     val ext = MaterialTheme.ext
     
     // 1. Calculate USD Value
-    val valueUsd = if (entry.currency == "P") {
+    val valueUsd = if (entry.portfolioRef != null) {
         (stockValues[entry.portfolioRef]?.first ?: 0.0) * entry.amount
     } else {
         val rateToUsd = if (entry.currency == "USD") 1.0 else fxRates[entry.currency] ?: 1.0
@@ -170,7 +170,7 @@ fun CashEntryRow(
     val valueDisplay = valueUsd / rateDisplayToUsd
     
     // 3. Original Amount & Currency for Col 3
-    val (actualAmount, actualCcy) = if (entry.currency == "P") {
+    val (actualAmount, actualCcy) = if (entry.portfolioRef != null) {
         valueUsd to "USD"
     } else {
         entry.amount to entry.currency
@@ -205,7 +205,7 @@ fun CashEntryRow(
                 if (entry.isMargin) {
                     SquareBadge("M", ext.warning)
                 }
-                if (entry.currency == "P") {
+                if (entry.portfolioRef != null) {
                     SquareIconBadge(Icons.Default.NorthEast, Color(0xFF42A5F5))
                 }
             }
@@ -306,11 +306,11 @@ fun SquareIconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, color
 @Composable
 fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEntry) -> Unit) {
     var label by remember { mutableStateOf(initial?.label ?: "") }
-    var currency by remember { mutableStateOf(initial?.currency ?: "USD") }
+    var currency by remember { mutableStateOf(if (initial?.portfolioRef != null) "P" else (initial?.currency ?: "USD")) }
     
     val formattedInitialAmount = remember(initial) {
         initial?.amount?.let { 
-            if (initial.currency == "P") "%.2f".format(it) else "%,.2f".format(Locale.US, it)
+            if (initial.portfolioRef != null) "%.2f".format(it) else "%,.2f".format(Locale.US, it)
         } ?: if (currency == "P") "1.00" else ""
     }
     var amount by remember { mutableStateOf(formattedInitialAmount) }
@@ -373,13 +373,14 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
             TextButton(
                 onClick = {
                     val parsedAmount = amount.replace(",", "").toDoubleOrNull() ?: (if (currency == "P") 1.0 else 0.0)
+                    val isP = currency.trim().uppercase() == "P"
                     val entry = CashEntry(
                         id = initial?.id ?: 0,
                         label = label.trim(),
-                        currency = currency.trim().uppercase(),
+                        currency = if (isP) "USD" else currency.trim().uppercase(),
                         amount = parsedAmount,
                         isMargin = isMargin,
-                        portfolioRef = if (currency == "P") portfolioRef.trim() else null
+                        portfolioRef = if (isP) portfolioRef.trim() else null
                     )
                     if (entry.label.isNotEmpty() && isValidAmount) onSave(entry)
                 },
