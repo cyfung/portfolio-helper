@@ -175,7 +175,7 @@ fun GroupsScreen(vm: MainViewModel) {
                             .padding(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val totalValue = totals.stockGrossValue + cashTotals.totalUsd
+                        val totalValue = totals.stockGrossValue + cashTotals.cashTotal
                         val prevTotalValue = totalValue - totals.dayChange
                         val totalChangePct = if (prevTotalValue != 0.0) {
                             (totals.dayChange / prevTotalValue) * 100.0

@@ -26,6 +26,7 @@ object PrefsKeys {
     val DISPLAY_CURRENCY        = stringPreferencesKey("display_currency")
     val SELECTED_PORTFOLIO_ID   = intPreferencesKey("selected_portfolio_id")
     val MARGIN_CHECK_NOTIFICATIONS_ENABLED = booleanPreferencesKey("margin_check_notifications_enabled")
+    val SCALING_PERCENT         = intPreferencesKey("scaling_percent")
     
     // Margin check stats
     val LAST_MARGIN_CHECK_TIME  = longPreferencesKey("last_margin_check_time")
@@ -129,6 +130,20 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun saveMarginCheckNotificationsEnabled(enabled: Boolean) {
         context.dataStore.edit { it[PrefsKeys.MARGIN_CHECK_NOTIFICATIONS_ENABLED] = enabled }
+    }
+
+    val scalingPercent: Flow<Int?> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.SCALING_PERCENT]
+    }
+
+    suspend fun saveScalingPercent(percent: Int?) {
+        context.dataStore.edit { prefs ->
+            if (percent == null) {
+                prefs.remove(PrefsKeys.SCALING_PERCENT)
+            } else {
+                prefs[PrefsKeys.SCALING_PERCENT] = percent
+            }
+        }
     }
 
     // ── Margin check stats ──────────────────────────────────────────────────

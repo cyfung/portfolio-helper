@@ -37,6 +37,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val portfolioAlerts by vm.portfolioAlerts.collectAsState()
     val marginStats by vm.marginCheckStats.collectAsState()
     val notificationsEnabled by vm.marginCheckNotificationsEnabled.collectAsState()
+    val scalingPercent by vm.scalingPercent.collectAsState()
 
     Column(
         modifier = Modifier
@@ -167,6 +168,33 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                     }) {
                         Text(if (pnlMode == "DISPLAY") "Portfolio" else "Native")
                     }
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
+                // Scaling %
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Privacy Scaling %", color = ext.textSecondary, fontSize = 13.sp)
+                        Text("Virtually scale QTY and cash entries", color = ext.textTertiary, fontSize = 11.sp)
+                    }
+                    var scalingText by remember(scalingPercent) { mutableStateOf(scalingPercent?.toString() ?: "") }
+                    OutlinedTextField(
+                        value = scalingText,
+                        onValueChange = { 
+                            scalingText = it
+                            vm.saveScalingPercent(it.toIntOrNull())
+                        },
+                        placeholder = { Text("None", fontSize = 12.sp) },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(80.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, textAlign = TextAlign.End),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ext.actionPositive.copy(alpha = 0.5f),
+                            unfocusedBorderColor = ext.textTertiary.copy(alpha = 0.2f)
+                        )
+                    )
                 }
 
                 HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))

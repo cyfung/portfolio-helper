@@ -90,6 +90,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val marginCheckStats: StateFlow<MarginCheckStats?> = settings.marginCheckStats
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val scalingPercent: StateFlow<Int?> = settings.scalingPercent
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 
     val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
@@ -159,25 +162,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Derived: All Portfolio Stock Values (USD) ──────────────────────────────
 
     val allPortfolioStockValuesUsd: StateFlow<Map<String, Pair<Double, Boolean>>> =
-        combine(allPositions, marketData, portfolios) { allPos, prices, allPortfolios ->
+        combine(allPositions, marketData, portfolios, scalingPercent) { allPos, prices, allPortfolios, scaling ->
             allPortfolios.associate { p ->
                 val pPositions = allPos.filter { it.portfolioId == p.serialId }
-                p.slug to PortfolioCalculator.computeStockGrossValue(pPositions, prices)
+                p.slug to PortfolioCalculator.computeStockGrossValue(pPositions, prices, scaling = scaling)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     // ── Derived: cash totals ──────────────────────────────────────────────────
 
-    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData, displayCurrency, allPortfolioStockValuesUsd) { entries, prices, displayCcy, stockValues ->
-        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices, displayCcy, stockValues)
+    val cashTotals: StateFlow<CashTotals> = combine(cashEntries, marketData, displayCurrency, allPortfolioStockValuesUsd, scalingPercent) { entries, prices, displayCcy, stockValues, scaling ->
+        val totals = PortfolioCalculator.computeTotals(emptyList(), entries, prices, displayCcy, stockValues, scaling)
         CashTotals(totals.cashTotal, totals.margin, totals.isReady)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0, false))
 
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
-        combine(positions, cashEntries, marketData, displayCurrency, allPortfolioStockValuesUsd) { pos, cash, prices, displayCcy, stockValues ->
-            PortfolioCalculator.computeTotals(pos, cash, prices, displayCcy, stockValues)
+        combine(positions, cashEntries, marketData, displayCurrency, allPortfolioStockValuesUsd, scalingPercent) { arr ->
+            @Suppress("UNCHECKED_CAST")
+            val pos = arr[0] as List<Position>
+            @Suppress("UNCHECKED_CAST")
+            val cash = arr[1] as List<CashEntry>
+            @Suppress("UNCHECKED_CAST")
+            val prices = arr[2] as Map<String, YahooQuote>
+            val displayCcy = arr[3] as String
+            @Suppress("UNCHECKED_CAST")
+            val stockValues = arr[4] as Map<String, Pair<Double, Boolean>>
+            val scaling = arr[5] as? Int
+            PortfolioCalculator.computeTotals(pos, cash, prices, displayCcy, stockValues, scaling)
         }.stateIn(
             viewModelScope, SharingStarted.Eagerly,
             PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false)
@@ -186,8 +199,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Derived: groups ───────────────────────────────────────────────────────
 
     val groupRows: StateFlow<List<GroupRow>> =
-        combine(positions, marketData, portfolioTotals) { pos, prices, totals ->
-            PortfolioCalculator.computeGroups(pos, prices, totals.stockGrossValue)
+        combine(positions, marketData, portfolioTotals, scalingPercent) { pos, prices, totals, scaling ->
+            PortfolioCalculator.computeGroups(pos, prices, totals.stockGrossValue, scaling)
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ── Portfolio selection ───────────────────────────────────────────────────
@@ -238,6 +251,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.saveMarginCheckNotificationsEnabled(enabled)
     }
 
+    fun saveScalingPercent(percent: Int?) = viewModelScope.launch {
+        settings.saveScalingPercent(percent)
+    }
+
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────
 
     fun createPortfolio(name: String) = viewModelScope.launch {
@@ -286,42 +303,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 host = host,
                 port = port
             ))
-            Log.i("MainViewModel", "Pairing successful")
-            sync()
+            _syncStatus.value = SyncStatus.Success
+            refreshMarketData()
         } catch (e: Exception) {
-            Log.e("MainViewModel", "Pairing failed: ${e.message}")
-            _syncStatus.value = SyncStatus.Error("Pairing failed: ${e.message}")
+            _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error")
         }
     }
 
     fun unpairServer() = viewModelScope.launch {
-        Log.i("MainViewModel", "Unpairing server")
         settings.saveSyncServerInfo(null)
         _syncStatus.value = SyncStatus.Idle
     }
 
     fun sync() = viewModelScope.launch {
-        Log.i("MainViewModel", "Sync button clicked or auto-sync started")
+        val server = syncServerInfo.value ?: return@launch
         _syncStatus.value = SyncStatus.Syncing
         try {
             syncRepo.sync()
-            Log.i("MainViewModel", "Sync repository call completed successfully")
-
-            // Auto-select the portfolio with the lowest serialId after sync
-            db.portfolioDao().getAll().minByOrNull { it.serialId }?.let { lowest ->
-                settings.saveSelectedPortfolioId(lowest.serialId)
-            }
-
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
         } catch (e: Exception) {
-            if (e is SyncRepository.UnauthorizedException) {
-                Log.w("MainViewModel", "Sync failed: Unauthorized. Re-pairing needed.")
-                _syncStatus.value = SyncStatus.Error("Device not paired or pairing expired.")
-            } else {
-                Log.e("MainViewModel", "Sync failed with error: ${e.message}", e)
-                _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error occurred")
-            }
+            _syncStatus.value = SyncStatus.Error(e.message ?: "Sync failed")
         }
     }
 
@@ -329,57 +331,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _syncStatus.value = SyncStatus.Idle
     }
 
-    // ── Market Data ───────────────────────────────────────────────────────────
+    // ── Refresh ───────────────────────────────────────────────────────────────
 
-    init {
-        YahooMarketDataService.setOnBatchUpdateListener { quotes ->
-            viewModelScope.launch {
-                val marketPrices = quotes.mapNotNull { quote ->
-                    val price = quote.regularMarketPrice ?: quote.previousClose
-                    if (price != null) {
-                        com.portfoliohelper.data.model.MarketPrice(
-                            quote.symbol,
-                            price,
-                            quote.previousClose,
-                            quote.isMarketClosed,
-                            timestamp = quote.timestamp,
-                            currency = quote.currency
-                        )
-                    } else null
-                }
-                if (marketPrices.isNotEmpty()) {
-                    db.marketPriceDao().upsertAll(marketPrices)
-                }
-            }
+    fun refreshMarketData() = viewModelScope.launch {
+        val symbols = activeSymbols.value
+        val cash = allCashEntries.value
+        val pos = allPositions.value
+        if (symbols.isNotEmpty()) {
+            PortfolioCalculator.fetchAndCacheMarketData(db, pos, cash)
         }
-
-        viewModelScope.launch {
-            activeSymbols.collect { symbols ->
-                if (symbols.isNotEmpty()) {
-                    YahooMarketDataService.start(symbols.toList())
-                }
-            }
-        }
-
-        // Initial sync if paired
-        viewModelScope.launch {
-            if (settings.syncServerInfo.firstOrNull() != null) {
-                sync()
-            }
-        }
-    }
-
-    private fun refreshMarketData() {
-        val all = activeSymbols.value.toList()
-        if (all.isNotEmpty()) {
-            YahooMarketDataService.start(all)
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        YahooMarketDataService.stop()
     }
 }
 
-data class CashTotals(val totalUsd: Double, val marginUsd: Double, val isReady: Boolean)
+data class CashTotals(val cashTotal: Double, val margin: Double, val isReady: Boolean)

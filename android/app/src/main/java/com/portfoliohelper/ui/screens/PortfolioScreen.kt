@@ -25,6 +25,7 @@ import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.YahooQuote
 import com.portfoliohelper.ui.components.*
 import com.portfoliohelper.ui.theme.ext
+import kotlin.math.round
 
 // ── Column indices — single source of truth ───────────────────────────────────
 private const val COL_MARK = 0
@@ -52,7 +53,8 @@ private fun buildStockDisplayData(
     prices: Map<String, YahooQuote>,
     grossValue: Double,
     pnlDisplayMode: String,
-    displayCurrency: String
+    displayCurrency: String,
+    scaling: Int?
 ): StockDisplayData {
     val rawMark = quote?.regularMarketPrice ?: quote?.previousClose
     val rawClose = quote?.previousClose ?: quote?.regularMarketPrice
@@ -81,14 +83,16 @@ private fun buildStockDisplayData(
         if (rateToUsdVal != 0.0) 1.0 / rateToUsdVal else 1.0
     }
 
+    val scaledQty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+
     // P&L calculation based on mode
     val pnl = if (pnlDisplayMode == "NATIVE") {
-        if (rawMark != null && rawClose != null) (rawMark - rawClose) * pos.quantity else 0.0
+        if (rawMark != null && rawClose != null) (rawMark - rawClose) * scaledQty else 0.0
     } else {
-        if (markUsd != null && closeUsd != null) (markUsd - closeUsd) * pos.quantity * usdToDisplayRate else 0.0
+        if (markUsd != null && closeUsd != null) (markUsd - closeUsd) * scaledQty * usdToDisplayRate else 0.0
     }
 
-    val currentValUsd = if (markUsd != null) markUsd * pos.quantity else 0.0
+    val currentValUsd = if (markUsd != null) markUsd * scaledQty else 0.0
     val currentWeight = if (grossValue > 0) (currentValUsd * usdToDisplayRate / grossValue) * 100.0 else 0.0
 
     return StockDisplayData(
@@ -119,6 +123,7 @@ fun PortfolioScreen(vm: MainViewModel) {
     val cashTotals by vm.cashTotals.collectAsState()
     val pnlMode by vm.pnlDisplayMode.collectAsState()
     val displayCcy by vm.displayCurrency.collectAsState()
+    val scaling by vm.scalingPercent.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -134,7 +139,7 @@ fun PortfolioScreen(vm: MainViewModel) {
 
         // ── Build display data once — reused for measurement and row rendering ─
         val stockData = positions.map { pos ->
-            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue, pnlMode, displayCcy)
+            buildStockDisplayData(pos, marketData[pos.symbol], marketData, totals.stockGrossValue, pnlMode, displayCcy, scaling)
         }
 
         // add a data row used only for width measurement
@@ -240,7 +245,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                                     .padding(12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                val totalValue = totals.stockGrossValue + cashTotals.totalUsd
+                                val totalValue = totals.stockGrossValue + cashTotals.cashTotal
                                 val prevTotalValue = totalValue - totals.dayChange
                                 val totalChangePct = if (prevTotalValue != 0.0)
                                     (totals.dayChange / prevTotalValue) * 100.0 else 0.0

@@ -7,6 +7,7 @@ import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.MarketPrice
 import com.portfoliohelper.data.model.Position
 import kotlin.math.abs
+import kotlin.math.round
 
 object PortfolioCalculator {
 
@@ -32,7 +33,8 @@ object PortfolioCalculator {
     fun computeStockGrossValue(
         positions: List<Position>,
         prices: Map<String, YahooQuote>,
-        previous: Boolean = false
+        previous: Boolean = false,
+        scaling: Int? = null
     ): Pair<Double, Boolean> {
         var totalUsd = 0.0
         var allReady = true
@@ -71,7 +73,8 @@ object PortfolioCalculator {
                 quote.regularMarketPrice ?: quote.previousClose ?: 0.0
             }
             
-            totalUsd += price * multiplier * pos.quantity
+            val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+            totalUsd += price * multiplier * qty
         }
         return totalUsd to allReady
     }
@@ -87,10 +90,11 @@ object PortfolioCalculator {
         cashEntries: List<CashEntry>,
         prices: Map<String, YahooQuote>,
         displayCurrency: String = "USD",
-        portfolioStockValues: Map<String, Pair<Double, Boolean>> = emptyMap()
+        portfolioStockValues: Map<String, Pair<Double, Boolean>> = emptyMap(),
+        scaling: Int? = null
     ): PortfolioTotals {
-        val (totalUsd, stocksReady) = computeStockGrossValue(positions, prices, false)
-        val (prevTotalUsd, prevStocksReady) = computeStockGrossValue(positions, prices, true)
+        val (totalUsd, stocksReady) = computeStockGrossValue(positions, prices, false, scaling)
+        val (prevTotalUsd, prevStocksReady) = computeStockGrossValue(positions, prices, true, scaling)
         var allReady = stocksReady && prevStocksReady
 
         var cashTotalUsd = 0.0
@@ -119,7 +123,8 @@ object PortfolioCalculator {
                     allReady = false
                     0.0
                 } else {
-                    e.amount * rate
+                    val amount = if (scaling != null) round(e.amount * scaling) / 100.0 else e.amount
+                    amount * rate
                 }
             }
             
@@ -245,9 +250,10 @@ object PortfolioCalculator {
         delta: Double,
         positions: List<Position>,
         prices: Map<String, YahooQuote>,
-        mode: AllocMode
+        mode: AllocMode,
+        scaling: Int? = null
     ): Map<String, Double> {
-        val totalVal = computeStockGrossValue(positions, prices).first
+        val totalVal = computeStockGrossValue(positions, prices, scaling = scaling).first
 
         return when (mode) {
             AllocMode.PROPORTIONAL -> positions.associate { pos ->
@@ -268,7 +274,8 @@ object PortfolioCalculator {
                 }
                 val multiplier = if (isPence) rate / 100.0 else rate
                 val markPrice = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
-                val w = if (totalVal > 0) markPrice * pos.quantity / totalVal else 0.0
+                val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+                val w = if (totalVal > 0) markPrice * qty / totalVal else 0.0
                 pos.symbol to w * delta
             }
 
@@ -276,10 +283,11 @@ object PortfolioCalculator {
                 positions,
                 prices,
                 totalVal,
-                delta
+                delta,
+                scaling
             )
 
-            AllocMode.WATERFALL -> computeWaterfall(positions, prices, totalVal, delta)
+            AllocMode.WATERFALL -> computeWaterfall(positions, prices, totalVal, delta, scaling)
         }
     }
 
@@ -287,7 +295,8 @@ object PortfolioCalculator {
         positions: List<Position>,
         prices: Map<String, YahooQuote>,
         totalVal: Double,
-        delta: Double
+        delta: Double,
+        scaling: Int? = null
     ): Map<String, Double> {
         val finalTotal = totalVal + delta
         val sign = if (delta >= 0) 1.0 else -1.0
@@ -305,7 +314,8 @@ object PortfolioCalculator {
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
             val multiplier = if (isPence) rate / 100.0 else rate
-            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
+            val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * qty
             sign * ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }
         var remaining = abs(delta)
@@ -322,7 +332,8 @@ object PortfolioCalculator {
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
             val multiplier = if (isPence) rate / 100.0 else rate
-            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
+            val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * qty
             val target = finalTotal * (pos.targetWeight / 100.0)
             val amount = minOf(remaining, maxOf(0.0, (target - curVal) * sign))
             alloc[pos.symbol] = amount * sign
@@ -342,7 +353,8 @@ object PortfolioCalculator {
         positions: List<Position>,
         prices: Map<String, YahooQuote>,
         totalVal: Double,
-        delta: Double
+        delta: Double,
+        scaling: Int? = null
     ): Map<String, Double> {
         val finalTotal = totalVal + delta
         val sign = if (delta >= 0) 1.0 else -1.0
@@ -360,7 +372,8 @@ object PortfolioCalculator {
                 prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: 1.0
             }
             val multiplier = if (isPence) rate / 100.0 else rate
-            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * pos.quantity
+            val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+            val curVal = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * qty
             pos.symbol to ((curVal / finalTotal) - (pos.targetWeight / 100.0))
         }.toMutableMap()
         val sorted = eligible.sortedBy { sign * (dev[it.symbol] ?: 0.0) }
@@ -404,7 +417,8 @@ object PortfolioCalculator {
     fun computeGroups(
         positions: List<Position>,
         prices: Map<String, YahooQuote>,
-        portfolioTotal: Double
+        portfolioTotal: Double,
+        scaling: Int? = null
     ): List<GroupRow> {
         data class Acc(
             var mktVal: Double = 0.0,
@@ -432,8 +446,10 @@ object PortfolioCalculator {
 
             val mark = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
             val close = (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier
-            val mktVal = mark * pos.quantity
-            val prevMktVal = close * pos.quantity
+            
+            val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+            val mktVal = mark * qty
+            val prevMktVal = close * qty
             for ((mult, name) in entries) {
                 val acc = map.getOrPut(name) { Acc() }
                 acc.mktVal += mktVal * mult

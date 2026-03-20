@@ -77,11 +77,11 @@ fun CashScreen(vm: MainViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (cashTotals.isReady) {
-                        val totalUsd = cashTotals.totalUsd
+                        val cashTotal = cashTotals.cashTotal
                         SummaryCard(
                             "Cash Total",
-                            formatCurrency(totalUsd),
-                            valueColor = if (totalUsd < 0) ext.negative else ext.textPrimary,
+                            formatCurrency(cashTotal),
+                            valueColor = if (cashTotal < 0) ext.negative else ext.textPrimary,
                             subValue = "",
                             modifier = Modifier.weight(1f)
                         )
@@ -90,14 +90,14 @@ fun CashScreen(vm: MainViewModel) {
                     }
 
                     if (totals.isReady) {
-                        val marginUsd = cashTotals.marginUsd
+                        val margin = cashTotals.margin
                         val marginPct = totals.marginPct
-                        if (marginUsd >= 0) {
+                        if (margin >= 0) {
                             SummaryCard("Margin", "-", valueColor = ext.textPrimary, subValue = "", modifier = Modifier.weight(1f))
                         } else {
                             SummaryCard(
                                 "Margin",
-                                formatSmart(abs(marginUsd)),
+                                formatSmart(abs(margin)),
                                 valueColor = ext.warning,
                                 subValue = formatPct(marginPct, 1),
                                 subValueColor = ext.warning,
