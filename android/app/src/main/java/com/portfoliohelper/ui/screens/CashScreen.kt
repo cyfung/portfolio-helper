@@ -44,6 +44,7 @@ fun CashScreen(vm: MainViewModel) {
     val fxRates by vm.fxRates.collectAsState()
     val stockValues by vm.allPortfolioStockValuesUsd.collectAsState()
     val displayCurrency by vm.displayCurrency.collectAsState()
+    val scalingPercent by vm.scalingPercent.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<CashEntry?>(null) }
@@ -120,6 +121,7 @@ fun CashScreen(vm: MainViewModel) {
                     stockValues = stockValues,
                     displayCurrency = displayCurrency,
                     showLabel = showLabel,
+                    scaling = scalingPercent,
                     onEdit = { editEntry = entry },
                     onDelete = { vm.deleteCashEntry(entry) }
                 )
@@ -152,28 +154,34 @@ fun CashEntryRow(
     stockValues: Map<String, Pair<Double, Boolean>>,
     displayCurrency: String,
     showLabel: Boolean,
+    scaling: Int? = null,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val ext = MaterialTheme.ext
-    
+
+    val scaledAmount = if (scaling != null && entry.portfolioRef == null)
+        kotlin.math.round(entry.amount * scaling) / 100.0
+    else
+        entry.amount
+
     // 1. Calculate USD Value
     val valueUsd = if (entry.portfolioRef != null) {
         (stockValues[entry.portfolioRef]?.first ?: 0.0) * entry.amount
     } else {
         val rateToUsd = if (entry.currency == "USD") 1.0 else fxRates[entry.currency] ?: 1.0
-        entry.amount * rateToUsd
+        scaledAmount * rateToUsd
     }
-    
+
     // 2. Calculate Display Value
     val rateDisplayToUsd = if (displayCurrency == "USD") 1.0 else fxRates[displayCurrency] ?: 1.0
     val valueDisplay = valueUsd / rateDisplayToUsd
-    
+
     // 3. Original Amount & Currency for Col 3
     val (actualAmount, actualCcy) = if (entry.portfolioRef != null) {
         valueUsd to "USD"
     } else {
-        entry.amount to entry.currency
+        scaledAmount to entry.currency
     }
 
     var showActions by remember { mutableStateOf(false) }

@@ -77,9 +77,26 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 attributes["data-config-key"] = AppConfig.KEY_SHOW_STOCK_DISPLAY_CURRENCY
                             }
                         }
+
+                        renderConfigField(
+                            label = "Privacy Scaling %",
+                            description = "Scale all managed assets (quantities and cash) by this percentage for display purposes. Leave empty to disable.",
+                            inputId = "privacy-scale-pct",
+                            badge = null
+                        ) {
+                            input(type = InputType.number) {
+                                id = "privacy-scale-pct"
+                                placeholder = "None"
+                                value = AppConfig.get(AppConfig.KEY_PRIVACY_SCALE_PCT)
+                                attributes["data-config-key"] = AppConfig.KEY_PRIVACY_SCALE_PCT
+                                attributes["min"] = "1"
+                                attributes["max"] = "999"
+                                attributes["step"] = "1"
+                            }
+                        }
                     }
 
-                    renderConfigSection("Portfolio Settings") {
+                    renderConfigSection("Portfolio and IB TWS Settings") {
                         // Per-portfolio table
                         val allPortfolios = ManagedPortfolio.getAll()
                         val firstSerialId = allPortfolios.firstOrNull()?.serialId
