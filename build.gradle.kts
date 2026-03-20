@@ -58,7 +58,6 @@ dependencies {
     implementation(kotlin("stdlib"))
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.json:json:20240303")
 
     // mDNS for Android Sync
     implementation("org.jmdns:jmdns:3.6.3")

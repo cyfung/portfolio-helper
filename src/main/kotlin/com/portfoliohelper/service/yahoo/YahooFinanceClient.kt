@@ -1,11 +1,12 @@
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.util.appJson
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
-import kotlinx.serialization.json.*
+import kotlinx.serialization.decodeFromString
 import org.slf4j.LoggerFactory
 
 object YahooFinanceClient {
@@ -17,11 +18,6 @@ object YahooFinanceClient {
             requestTimeoutMillis = 10_000
             socketTimeoutMillis = 10_000
         }
-    }
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
     }
 
     suspend fun fetchQuote(symbol: String): YahooQuote {
@@ -46,22 +42,17 @@ object YahooFinanceClient {
 
     private fun parseQuoteResponse(symbol: String, jsonBody: String): YahooQuote {
         try {
-            val jsonElement = json.parseToJsonElement(jsonBody)
-            val result = jsonElement.jsonObject["chart"]?.jsonObject?.get("result")?.jsonArray?.get(0)?.jsonObject
+            val response = appJson.decodeFromString<YahooChartResponse>(jsonBody)
+            val result = response.chart.result?.firstOrNull()
                 ?: throw YahooFinanceException("Invalid response structure for $symbol")
 
-            val meta = result["meta"]?.jsonObject
-            val regularMarketPrice = meta?.get("regularMarketPrice")?.jsonPrimitive?.doubleOrNull
-
-            // Extract previous close from meta
-            val previousClose = meta?.get("chartPreviousClose")?.jsonPrimitive?.doubleOrNull
-            val currency = meta?.get("currency")?.jsonPrimitive?.contentOrNull
-
-            // Extract trading hours to determine if market is closed
-            val currentTradingPeriod = meta?.get("currentTradingPeriod")?.jsonObject
-            val regularPeriod = currentTradingPeriod?.get("regular")?.jsonObject
-            val tradingPeriodStart = regularPeriod?.get("start")?.jsonPrimitive?.longOrNull
-            val tradingPeriodEnd = regularPeriod?.get("end")?.jsonPrimitive?.longOrNull
+            val meta = result.meta
+            val regularMarketPrice = meta?.regularMarketPrice
+            val previousClose = meta?.chartPreviousClose
+            val currency = meta?.currency
+            val regularPeriod = meta?.currentTradingPeriod?.regular
+            val tradingPeriodStart = regularPeriod?.start
+            val tradingPeriodEnd = regularPeriod?.end
 
             // Determine if market is closed (before open or after close).
             // Null trading period = unknown, assume closed.
@@ -81,6 +72,8 @@ object YahooFinanceClient {
                 isMarketClosed = isMarketClosed,
                 currency = currency
             )
+        } catch (e: YahooFinanceException) {
+            throw e
         } catch (e: Exception) {
             throw YahooFinanceException("Failed to parse response for $symbol", e)
         }

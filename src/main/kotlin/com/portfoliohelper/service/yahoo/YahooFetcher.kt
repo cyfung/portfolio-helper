@@ -9,20 +9,20 @@
  *
  * Requirements (add to build.gradle.kts):
  *   implementation("com.squareup.okhttp3:okhttp:4.12.0")
- *   implementation("org.json:json:20240303")
+ *   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
  *
  * Run:
- *   kotlinc YahooFetcher.kt -include-runtime -cp okhttp-4.12.0.jar:json-20240303.jar -d fetcher.jar
- *   java -cp fetcher.jar:okhttp-4.12.0.jar:json-20240303.jar YahooFetcherKt
+ *   kotlinc YahooFetcher.kt -include-runtime -cp okhttp-4.12.0.jar:kotlinx-serialization-json-1.8.0.jar -d fetcher.jar
+ *   java -cp fetcher.jar:okhttp-4.12.0.jar:kotlinx-serialization-json-1.8.0.jar YahooFetcherKt
  *
  * Or just use Gradle (see README at bottom of this file).
  */
 
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.util.appJson
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.Instant
@@ -71,24 +71,18 @@ object YahooHistoricalFetcher {
             resp.body!!.string()
         }
 
-        val root = JSONObject(body)
-        val result = root.getJSONObject("chart").getJSONArray("result").getJSONObject(0)
-        val timestamps = result.getJSONArray("timestamp")
-        val adjClose = result
-            .getJSONObject("indicators")
-            .getJSONArray("adjclose")
-            .getJSONObject(0)
-            .getJSONArray("adjclose")
+        val response = appJson.decodeFromString<YahooChartResponse>(body)
+        val result = response.chart.result?.firstOrNull()
+            ?: error("No result in Yahoo response for $ticker")
+        val timestamps = result.timestamp ?: error("No timestamps for $ticker")
+        val adjCloseList = result.indicators?.adjClose?.firstOrNull()?.adjClose
+            ?: error("No adjclose data for $ticker")
 
         val prices = mutableMapOf<LocalDate, Double>()
-        for (i in 0 until timestamps.length()) {
-            if (adjClose.isNull(i)) continue
-            val date = Instant.ofEpochSecond(timestamps.getLong(i))
-                .atZone(ZoneOffset.UTC).toLocalDate()
-            val price = adjClose.getDouble(i)
-            if (date <= endDate) {
-                prices[date] = price
-            }
+        for (i in timestamps.indices) {
+            val price = adjCloseList.getOrNull(i) ?: continue
+            val date = Instant.ofEpochSecond(timestamps[i]).atZone(ZoneOffset.UTC).toLocalDate()
+            if (date <= endDate) prices[date] = price
         }
 
         logger.info("Fetched ${prices.size} trading days for $ticker")
@@ -115,20 +109,14 @@ object YahooHistoricalFetcher {
             resp.body!!.string()
         }
 
-        val root = JSONObject(body)
-        val result = root.getJSONObject("chart").getJSONArray("result").getJSONObject(0)
-        val events = result.optJSONObject("events") ?: return emptyMap()
-        val dividends = events.optJSONObject("dividends") ?: return emptyMap()
+        val response = appJson.decodeFromString<YahooChartResponse>(body)
+        val result = response.chart.result?.firstOrNull() ?: return emptyMap()
+        val dividends = result.events?.dividends ?: return emptyMap()
 
         val out = mutableMapOf<LocalDate, Double>()
-        for (key in dividends.keys()) {
-            val entry = dividends.getJSONObject(key)
-            val ts = entry.getLong("date")
-            val amount = entry.getDouble("amount")
-            val date = Instant.ofEpochSecond(ts).atZone(ZoneOffset.UTC).toLocalDate()
-            if (date in startDate..endDate) {
-                out[date] = amount
-            }
+        for ((_, div) in dividends) {
+            val date = Instant.ofEpochSecond(div.date).atZone(ZoneOffset.UTC).toLocalDate()
+            if (date in startDate..endDate) out[date] = div.amount
         }
 
         logger.info("Fetched ${out.size} dividend events for $ticker")
@@ -262,7 +250,7 @@ fun main() {
  *
  *   dependencies {
  *       implementation("com.squareup.okhttp3:okhttp:4.12.0")
- *       implementation("org.json:json:20240303")
+ *       implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
  *   }
  *
  * Place YahooFetcher.kt in src/main/kotlin/ then run:
