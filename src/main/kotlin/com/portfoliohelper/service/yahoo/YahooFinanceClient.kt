@@ -53,6 +53,7 @@ object YahooFinanceClient {
             val regularPeriod = meta?.currentTradingPeriod?.regular
             val tradingPeriodStart = regularPeriod?.start
             val tradingPeriodEnd = regularPeriod?.end
+            val gmtoffset = regularPeriod?.gmtoffset
 
             // Determine if market is closed (before open or after close).
             // Null trading period = unknown, assume closed.
@@ -69,6 +70,7 @@ object YahooFinanceClient {
                 previousClose = previousClose,
                 tradingPeriodStart = tradingPeriodStart,
                 tradingPeriodEnd = tradingPeriodEnd,
+                gmtoffset = gmtoffset,
                 isMarketClosed = isMarketClosed,
                 currency = currency
             )

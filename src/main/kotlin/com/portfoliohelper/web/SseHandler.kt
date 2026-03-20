@@ -13,6 +13,8 @@ import io.ktor.server.sse.*
 import io.ktor.sse.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneOffset
 
 internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
@@ -79,8 +81,16 @@ private fun buildPriceJson(symbol: String, quote: YahooQuote): String = buildStr
     append("\"isMarketClosed\":${quote.isMarketClosed},")
     append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
     if (quote.currency != null) append("\"currency\":\"${quote.currency}\",")
+    val localDate = computeLocalDate(quote.tradingPeriodEnd, quote.gmtoffset)
+    if (localDate != null) append("\"localDate\":\"$localDate\",")
     append("\"timestamp\":${quote.lastUpdateTime}")
     append("}")
+}
+
+private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): String? {
+    if (tradingPeriodEndSec == null || gmtoffset == null) return null
+    return Instant.ofEpochSecond(tradingPeriodEndSec + gmtoffset)
+        .atOffset(ZoneOffset.UTC).toLocalDate().toString()
 }
 
 private fun buildNavJson(symbol: String, navData: NavData): String = buildString {

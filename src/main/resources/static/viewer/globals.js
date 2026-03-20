@@ -21,6 +21,7 @@ var rawMarkPrices = {};         // symbol → raw mark price
 var rawClosePrices = {};        // symbol → raw close price
 var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
 var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
+var symbolLocalDate = {};           // symbol → "YYYY-MM-DD" (trading day local date)
 
 // Per-stock currency (server-rendered + updated via SSE)
 var stockCurrencies = {};          // symbol → currency code (e.g. 'USD', 'HKD')

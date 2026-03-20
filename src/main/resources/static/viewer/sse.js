@@ -61,6 +61,7 @@ function initSseConnection() {
                 if (data.currency) {
                     stockCurrencies[data.symbol] = data.currency;
                 }
+                if (data.localDate) symbolLocalDate[data.symbol] = data.localDate;
                 updateGlobalTimestamp(data.timestamp);
                 updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
             }

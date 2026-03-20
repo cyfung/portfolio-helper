@@ -189,7 +189,7 @@ function computeAllocations(delta, stocks, totalStockValue, mode) {
 function compute(snap) {
     const {
         stocks, previousMarkTexts, rawMarkPrices, rawClosePrices, fxRates, stockCurrencies,
-        symbolMarketClosed, symbolTradingPeriodEndMs, componentDayPercents, navValues,
+        symbolMarketClosed, symbolTradingPeriodEndMs, symbolLocalDate, componentDayPercents, navValues,
         currentDisplayCurrency: cdc, showStockDisplayCurrency,
         cashEntries, ibkrRatesData,
         rebalTargetUsd, marginTargetPct, allocAddMode, allocReduceMode,
@@ -213,9 +213,17 @@ function compute(snap) {
     }
 
     let markTotal = 0;
-    let prevTotal = 0;
+    let markDayTotal = 0;
+    let prevDayTotal = 0;
     let stockGrossValueKnown = true;
     const perStockData = {};
+
+    // Find latest local trading date to filter day change contributions
+    let latestLocalDate = null;
+    for (const stock of stocks) {
+        const d = symbolLocalDate[stock.symbol];
+        if (d && (latestLocalDate === null || d > latestLocalDate)) latestLocalDate = d;
+    }
 
     // Pass 1: per-stock prices, values, day change, est val
     for (const stock of stocks) {
@@ -280,7 +288,14 @@ function compute(snap) {
         } else {
             if (markPrice === null && closePrice === null) stockGrossValueKnown = false;
             if (markPrice !== null) markTotal += markPrice * qty * fxRate;
-            if (closePrice !== null) prevTotal += closePrice * qty * fxRate;
+
+            // Day change: only count stocks from the latest local trading date
+            const stockDate = symbolLocalDate[stock.symbol] ?? null;
+            const includeInDayChange = latestLocalDate === null || stockDate === latestLocalDate;
+            if (includeInDayChange) {
+                if (markPrice !== null) markDayTotal += markPrice * qty * fxRate;
+                if (closePrice !== null) prevDayTotal += closePrice * qty * fxRate;
+            }
         }
 
         // Flash: triggered only when displayed mark price text changes
@@ -427,8 +442,8 @@ function compute(snap) {
     }
 
     // Totals
-    const dayChangeDollars = markTotal - prevTotal;
-    const changePercent = prevTotal > 0 ? (dayChangeDollars / prevTotal) * 100 : 0;
+    const dayChangeDollars = markDayTotal - prevDayTotal;
+    const changePercent = prevDayTotal > 0 ? (dayChangeDollars / prevDayTotal) * 100 : 0;
     const isZeroTotalChange = Math.abs(dayChangeDollars) < 0.005;
     const changeClass = isZeroTotalChange ? 'neutral' : dayChangeDollars > 0 ? 'positive' : 'negative';
 
@@ -437,7 +452,7 @@ function compute(snap) {
     const portfolioDayChangeHTML = !stockGrossValueKnown ? 'N/A'
         : buildDayChangeHTML(dayChangeDollars, changePercent, changeClass, fxRates, cdc);
 
-    const prevGrandTotal = prevTotal + cashTotalUsd;
+    const prevGrandTotal = prevDayTotal + cashTotalUsd;
     const totalChangePercent = prevGrandTotal !== 0 ? (dayChangeDollars / Math.abs(prevGrandTotal)) * 100 : 0;
     const totalDayChangeHTML = !stockGrossValueKnown ? 'N/A'
         : buildDayChangeHTML(dayChangeDollars, totalChangePercent, changeClass, fxRates, cdc);
@@ -566,7 +581,7 @@ function compute(snap) {
         totals: {
             stockGrossTotal, stockGrossValueKnown,
             stockGrossValRaw: markTotal,
-            prevStockGrossValRaw: prevTotal,
+            prevStockGrossValRaw: prevDayTotal,
             dayChangeDollarsRaw: dayChangeDollars,
             portfolioDayChangeHTML, totalDayChangeHTML,
             grandTotal, grandTotalKnown: stockGrossValueKnown && cashTotalKnown,
@@ -693,6 +708,7 @@ function _buildSnapshot() {
         stockCurrencies: Object.assign({}, stockCurrencies),
         symbolMarketClosed: Object.assign({}, symbolMarketClosed),
         symbolTradingPeriodEndMs: Object.assign({}, symbolTradingPeriodEndMs),
+        symbolLocalDate: Object.assign({}, symbolLocalDate),
         componentDayPercents: Object.assign({}, componentDayPercents),
         navValues: Object.assign({}, navValues),
         currentDisplayCurrency,
