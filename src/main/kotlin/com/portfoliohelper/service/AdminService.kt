@@ -6,6 +6,7 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import kotlinx.serialization.Serializable
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.util.*
@@ -92,6 +93,7 @@ object AdminService {
         AdminSessionsTable.deleteWhere { AdminSessionsTable.token eq token }
     }
 
+    @Serializable
     data class SessionInfo(val token: String, val createdAt: Long, val ip: String, val userAgent: String)
 
     fun getSessions(): List<SessionInfo> = transaction {

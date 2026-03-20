@@ -1,5 +1,7 @@
 package com.portfoliohelper.service
 
+import kotlinx.serialization.Serializable
+
 // ── Request / Response types ──────────────────────────────────────────────────
 
 data class MonteCarloRequest(
@@ -13,6 +15,7 @@ data class MonteCarloRequest(
     val seed: Long? = null            // null = generate fresh random seed
 )
 
+@Serializable
 data class MonteCarloPercentilePath(
     val percentile: Int,       // 5, 10, 25, 50, 75, 90, 95
     val points: List<Double>,  // full-resolution values, starts at 10 000
@@ -24,6 +27,7 @@ data class MonteCarloPercentilePath(
     val upi: Double
 )
 
+@Serializable
 data class MonteCarloCurveResult(
     val label: String,
     val percentilePaths: List<MonteCarloPercentilePath>,  // CAGR-sorted, full paths
@@ -33,11 +37,13 @@ data class MonteCarloCurveResult(
     val upiPercentiles: List<Double>      // UPI-sorted
 )
 
+@Serializable
 data class MonteCarloPortfolioResult(
     val label: String,
     val curves: List<MonteCarloCurveResult>  // [0] = no-margin, rest = margin variants
 )
 
+@Serializable
 data class MonteCarloResult(
     val simulatedYears: Int,
     val numSimulations: Int,

@@ -2,7 +2,9 @@ package com.portfoliohelper.service
 
 import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.AppConfig
+import com.portfoliohelper.util.appJson
 import kotlinx.coroutines.*
+import kotlinx.serialization.Serializable
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.slf4j.LoggerFactory
@@ -16,14 +18,17 @@ import kotlin.system.exitProcess
 object UpdateService {
     private val logger = LoggerFactory.getLogger(UpdateService::class.java)
 
+    @Serializable
     enum class DownloadPhase { IDLE, DOWNLOADING, READY, APPLYING }
 
+    @Serializable
     data class DownloadProgress(
         val phase: DownloadPhase = DownloadPhase.IDLE,
         val bytesReceived: Long = 0,
         val totalBytes: Long = 0
     )
 
+    @Serializable
     data class UpdateInfo(
         val currentVersion: String,
         val latestVersion: String?,
@@ -319,23 +324,36 @@ object UpdateService {
         return false
     }
 
-    fun UpdateInfo.toJson(): String = buildString {
-        fun String.esc() = replace("\\", "\\\\").replace("\"", "\\\"")
-        append("{")
-        append("\"currentVersion\":\"$currentVersion\",")
-        append("\"latestVersion\":${latestVersion?.let { "\"$it\"" } ?: "null"},")
-        append("\"releaseUrl\":${releaseUrl?.let { "\"${it.esc()}\"" } ?: "null"},")
-        append("\"hasUpdate\":$hasUpdate,")
-        append("\"isJpackageInstall\":$isJpackageInstall,")
-        append("\"autoUpdate\":${AppConfig.autoUpdate},")
-        append("\"lastCheckedMs\":$lastCheckedMs,")
-        append("\"lastCheckError\":${lastCheckError?.let { "\"${it.esc()}\"" } ?: "null"},")
-        append("\"download\":{")
-        append("\"phase\":\"${download.phase.name}\",")
-        append("\"bytesReceived\":${download.bytesReceived},")
-        append("\"totalBytes\":${download.totalBytes}")
-        append("},")
-        append("\"pendingJarPath\":${pendingJarPath?.let { "\"${it.esc()}\"" } ?: "null"}")
-        append("}")
+    @Serializable
+    data class UpdateInfoResponse(
+        val currentVersion: String,
+        val latestVersion: String?,
+        val releaseUrl: String?,
+        val jpackageAssetUrl: String?,
+        val hasUpdate: Boolean,
+        val isJpackageInstall: Boolean,
+        val autoUpdate: Boolean,
+        val lastCheckedMs: Long,
+        val lastCheckError: String?,
+        val download: DownloadProgress,
+        val pendingJarPath: String?
+    ) {
+        companion object {
+            fun from(info: UpdateInfo) = UpdateInfoResponse(
+                currentVersion = info.currentVersion,
+                latestVersion = info.latestVersion,
+                releaseUrl = info.releaseUrl,
+                jpackageAssetUrl = info.jpackageAssetUrl,
+                hasUpdate = info.hasUpdate,
+                isJpackageInstall = info.isJpackageInstall,
+                autoUpdate = AppConfig.autoUpdate,
+                lastCheckedMs = info.lastCheckedMs,
+                lastCheckError = info.lastCheckError,
+                download = info.download,
+                pendingJarPath = info.pendingJarPath
+            )
+        }
     }
+
+    fun UpdateInfo.toResponseJson(): String = appJson.encodeToString(UpdateInfoResponse.from(this))
 }

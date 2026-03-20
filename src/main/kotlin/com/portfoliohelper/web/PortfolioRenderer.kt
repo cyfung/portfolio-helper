@@ -5,11 +5,16 @@ import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
 import kotlinx.html.*
+import kotlinx.serialization.Serializable
 import kotlin.math.abs
+
+@Serializable
+private data class PortfolioOption(val slug: String, val name: String)
 
 internal suspend fun ApplicationCall.renderPortfolioPage(
     entry: ManagedPortfolio,
@@ -91,43 +96,17 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         """
                         var portfolioId = "${entry.slug}";
                         var portfolioName = "${entry.name}";
-                        var fxRates = ${
-                            buildString {
-                                append("{ USD: 1.0")
-                                fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
-                                append(" }")
-                            }
-                        };
-                        var displayCurrencies = ${
-                            buildString {
-                                append("[")
-                                displayCurrencies.joinTo(this, ",") { "\"$it\"" }
-                                append("]")
-                            }
-                        };
+                        var fxRates = ${appJson.encodeToString(buildMap { put("USD", 1.0); putAll(fxRateMap) })};
+                        var displayCurrencies = ${appJson.encodeToString(displayCurrencies)};
                         var savedRebalTargetUsd = ${"%.2f".format(savedRebalTargetUsd)};
                         var savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
                         var savedAllocAddMode = "$savedAllocAddMode";
                         var savedAllocReduceMode = "$savedAllocReduceMode";
                         var virtualBalanceEnabled = $virtualBalanceEnabled;
                         var dividendCalcUpToDate = "${portfolioConf["dividendCalcUpToDate"] ?: ""}";
-                        var stockCurrencies = ${
-                            buildString {
-                                append("{")
-                                stockCurrenciesMap.entries.joinTo(this, ", ") { (sym, ccy) -> "\"$sym\": \"$ccy\"" }
-                                append("}")
-                            }
-                        };
+                        var stockCurrencies = ${appJson.encodeToString(stockCurrenciesMap)};
                         var savedShowStockDisplayCurrency = $showStockDisplayCurrency;
-                        var allPortfolioOptions = ${
-                            buildString {
-                                append("[")
-                                allPortfolios.joinTo(this, ",") { p ->
-                                    "{\"slug\":\"${p.slug.replace("\"", "\\\"")}\",\"name\":\"${p.name.replace("\"", "\\\"")}\"}"
-                                }
-                                append("]")
-                            }
-                        };
+                        var allPortfolioOptions = ${appJson.encodeToString(allPortfolios.map { p -> PortfolioOption(p.slug, p.name) })};
                         """.trimIndent()
                     )
                 }
