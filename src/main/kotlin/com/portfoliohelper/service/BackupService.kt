@@ -36,7 +36,16 @@ data class PortfolioSyncEntry(
 )
 
 @Serializable
-data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>)
+data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>, val checksum: String)
+
+fun computeSyncChecksum(entries: List<PortfolioSyncEntry>): String {
+    val lines = entries
+        .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}" } }
+        .sorted()
+        .joinToString("\n")
+    val digest = MessageDigest.getInstance("SHA-256")
+    return digest.digest(lines.toByteArray()).joinToString("") { "%02x".format(it) }
+}
 
 @Serializable
 data class BackupRoot(

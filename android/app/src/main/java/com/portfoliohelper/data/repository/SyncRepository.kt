@@ -244,6 +244,17 @@ class SyncRepository(
     }
 
     private suspend fun parseAndSave(response: AllSyncResponse) {
+        if (response.portfolios.isEmpty()) {
+            Log.w("SyncRepository", "Sync skipped: server returned 0 portfolios")
+            throw Exception("Sync response contained no portfolios")
+        }
+
+        val computed = computeSyncChecksum(response.portfolios)
+        if (computed != response.checksum) {
+            Log.e("SyncRepository", "Sync checksum mismatch: expected=${response.checksum} got=$computed")
+            throw Exception("Sync data integrity check failed — data may be incomplete")
+        }
+
         db.withTransaction {
             db.positionDao().hardDeleteAll()
             db.cashDao().deleteAll()
@@ -295,6 +306,15 @@ class SyncRepository(
         }
     }
 
+    private fun computeSyncChecksum(portfolios: List<PortfolioSyncEntry>): String {
+        val lines = portfolios
+            .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}" } }
+            .sorted()
+            .joinToString("\n")
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(lines.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
     class UnauthorizedException : Exception("Device not paired or authentication failed")
 }
 
@@ -310,7 +330,7 @@ data class PortfolioSyncEntry(
 )
 
 @kotlinx.serialization.Serializable
-data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>)
+data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>, val checksum: String)
 
 @kotlinx.serialization.Serializable
 data class BackupStock(
