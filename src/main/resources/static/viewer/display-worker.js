@@ -235,7 +235,7 @@ function compute(snap) {
 
         const markLoaded = markPrice !== null;
         const markText = markLoaded ? markPrice.toFixed(2) : '—';
-        const markAfterHours = !!symbolMarketClosed[symbol];
+        const markAfterHours = symbolMarketClosed[symbol] !== false;
         const closeLoaded = closePrice !== null;
         const closeText = closeLoaded ? closePrice.toFixed(2) : '—';
 
@@ -317,7 +317,7 @@ function compute(snap) {
                     let sumComponent = 0, allAvailable = true;
                     for (const comp of letfComponents) {
                         const dayPct = componentDayPercents[comp.sym];
-                        if (dayPct === undefined) { allAvailable = false; break; }
+                        if (dayPct === undefined || isNaN(dayPct)) { allAvailable = false; break; }
                         sumComponent += comp.mult * dayPct / 100;
                     }
                     if (allAvailable) {

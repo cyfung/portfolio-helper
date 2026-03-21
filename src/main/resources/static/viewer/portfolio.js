@@ -26,7 +26,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
     if (lastClosePrice !== null) rawClosePrices[symbol] = lastClosePrice;
 
     // Store Day % for LETF Est Val calculations
-    if (markPrice !== null && lastClosePrice !== null && lastClosePrice !== 0) {
+    if (markPrice != null && lastClosePrice != null && lastClosePrice !== 0) {
         componentDayPercents[symbol] = ((markPrice - lastClosePrice) / lastClosePrice) * 100;
     }
 
