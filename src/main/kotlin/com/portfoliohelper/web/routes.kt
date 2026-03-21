@@ -2,7 +2,8 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.*
-import com.portfoliohelper.service.UpdateService.toJson
+import com.portfoliohelper.service.UpdateService.toResponseJson
+import com.portfoliohelper.util.appJson
 import com.portfoliohelper.service.db.GlobalSettingsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
@@ -19,6 +20,7 @@ import io.ktor.server.sse.*
 import io.ktor.sse.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -117,7 +119,6 @@ private suspend fun ApplicationCall.respondApiError(
 )
 
 private fun String.toSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-private fun String.jsonEscape() = replace("\\", "\\\\").replace("\"", "\\\"")
 private fun JsonObject.parseSlug() =
     this["name"]?.jsonPrimitive?.contentOrNull?.trim()
         ?.takeIf { it.isNotBlank() }?.toSlug()?.takeIf { it.isNotBlank() }
@@ -135,6 +136,20 @@ private fun JsonArray.parseCashEntries() = mapNotNull { el ->
         com.portfoliohelper.model.CashEntry(label, currency, marginFlag, amount)
     }
 }
+
+@Serializable
+private data class SavedBacktestPortfolio(val name: String, val config: JsonElement)
+
+@Serializable
+private data class TwsPositionItem(val symbol: String, val qty: Double)
+
+@Serializable
+private data class TwsSnapshotResponse(
+    val account: String,
+    val positions: List<TwsPositionItem>,
+    val cashBalances: Map<String, Double>,
+    val accruedCash: Map<String, Double>
+)
 
 private val LOAN_COMPARE_FIELDS = listOf(
     "loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows"
@@ -259,16 +274,13 @@ fun Application.configureRouting() {
                 SavedBacktestPortfoliosTable.selectAll()
                     .orderBy(SavedBacktestPortfoliosTable.createdAt)
                     .map {
-                        buildJsonObject {
-                            put("name", it[SavedBacktestPortfoliosTable.name])
-                            put(
-                                "config",
-                                Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config])
-                            )
-                        }
+                        SavedBacktestPortfolio(
+                            name = it[SavedBacktestPortfoliosTable.name],
+                            config = Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config])
+                        )
                     }
             }
-            call.respondText(JsonArray(rows).toString(), ContentType.Application.Json)
+            call.respondText(appJson.encodeToString(rows), ContentType.Application.Json)
         }
 
         delete("/api/backtest/savedPortfolios") {
@@ -299,9 +311,9 @@ fun Application.configureRouting() {
                     it[SavedBacktestPortfoliosTable.config] = config.toString()
                     it[SavedBacktestPortfoliosTable.createdAt] = System.currentTimeMillis()
                 }
-                buildJsonObject { put("name", finalName); put("config", config) }
+                SavedBacktestPortfolio(finalName, config)
             }
-            call.respondText(saved.toString(), ContentType.Application.Json)
+            call.respondText(appJson.encodeToString(saved), ContentType.Application.Json)
         }
 
         post("/api/backtest/run") {
@@ -320,35 +332,7 @@ fun Application.configureRouting() {
                 val result =
                     BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
 
-                // Serialise result to JSON manually
-                fun serializeStats(s: BacktestStats) = buildString {
-                    append("{\"cagr\":${s.cagr},\"maxDrawdown\":${s.maxDrawdown},\"sharpe\":${s.sharpe}")
-                    append(",\"ulcerIndex\":${s.ulcerIndex},\"upi\":${s.upi}")
-                    append(",\"endingValue\":${s.endingValue}")
-                    append(",\"marginUpperTriggers\":${s.marginUpperTriggers ?: "null"}")
-                    append(",\"marginLowerTriggers\":${s.marginLowerTriggers ?: "null"}")
-                    append("}")
-                }
-
-                fun serializePoints(pts: List<DataPoint>) =
-                    "[${pts.joinToString(",") { "{\"date\":\"${it.date}\",\"value\":${it.value}}" }}]"
-
-                val resultJson = buildString {
-                    append("{\"portfolios\":[")
-                    result.portfolios.forEachIndexed { pi, pr ->
-                        if (pi > 0) append(",")
-                        append("{\"label\":\"${pr.label.jsonEscape()}\",\"curves\":[")
-                        pr.curves.forEachIndexed { ci, cr ->
-                            if (ci > 0) append(",")
-                            append("{\"label\":\"${cr.label.jsonEscape()}\",")
-                            append("\"points\":${serializePoints(cr.points)},")
-                            append("\"stats\":${serializeStats(cr.stats)}}")
-                        }
-                        append("]}")
-                    }
-                    append("]}")
-                }
-                call.respondText(resultJson, ContentType.Application.Json)
+                call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
                     "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
@@ -394,45 +378,7 @@ fun Application.configureRouting() {
                 )
                 val result = MonteCarloService.runMonteCarlo(request)
 
-                fun serializePoints(pts: List<Double>) =
-                    "[${pts.joinToString(",") { "%.4f".format(it) }}]"
-
-                val resultJson = buildString {
-                    append("{\"simulatedYears\":${result.simulatedYears}")
-                    append(",\"numSimulations\":${result.numSimulations}")
-                    append(",\"portfolios\":[")
-                    result.portfolios.forEachIndexed { pi, pr ->
-                        if (pi > 0) append(",")
-                        append("{\"label\":\"${pr.label.jsonEscape()}\",\"curves\":[")
-                        pr.curves.forEachIndexed { ci, cr ->
-                            if (ci > 0) append(",")
-                            append("{\"label\":\"${cr.label.jsonEscape()}\",\"percentilePaths\":[")
-                            cr.percentilePaths.forEachIndexed { ppi, pp ->
-                                if (ppi > 0) append(",")
-                                append("{\"percentile\":${pp.percentile}")
-                                append(",\"points\":${serializePoints(pp.points)}")
-                                append(",\"endValue\":${pp.endValue}")
-                                append(",\"cagr\":${pp.cagr}")
-                                append(",\"maxDrawdown\":${pp.maxDrawdown}")
-                                append(",\"sharpe\":${"%.4f".format(pp.sharpe)}")
-                                append(",\"ulcerIndex\":${"%.4f".format(pp.ulcerIndex)}")
-                                append(",\"upi\":${"%.4f".format(pp.upi)}")
-                                append("}")
-                            }
-                            append("]")
-                            fun serializeDoubleList(lst: List<Double>) =
-                                "[${lst.joinToString(",") { "%.6f".format(it) }}]"
-                            append(",\"maxDdPercentiles\":${serializeDoubleList(cr.maxDdPercentiles)}")
-                            append(",\"sharpePercentiles\":${serializeDoubleList(cr.sharpePercentiles)}")
-                            append(",\"ulcerPercentiles\":${serializeDoubleList(cr.ulcerPercentiles)}")
-                            append(",\"upiPercentiles\":${serializeDoubleList(cr.upiPercentiles)}")
-                            append("}")
-                        }
-                        append("]}")
-                    }
-                    append("]}")
-                }
-                call.respondText(resultJson, ContentType.Application.Json)
+                call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
                     "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
@@ -708,10 +654,7 @@ fun Application.configureRouting() {
             val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val entries = BackupService.listDbBackups(portfolioEntry)
-            val json = "[" + entries.joinToString(",") {
-                "{\"id\":${it.id},\"createdAt\":${it.createdAt},\"label\":\"${it.label}\"}"
-            } + "]"
-            call.respondText(json, ContentType.Application.Json)
+            call.respondText(appJson.encodeToString(entries), ContentType.Application.Json)
         }
 
         // Restore a portfolio from a DB backup row
@@ -789,35 +732,7 @@ fun Application.configureRouting() {
                         ContentType.Application.Json
                     )
                 } else {
-                    val json = buildString {
-                        append("{")
-                        var first = true
-                        if (result.stocks != null) {
-                            first = false
-                            append("\"stocks\":[")
-                            result.stocks.forEachIndexed { i, s ->
-                                if (i > 0) append(",")
-                                val sym = (s["symbol"] as String).replace("\"", "\\\"")
-                                val letf = (s["letf"] as String).replace("\"", "\\\"")
-                                val grp = (s["groups"] as String).replace("\"", "\\\"")
-                                append("{\"symbol\":\"$sym\",\"amount\":${s["amount"]},\"targetWeight\":${s["targetWeight"]},\"letf\":\"$letf\",\"groups\":\"$grp\"}")
-                            }
-                            append("]")
-                        }
-                        if (result.cashKeys != null) {
-                            if (!first) append(",")
-                            append("\"cash\":[")
-                            result.cashKeys.forEachIndexed { i, c ->
-                                if (i > 0) append(",")
-                                val k = (c["key"] ?: "").replace("\"", "\\\"")
-                                val v = (c["value"] ?: "").replace("\"", "\\\"")
-                                append("{\"key\":\"$k\",\"value\":\"$v\"}")
-                            }
-                            append("]")
-                        }
-                        append("}")
-                    }
-                    call.respondText(json, ContentType.Application.Json)
+                    call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
                 }
             } catch (e: Exception) {
                 call.respondText(
@@ -857,23 +772,15 @@ fun Application.configureRouting() {
                 fun symbolWithSuffix(exchange: String, symbol: String): String =
                     symbol + (exchangeSuffixMap[exchange] ?: "")
 
-                val positionsJson = snapshot.positions.joinToString(",", "[", "]") { pos ->
-                    val sym = symbolWithSuffix(pos.exchange, pos.symbol)
-                    "{\"symbol\":\"$sym\",\"qty\":${pos.qty}}"
-                }
-
-                fun mapToJson(m: Map<String, Double>): String =
-                    m.entries.joinToString(",", "{", "}") { (k, v) -> "\"$k\":$v" }
-
-                val json = buildString {
-                    append("{")
-                    append("\"account\":\"${snapshot.account}\",")
-                    append("\"positions\":$positionsJson,")
-                    append("\"cashBalances\":${mapToJson(snapshot.summary.cashBalances)},")
-                    append("\"accruedCash\":${mapToJson(snapshot.summary.accruedCash)}")
-                    append("}")
-                }
-                call.respondText(json, ContentType.Application.Json)
+                val response = TwsSnapshotResponse(
+                    account = snapshot.account,
+                    positions = snapshot.positions.map { pos ->
+                        TwsPositionItem(symbolWithSuffix(pos.exchange, pos.symbol), pos.qty)
+                    },
+                    cashBalances = snapshot.summary.cashBalances,
+                    accruedCash = snapshot.summary.accruedCash
+                )
+                call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
                     "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
@@ -885,16 +792,16 @@ fun Application.configureRouting() {
 
         // Admin
         get("/api/admin/update-info") {
-            call.respondText(UpdateService.getInfo().toJson(), ContentType.Application.Json)
+            call.respondText(UpdateService.getInfo().toResponseJson(), ContentType.Application.Json)
         }
 
         post("/api/admin/check-update") {
             try {
                 UpdateService.checkForUpdate()
-                call.respondText(UpdateService.getInfo().toJson(), ContentType.Application.Json)
+                call.respondText(UpdateService.getInfo().toResponseJson(), ContentType.Application.Json)
             } catch (_: Exception) {
                 call.respondText(
-                    UpdateService.getInfo().toJson(),
+                    UpdateService.getInfo().toResponseJson(),
                     ContentType.Application.Json,
                     HttpStatusCode.OK
                 )

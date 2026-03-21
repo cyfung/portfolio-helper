@@ -10,14 +10,30 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("AdminRoutes")
 
 @Serializable
 private data class AdminLoginRequest(val passcode: String)
+
+@Serializable
+private data class PairedDeviceResponse(
+    val serverAssignedId: String,
+    val name: String,
+    val clientId: String,
+    val pairedAt: Long,
+    val lastIp: String
+)
+
+@Serializable
+private data class SessionInfoResponse(
+    val token: String,
+    val createdAt: Long,
+    val ip: String,
+    val userAgent: String,
+    val isCurrent: Boolean
+)
 
 fun Route.configureAdminRoutes() {
 
@@ -82,42 +98,30 @@ fun Route.configureAdminRoutes() {
     /** List all paired devices */
     get("/api/paired-devices") {
         val devices = PairingService.getPairedClients().map { client ->
-            buildJsonObject {
-                put("serverAssignedId", client.serverAssignedId)
-                put("name", client.name)
-                put("clientId", client.clientId)
-                put("pairedAt", client.pairedAt)
-                put("lastIp", client.lastIp)
-            }
+            PairedDeviceResponse(
+                serverAssignedId = client.serverAssignedId,
+                name = client.name,
+                clientId = client.clientId,
+                pairedAt = client.pairedAt,
+                lastIp = client.lastIp
+            )
         }
-        call.respondText(
-            appJson.encodeToString(
-                kotlinx.serialization.json.JsonArray.serializer(),
-                kotlinx.serialization.json.JsonArray(devices)
-            ),
-            ContentType.Application.Json
-        )
+        call.respondText(appJson.encodeToString(devices), ContentType.Application.Json)
     }
 
     /** List all admin sessions with isCurrent flag */
     get("/api/admin/sessions") {
         val currentToken = call.request.cookies[AdminService.SESSION_COOKIE]
         val sessions = AdminService.getSessions().map { s ->
-            buildJsonObject {
-                put("token", s.token)
-                put("createdAt", s.createdAt)
-                put("ip", s.ip)
-                put("userAgent", s.userAgent)
-                put("isCurrent", s.token == currentToken)
-            }
+            SessionInfoResponse(
+                token = s.token,
+                createdAt = s.createdAt,
+                ip = s.ip,
+                userAgent = s.userAgent,
+                isCurrent = s.token == currentToken
+            )
         }
-        call.respondText(
-            appJson.encodeToString(
-                kotlinx.serialization.json.JsonArray.serializer(),
-                kotlinx.serialization.json.JsonArray(sessions)
-            ),
-            ContentType.Application.Json
-        )
+        call.respondText(appJson.encodeToString(sessions), ContentType.Application.Json)
     }
 
     /** Remove a specific admin session (cannot remove own session) */

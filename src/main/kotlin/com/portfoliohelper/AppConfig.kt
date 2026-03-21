@@ -17,6 +17,7 @@ object AppConfig {
     const val KEY_UPDATE_CHECK_INTERVAL = "updateCheckInterval"
     const val KEY_SHOW_STOCK_DISPLAY_CURRENCY = "showStockDisplayCurrency"
     const val KEY_DIVIDEND_SAFE_LAG_DAYS = "dividendSafeLagDays"
+    const val KEY_PRIVACY_SCALE_PCT = "privacyScalePct"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -29,7 +30,8 @@ object AppConfig {
         KEY_AUTO_UPDATE         to "true",
         KEY_UPDATE_CHECK_INTERVAL to "86400",
         KEY_SHOW_STOCK_DISPLAY_CURRENCY to "false",
-        KEY_DIVIDEND_SAFE_LAG_DAYS to "5"
+        KEY_DIVIDEND_SAFE_LAG_DAYS to "5",
+        KEY_PRIVACY_SCALE_PCT   to ""
     )
 
     fun get(key: String): String {
@@ -65,6 +67,7 @@ object AppConfig {
         (get(KEY_UPDATE_CHECK_INTERVAL).toLongOrNull()?.takeIf { it >= 60 } ?: 86400L) * 1000L
     val showStockDisplayCurrency: Boolean get() = get(KEY_SHOW_STOCK_DISPLAY_CURRENCY).lowercase() == "true"
     val dividendSafeLagDays: Long get() = get(KEY_DIVIDEND_SAFE_LAG_DAYS).toLongOrNull()?.takeIf { it >= 0 } ?: 5L
+    val privacyScalePct: Double? get() = get(KEY_PRIVACY_SCALE_PCT).toDoubleOrNull()?.takeIf { it > 0 }
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

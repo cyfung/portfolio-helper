@@ -5,11 +5,16 @@ import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
 import kotlinx.html.*
+import kotlinx.serialization.Serializable
 import kotlin.math.abs
+
+@Serializable
+private data class PortfolioOption(val slug: String, val name: String)
 
 internal suspend fun ApplicationCall.renderPortfolioPage(
     entry: ManagedPortfolio,
@@ -24,6 +29,13 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
         s.label to (YahooMarketDataService.getQuote(s.label)?.currency ?: "USD")
     }
     val showStockDisplayCurrency = AppConfig.showStockDisplayCurrency
+    val privacyScalePct: Double? = AppConfig.privacyScalePct
+    fun scaleCash(amount: Double): Double =
+        if (privacyScalePct != null) kotlin.math.round(amount * privacyScalePct) / 100.0 else amount
+    fun scaleQty(qty: Double): Double =
+        if (privacyScalePct != null) kotlin.math.round(qty * privacyScalePct / 100.0).toDouble() else qty
+    val displayStockGross = if (privacyScalePct != null) portfolio.stockGrossValue * privacyScalePct / 100.0
+                            else portfolio.stockGrossValue
 
     // Build FX rate map for non-USD currencies from cached Yahoo quotes (e.g. HKDUSD=X → 0.1286)
     val fxRateMap: Map<String, Double> = cashEntries
@@ -38,21 +50,24 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     // Helper to resolve a cash entry to its USD value (handles regular, P-reference, and FX entries)
     fun resolveEntryUsd(e: CashEntry): Double? {
         return when (e.currency) {
-            "USD" -> e.amount
+            "USD" -> scaleCash(e.amount)
             "P" -> {
                 val ref =
                     ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
                         ?: return null
-                e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
+                val rawValue = e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
+                if (privacyScalePct != null) rawValue * privacyScalePct / 100.0 else rawValue
             }
 
-            else -> fxRateMap[e.currency]?.let { e.amount * it }
+            else -> fxRateMap[e.currency]?.let { scaleCash(e.amount) * it }
         }
     }
 
     // Load per-portfolio config from SQLite (PortfolioCfgTable)
     val portfolioConf: Map<String, String> = entry.getAllConfig()
     val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
+    val displayRebalTarget = if (privacyScalePct != null) savedRebalTargetUsd * privacyScalePct / 100.0
+                             else savedRebalTargetUsd
     val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
     val savedAllocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL"
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
@@ -91,43 +106,17 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         """
                         var portfolioId = "${entry.slug}";
                         var portfolioName = "${entry.name}";
-                        var fxRates = ${
-                            buildString {
-                                append("{ USD: 1.0")
-                                fxRateMap.forEach { (ccy, rate) -> append(", $ccy: $rate") }
-                                append(" }")
-                            }
-                        };
-                        var displayCurrencies = ${
-                            buildString {
-                                append("[")
-                                displayCurrencies.joinTo(this, ",") { "\"$it\"" }
-                                append("]")
-                            }
-                        };
-                        var savedRebalTargetUsd = ${"%.2f".format(savedRebalTargetUsd)};
+                        var fxRates = ${appJson.encodeToString(buildMap { put("USD", 1.0); putAll(fxRateMap) })};
+                        var displayCurrencies = ${appJson.encodeToString(displayCurrencies)};
+                        var savedRebalTargetUsd = ${"%.2f".format(displayRebalTarget)};
                         var savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
                         var savedAllocAddMode = "$savedAllocAddMode";
                         var savedAllocReduceMode = "$savedAllocReduceMode";
                         var virtualBalanceEnabled = $virtualBalanceEnabled;
                         var dividendCalcUpToDate = "${portfolioConf["dividendCalcUpToDate"] ?: ""}";
-                        var stockCurrencies = ${
-                            buildString {
-                                append("{")
-                                stockCurrenciesMap.entries.joinTo(this, ", ") { (sym, ccy) -> "\"$sym\": \"$ccy\"" }
-                                append("}")
-                            }
-                        };
+                        var stockCurrencies = ${appJson.encodeToString(stockCurrenciesMap)};
                         var savedShowStockDisplayCurrency = $showStockDisplayCurrency;
-                        var allPortfolioOptions = ${
-                            buildString {
-                                append("[")
-                                allPortfolios.joinTo(this, ",") { p ->
-                                    "{\"slug\":\"${p.slug.replace("\"", "\\\"")}\",\"name\":\"${p.name.replace("\"", "\\\"")}\"}"
-                                }
-                                append("]")
-                            }
-                        };
+                        var allPortfolioOptions = ${appJson.encodeToString(allPortfolios.map { p -> PortfolioOption(p.slug, p.name) })};
                         """.trimIndent()
                     )
                 }
@@ -282,7 +271,9 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                                     effectiveCashEntries,
                                     ::resolveEntryUsd,
                                     portfolio,
-                                    cashTotalUsd
+                                    cashTotalUsd,
+                                    displayStockGross,
+                                    privacyScalePct
                                 )
                             }
                         }
@@ -325,7 +316,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
-                        buildStockTable(portfolio)
+                        buildStockTable(portfolio, displayStockGross, privacyScalePct)
 
                         div {
                             id = "group-table-container"
@@ -362,8 +353,12 @@ private fun TBODY.buildSummaryRows(
     cashEntries: List<CashEntry>,
     resolveEntryUsd: (CashEntry) -> Double?,
     portfolio: Portfolio,
-    cashTotalUsd: Double
+    cashTotalUsd: Double,
+    stockGrossForDisplay: Double = portfolio.stockGrossValue,
+    privacyScalePct: Double? = null
 ) {
+    fun scaleCash(x: Double): Double =
+        if (privacyScalePct != null) kotlin.math.round(x * privacyScalePct) / 100.0 else x
     // Portfolio Value row — at the top of the summary table (stocks + cash grand total)
     // Day change innerHTML is fully owned by JS (updateTotalValue); render empty
     tr(classes = "grand-total-row") {
@@ -373,7 +368,7 @@ private fun TBODY.buildSummaryRows(
         td {
             span {
                 id = "portfolio-total"
-                +"%,.2f".format(portfolio.stockGrossValue + cashTotalUsd)
+                +"%,.2f".format(stockGrossForDisplay + cashTotalUsd)
             }
             div(classes = "summary-subvalue") { id = "total-day-change" }
         }
@@ -398,7 +393,7 @@ private fun TBODY.buildSummaryRows(
             attributes["data-amount"] = if (entry.portfolioRef != null) {
                 resolveEntryUsd(entry)?.toString() ?: "0"
             } else {
-                entry.amount.toString()
+                scaleCash(entry.amount).toString()
             }
             attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
             attributes["data-margin-flag"] = entry.marginFlag.toString()
@@ -425,7 +420,7 @@ private fun TBODY.buildSummaryRows(
                     val resolvedUsd = resolveEntryUsd(entry)
                     if (resolvedUsd != null) +"${"%,.2f".format(resolvedUsd)} USD" else +"--- USD"
                 } else {
-                    +"${"%,.2f".format(entry.amount)} ${entry.currency}"
+                    +"${"%,.2f".format(scaleCash(entry.amount))} ${entry.currency}"
                 }
             }
             td(classes = "cash-converted-col") {
@@ -459,7 +454,7 @@ private fun TBODY.buildSummaryRows(
         if (hasMarginEntries) {
             val marginUsd = cashEntries.filter { it.marginFlag }
                 .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-            val marginDenominator = portfolio.stockGrossValue + marginUsd
+            val marginDenominator = stockGrossForDisplay + marginUsd
             tr(classes = "margin-row") {
                 attributes["data-margin-row"] = "true"
                 if (marginUsd >= 0) style = "display:none;"
@@ -494,7 +489,7 @@ private fun TBODY.buildSummaryRows(
             td {
                 div {
                     id = "stock-gross-total"
-                    +"%,.2f".format(portfolio.stockGrossValue)
+                    +"%,.2f".format(stockGrossForDisplay)
                 }
                 div(classes = "summary-subvalue") { id = "portfolio-day-change" }
             }
@@ -509,7 +504,7 @@ private fun TBODY.buildSummaryRows(
         td {
             input(type = InputType.text, classes = "rebal-target-input") {
                 attributes["id"] = "rebal-target-input"
-                attributes["placeholder"] = "%,.2f".format(portfolio.stockGrossValue)
+                attributes["placeholder"] = "%,.2f".format(stockGrossForDisplay)
                 attributes["autocomplete"] = "off"
             }
         }
@@ -518,7 +513,7 @@ private fun TBODY.buildSummaryRows(
     // Margin Target row — only rendered when margin entries are configured
     if (cashEntries.any { it.marginFlag }) {
         val mUsd = cashEntries.filter { it.marginFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-        val mDenom = portfolio.stockGrossValue + mUsd
+        val mDenom = stockGrossForDisplay + mUsd
         val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"
@@ -537,7 +532,13 @@ private fun TBODY.buildSummaryRows(
     }
 }
 
-private fun FlowContent.buildStockTable(portfolio: Portfolio) {
+private fun FlowContent.buildStockTable(
+    portfolio: Portfolio,
+    stockGrossForDisplay: Double = portfolio.stockGrossValue,
+    privacyScalePct: Double? = null
+) {
+    fun scaleQty(q: Double): Double =
+        if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0).toDouble() else q
     table(classes = "portfolio-table") {
         id = "stock-view-table"
         thead {
@@ -573,7 +574,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                 val effectiveTarget = stock.targetWeight ?: 0.0
                 tr {
                     attributes["data-symbol"] = stock.label
-                    attributes["data-qty"] = formatQty(stock.amount)
+                    attributes["data-qty"] = formatQty(scaleQty(stock.amount))
                     attributes["data-weight"] = effectiveTarget.toString()
                     if (stock.letfComponents != null) {
                         attributes["data-letf"] =
@@ -590,7 +591,7 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     // Qty (Amount)
                     td(classes = "amount") {
                         id = "amount-${stock.label}"
-                        +formatQty(stock.amount)
+                        +formatQty(scaleQty(stock.amount))
                     }
 
                     // Last NAV — kept server-side as it comes from a separate NAV feed, not SSE
@@ -633,9 +634,12 @@ private fun FlowContent.buildStockTable(portfolio: Portfolio) {
                     }
 
                     // Mkt Val — kept for first paint; SSE overwrites immediately
-                    td(classes = if (stock.value != null) "col-market-data value loaded col-moreinfo" else "col-market-data value col-moreinfo") {
+                    val mktVal = stock.value
+                    td(classes = if (mktVal != null) "col-market-data value loaded col-moreinfo" else "col-market-data value col-moreinfo") {
                         id = "value-${stock.label}"
-                        +(if (stock.value != null) "%,.2f".format(stock.value) else "—")
+                        +(if (mktVal != null) "%,.2f".format(
+                            if (privacyScalePct != null) mktVal * privacyScalePct / 100.0 else mktVal
+                        ) else "—")
                     }
 
                     // Weight — owned by JS (updateCurrentWeights); render empty

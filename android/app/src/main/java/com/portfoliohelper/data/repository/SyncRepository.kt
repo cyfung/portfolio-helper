@@ -266,23 +266,15 @@ class SyncRepository(
                 }
 
                 entry.cash.forEach { c ->
-                    val cashEntry = when (c.currency) {
-                        "P" -> CashEntry(
-                            portfolioId = serialId,
-                            label = c.label,
-                            currency = "P",
-                            amount = c.amount, // multiplier
-                            isMargin = c.marginFlag,
-                            portfolioRef = c.portfolioRef
-                        )
-                        else -> CashEntry(
-                            portfolioId = serialId,
-                            label = c.label,
-                            currency = c.currency,
-                            amount = c.amount,
-                            isMargin = c.marginFlag
-                        )
-                    }
+                    val isP = c.currency == "P" || c.portfolioRef != null
+                    val cashEntry = CashEntry(
+                        portfolioId = serialId,
+                        label = c.label,
+                        currency = if (isP) "USD" else c.currency,
+                        amount = c.amount,
+                        isMargin = c.marginFlag,
+                        portfolioRef = c.portfolioRef
+                    )
                     db.cashDao().upsert(cashEntry)
                 }
 

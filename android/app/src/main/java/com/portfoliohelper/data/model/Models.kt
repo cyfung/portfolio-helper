@@ -44,10 +44,10 @@ data class CashEntry(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val portfolioId: Int = 0,
     val label: String,
-    val currency: String,       // ISO code e.g. "USD", "HKD", or "P" for portfolio reference
-    val amount: Double,         // value if regular; multiplier if currency is "P"
+    val currency: String,       // ISO code e.g. "USD", "HKD"
+    val amount: Double,         // value if regular; multiplier if portfolioRef is set
     val isMargin: Boolean = false,
-    val portfolioRef: String? = null // slug of the referenced portfolio if currency is "P"
+    val portfolioRef: String? = null // slug of the referenced portfolio; if set, this is a portfolio reference
 )
 
 // ── Market Price (cached for offline fallback) ───────────────────────────────

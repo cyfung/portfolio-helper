@@ -1,5 +1,7 @@
 package com.portfoliohelper.service
 
+import kotlinx.serialization.Serializable
+
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 enum class RebalanceStrategy { NONE, DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY }
@@ -43,8 +45,10 @@ data class MultiBacktestRequest(
     val portfolios: List<PortfolioConfig>  // 1–3
 )
 
+@Serializable
 data class DataPoint(val date: String, val value: Double)
 
+@Serializable
 data class BacktestStats(
     val cagr: Double,
     val maxDrawdown: Double,
@@ -56,17 +60,20 @@ data class BacktestStats(
     val marginLowerTriggers: Int? = null    // deviation breach below target (market rose, leverage too low)
 )
 
+@Serializable
 data class CurveResult(
     val label: String,
     val points: List<DataPoint>,
     val stats: BacktestStats
 )
 
+@Serializable
 data class PortfolioResult(
     val label: String,
     val curves: List<CurveResult>  // index 0 = no-margin; rest = margin variants
 )
 
+@Serializable
 data class MultiBacktestResult(
     val portfolios: List<PortfolioResult>
 )

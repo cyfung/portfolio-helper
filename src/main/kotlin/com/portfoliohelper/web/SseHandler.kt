@@ -9,12 +9,73 @@ import com.portfoliohelper.service.nav.NavData
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.service.yahoo.YahooQuote
+import com.portfoliohelper.util.appJson
 import io.ktor.server.sse.*
 import io.ktor.sse.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.serialization.Serializable
+
+@Serializable
+private data class PriceEvent(
+    val symbol: String,
+    val markPrice: Double?,
+    val lastClosePrice: Double?,
+    val isMarketClosed: Boolean?,
+    val tradingPeriodEnd: Long?,
+    val currency: String?,
+    val localDate: String?,
+    val timestamp: Long?
+)
+
+@Serializable
+private data class NavEvent(
+    val type: String = "nav",
+    val symbol: String,
+    val nav: Double,
+    val timestamp: Long
+)
+
+@Serializable
+private data class IbkrRateTier(val upTo: Double?, val rate: Double)
+
+@Serializable
+private data class IbkrRateCurrencyEntry(
+    val currency: String,
+    val baseRate: Double,
+    val days: Int,
+    val tiers: List<IbkrRateTier>
+)
+
+@Serializable
+private data class IbkrRatesEvent(
+    val type: String = "ibkr-rates",
+    val currencies: List<IbkrRateCurrencyEntry>,
+    val lastFetch: Long
+)
+
+@Serializable
+private data class PortfolioValueEvent(
+    val type: String = "portfolio-value",
+    val portfolioId: String,
+    val value: Double
+)
+
+@Serializable
+private data class ReloadSseEvent(
+    val type: String = "reload",
+    val timestamp: Long
+)
+
+@Serializable
+private data class DividendSseEvent(
+    val type: String = "dividend",
+    val portfolioId: String,
+    val total: Double,
+    val calcUpToDate: String
+)
 
 internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
@@ -47,20 +108,24 @@ internal suspend fun ServerSSESession.handleSseStream() {
         YahooMarketDataService.batchComplete.collect {
             ManagedPortfolio.getAll().forEach { p ->
                 val total = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).stockGrossValue
-                channel.trySend("""{"type":"portfolio-value","portfolioId":"${p.slug}","value":${"%.2f".format(total)}}""")
+                channel.trySend(appJson.encodeToString(PortfolioValueEvent(portfolioId = p.slug, value = total)))
             }
         }
     }
 
     launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
-            channel.trySend("{\"type\":\"reload\",\"timestamp\":${it.timestamp}}")
+            channel.trySend(appJson.encodeToString(ReloadSseEvent(timestamp = it.timestamp)))
         }
     }
 
     launch {
         DividendService.updates.collect { update ->
-            channel.trySend("{\"type\":\"dividend\",\"portfolioId\":\"${update.portfolioSlug}\",\"total\":${update.total},\"calcUpToDate\":\"${update.calcUpToDate}\"}")
+            channel.trySend(appJson.encodeToString(DividendSseEvent(
+                portfolioId = update.portfolioSlug,
+                total = update.total,
+                calcUpToDate = update.calcUpToDate
+            )))
         }
     }
 
@@ -73,19 +138,17 @@ internal suspend fun ServerSSESession.handleSseStream() {
     }
 }
 
-private fun buildPriceJson(symbol: String, quote: YahooQuote): String = buildString {
-    append("{")
-    append("\"symbol\":\"$symbol\",")
-    append("\"markPrice\":${quote.regularMarketPrice},")
-    append("\"lastClosePrice\":${quote.previousClose},")
-    append("\"isMarketClosed\":${quote.isMarketClosed},")
-    append("\"tradingPeriodEnd\":${quote.tradingPeriodEnd},")
-    if (quote.currency != null) append("\"currency\":\"${quote.currency}\",")
-    val localDate = computeLocalDate(quote.tradingPeriodEnd, quote.gmtoffset)
-    if (localDate != null) append("\"localDate\":\"$localDate\",")
-    append("\"timestamp\":${quote.lastUpdateTime}")
-    append("}")
-}
+private fun buildPriceJson(symbol: String, quote: YahooQuote): String =
+    appJson.encodeToString(PriceEvent(
+        symbol = symbol,
+        markPrice = quote.regularMarketPrice,
+        lastClosePrice = quote.previousClose,
+        isMarketClosed = quote.isMarketClosed,
+        tradingPeriodEnd = quote.tradingPeriodEnd,
+        currency = quote.currency,
+        localDate = computeLocalDate(quote.tradingPeriodEnd, quote.gmtoffset),
+        timestamp = quote.lastUpdateTime
+    ))
 
 private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): String? {
     if (tradingPeriodEndSec == null || gmtoffset == null) return null
@@ -93,24 +156,19 @@ private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): Strin
         .atOffset(ZoneOffset.UTC).toLocalDate().toString()
 }
 
-private fun buildNavJson(symbol: String, navData: NavData): String = buildString {
-    append("{")
-    append("\"type\":\"nav\",")
-    append("\"symbol\":\"$symbol\",")
-    append("\"nav\":${navData.nav},")
-    append("\"timestamp\":${navData.lastFetchTime}")
-    append("}")
-}
+private fun buildNavJson(symbol: String, navData: NavData): String =
+    appJson.encodeToString(NavEvent(symbol = symbol, nav = navData.nav, timestamp = navData.lastFetchTime))
 
-private fun buildIbkrJson(): String = buildString {
-    append("{\"type\":\"ibkr-rates\",\"currencies\":[")
-    val entries = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
-        val tiers = r.tiers.joinToString(",", "[", "]") { t ->
-            if (t.upTo != null) "{\"upTo\":${t.upTo},\"rate\":${t.rate}}"
-            else "{\"upTo\":null,\"rate\":${t.rate}}"
-        }
-        "{\"currency\":\"$ccy\",\"baseRate\":${r.baseRate},\"days\":${CurrencyConventions.getDaysInYear(ccy)},\"tiers\":$tiers}"
-    }
-    append(entries.joinToString(","))
-    append("],\"lastFetch\":${IbkrMarginRateService.getLastFetchMillis()}}")
-}
+private fun buildIbkrJson(): String = appJson.encodeToString(
+    IbkrRatesEvent(
+        currencies = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
+            IbkrRateCurrencyEntry(
+                currency = ccy,
+                baseRate = r.baseRate,
+                days = CurrencyConventions.getDaysInYear(ccy),
+                tiers = r.tiers.map { IbkrRateTier(it.upTo, it.rate) }
+            )
+        },
+        lastFetch = IbkrMarginRateService.getLastFetchMillis()
+    )
+)

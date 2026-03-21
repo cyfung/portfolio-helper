@@ -44,6 +44,7 @@ fun CashScreen(vm: MainViewModel) {
     val fxRates by vm.fxRates.collectAsState()
     val stockValues by vm.allPortfolioStockValuesUsd.collectAsState()
     val displayCurrency by vm.displayCurrency.collectAsState()
+    val scalingPercent by vm.scalingPercent.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<CashEntry?>(null) }
@@ -77,11 +78,11 @@ fun CashScreen(vm: MainViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (cashTotals.isReady) {
-                        val totalUsd = cashTotals.totalUsd
+                        val cashTotal = cashTotals.cashTotal
                         SummaryCard(
                             "Cash Total",
-                            formatCurrency(totalUsd),
-                            valueColor = if (totalUsd < 0) ext.negative else ext.textPrimary,
+                            formatCurrency(cashTotal),
+                            valueColor = if (cashTotal < 0) ext.negative else ext.textPrimary,
                             subValue = "",
                             modifier = Modifier.weight(1f)
                         )
@@ -90,14 +91,14 @@ fun CashScreen(vm: MainViewModel) {
                     }
 
                     if (totals.isReady) {
-                        val marginUsd = cashTotals.marginUsd
+                        val margin = cashTotals.margin
                         val marginPct = totals.marginPct
-                        if (marginUsd >= 0) {
+                        if (margin >= 0) {
                             SummaryCard("Margin", "-", valueColor = ext.textPrimary, subValue = "", modifier = Modifier.weight(1f))
                         } else {
                             SummaryCard(
                                 "Margin",
-                                formatSmart(abs(marginUsd)),
+                                formatSmart(abs(margin)),
                                 valueColor = ext.warning,
                                 subValue = formatPct(marginPct, 1),
                                 subValueColor = ext.warning,
@@ -120,6 +121,7 @@ fun CashScreen(vm: MainViewModel) {
                     stockValues = stockValues,
                     displayCurrency = displayCurrency,
                     showLabel = showLabel,
+                    scaling = scalingPercent,
                     onEdit = { editEntry = entry },
                     onDelete = { vm.deleteCashEntry(entry) }
                 )
@@ -152,28 +154,34 @@ fun CashEntryRow(
     stockValues: Map<String, Pair<Double, Boolean>>,
     displayCurrency: String,
     showLabel: Boolean,
+    scaling: Int? = null,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val ext = MaterialTheme.ext
-    
+
+    val scaledAmount = if (scaling != null && entry.portfolioRef == null)
+        kotlin.math.round(entry.amount * scaling) / 100.0
+    else
+        entry.amount
+
     // 1. Calculate USD Value
-    val valueUsd = if (entry.currency == "P") {
+    val valueUsd = if (entry.portfolioRef != null) {
         (stockValues[entry.portfolioRef]?.first ?: 0.0) * entry.amount
     } else {
         val rateToUsd = if (entry.currency == "USD") 1.0 else fxRates[entry.currency] ?: 1.0
-        entry.amount * rateToUsd
+        scaledAmount * rateToUsd
     }
-    
+
     // 2. Calculate Display Value
     val rateDisplayToUsd = if (displayCurrency == "USD") 1.0 else fxRates[displayCurrency] ?: 1.0
     val valueDisplay = valueUsd / rateDisplayToUsd
-    
+
     // 3. Original Amount & Currency for Col 3
-    val (actualAmount, actualCcy) = if (entry.currency == "P") {
+    val (actualAmount, actualCcy) = if (entry.portfolioRef != null) {
         valueUsd to "USD"
     } else {
-        entry.amount to entry.currency
+        scaledAmount to entry.currency
     }
 
     var showActions by remember { mutableStateOf(false) }
@@ -205,7 +213,7 @@ fun CashEntryRow(
                 if (entry.isMargin) {
                     SquareBadge("M", ext.warning)
                 }
-                if (entry.currency == "P") {
+                if (entry.portfolioRef != null) {
                     SquareIconBadge(Icons.Default.NorthEast, Color(0xFF42A5F5))
                 }
             }
@@ -306,11 +314,11 @@ fun SquareIconBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, color
 @Composable
 fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEntry) -> Unit) {
     var label by remember { mutableStateOf(initial?.label ?: "") }
-    var currency by remember { mutableStateOf(initial?.currency ?: "USD") }
+    var currency by remember { mutableStateOf(if (initial?.portfolioRef != null) "P" else (initial?.currency ?: "USD")) }
     
     val formattedInitialAmount = remember(initial) {
         initial?.amount?.let { 
-            if (initial.currency == "P") "%.2f".format(it) else "%,.2f".format(Locale.US, it)
+            if (initial.portfolioRef != null) "%.2f".format(it) else "%,.2f".format(Locale.US, it)
         } ?: if (currency == "P") "1.00" else ""
     }
     var amount by remember { mutableStateOf(formattedInitialAmount) }
@@ -373,13 +381,14 @@ fun CashEntryDialog(initial: CashEntry?, onDismiss: () -> Unit, onSave: (CashEnt
             TextButton(
                 onClick = {
                     val parsedAmount = amount.replace(",", "").toDoubleOrNull() ?: (if (currency == "P") 1.0 else 0.0)
+                    val isP = currency.trim().uppercase() == "P"
                     val entry = CashEntry(
                         id = initial?.id ?: 0,
                         label = label.trim(),
-                        currency = currency.trim().uppercase(),
+                        currency = if (isP) "USD" else currency.trim().uppercase(),
                         amount = parsedAmount,
                         isMargin = isMargin,
-                        portfolioRef = if (currency == "P") portfolioRef.trim() else null
+                        portfolioRef = if (isP) portfolioRef.trim() else null
                     )
                     if (entry.label.isNotEmpty() && isValidAmount) onSave(entry)
                 },

@@ -66,11 +66,25 @@ data class BackupCash(
     val snapshotUsd: Double? = null   // P entries only; ignored on restore/import
 )
 
+@Serializable
 data class DbBackupEntry(val id: Int, val createdAt: Long, val label: String)
 
+@Serializable
+data class ImportedStock(
+    val symbol: String,
+    val amount: Double,
+    val targetWeight: Double,
+    val letf: String,
+    val groups: String
+)
+
+@Serializable
+data class ImportedCash(val key: String, val value: String)
+
+@Serializable
 data class ImportResult(
-    val stocks: List<Map<String, Any>>?,      // null = not present in file
-    val cashKeys: List<Map<String, String>>?, // [{key, value}, ...]; null = not present
+    val stocks: List<ImportedStock>?,  // null = not present in file
+    val cash: List<ImportedCash>?,     // null = not present in file
     val error: String?
 )
 
@@ -306,16 +320,13 @@ object BackupService {
         return try {
             val root = appJson.decodeFromString<BackupRoot>(String(bytes))
             val stocks = root.stocks.map { s ->
-                mapOf<String, Any>(
-                    "symbol" to s.symbol, "amount" to s.amount,
-                    "targetWeight" to s.targetWeight, "letf" to s.letf, "groups" to s.groups
-                )
+                ImportedStock(s.symbol, s.amount, s.targetWeight, s.letf, s.groups)
             }
             val cash = root.cash.map { c ->
                 val value = if (c.currency == "P") {
                     (if (c.amount < 0) "-" else "") + (c.portfolioRef ?: "")
                 } else c.amount.toString()
-                mapOf("key" to c.key, "value" to value)
+                ImportedCash(c.key, value)
             }
             if (stocks.isEmpty() && cash.isEmpty())
                 ImportResult(null, null, "JSON backup has no stocks or cash entries")
@@ -331,7 +342,7 @@ object BackupService {
             val reader = InputStreamReader(ByteArrayInputStream(bytes))
             val csvFormat = CSVFormat.DEFAULT.builder()
                 .setHeader().setSkipHeaderRecord(true).build()
-            val rows = mutableListOf<Map<String, Any>>()
+            val rows = mutableListOf<ImportedStock>()
             CSVParser(reader, csvFormat).use { parser ->
                 for (record in parser) {
                     try {
@@ -353,12 +364,7 @@ object BackupService {
                         } catch (_: Exception) {
                             ""
                         }
-                        rows.add(
-                            mapOf(
-                                "symbol" to symbol as Any, "amount" to amount,
-                                "targetWeight" to targetWeight, "letf" to letf, "groups" to groups
-                            )
-                        )
+                        rows.add(ImportedStock(symbol, amount, targetWeight, letf, groups))
                     } catch (_: Exception) { /* skip bad rows */
                     }
                 }
@@ -378,7 +384,7 @@ object BackupService {
 
     private fun parseTxtImport(bytes: ByteArray): ImportResult {
         return try {
-            val entries = mutableListOf<Map<String, String>>()
+            val entries = mutableListOf<ImportedCash>()
             String(bytes).lines().forEach { rawLine ->
                 val line = rawLine.trim()
                 if (line.isEmpty() || line.startsWith("#")) return@forEach
@@ -389,7 +395,7 @@ object BackupService {
                 if (key.split(".").size < 2) return@forEach
                 // Accept numeric values or non-empty portfolio refs
                 if (value.toDoubleOrNull() != null || value.trimStart('+', '-').isNotEmpty()) {
-                    entries.add(mapOf("key" to key, "value" to value))
+                    entries.add(ImportedCash(key, value))
                 }
             }
             if (entries.isEmpty())
@@ -429,7 +435,7 @@ object BackupService {
                 "cash.txt in ZIP: ${txtResult.error}"
             )
             val stocks = csvResult?.stocks
-            val cash = txtResult?.cashKeys
+            val cash = txtResult?.cash
             if (stocks == null && cash == null)
                 ImportResult(null, null, "ZIP contains no stocks.csv or cash.txt")
             else
