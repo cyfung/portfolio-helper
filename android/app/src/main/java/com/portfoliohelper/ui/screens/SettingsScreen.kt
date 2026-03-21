@@ -38,6 +38,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val marginStats by vm.marginCheckStats.collectAsState()
     val notificationsEnabled by vm.marginCheckNotificationsEnabled.collectAsState()
     val scalingPercent by vm.scalingPercent.collectAsState()
+    val afterHoursGray by vm.afterHoursGray.collectAsState()
 
     Column(
         modifier = Modifier
@@ -193,6 +194,24 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = ext.actionPositive.copy(alpha = 0.5f),
                             unfocusedBorderColor = ext.textTertiary.copy(alpha = 0.2f)
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
+                // After-Hours Style Toggle
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("After-Hours Style: Gray", color = ext.textSecondary, fontSize = 13.sp)
+                        Text("Show after-hours data as gray instead of dimmed colors", color = ext.textTertiary, fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = afterHoursGray,
+                        onCheckedChange = { vm.saveAfterHoursGray(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = ext.actionPositive,
+                            checkedTrackColor = ext.actionPositive.copy(alpha = 0.3f)
                         )
                     )
                 }

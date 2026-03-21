@@ -116,6 +116,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         var dividendCalcUpToDate = "${portfolioConf["dividendCalcUpToDate"] ?: ""}";
                         var stockCurrencies = ${appJson.encodeToString(stockCurrenciesMap)};
                         var savedShowStockDisplayCurrency = $showStockDisplayCurrency;
+                        var savedAfterHoursGray = ${AppConfig.afterHoursGray};
                         var allPortfolioOptions = ${appJson.encodeToString(allPortfolios.map { p -> PortfolioOption(p.slug, p.name) })};
                         """.trimIndent()
                     )

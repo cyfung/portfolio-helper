@@ -1323,7 +1323,7 @@ h1 {
 .price-change.negative { color: var(--color-negative); }
 .price-change.neutral { color: var(--color-text-tertiary); }
 
-/* After-hours styling - mark price goes grey */
+/* After-hours styling - colored+dimmed (default CSS, used when gray mode is off) */
 .price.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 0.8;
@@ -1332,6 +1332,16 @@ h1 {
 /* After-hours styling - chg preserves positive/negative color, just dimmed */
 .price-change.after-hours {
     opacity: 0.75;
+}
+
+/* After-hours styling - gray mode (solid gray, default setting) */
+body.after-hours-gray .price.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
+}
+body.after-hours-gray .price-change.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
 }
 
 /* Weight Difference Display */
@@ -3781,6 +3791,12 @@ td[id^="est-val-"].loaded {
 
 .mark-day-pct.after-hours {
     opacity: 0.75;
+}
+body.after-hours-gray .mark-day-pct.after-hours {
+    color: var(--color-text-secondary) !important;
+    background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent) !important;
+    border-color: color-mix(in srgb, var(--color-text-secondary) 25%, transparent) !important;
+    opacity: 1;
 }
 
 /* ============================================

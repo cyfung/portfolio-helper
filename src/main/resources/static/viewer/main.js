@@ -17,6 +17,7 @@ initBackupPanel();
     initTwsSync();
     initSaveToBacktest();
     initThemeToggle();
+    document.body.classList.toggle('after-hours-gray', afterHoursGray);
 
     // Compute display values (including cash totals) from server-rendered DOM data.
     // The worker reads cash entries from DOM and sets lastMarginUsd/lastCashTotalUsd globals.

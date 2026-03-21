@@ -124,6 +124,7 @@ fun PortfolioScreen(vm: MainViewModel) {
     val pnlMode by vm.pnlDisplayMode.collectAsState()
     val displayCcy by vm.displayCurrency.collectAsState()
     val scaling by vm.scalingPercent.collectAsState()
+    val afterHoursGray by vm.afterHoursGray.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -297,6 +298,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                             onDelete = { vm.deletePosition(pos.symbol) },
                             scrollState = scrollState,
                             layout = layout,
+                            afterHoursGray = afterHoursGray,
                         )
                         Divider()
                     }
@@ -332,6 +334,7 @@ private fun PositionRow(
     onDelete: () -> Unit,
     scrollState: ScrollState,
     layout: TableLayout,
+    afterHoursGray: Boolean = true,
 ) {
     val ext = MaterialTheme.ext
 
@@ -382,13 +385,17 @@ private fun PositionRow(
                         fontSize = 16.sp,
                     )
                     Spacer(Modifier.width(4.dp))
-                    DayPctPill(display.dayPct, afterHours = display.isMarketClosed)
+                    DayPctPill(display.dayPct, afterHours = display.isMarketClosed, grayStyle = afterHoursGray)
                 }
 
                 // P&L
                 MonoText(
                     text = display.fmtPnl,
-                    color = if (display.isMarketClosed) display.pnlColor.copy(alpha = 0.6f) else display.pnlColor,
+                    color = when {
+                        !display.isMarketClosed -> display.pnlColor
+                        afterHoursGray          -> ext.textSecondary
+                        else                    -> display.pnlColor.copy(alpha = 0.6f)
+                    },
                     fontWeight = FontWeight.Light,
                     fontSize = 15.sp,
                     modifier = Modifier.width(pnlW),

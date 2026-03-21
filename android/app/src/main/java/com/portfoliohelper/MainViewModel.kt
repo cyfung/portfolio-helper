@@ -93,6 +93,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val scalingPercent: StateFlow<Int?> = settings.scalingPercent
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val afterHoursGray: StateFlow<Boolean> = settings.afterHoursGray
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 
     val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
@@ -253,6 +256,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveScalingPercent(percent: Int?) = viewModelScope.launch {
         settings.saveScalingPercent(percent)
+    }
+
+    fun saveAfterHoursGray(gray: Boolean) = viewModelScope.launch {
+        settings.saveAfterHoursGray(gray)
     }
 
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────

@@ -29,6 +29,7 @@ var stockCurrencies = {};          // symbol → currency code (e.g. 'USD', 'HKD
 // Display state
 var currentDisplayCurrency = 'USD';
 var showStockDisplayCurrency = (typeof savedShowStockDisplayCurrency !== 'undefined') ? savedShowStockDisplayCurrency : false;
+var afterHoursGray = (typeof savedAfterHoursGray !== 'undefined') ? savedAfterHoursGray : true;
 
 // Portfolio totals (updated live)
 var lastStockGrossVal = 0;

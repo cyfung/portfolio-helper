@@ -283,15 +283,16 @@ fun MonoText(
 }
 
 @Composable
-fun DayPctPill(pct: Double, afterHours: Boolean = false) {
+fun DayPctPill(pct: Double, afterHours: Boolean = false, grayStyle: Boolean = true) {
     val ext    = MaterialTheme.ext
     val isZero = abs(pct) < 0.1
     val color  = when {
-        isZero   -> ext.textTertiary
-        pct > 0  -> ext.positive
-        else     -> ext.negative
+        afterHours && grayStyle -> ext.textSecondary
+        isZero                  -> ext.textTertiary
+        pct > 0                 -> ext.positive
+        else                    -> ext.negative
     }
-    val alpha  = if (afterHours) 0.55f else 1f
+    val alpha  = if (afterHours && !grayStyle) 0.55f else 1f
     val text   = formatSignedPct(pct)
     Box(
         modifier = Modifier
@@ -545,7 +546,7 @@ fun MarginStatsWidget(stats: MarginCheckStats, ext: com.portfoliohelper.ui.theme
 
             if (isError) {
                 Text(
-                    text = stats.errorMessage ?: "Check failed. Using cached data.",
+                    text = stats.errorMessage,
                     color = ext.negative,
                     fontSize = 12.sp,
                     lineHeight = 16.sp

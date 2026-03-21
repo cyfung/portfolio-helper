@@ -94,6 +94,19 @@ internal suspend fun ApplicationCall.renderConfigPage() {
                                 attributes["step"] = "1"
                             }
                         }
+
+                        renderConfigField(
+                            label = "After-Hours Style: Gray",
+                            description = "Show after-hours prices and changes as solid gray (default). When off, keeps positive/negative colors but dimmed.",
+                            inputId = "after-hours-gray",
+                            badge = null
+                        ) {
+                            input(type = InputType.checkBox) {
+                                id = "after-hours-gray"
+                                checked = AppConfig.afterHoursGray
+                                attributes["data-config-key"] = AppConfig.KEY_AFTER_HOURS_GRAY
+                            }
+                        }
                     }
 
                     renderConfigSection("Portfolio and IB TWS Settings") {
