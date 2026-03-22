@@ -52,6 +52,10 @@ fun main() {
     }
 
     Database.connect("jdbc:sqlite:${dbFile.toAbsolutePath()}", driver = "org.sqlite.JDBC")
+    transaction {
+        exec("PRAGMA journal_mode=WAL")
+        exec("PRAGMA busy_timeout=5000")
+    }
     logger.info("Connected to database at $dbFile")
 
     val allPortfolios = ManagedPortfolio.getAll()
