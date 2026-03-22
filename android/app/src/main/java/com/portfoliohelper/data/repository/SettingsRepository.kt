@@ -30,17 +30,21 @@ object PrefsKeys {
     val AFTER_HOURS_GRAY        = booleanPreferencesKey("after_hours_gray")
 
     // Margin check stats
-    val LAST_MARGIN_CHECK_TIME  = longPreferencesKey("last_margin_check_time")
+    val LAST_MARGIN_CHECK_TIME      = longPreferencesKey("last_margin_check_time")
     val LAST_MARGIN_CHECK_DATA_OLD  = longPreferencesKey("last_margin_check_data_old")
     val LAST_MARGIN_CHECK_TRIGGERED = stringPreferencesKey("last_margin_check_triggered") // comma-separated names
     val LAST_MARGIN_CHECK_ERROR     = stringPreferencesKey("last_margin_check_error")
+    val MARGIN_CHECK_IS_RUNNING     = booleanPreferencesKey("margin_check_is_running")
+    val MARGIN_CHECK_RUN_START      = longPreferencesKey("margin_check_run_start")
 }
 
 data class MarginCheckStats(
     val runTime: Long,
     val oldestDataTime: Long,
     val triggeredPortfolios: List<String>,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isRunning: Boolean = false,
+    val runStartTime: Long = 0L
 )
 
 class SettingsRepository(private val context: Context) {
@@ -158,12 +162,26 @@ class SettingsRepository(private val context: Context) {
     // ── Margin check stats ──────────────────────────────────────────────────
 
     val marginCheckStats: Flow<MarginCheckStats?> = context.dataStore.data.map { prefs ->
-        val runTime = prefs[PrefsKeys.LAST_MARGIN_CHECK_TIME] ?: return@map null
+        val isRunning = prefs[PrefsKeys.MARGIN_CHECK_IS_RUNNING] ?: false
+        val runStartTime = prefs[PrefsKeys.MARGIN_CHECK_RUN_START] ?: 0L
+        // Stale guard: if isRunning=true but start was > 15 minutes ago, treat as not running
+        val staleRunning = isRunning && (System.currentTimeMillis() - runStartTime) > 15 * 60_000
+        val runTime = prefs[PrefsKeys.LAST_MARGIN_CHECK_TIME] ?: return@map if (isRunning && !staleRunning) {
+            MarginCheckStats(
+                runTime = 0L,
+                oldestDataTime = 0L,
+                triggeredPortfolios = emptyList(),
+                isRunning = true,
+                runStartTime = runStartTime
+            )
+        } else null
         MarginCheckStats(
             runTime = runTime,
             oldestDataTime = prefs[PrefsKeys.LAST_MARGIN_CHECK_DATA_OLD] ?: 0L,
             triggeredPortfolios = prefs[PrefsKeys.LAST_MARGIN_CHECK_TRIGGERED]?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
-            errorMessage = prefs[PrefsKeys.LAST_MARGIN_CHECK_ERROR]
+            errorMessage = prefs[PrefsKeys.LAST_MARGIN_CHECK_ERROR],
+            isRunning = isRunning && !staleRunning,
+            runStartTime = runStartTime
         )
     }
 
@@ -177,6 +195,16 @@ class SettingsRepository(private val context: Context) {
             } else {
                 prefs.remove(PrefsKeys.LAST_MARGIN_CHECK_ERROR)
             }
+            // Completing a run always clears running state
+            prefs[PrefsKeys.MARGIN_CHECK_IS_RUNNING] = false
+            prefs[PrefsKeys.MARGIN_CHECK_RUN_START] = 0L
+        }
+    }
+
+    suspend fun setMarginCheckRunning(isRunning: Boolean, startTime: Long = 0L) {
+        context.dataStore.edit { prefs ->
+            prefs[PrefsKeys.MARGIN_CHECK_IS_RUNNING] = isRunning
+            prefs[PrefsKeys.MARGIN_CHECK_RUN_START] = startTime
         }
     }
 }

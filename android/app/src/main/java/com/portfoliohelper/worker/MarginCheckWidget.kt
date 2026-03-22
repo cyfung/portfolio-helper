@@ -1,323 +1,243 @@
 package com.portfoliohelper.worker
 
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.DpSize
-import androidx.glance.GlanceId
-import androidx.glance.GlanceModifier
-import androidx.glance.GlanceTheme
-import androidx.glance.LocalSize
-import androidx.glance.action.actionStartActivity
-import androidx.glance.action.clickable
-import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.provideContent
-import androidx.glance.background
-import androidx.glance.color.ColorProvider
-import androidx.glance.layout.Alignment
-import androidx.glance.layout.Box
-import androidx.glance.layout.Column
-import androidx.glance.layout.Row
-import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.fillMaxWidth
-import androidx.glance.layout.height
-import androidx.glance.layout.padding
-import androidx.glance.text.FontWeight
-import androidx.glance.text.Text
-import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
+import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
+import android.util.SizeF
+import android.view.View
+import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import com.portfoliohelper.MainActivity
 import com.portfoliohelper.PortfolioHelperApp
+import com.portfoliohelper.R
 import com.portfoliohelper.data.repository.MarginCheckStats
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// ── Color helpers ────────────────────────────────────────────────────────────
-// ColorProvider(Color) is restricted to the Glance library group.
-// The public API requires day/night variants. Since this widget is dark-only,
-// we pass the same color for both via this helper.
-private fun fixedColor(color: Color): ColorProvider =
-    ColorProvider(day = color, night = color)
+private const val TAG = "MarginCheckWidget"
 
-private val BgColor          = fixedColor(Color(0xFF1C1B1F))
-private val TextPrimaryColor = fixedColor(Color(0xFFE6E1E5))
-private val TextMutedColor   = fixedColor(Color(0xFF938F99))
-private val PositiveColor    = fixedColor(Color(0xFF4CAF50))
-private val WarningColor     = fixedColor(Color(0xFFFFC107))
-private val NegativeColor    = fixedColor(Color(0xFFF44336))
-private val DividerColor     = fixedColor(Color(0x1AFFFFFF))
+class MarginCheckWidgetReceiver : AppWidgetProvider() {
 
-class MarginCheckWidget : GlanceAppWidget() {
-
-    override val sizeMode = SizeMode.Responsive(
-        setOf(
-            DpSize(130.dp, 70.dp),   // 5-col 2×1
-            DpSize(165.dp, 70.dp),   // 4-col 2×1
-            DpSize(210.dp, 70.dp),   // 3-col 2×1
-            DpSize(130.dp, 145.dp),  // 5-col 2×2
-            DpSize(165.dp, 145.dp),  // 4-col 2×2
-            DpSize(210.dp, 145.dp),  // 3-col 2×2
-        )
-    )
-
-    override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val app = context.applicationContext as PortfolioHelperApp
-        val stats = app.settingsRepo.marginCheckStats.firstOrNull()
-
-        provideContent {
-            GlanceTheme {
-                WidgetContent(stats)
-            }
-        }
-    }
-
-    @Composable
-    private fun WidgetContent(stats: MarginCheckStats?) {
-        val size = LocalSize.current
-        val hPad = if (size.width >= 150.dp) 20.dp else 10.dp
-        val isMedium = size.height >= 120.dp
-
-        if (isMedium) {
-            MediumLayout(stats, hPad)
-        } else {
-            SmallLayout(stats, hPad)
-        }
-    }
-
-    @Composable
-    private fun SmallLayout(
-        stats: MarginCheckStats?,
-        hPad: androidx.compose.ui.unit.Dp
-    ) {
-        Column(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(BgColor)
-                .padding(horizontal = hPad, vertical = 8.dp)
-                .clickable(actionStartActivity<MainActivity>()),
-            verticalAlignment = Alignment.Top,
-            horizontalAlignment = Alignment.Start
-        ) {
-            if (stats == null) {
-                // ── No data yet ──────────────────────────────────────────
-                Text(
-                    text = "MARGIN CHECK",
-                    style = TextStyle(
-                        color = TextMutedColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                )
-                Box(
-                    modifier = GlanceModifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No data yet",
-                        style = TextStyle(color = TextMutedColor, fontSize = 10.sp)
-                    )
+    override fun onReceive(context: Context, intent: Intent) {
+        // Override onReceive so goAsync() can be called before coroutine work starts.
+        // goAsync() prevents the system from killing the process after onReceive() returns.
+        when (intent.action) {
+            AppWidgetManager.ACTION_APPWIDGET_OPTIONS_CHANGED -> {
+                val pendingResult = goAsync()
+                val appWidgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
+                val newOptions = intent.getBundleExtra(AppWidgetManager.EXTRA_APPWIDGET_OPTIONS) ?: Bundle()
+                val wm = AppWidgetManager.getInstance(context)
+                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                    try {
+                        val app = context.applicationContext as PortfolioHelperApp
+                        val stats = app.settingsRepo.marginCheckStats.firstOrNull()
+                        if (appWidgetId != -1) {
+                            wm.updateAppWidget(appWidgetId, buildRemoteViews(context, stats, newOptions))
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "OPTIONS_CHANGED update failed", e)
+                    } finally {
+                        pendingResult.finish()
+                    }
                 }
-                return@Column
+            }
+            AppWidgetManager.ACTION_APPWIDGET_UPDATE -> {
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                    try {
+                        updateAll(context)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "onUpdate failed", e)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            }
+            else -> super.onReceive(context, intent)
+        }
+    }
+
+    companion object {
+
+        suspend fun updateAll(context: Context) {
+            val app = context.applicationContext as PortfolioHelperApp
+            val stats = app.settingsRepo.marginCheckStats.firstOrNull()
+            val wm = AppWidgetManager.getInstance(context)
+            val ids = wm.getAppWidgetIds(ComponentName(context, MarginCheckWidgetReceiver::class.java))
+            ids.forEach { id ->
+                val opts = wm.getAppWidgetOptions(id)
+                wm.updateAppWidget(id, buildRemoteViews(context, stats, opts))
+            }
+        }
+
+        /**
+         * Builds a RemoteViews that automatically adapts to the widget's current size.
+         * On API 31+: uses the responsive RemoteViews map — the launcher picks the right variant.
+         * Pre-31: falls back to measuring current height via options bundle.
+         */
+        fun buildRemoteViews(context: Context, stats: MarginCheckStats?, options: Bundle): RemoteViews {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                buildResponsiveViews(context, stats)
+            } else {
+                // Portrait: current height ≈ MAX_HEIGHT, current width ≈ MIN_WIDTH
+                val h = maxOf(
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0),
+                    options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+                )
+                val w = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+                buildViews(context, stats, isMedium = h >= 100, widthDp = w)
+            }
+        }
+
+        /**
+         * API 31+ only: provide all size variants; the launcher selects the best fit automatically.
+         * Size breakpoints match the original Glance SizeMode.Responsive values.
+         */
+        @RequiresApi(Build.VERSION_CODES.S)
+        private fun buildResponsiveViews(context: Context, stats: MarginCheckStats?): RemoteViews {
+            return RemoteViews(
+                mapOf(
+                    SizeF(130f, 70f)  to buildViews(context, stats, isMedium = false, widthDp = 130),
+                    SizeF(210f, 70f)  to buildViews(context, stats, isMedium = false, widthDp = 210),
+                    SizeF(130f, 145f) to buildViews(context, stats, isMedium = true,  widthDp = 130),
+                    SizeF(210f, 145f) to buildViews(context, stats, isMedium = true,  widthDp = 210),
+                )
+            )
+        }
+
+        fun buildViews(context: Context, stats: MarginCheckStats?, isMedium: Boolean, widthDp: Int = 0): RemoteViews {
+            val layoutId = if (isMedium) R.layout.widget_medium else R.layout.widget_small
+            val rv = RemoteViews(context.packageName, layoutId)
+
+            // Adaptive padding: wide widget (≥150dp) → 20dp horizontal, narrow → 10dp
+            val density = context.resources.displayMetrics.density
+            val hPad = ((if (widthDp >= 150) 20 else 10) * density).toInt()
+            val vPad = ((if (isMedium) 12 else 8) * density).toInt()
+            rv.setViewPadding(R.id.widget_root, hPad, vPad, hPad, vPad)
+
+            val pi = PendingIntent.getActivity(
+                context, 0,
+                Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            rv.setOnClickPendingIntent(R.id.widget_root, pi)
+
+            val colorTextPrimary = ContextCompat.getColor(context, R.color.widget_text_primary)
+            val colorWarning     = ContextCompat.getColor(context, R.color.widget_warning)
+            val colorPositive    = ContextCompat.getColor(context, R.color.widget_positive)
+            val colorNegative    = ContextCompat.getColor(context, R.color.widget_negative)
+
+            if (stats == null) {
+                rv.setViewVisibility(R.id.container_no_data, View.VISIBLE)
+                rv.setViewVisibility(R.id.container_running, View.GONE)
+                rv.setViewVisibility(R.id.container_normal, View.GONE)
+                rv.setTextViewText(R.id.text_status_badge, "")
+                return rv
             }
 
-            val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+            if (stats.isRunning) {
+                rv.setViewVisibility(R.id.container_no_data, View.GONE)
+                rv.setViewVisibility(R.id.container_running, View.VISIBLE)
+                rv.setViewVisibility(R.id.container_normal, View.GONE)
+                rv.setTextViewText(R.id.text_status_badge, "● Running")
+                rv.setTextColor(R.id.text_status_badge, colorWarning)
+
+                val elapsed = System.currentTimeMillis() - stats.runStartTime
+                rv.setChronometer(
+                    R.id.chronometer_elapsed,
+                    SystemClock.elapsedRealtime() - elapsed,
+                    null,
+                    true
+                )
+
+                val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+                rv.setTextViewText(R.id.text_started_time, "Started ${timeFmt.format(Date(stats.runStartTime))}")
+
+                if (stats.runTime > 0L) {
+                    rv.setViewVisibility(R.id.text_last_run, View.VISIBLE)
+                    rv.setTextViewText(R.id.text_last_run, "Last: ${timeFmt.format(Date(stats.runTime))}")
+                } else {
+                    rv.setViewVisibility(R.id.text_last_run, View.GONE)
+                }
+                return rv
+            }
+
+            // Normal state
+            rv.setViewVisibility(R.id.container_no_data, View.GONE)
+            rv.setViewVisibility(R.id.container_running, View.GONE)
+            rv.setViewVisibility(R.id.container_normal, View.VISIBLE)
+
             val isError = stats.errorMessage != null
             val isAlert = !isError && stats.triggeredPortfolios.isNotEmpty()
 
-            val statusColor = if (isError || isAlert) NegativeColor else PositiveColor
+            val statusColor = if (isError || isAlert) colorNegative else colorPositive
             val statusLabel = when {
                 isError -> "● Fail"
                 isAlert -> "● Alert"
                 else    -> "● OK"
             }
-            val timeColor = if (isError || isAlert) NegativeColor else TextPrimaryColor
-
-            // ── Header: label + status badge ─────────────────────────────
-            Row(
-                modifier = GlanceModifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "MARGIN CHECK",
-                    style = TextStyle(
-                        color = TextMutedColor,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                )
-                Spacer(GlanceModifier.defaultWeight())
-                Text(
-                    text = statusLabel,
-                    style = TextStyle(
-                        color = statusColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                )
-            }
-
-            // ── Row 2: time + data age ────────────────────────────────────
-            val dataAgeMinutes = (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
-            val ageColor = when {
-                dataAgeMinutes < 15 -> PositiveColor
-                dataAgeMinutes < 60 -> WarningColor
-                else                -> NegativeColor
-            }
-
-            Row(
-                modifier = GlanceModifier.fillMaxWidth().padding(top = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = timeFmt.format(Date(stats.runTime)),
-                    style = TextStyle(
-                        color = timeColor,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                )
-                Spacer(GlanceModifier.defaultWeight())
-                Text(
-                    text = "${dataAgeMinutes}m old",
-                    style = TextStyle(
-                        color = if (isError) NegativeColor else ageColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                )
-            }
-
-            // ── Row 3: detail line ────────────────────────────────────────
-            Spacer(GlanceModifier.height(2.dp))
-            when {
-                isError -> Text(
-                    text = stats.errorMessage,
-                    style = TextStyle(color = NegativeColor, fontSize = 9.sp),
-                    maxLines = 1
-                )
-                isAlert -> Text(
-                    text = stats.triggeredPortfolios.joinToString(", "),
-                    style = TextStyle(
-                        color = NegativeColor,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    maxLines = 1
-                )
-                else -> { /* OK — no third line needed */ }
-            }
-        }
-    }
-
-    @Composable
-    private fun MediumLayout(
-        stats: MarginCheckStats?,
-        hPad: androidx.compose.ui.unit.Dp
-    ) {
-        Column(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(BgColor)
-                .padding(horizontal = hPad, vertical = 12.dp)
-                .clickable(actionStartActivity<MainActivity>()),
-            verticalAlignment = Alignment.Top,
-            horizontalAlignment = Alignment.Start
-        ) {
-            if (stats == null) {
-                Text(
-                    text = "MARGIN CHECK",
-                    style = TextStyle(color = TextMutedColor, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                )
-                Box(modifier = GlanceModifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No data yet", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
-                }
-                return@Column
-            }
+            rv.setTextViewText(R.id.text_status_badge, statusLabel)
+            rv.setTextColor(R.id.text_status_badge, statusColor)
 
             val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-            val isError = stats.errorMessage != null
-            val isAlert = !isError && stats.triggeredPortfolios.isNotEmpty()
-            val statusColor = if (isError || isAlert) NegativeColor else PositiveColor
-            val statusLabel = when { isError -> "● Failed"; isAlert -> "● Alert"; else -> "● OK" }
-            val timeColor = if (isError || isAlert) NegativeColor else TextPrimaryColor
-            val dataAgeMinutes = (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
+            val timeColor = if (isError || isAlert) colorNegative else colorTextPrimary
+            rv.setTextViewText(R.id.text_run_time, timeFmt.format(Date(stats.runTime)))
+            rv.setTextColor(R.id.text_run_time, timeColor)
+
+            val dataAgeMinutes = if (!isError && stats.oldestDataTime > 0L)
+                (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
+            else null
             val ageColor = when {
-                dataAgeMinutes < 15 -> PositiveColor
-                dataAgeMinutes < 60 -> WarningColor
-                else                -> NegativeColor
+                dataAgeMinutes == null -> colorTextPrimary
+                dataAgeMinutes < 15   -> colorPositive
+                dataAgeMinutes < 60   -> colorWarning
+                else                  -> colorNegative
             }
 
-            // ── Header ───────────────────────────────────────────────────
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("MARGIN CHECK", style = TextStyle(color = TextMutedColor, fontSize = 11.sp, fontWeight = FontWeight.Medium))
-                Spacer(GlanceModifier.defaultWeight())
-                Text(statusLabel, style = TextStyle(color = statusColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
-            }
-
-            // ── Hero time ────────────────────────────────────────────────
-            Text(
-                text = timeFmt.format(Date(stats.runTime)),
-                style = TextStyle(color = timeColor, fontSize = 28.sp, fontWeight = FontWeight.Medium),
-                modifier = GlanceModifier.padding(top = 6.dp, bottom = 6.dp)
-            )
-
-            // ── Divider ──────────────────────────────────────────────────
-            Box(modifier = GlanceModifier.fillMaxWidth().height(1.dp).background(DividerColor)) {}
-
-            Spacer(GlanceModifier.height(10.dp))
-
-            // ── Metrics rows ─────────────────────────────────────────────
             when {
                 isError -> {
-                    Text(
-                        text = stats.errorMessage,
-                        style = TextStyle(color = NegativeColor, fontSize = 10.sp),
-                        maxLines = 2,
-                        modifier = GlanceModifier.padding(bottom = 8.dp)
-                    )
-                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data age", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
-                        Spacer(GlanceModifier.defaultWeight())
-                        Text("${dataAgeMinutes}m", style = TextStyle(color = NegativeColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
-                    }
+                    rv.setViewVisibility(R.id.text_detail, View.VISIBLE)
+                    rv.setTextViewText(R.id.text_detail, stats.errorMessage ?: "Error")
+                    rv.setTextColor(R.id.text_detail, colorNegative)
                 }
                 isAlert -> {
-                    Text(
-                        text = stats.triggeredPortfolios.joinToString(", "),
-                        style = TextStyle(color = NegativeColor, fontSize = 10.sp, fontWeight = FontWeight.Medium),
-                        maxLines = 2,
-                        modifier = GlanceModifier.padding(bottom = 8.dp)
-                    )
-                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data age", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
-                        Spacer(GlanceModifier.defaultWeight())
-                        Text("${dataAgeMinutes}m", style = TextStyle(color = ageColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
-                    }
+                    rv.setViewVisibility(R.id.text_detail, View.VISIBLE)
+                    rv.setTextViewText(R.id.text_detail, stats.triggeredPortfolios.joinToString(", "))
+                    rv.setTextColor(R.id.text_detail, colorNegative)
                 }
-                else -> {
-                    Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Data age", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
-                        Spacer(GlanceModifier.defaultWeight())
-                        Text("${dataAgeMinutes}m", style = TextStyle(color = ageColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
-                    }
-                    Row(modifier = GlanceModifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Portfolios", style = TextStyle(color = TextMutedColor, fontSize = 10.sp))
-                        Spacer(GlanceModifier.defaultWeight())
-                        Text("${stats.triggeredPortfolios.size} triggered", style = TextStyle(color = PositiveColor, fontSize = 10.sp, fontWeight = FontWeight.Medium))
-                    }
+                else -> rv.setViewVisibility(R.id.text_detail, View.GONE)
+            }
+
+            if (!isMedium) {
+                rv.setTextViewText(R.id.text_data_age, if (dataAgeMinutes != null) "${dataAgeMinutes}m old" else "–")
+                rv.setTextColor(R.id.text_data_age, if (isError) colorNegative else ageColor)
+            } else {
+                rv.setTextViewText(R.id.text_data_age_value, if (dataAgeMinutes != null) "${dataAgeMinutes}m" else "–")
+                rv.setTextColor(R.id.text_data_age_value, if (isError) colorNegative else ageColor)
+                if (!isError && !isAlert) {
+                    rv.setViewVisibility(R.id.row_portfolios, View.VISIBLE)
+                    rv.setTextViewText(R.id.text_portfolios_count, "${stats.triggeredPortfolios.size} triggered")
+                    rv.setTextColor(R.id.text_portfolios_count, colorPositive)
+                } else {
+                    rv.setViewVisibility(R.id.row_portfolios, View.GONE)
                 }
             }
+
+            return rv
         }
     }
-}
-
-class MarginCheckWidgetReceiver : GlanceAppWidgetReceiver() {
-    override val glanceAppWidget: GlanceAppWidget = MarginCheckWidget()
 }

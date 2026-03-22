@@ -68,6 +68,4 @@ dependencies {
 
     implementation(libs.bundles.ktor)
 
-    implementation(libs.glance.appwidget)
-    implementation(libs.glance.material3)
 }

@@ -12,7 +12,6 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -23,8 +22,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.portfoliohelper.PortfolioHelperApp
-import com.portfoliohelper.data.model.CashEntry
-import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import kotlinx.coroutines.flow.first
@@ -100,20 +97,34 @@ class MarginCheckWorker(
     override suspend fun doWork(): Result {
         Log.d(TAG, "Worker execution started: Price Sync + Margin Check")
         val app = context.applicationContext as PortfolioHelperApp
-        
-        try {
-            setForeground(getForegroundInfo())
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not run in foreground: ${e.message}")
-        }
+
+        // Signal running state immediately so widget shows ● Running + Chronometer
+        val startTime = System.currentTimeMillis()
+        app.settingsRepo.setMarginCheckRunning(true, startTime)
+        MarginCheckWidgetReceiver.updateAll(context)
 
         try {
-            val result = runMarginCheck(app)
-            // Update widget to show new prices and margin status
-            MarginCheckWidget().updateAll(context)
+            try {
+                setForeground(getForegroundInfo())
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not run in foreground — worker may be killed early", e)
+                app.settingsRepo.updateMarginCheckStats(
+                    MarginCheckStats(
+                        runTime = System.currentTimeMillis(),
+                        oldestDataTime = 0L,
+                        triggeredPortfolios = emptyList(),
+                        errorMessage = "Foreground failed: ${e.message}"
+                    )
+                )
+                MarginCheckWidgetReceiver.updateAll(context)
+                return Result.retry()
+            }
+
+            val result = kotlinx.coroutines.withTimeout(45_000) { runMarginCheck(app) }
+            MarginCheckWidgetReceiver.updateAll(context)
             return result
         } catch (e: Exception) {
-            Log.e(TAG, "Fatal error in worker: ${e.message}", e)
+            Log.e(TAG, "Fatal error in worker", e)
             app.settingsRepo.updateMarginCheckStats(
                 MarginCheckStats(
                     runTime = System.currentTimeMillis(),
@@ -122,23 +133,32 @@ class MarginCheckWorker(
                     errorMessage = e.message ?: "Unknown error"
                 )
             )
-            MarginCheckWidget().updateAll(context)
-            return Result.success()
+            MarginCheckWidgetReceiver.updateAll(context)
+            return Result.retry()
+        } finally {
+            // Always clear running state — even if worker is interrupted
+            app.settingsRepo.setMarginCheckRunning(false)
         }
     }
 
     private suspend fun runMarginCheck(app: PortfolioHelperApp): Result {
-        kotlinx.coroutines.delay(1000)
-
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notificationsEnabled = app.settingsRepo.marginCheckNotificationsEnabled.first()
 
         val allAlerts = app.database.portfolioMarginAlertDao().getAll()
         val portfolios = app.database.portfolioDao().getAll().associateBy { it.serialId }
         val allPortfoliosList = app.database.portfolioDao().getAll()
-        
+
         if (allAlerts.isEmpty()) {
-            Log.d(TAG, "No alerts or portfolios found to sync.")
+            Log.d(TAG, "No alerts configured — updating stats timestamp.")
+            app.settingsRepo.updateMarginCheckStats(
+                MarginCheckStats(
+                    runTime = System.currentTimeMillis(),
+                    oldestDataTime = System.currentTimeMillis(),
+                    triggeredPortfolios = emptyList(),
+                    errorMessage = null
+                )
+            )
             return Result.success()
         }
 
@@ -238,7 +258,7 @@ class MarginCheckWorker(
         app.settingsRepo.updateMarginCheckStats(
             MarginCheckStats(
                 runTime = System.currentTimeMillis(),
-                oldestDataTime = if (oldestDataTime == Long.MAX_VALUE) 0L else oldestDataTime,
+                oldestDataTime = if (oldestDataTime == Long.MAX_VALUE) System.currentTimeMillis() else oldestDataTime,
                 triggeredPortfolios = triggeredPortfolioNames,
                 errorMessage = null
             )

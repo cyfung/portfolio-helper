@@ -156,30 +156,33 @@ class SyncRepository(
                 }
             }
 
-            val response = pairClient.post("https://$host:$port/api/sync/pair") {
-                parameter("pin", pin)
-                header("X-Device-ID", clientId)
-                header("X-Device-Name", deviceName)
-            }
+            try {
+                val response = pairClient.post("https://$host:$port/api/sync/pair") {
+                    parameter("pin", pin)
+                    header("X-Device-ID", clientId)
+                    header("X-Device-Name", deviceName)
+                }
 
-            if (response.status != HttpStatusCode.OK) {
+                if (response.status != HttpStatusCode.OK) {
+                    val body = response.bodyAsText()
+                    throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+                }
+
                 val body = response.bodyAsText()
-                throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+                val json = Json.parseToJsonElement(body).jsonObject
+                val serverAssignedId = json["serverAssignedId"]?.jsonPrimitive?.content
+                    ?: throw Exception("Missing serverAssignedId in response")
+                val aesKey = json["aesKey"]?.jsonPrimitive?.content
+                    ?: throw Exception("Missing aesKey in response")
+
+                settings.saveServerAssignedId(serverAssignedId)
+                settings.saveAesKey(aesKey)
+                capturedFingerprint?.let { settings.saveTlsFingerprint(it) }
+
+                Log.i("SyncRepository", "Paired successfully. serverAssignedId=$serverAssignedId, fingerprint=$capturedFingerprint")
+            } finally {
+                pairClient.close()
             }
-
-            val body = response.bodyAsText()
-            val json = Json.parseToJsonElement(body).jsonObject
-            val serverAssignedId = json["serverAssignedId"]?.jsonPrimitive?.content
-                ?: throw Exception("Missing serverAssignedId in response")
-            val aesKey = json["aesKey"]?.jsonPrimitive?.content
-                ?: throw Exception("Missing aesKey in response")
-
-            settings.saveServerAssignedId(serverAssignedId)
-            settings.saveAesKey(aesKey)
-            capturedFingerprint?.let { settings.saveTlsFingerprint(it) }
-
-            Log.i("SyncRepository", "Paired successfully. serverAssignedId=$serverAssignedId, fingerprint=$capturedFingerprint")
-            pairClient.close()
         } finally {
             client.close()
         }
@@ -231,7 +234,7 @@ class SyncRepository(
             if (e is CancellationException) throw e
             if (e is UnauthorizedException) throw e
             Log.e("SyncRepository", "Sync failed: ${e.message}", e)
-            throw Exception("Connection failed: ${e.message}")
+            throw Exception("Connection failed: ${e.message}", e)
         } finally {
             client.close()
         }
