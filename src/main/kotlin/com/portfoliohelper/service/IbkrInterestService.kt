@@ -5,7 +5,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 
@@ -27,7 +26,8 @@ data class IbkrInterestSnapshot(
     val cheapestDailyUsd: Double,
     val savingsUsd: Double,
     val label: String,                       // "Saving" or "Saving (Buy/Sell USD.XXX)"
-    val perCurrency: List<IbkrCurrencyInterest>
+    val perCurrency: List<IbkrCurrencyInterest>,
+    val lastFetch: Long
 )
 
 class IbkrInterestService(
@@ -39,13 +39,13 @@ class IbkrInterestService(
     val updates: StateFlow<IbkrInterestSnapshot?> = combine(
         cashEntries,
         cashSvc.updates,
-        IbkrMarginRateService.updates.onStart { emit(Unit) }
-    ) { entries, cash, _ ->
-        compute(entries, cash)
+        IbkrMarginRateService.ratesFlow
+    ) { entries, cash, ratesSnap ->
+        compute(entries, cash, ratesSnap)
     }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    private fun compute(entries: List<CashEntry>, cashSnap: CashDisplaySnapshot): IbkrInterestSnapshot? {
-        val allRates = IbkrMarginRateService.getAllRates()
+    private fun compute(entries: List<CashEntry>, cashSnap: CashDisplaySnapshot, ratesSnap: IbkrMarginRateService.RatesSnapshot): IbkrInterestSnapshot? {
+        val allRates = ratesSnap.rates
         if (allRates.isEmpty()) return null
 
         val marginCurrencies = mutableSetOf("USD")
@@ -122,7 +122,8 @@ class IbkrInterestService(
             cheapestDailyUsd = cheapestDailyUsd,
             savingsUsd = savingsUsd,
             label = buildLabel(cheapestCcy, perCurrency),
-            perCurrency = perCurrency
+            perCurrency = perCurrency,
+            lastFetch = ratesSnap.lastFetch
         )
     }
 

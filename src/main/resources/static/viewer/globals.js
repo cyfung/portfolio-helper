@@ -60,9 +60,6 @@ var allocReduceMode = (typeof savedAllocReduceMode !== 'undefined' ? savedAllocR
 // Group view state
 var groupViewActive = false;
 
-// IBKR rates data (set on ibkr-rates SSE, read by display-worker)
-var lastIbkrRatesData = null;
-
 // Server-computed per-stock display data (set by applyStockDisplay, read by display-worker)
 // symbol → { markPrice, closePrice, positionValueUsd, currency }
 var lastServerStocks = {};

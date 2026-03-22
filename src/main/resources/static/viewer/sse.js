@@ -45,13 +45,18 @@ function initSseConnection() {
                 applyCashDisplay(data);
             } else if (data.type === 'portfolio-totals') {
                 applyPortfolioTotals(data);
-            } else if (data.type === 'ibkr-interest') {
-                applyIbkrInterest(data);
+            } else if (data.type === 'ibkr-display') {
+                if (data.portfolioId === portfolioId) {
+                    const display = document.getElementById('ibkr-display');
+                    if (display) display.innerHTML = data.html;
+                    const fetchEl = document.getElementById('ibkr-last-fetch');
+                    if (fetchEl && data.lastFetch > 0)
+                        fetchEl.textContent = new Date(data.lastFetch).toLocaleTimeString();
+                    const reloadBtn = document.getElementById('ibkr-reload-btn');
+                    if (reloadBtn) reloadBtn.dataset.lastFetch = data.lastFetch;
+                }
             } else if (data.type === 'dividend') {
                 updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
-            } else if (data.type === 'ibkr-rates') {
-                buildIbkrRatesTable(data);
-                lastIbkrRatesData = data;
             } else {
                 // FX rate update
                 if (data.symbol && data.symbol.endsWith('USD=X')) {

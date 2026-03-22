@@ -1,9 +1,6 @@
 package com.portfoliohelper.web
 
-import com.portfoliohelper.service.CurrencyConventions
 import com.portfoliohelper.service.DividendService
-import com.portfoliohelper.service.IbkrCurrencyInterest
-import com.portfoliohelper.service.IbkrMarginRateService
 import com.portfoliohelper.service.PortfolioMasterService
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.CashEntryDisplay
@@ -35,17 +32,6 @@ private data class PriceEvent(
 )
 
 @Serializable
-private data class IbkrRateTier(val upTo: Double?, val rate: Double)
-
-@Serializable
-private data class IbkrRateCurrencyEntry(
-    val currency: String,
-    val baseRate: Double,
-    val days: Int,
-    val tiers: List<IbkrRateTier>
-)
-
-@Serializable
 private sealed class SseEvent
 
 @Serializable
@@ -54,13 +40,6 @@ private data class NavEvent(
     val symbol: String,
     val nav: Double,
     val timestamp: Long
-) : SseEvent()
-
-@Serializable
-@SerialName("ibkr-rates")
-private data class IbkrRatesEvent(
-    val currencies: List<IbkrRateCurrencyEntry>,
-    val lastFetch: Long
 ) : SseEvent()
 
 @Serializable
@@ -100,15 +79,11 @@ private data class PortfolioTotalsEvent(
 ) : SseEvent()
 
 @Serializable
-@SerialName("ibkr-interest")
-private data class IbkrInterestEvent(
+@SerialName("ibkr-display")
+private data class IbkrDisplayEvent(
     val portfolioId: String,
-    val currentDailyUsd: Double,
-    val cheapestCcy: String?,
-    val cheapestDailyUsd: Double,
-    val savingsUsd: Double,
-    val label: String,
-    val perCurrency: List<IbkrCurrencyInterest>
+    val html: String,
+    val lastFetch: Long
 ) : SseEvent()
 
 @Serializable
@@ -143,12 +118,6 @@ internal suspend fun ServerSSESession.handleSseStream() {
         }
         NavService.updates.collect { (symbol, navData) ->
             channel.trySend(buildNavJson(symbol, navData))
-        }
-    }
-
-    launch {
-        IbkrMarginRateService.updates.collect {
-            channel.trySend(buildIbkrJson())
         }
     }
 
@@ -196,14 +165,10 @@ internal suspend fun ServerSSESession.handleSseStream() {
 
     launch {
         PortfolioMasterService.interestFlow.collect { snap ->
-            channel.trySend(appJson.encodeToString<SseEvent>(IbkrInterestEvent(
+            channel.trySend(appJson.encodeToString<SseEvent>(IbkrDisplayEvent(
                 portfolioId = snap.portfolioId,
-                currentDailyUsd = snap.currentDailyUsd,
-                cheapestCcy = snap.cheapestCcy,
-                cheapestDailyUsd = snap.cheapestDailyUsd,
-                savingsUsd = snap.savingsUsd,
-                label = snap.label,
-                perCurrency = snap.perCurrency
+                html = renderIbkrDisplayHtml(snap),
+                lastFetch = snap.lastFetch
             )))
         }
     }
@@ -254,16 +219,3 @@ private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): Strin
 private fun buildNavJson(symbol: String, navData: NavData): String =
     appJson.encodeToString<SseEvent>(NavEvent(symbol = symbol, nav = navData.nav, timestamp = navData.lastFetchTime))
 
-private fun buildIbkrJson(): String = appJson.encodeToString<SseEvent>(
-    IbkrRatesEvent(
-        currencies = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
-            IbkrRateCurrencyEntry(
-                currency = ccy,
-                baseRate = r.baseRate,
-                days = CurrencyConventions.getDaysInYear(ccy),
-                tiers = r.tiers.map { IbkrRateTier(it.upTo, it.rate) }
-            )
-        },
-        lastFetch = IbkrMarginRateService.getLastFetchMillis()
-    )
-)

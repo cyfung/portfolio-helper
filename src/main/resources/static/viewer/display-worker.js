@@ -1,6 +1,6 @@
 // ── display-worker.js — Background worker for rebalance/allocation computation ──
-// Per-stock prices, cash totals, IBKR interest are now computed server-side and
-// applied via applyStockDisplay / applyCashDisplay / applyPortfolioTotals / applyIbkrInterest.
+// Per-stock prices, cash totals, and IBKR interest are now computed server-side and
+// applied via applyStockDisplay / applyCashDisplay / applyPortfolioTotals / ibkr-display SSE.
 // This worker only handles weight, rebal, and alloc columns (needs user UI state).
 //
 // Depends on: globals.js, utils.js (parsePrice available on main thread)

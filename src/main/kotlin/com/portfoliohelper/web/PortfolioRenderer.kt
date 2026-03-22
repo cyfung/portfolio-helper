@@ -297,7 +297,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         }
 
                         if (effectiveCashEntries.any { it.marginFlag }) {
-                            buildIbkrRatesTable()
+                            buildIbkrRatesSection()
                         }
                     }
 
