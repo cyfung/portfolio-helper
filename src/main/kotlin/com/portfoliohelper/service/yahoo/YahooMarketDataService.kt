@@ -4,8 +4,34 @@ import com.portfoliohelper.model.Portfolio
 import com.portfoliohelper.model.Stock
 import com.portfoliohelper.service.PollingService
 import com.portfoliohelper.service.nav.NavService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 object YahooMarketDataService : PollingService<YahooQuote>("Yahoo Finance") {
+
+    private val fxScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val _fxRates = MutableStateFlow<Map<String, Double>>(emptyMap())
+    val fxRates: StateFlow<Map<String, Double>> = _fxRates
+
+    init {
+        fxScope.launch {
+            batchComplete.collect { _fxRates.value = buildFxMap() }
+        }
+    }
+
+    private fun buildFxMap(): Map<String, Double> =
+        cache.entries
+            .filter { it.key.endsWith("USD=X") }
+            .mapNotNull { (key, quote) ->
+                val rate = quote.regularMarketPrice ?: return@mapNotNull null
+                key.removeSuffix("USD=X") to rate
+            }
+            .toMap()
 
     fun requestMarketDataForSymbols(symbols: List<String>, updateIntervalSeconds: Long = 60) {
         logger.info("Requesting market data for ${symbols.size} symbols (update interval: ${updateIntervalSeconds}s)...")
@@ -35,6 +61,7 @@ object YahooMarketDataService : PollingService<YahooQuote>("Yahoo Finance") {
     }
 
     override fun shutdown() {
+        fxScope.cancel()
         super.shutdown()
         YahooFinanceClient.shutdown()
     }

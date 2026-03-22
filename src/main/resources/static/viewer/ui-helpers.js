@@ -73,6 +73,7 @@ function applyStockDisplay(data) {
 
         // Store server-computed data for display-worker (weight/rebal/alloc)
         lastServerStocks[symbol] = { markPrice, closePrice, positionValueUsd, currency };
+        stockCurrencies[symbol] = currency;
 
         // Qty display cell and data-qty attribute (scaled by server)
         const amountCell = document.getElementById('amount-' + symbol);
@@ -182,7 +183,16 @@ function applyStockDisplay(data) {
                 estValCell.classList.remove('loaded');
             }
         }
+
+        // NAV cell (Last NAV column)
+        const navCell = document.getElementById('nav-' + symbol);
+        if (navCell) {
+            const nav = stock.lastNav;
+            navCell.textContent = nav !== null && nav !== undefined ? nav.toFixed(2) : '—';
+            if (nav !== null && nav !== undefined) navCell.classList.add('loaded');
+        }
     }
+    updateGlobalTimestamp(Date.now());
 
     // Update globals for display-worker
     lastStockGrossVal = data.stockGrossUsd;

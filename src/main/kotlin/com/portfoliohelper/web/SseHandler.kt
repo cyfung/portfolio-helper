@@ -5,41 +5,22 @@ import com.portfoliohelper.service.PortfolioMasterService
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.CashEntryDisplay
 import com.portfoliohelper.service.StockDisplay
-import com.portfoliohelper.service.nav.NavData
-import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
-import com.portfoliohelper.service.yahoo.YahooQuote
 import com.portfoliohelper.util.appJson
 import io.ktor.server.sse.*
 import io.ktor.sse.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.ZoneOffset
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-
-@Serializable
-private data class PriceEvent(
-    val symbol: String,
-    val markPrice: Double?,
-    val lastClosePrice: Double?,
-    val isMarketClosed: Boolean?,
-    val tradingPeriodEnd: Long?,
-    val currency: String?,
-    val localDate: String?,
-    val timestamp: Long?
-)
 
 @Serializable
 private sealed class SseEvent
 
 @Serializable
-@SerialName("nav")
-private data class NavEvent(
-    val symbol: String,
-    val nav: Double,
-    val timestamp: Long
+@SerialName("fx-rates")
+private data class FxRatesEvent(
+    val rates: Map<String, Double>
 ) : SseEvent()
 
 @Serializable
@@ -104,20 +85,8 @@ internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
 
     launch {
-        YahooMarketDataService.snapshotAll().forEach { (symbol, quote) ->
-            if (quote.regularMarketPrice != null) channel.trySend(buildPriceJson(symbol, quote))
-        }
-        YahooMarketDataService.updates.collect { (symbol, quote) ->
-            if (quote.regularMarketPrice != null) channel.trySend(buildPriceJson(symbol, quote))
-        }
-    }
-
-    launch {
-        NavService.snapshotAll().forEach { (symbol, navData) ->
-            channel.trySend(buildNavJson(symbol, navData))
-        }
-        NavService.updates.collect { (symbol, navData) ->
-            channel.trySend(buildNavJson(symbol, navData))
+        YahooMarketDataService.fxRates.collect { rates ->
+            if (rates.isNotEmpty()) channel.trySend(appJson.encodeToString<SseEvent>(FxRatesEvent(rates)))
         }
     }
 
@@ -198,24 +167,4 @@ internal suspend fun ServerSSESession.handleSseStream() {
     }
 }
 
-private fun buildPriceJson(symbol: String, quote: YahooQuote): String =
-    appJson.encodeToString(PriceEvent(
-        symbol = symbol,
-        markPrice = quote.regularMarketPrice,
-        lastClosePrice = quote.previousClose,
-        isMarketClosed = quote.isMarketClosed,
-        tradingPeriodEnd = quote.tradingPeriodEnd,
-        currency = quote.currency,
-        localDate = computeLocalDate(quote.tradingPeriodEnd, quote.gmtoffset),
-        timestamp = quote.lastUpdateTime
-    ))
-
-private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): String? {
-    if (tradingPeriodEndSec == null || gmtoffset == null) return null
-    return Instant.ofEpochSecond(tradingPeriodEndSec + gmtoffset)
-        .atOffset(ZoneOffset.UTC).toLocalDate().toString()
-}
-
-private fun buildNavJson(symbol: String, navData: NavData): String =
-    appJson.encodeToString<SseEvent>(NavEvent(symbol = symbol, nav = navData.nav, timestamp = navData.lastFetchTime))
 

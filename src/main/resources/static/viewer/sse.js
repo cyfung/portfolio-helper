@@ -37,8 +37,9 @@ function initSseConnection() {
             if (data.type === 'reload') {
                 console.log('Portfolio reloaded, refreshing page...');
                 location.reload();
-            } else if (data.type === 'nav') {
-                updateNavInUI(data.symbol, data.nav);
+            } else if (data.type === 'fx-rates') {
+                Object.assign(fxRates, data.rates);
+                scheduleDisplayUpdate();
             } else if (data.type === 'stock-display') {
                 applyStockDisplay(data);
             } else if (data.type === 'cash-display') {
@@ -57,22 +58,6 @@ function initSseConnection() {
                 }
             } else if (data.type === 'dividend') {
                 updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
-            } else {
-                // FX rate update
-                if (data.symbol && data.symbol.endsWith('USD=X')) {
-                    const ccy = data.symbol.replace('USD=X', '');
-                    if (data.markPrice !== null && data.markPrice !== undefined) {
-                        fxRates[ccy] = data.markPrice;
-                        scheduleDisplayUpdate();
-                    }
-                    return;
-                }
-
-                if (data.currency) {
-                    stockCurrencies[data.symbol] = data.currency;
-                }
-                if (data.localDate) symbolLocalDate[data.symbol] = data.localDate;
-                updateGlobalTimestamp(data.timestamp);
             }
         } catch (e) {
             console.error('Failed to parse SSE data:', e);
