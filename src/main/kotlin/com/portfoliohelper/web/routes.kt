@@ -398,6 +398,7 @@ fun Application.configureRouting() {
 
                 transaction { portfolioEntry.replacePositions(rows) }
 
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
                 DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
@@ -417,6 +418,7 @@ fun Application.configureRouting() {
 
                 transaction { portfolioEntry.replaceCash(entries) }
 
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondOk()
@@ -454,6 +456,8 @@ fun Application.configureRouting() {
                     }
                 }
 
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
                 DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
@@ -540,13 +544,14 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 val slug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
-                if (ManagedPortfolio.getBySlug(slug) != null) {
+                val portfolio = try {
+                    PortfolioMasterService.create(slug)
+                } catch (e: IllegalArgumentException) {
                     return@post call.respondText(
-                        "{\"status\":\"error\",\"message\":\"A portfolio named '${slug}' already exists.\"}",
+                        "{\"status\":\"error\",\"message\":\"${e.message}\"}",
                         ContentType.Application.Json, HttpStatusCode.Conflict
                     )
                 }
-                val portfolio = ManagedPortfolio.create(slug)
                 call.respondText(
                     "{\"status\":\"ok\",\"slug\":\"${portfolio.slug}\"}",
                     ContentType.Application.Json
@@ -564,14 +569,14 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 val newSlug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
-                if (newSlug != portfolio.slug && ManagedPortfolio.getBySlug(newSlug) != null) {
+                try {
+                    PortfolioMasterService.rename(portfolio, newSlug)
+                } catch (e: IllegalArgumentException) {
                     return@post call.respondText(
-                        "{\"status\":\"error\",\"message\":\"A portfolio named '$newSlug' already exists.\"}",
+                        "{\"status\":\"error\",\"message\":\"${e.message}\"}",
                         ContentType.Application.Json, HttpStatusCode.Conflict
                     )
                 }
-                portfolio.rename(newSlug)
-                PortfolioUpdateBroadcaster.broadcastReload()
                 call.respondText(
                     "{\"status\":\"ok\",\"slug\":\"$newSlug\"}",
                     ContentType.Application.Json
@@ -588,15 +593,14 @@ fun Application.configureRouting() {
                     ?: return@delete call.respond(HttpStatusCode.BadRequest)
                 val portfolio = ManagedPortfolio.getBySlug(portfolioId)
                     ?: return@delete call.respond(HttpStatusCode.NotFound)
-                if (portfolio.serialId == ManagedPortfolio.firstSerialId()) {
+                try {
+                    PortfolioMasterService.delete(portfolio)
+                } catch (e: IllegalStateException) {
                     return@delete call.respondText(
-                        "{\"status\":\"error\",\"message\":\"The default portfolio cannot be removed.\"}",
+                        "{\"status\":\"error\",\"message\":\"${e.message}\"}",
                         ContentType.Application.Json, HttpStatusCode.Forbidden
                     )
                 }
-                portfolio.delete()
-                PortfolioUpdateBroadcaster.broadcastReload()
-                MarketDataCoordinator.refresh()
                 call.respondOk()
             } catch (e: Exception) {
                 call.respondApiError(e)
@@ -665,6 +669,8 @@ fun Application.configureRouting() {
                 val id = call.request.queryParameters["id"]?.toIntOrNull()
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
                 BackupService.restoreFromDb(portfolioEntry, id)
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondOk()

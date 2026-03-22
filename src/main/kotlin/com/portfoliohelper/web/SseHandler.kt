@@ -2,9 +2,12 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.service.CurrencyConventions
 import com.portfoliohelper.service.DividendService
+import com.portfoliohelper.service.IbkrCurrencyInterest
 import com.portfoliohelper.service.IbkrMarginRateService
-import com.portfoliohelper.service.ManagedPortfolio
+import com.portfoliohelper.service.PortfolioMasterService
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
+import com.portfoliohelper.service.CashEntryDisplay
+import com.portfoliohelper.service.StockDisplay
 import com.portfoliohelper.service.nav.NavData
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
@@ -16,6 +19,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -31,14 +35,6 @@ private data class PriceEvent(
 )
 
 @Serializable
-private data class NavEvent(
-    val type: String = "nav",
-    val symbol: String,
-    val nav: Double,
-    val timestamp: Long
-)
-
-@Serializable
 private data class IbkrRateTier(val upTo: Double?, val rate: Double)
 
 @Serializable
@@ -50,32 +46,84 @@ private data class IbkrRateCurrencyEntry(
 )
 
 @Serializable
+private sealed class SseEvent
+
+@Serializable
+@SerialName("nav")
+private data class NavEvent(
+    val symbol: String,
+    val nav: Double,
+    val timestamp: Long
+) : SseEvent()
+
+@Serializable
+@SerialName("ibkr-rates")
 private data class IbkrRatesEvent(
-    val type: String = "ibkr-rates",
     val currencies: List<IbkrRateCurrencyEntry>,
     val lastFetch: Long
-)
+) : SseEvent()
 
 @Serializable
-private data class PortfolioValueEvent(
-    val type: String = "portfolio-value",
+@SerialName("stock-display")
+private data class StockDisplayEvent(
     val portfolioId: String,
-    val value: Double
-)
+    val stocks: List<StockDisplay>,
+    val stockGrossUsd: Double,
+    val stockGrossKnown: Boolean,
+    val dayChangeUsd: Double,
+    val prevDayUsd: Double
+) : SseEvent()
 
 @Serializable
+@SerialName("cash-display")
+private data class CashDisplayEvent(
+    val portfolioId: String,
+    val entries: List<CashEntryDisplay>,
+    val totalUsd: Double,
+    val totalKnown: Boolean,
+    val marginUsd: Double
+) : SseEvent()
+
+@Serializable
+@SerialName("portfolio-totals")
+private data class PortfolioTotalsEvent(
+    val portfolioId: String,
+    val stockGrossUsd: Double,
+    val stockGrossKnown: Boolean,
+    val cashTotalUsd: Double,
+    val cashKnown: Boolean,
+    val grandTotalUsd: Double,
+    val grandTotalKnown: Boolean,
+    val marginUsd: Double,
+    val dayChangeUsd: Double,
+    val prevDayUsd: Double
+) : SseEvent()
+
+@Serializable
+@SerialName("ibkr-interest")
+private data class IbkrInterestEvent(
+    val portfolioId: String,
+    val currentDailyUsd: Double,
+    val cheapestCcy: String?,
+    val cheapestDailyUsd: Double,
+    val savingsUsd: Double,
+    val label: String,
+    val perCurrency: List<IbkrCurrencyInterest>
+) : SseEvent()
+
+@Serializable
+@SerialName("reload")
 private data class ReloadSseEvent(
-    val type: String = "reload",
     val timestamp: Long
-)
+) : SseEvent()
 
 @Serializable
+@SerialName("dividend")
 private data class DividendSseEvent(
-    val type: String = "dividend",
     val portfolioId: String,
     val total: Double,
     val calcUpToDate: String
-)
+) : SseEvent()
 
 internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
@@ -105,23 +153,70 @@ internal suspend fun ServerSSESession.handleSseStream() {
     }
 
     launch {
-        YahooMarketDataService.batchComplete.collect {
-            ManagedPortfolio.getAll().forEach { p ->
-                val total = YahooMarketDataService.getCurrentPortfolio(p.getStocks()).stockGrossValue
-                channel.trySend(appJson.encodeToString(PortfolioValueEvent(portfolioId = p.slug, value = total)))
-            }
+        PortfolioMasterService.stockFlow.collect { snap ->
+            channel.trySend(appJson.encodeToString<SseEvent>(StockDisplayEvent(
+                portfolioId = snap.portfolioId,
+                stocks = snap.stocks,
+                stockGrossUsd = snap.stockGrossUsd,
+                stockGrossKnown = snap.stockGrossKnown,
+                dayChangeUsd = snap.dayChangeUsd,
+                prevDayUsd = snap.prevDayUsd
+            )))
+        }
+    }
+
+    launch {
+        PortfolioMasterService.cashFlow.collect { snap ->
+            channel.trySend(appJson.encodeToString<SseEvent>(CashDisplayEvent(
+                portfolioId = snap.portfolioId,
+                entries = snap.entries,
+                totalUsd = snap.totalUsd,
+                totalKnown = snap.totalKnown,
+                marginUsd = snap.marginUsd
+            )))
+        }
+    }
+
+    launch {
+        PortfolioMasterService.totalsFlow.collect { snap ->
+            channel.trySend(appJson.encodeToString<SseEvent>(PortfolioTotalsEvent(
+                portfolioId = snap.portfolioId,
+                stockGrossUsd = snap.stockGrossUsd,
+                stockGrossKnown = snap.stockGrossKnown,
+                cashTotalUsd = snap.cashTotalUsd,
+                cashKnown = snap.cashKnown,
+                grandTotalUsd = snap.grandTotalUsd,
+                grandTotalKnown = snap.grandTotalKnown,
+                marginUsd = snap.marginUsd,
+                dayChangeUsd = snap.dayChangeUsd,
+                prevDayUsd = snap.prevDayUsd
+            )))
+        }
+    }
+
+    launch {
+        PortfolioMasterService.interestFlow.collect { snap ->
+            channel.trySend(appJson.encodeToString<SseEvent>(IbkrInterestEvent(
+                portfolioId = snap.portfolioId,
+                currentDailyUsd = snap.currentDailyUsd,
+                cheapestCcy = snap.cheapestCcy,
+                cheapestDailyUsd = snap.cheapestDailyUsd,
+                savingsUsd = snap.savingsUsd,
+                label = snap.label,
+                perCurrency = snap.perCurrency
+            )))
         }
     }
 
     launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
-            channel.trySend(appJson.encodeToString(ReloadSseEvent(timestamp = it.timestamp)))
+            channel.trySend(appJson.encodeToString<SseEvent>(ReloadSseEvent(timestamp = it.timestamp)))
         }
     }
 
     launch {
         DividendService.updates.collect { update ->
-            channel.trySend(appJson.encodeToString(DividendSseEvent(
+            channel.trySend(appJson.encodeToString<SseEvent>(DividendSseEvent(
                 portfolioId = update.portfolioSlug,
                 total = update.total,
                 calcUpToDate = update.calcUpToDate
@@ -157,9 +252,9 @@ private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): Strin
 }
 
 private fun buildNavJson(symbol: String, navData: NavData): String =
-    appJson.encodeToString(NavEvent(symbol = symbol, nav = navData.nav, timestamp = navData.lastFetchTime))
+    appJson.encodeToString<SseEvent>(NavEvent(symbol = symbol, nav = navData.nav, timestamp = navData.lastFetchTime))
 
-private fun buildIbkrJson(): String = appJson.encodeToString(
+private fun buildIbkrJson(): String = appJson.encodeToString<SseEvent>(
     IbkrRatesEvent(
         currencies = IbkrMarginRateService.getAllRates().map { (ccy, r) ->
             IbkrRateCurrencyEntry(

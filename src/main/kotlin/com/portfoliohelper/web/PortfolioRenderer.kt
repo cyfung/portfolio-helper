@@ -4,6 +4,7 @@ import com.portfoliohelper.AppConfig
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.model.Portfolio
 import com.portfoliohelper.service.ManagedPortfolio
+import com.portfoliohelper.service.PortfolioMasterService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
@@ -33,7 +34,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     fun scaleCash(amount: Double): Double =
         if (privacyScalePct != null) kotlin.math.round(amount * privacyScalePct) / 100.0 else amount
     fun scaleQty(qty: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(qty * privacyScalePct / 100.0).toDouble() else qty
+        if (privacyScalePct != null) kotlin.math.round(qty * privacyScalePct / 100.0) else qty
     val displayStockGross = if (privacyScalePct != null) portfolio.stockGrossValue * privacyScalePct / 100.0
                             else portfolio.stockGrossValue
 
@@ -55,7 +56,10 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                 val ref =
                     ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
                         ?: return null
-                val rawValue = e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
+                val refPortfolio = YahooMarketDataService.getCurrentPortfolio(ref.getStocks())
+                if (!refPortfolio.isValueKnown) return null
+                val refCashTotal = PortfolioMasterService.get(ref.slug)?.cashDisplay?.computeTotal() ?: 0.0
+                val rawValue = e.amount * (refPortfolio.stockGrossValue + refCashTotal)
                 if (privacyScalePct != null) rawValue * privacyScalePct / 100.0 else rawValue
             }
 
@@ -317,7 +321,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
-                        buildStockTable(portfolio, displayStockGross, privacyScalePct)
+                        buildStockTable(portfolio, privacyScalePct)
 
                         div {
                             id = "group-table-container"
@@ -392,7 +396,7 @@ private fun TBODY.buildSummaryRows(
             // P entries: JS treats them as USD (rate=1.0) with pre-resolved amount
             attributes["data-currency"] = if (entry.portfolioRef != null) "USD" else entry.currency
             attributes["data-amount"] = if (entry.portfolioRef != null) {
-                resolveEntryUsd(entry)?.toString() ?: "0"
+                resolveEntryUsd(entry)?.toString() ?: "NaN"
             } else {
                 scaleCash(entry.amount).toString()
             }
@@ -535,11 +539,10 @@ private fun TBODY.buildSummaryRows(
 
 private fun FlowContent.buildStockTable(
     portfolio: Portfolio,
-    stockGrossForDisplay: Double = portfolio.stockGrossValue,
     privacyScalePct: Double? = null
 ) {
     fun scaleQty(q: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0).toDouble() else q
+        if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0) else q
     table(classes = "portfolio-table") {
         id = "stock-view-table"
         thead {

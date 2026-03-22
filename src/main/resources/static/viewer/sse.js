@@ -39,14 +39,19 @@ function initSseConnection() {
                 location.reload();
             } else if (data.type === 'nav') {
                 updateNavInUI(data.symbol, data.nav);
-            } else if (data.type === 'portfolio-value') {
-                updatePortfolioRefValues(data.portfolioId, data.value);
+            } else if (data.type === 'stock-display') {
+                applyStockDisplay(data);
+            } else if (data.type === 'cash-display') {
+                applyCashDisplay(data);
+            } else if (data.type === 'portfolio-totals') {
+                applyPortfolioTotals(data);
+            } else if (data.type === 'ibkr-interest') {
+                applyIbkrInterest(data);
             } else if (data.type === 'dividend') {
                 updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
             } else if (data.type === 'ibkr-rates') {
                 buildIbkrRatesTable(data);
                 lastIbkrRatesData = data;
-                scheduleDisplayUpdate();
             } else {
                 // FX rate update
                 if (data.symbol && data.symbol.endsWith('USD=X')) {
@@ -63,7 +68,6 @@ function initSseConnection() {
                 }
                 if (data.localDate) symbolLocalDate[data.symbol] = data.localDate;
                 updateGlobalTimestamp(data.timestamp);
-                updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
             }
         } catch (e) {
             console.error('Failed to parse SSE data:', e);

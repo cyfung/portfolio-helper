@@ -62,3 +62,12 @@ var groupViewActive = false;
 
 // IBKR rates data (set on ibkr-rates SSE, read by display-worker)
 var lastIbkrRatesData = null;
+
+// Server-computed per-stock display data (set by applyStockDisplay, read by display-worker)
+// symbol → { markPrice, closePrice, positionValueUsd, currency }
+var lastServerStocks = {};
+
+// Last received SSE snapshots (cached for display currency re-apply)
+var lastStockDisplayData = null;
+var lastCashDisplayData = null;
+var lastPortfolioTotalsData = null;

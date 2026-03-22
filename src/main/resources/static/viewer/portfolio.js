@@ -1,5 +1,7 @@
-// ── portfolio.js — Price ingestion: writes globals, delegates display to worker ─
+// ── portfolio.js — Price ingestion: writes globals for legacy compatibility ────
 // Depends on: utils.js, ui-helpers.js, rebalance.js, cash.js, display-worker.js
+// Note: per-stock display cells are now updated by applyStockDisplay() in ui-helpers.js
+// when the server sends a 'stock-display' SSE event.
 
 function updateNavInUI(symbol, nav) {
     navValues[symbol] = nav;
@@ -8,11 +10,11 @@ function updateNavInUI(symbol, nav) {
         navCell.textContent = nav !== null ? nav.toFixed(2) : '—';
         if (nav !== null) navCell.classList.add('loaded');
     }
-    scheduleDisplayUpdate();
+    // No scheduleDisplayUpdate() — est val is now computed server-side
 }
 
 function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, tradingPeriodEnd) {
-    // Update per-symbol market state globals
+    // Keep globals for FX/display-currency compatibility; stock cells are updated via applyStockDisplay
     symbolMarketClosed[symbol] = isMarketClosed;
     if (tradingPeriodEnd !== null && tradingPeriodEnd !== undefined) {
         const endMs = tradingPeriodEnd * 1000;
@@ -20,15 +22,7 @@ function updatePriceInUI(symbol, markPrice, lastClosePrice, isMarketClosed, trad
             symbolTradingPeriodEndMs[symbol] = endMs;
         }
     }
-
-    // Store raw prices for high-precision calculations
     if (markPrice !== null) rawMarkPrices[symbol] = markPrice;
     if (lastClosePrice !== null) rawClosePrices[symbol] = lastClosePrice;
-
-    // Store Day % for LETF Est Val calculations
-    if (markPrice != null && lastClosePrice != null && lastClosePrice !== 0) {
-        componentDayPercents[symbol] = ((markPrice - lastClosePrice) / lastClosePrice) * 100;
-    }
-
-    scheduleDisplayUpdate();
+    // No scheduleDisplayUpdate() — stock cells are updated via applyStockDisplay SSE event
 }

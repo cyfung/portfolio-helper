@@ -19,8 +19,8 @@ initBackupPanel();
     initThemeToggle();
     document.body.classList.toggle('after-hours-gray', afterHoursGray);
 
-    // Compute display values (including cash totals) from server-rendered DOM data.
-    // The worker reads cash entries from DOM and sets lastMarginUsd/lastCashTotalUsd globals.
+    // Compute initial weight/rebal/alloc columns. Per-stock prices and totals
+    // are populated once the first stock-display/portfolio-totals SSE events arrive.
     scheduleDisplayUpdate();
 
     // Restore saved rebalance/margin targets — margin % takes priority
