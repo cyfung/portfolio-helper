@@ -74,6 +74,14 @@ function applyStockDisplay(data) {
         // Store server-computed data for display-worker (weight/rebal/alloc)
         lastServerStocks[symbol] = { markPrice, closePrice, positionValueUsd, currency };
 
+        // Qty display cell and data-qty attribute (scaled by server)
+        const amountCell = document.getElementById('amount-' + symbol);
+        if (amountCell && qty !== null && qty !== undefined) {
+            amountCell.textContent = qty % 1 === 0 ? Math.round(qty).toString() : String(qty);
+        }
+        const viewRow = document.querySelector('#stock-view-table tbody tr[data-symbol="' + symbol + '"]');
+        if (viewRow && qty !== null && qty !== undefined) viewRow.dataset.qty = qty;
+
         const markText = markPrice !== null ? markPrice.toFixed(2) : '—';
         const markLoaded = markPrice !== null;
 

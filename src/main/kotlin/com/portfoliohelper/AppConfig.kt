@@ -1,6 +1,9 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.db.GlobalSettingsTable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.upsert
@@ -54,6 +57,7 @@ object AppConfig {
                 }
             }
         }
+        if (KEY_PRIVACY_SCALE_PCT in updates) _privacyScalePct.value = privacyScalePct
     }
 
     // Typed accessors
@@ -70,6 +74,10 @@ object AppConfig {
     val showStockDisplayCurrency: Boolean get() = get(KEY_SHOW_STOCK_DISPLAY_CURRENCY).lowercase() == "true"
     val dividendSafeLagDays: Long get() = get(KEY_DIVIDEND_SAFE_LAG_DAYS).toLongOrNull()?.takeIf { it >= 0 } ?: 5L
     val privacyScalePct: Double? get() = get(KEY_PRIVACY_SCALE_PCT).toDoubleOrNull()?.takeIf { it > 0 }
+    private val _privacyScalePct: MutableStateFlow<Double?> by lazy {
+        MutableStateFlow(privacyScalePct)
+    }
+    val privacyScalePctFlow: StateFlow<Double?> by lazy { _privacyScalePct.asStateFlow() }
     val afterHoursGray: Boolean get() = get(KEY_AFTER_HOURS_GRAY).lowercase() != "false"
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")

@@ -30,7 +30,8 @@ data class CashDisplaySnapshot(
 
 class CashDisplayService(
     private val portfolioId: String,
-    private val cashEntries: StateFlow<List<CashEntry>>
+    private val cashEntries: StateFlow<List<CashEntry>>,
+    private val privacyScalePct: StateFlow<Double?>
 ) {
 
     private val _updates =
@@ -42,6 +43,7 @@ class CashDisplayService(
     fun initialize(scope: CoroutineScope) {
         scope.launch { YahooMarketDataService.batchComplete.collect { computeAndEmit() } }
         scope.launch { cashEntries.collect { computeAndEmit() } }
+        scope.launch { privacyScalePct.collect { computeAndEmit() } }
         scope.launch {
             PortfolioMasterService.stockGrossFlow.collect { snap ->
                 stockGrossCache[snap.portfolioId] = snap
@@ -91,19 +93,23 @@ class CashDisplayService(
      */
     fun computeTotal(): Double = compute().totalUsd
 
-    private fun resolveEntryUsd(entry: CashEntry): Double? = when (entry.currency) {
-        "USD" -> entry.amount
-        "P" -> {
-            val portfolioRef = entry.portfolioRef ?: return null
-            val snap = stockGrossCache[portfolioRef] ?: return null
-            if (!snap.stockGrossKnown) return null
-            entry.amount * snap.stockGrossUsd
-        }
-
-        else -> {
-            val rate = YahooMarketDataService.getQuote("${entry.currency}USD=X")?.regularMarketPrice
-                ?: return null
-            entry.amount * rate
+    private fun resolveEntryUsd(entry: CashEntry): Double? {
+        val scale = privacyScalePct.value
+        val amount = if (scale != null) entry.amount * scale / 100.0 else entry.amount
+        return when (entry.currency) {
+            "USD" -> amount
+            "P" -> {
+                // entry.amount is a multiplier (1.0 / -1.0), not a monetary value; stockGrossUsd is already scaled
+                val portfolioRef = entry.portfolioRef ?: return null
+                val snap = stockGrossCache[portfolioRef] ?: return null
+                if (!snap.stockGrossKnown) return null
+                entry.amount * snap.stockGrossUsd
+            }
+            else -> {
+                val rate = YahooMarketDataService.getQuote("${entry.currency}USD=X")?.regularMarketPrice
+                    ?: return null
+                amount * rate
+            }
         }
     }
 

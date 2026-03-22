@@ -32,7 +32,7 @@ data class IbkrInterestSnapshot(
 
 class IbkrInterestService(
     private val portfolioId: String,
-    private val cashEntries: StateFlow<List<CashEntry>>,
+    cashEntries: StateFlow<List<CashEntry>>,
     cashSvc: CashDisplayService,
     scope: CoroutineScope
 ) {

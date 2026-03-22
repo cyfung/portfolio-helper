@@ -33,8 +33,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     val privacyScalePct: Double? = AppConfig.privacyScalePct
     fun scaleCash(amount: Double): Double =
         if (privacyScalePct != null) kotlin.math.round(amount * privacyScalePct) / 100.0 else amount
-    fun scaleQty(qty: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(qty * privacyScalePct / 100.0) else qty
+
     val displayStockGross = if (privacyScalePct != null) portfolio.stockGrossValue * privacyScalePct / 100.0
                             else portfolio.stockGrossValue
 
@@ -396,7 +395,7 @@ private fun TBODY.buildSummaryRows(
             // P entries: JS treats them as USD (rate=1.0) with pre-resolved amount
             attributes["data-currency"] = if (entry.portfolioRef != null) "USD" else entry.currency
             attributes["data-amount"] = if (entry.portfolioRef != null) {
-                resolveEntryUsd(entry)?.toString() ?: "NaN"
+                "0"  // updated by updatePortfolioRefValues via SSE
             } else {
                 scaleCash(entry.amount).toString()
             }
@@ -422,8 +421,7 @@ private fun TBODY.buildSummaryRows(
             }
             td(classes = "cash-raw-col") {
                 if (entry.portfolioRef != null) {
-                    val resolvedUsd = resolveEntryUsd(entry)
-                    if (resolvedUsd != null) +"${"%,.2f".format(resolvedUsd)} USD" else +"--- USD"
+                    +"--- USD"  // updated by updatePortfolioRefValues via SSE
                 } else {
                     +"${"%,.2f".format(scaleCash(entry.amount))} ${entry.currency}"
                 }
@@ -431,8 +429,7 @@ private fun TBODY.buildSummaryRows(
             td(classes = "cash-converted-col") {
                 span {
                     id = "cash-usd-${entry.label}-${entry.currency}"
-                    val resolvedUsd = resolveEntryUsd(entry)
-                    if (resolvedUsd != null) +"%,.2f".format(resolvedUsd) else +"---"
+                    // Left blank; SSE applyCashDisplay fills in the correct scaled value
                 }
             }
         }
@@ -579,6 +576,7 @@ private fun FlowContent.buildStockTable(
                 tr {
                     attributes["data-symbol"] = stock.label
                     attributes["data-qty"] = formatQty(scaleQty(stock.amount))
+                    attributes["data-raw-qty"] = stock.amount.toString()
                     attributes["data-weight"] = effectiveTarget.toString()
                     if (stock.letfComponents != null) {
                         attributes["data-letf"] =

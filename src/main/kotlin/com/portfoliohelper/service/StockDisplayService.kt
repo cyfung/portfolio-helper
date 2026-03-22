@@ -44,7 +44,8 @@ data class StockDisplaySnapshot(
 
 class StockDisplayService(
     private val portfolioId: String,
-    private val stocks: StateFlow<List<Stock>>
+    private val stocks: StateFlow<List<Stock>>,
+    private val privacyScalePct: StateFlow<Double?>
 ) {
     private val _updates = MutableSharedFlow<StockDisplaySnapshot>(replay = 1, extraBufferCapacity = 8)
     val updates: SharedFlow<StockDisplaySnapshot> = _updates.asSharedFlow()
@@ -53,6 +54,7 @@ class StockDisplayService(
         scope.launch { YahooMarketDataService.batchComplete.collect { computeAndEmit() } }
         scope.launch { NavService.updates.collect { computeAndEmit() } }
         scope.launch { stocks.collect { computeAndEmit() } }
+        scope.launch { privacyScalePct.collect { computeAndEmit() } }
     }
 
     private fun computeAndEmit() { _updates.tryEmit(compute()) }
@@ -80,7 +82,9 @@ class StockDisplayService(
             val localDate: String?
         )
 
+        val scale = privacyScalePct.value
         val work = baseStocks.map { stock ->
+            val qty = if (scale != null) Math.round(stock.amount * scale / 100.0).toDouble() else stock.amount
             val quote = YahooMarketDataService.getQuote(stock.label)
             val ccy = quote?.currency ?: "USD"
             val fxRate = getFxRateToUsd(ccy)
@@ -89,9 +93,9 @@ class StockDisplayService(
             val effectivePrice = markPrice ?: closePrice
 
             val positionValueUsd = if (effectivePrice != null && fxRate != null)
-                effectivePrice * stock.amount * fxRate else null
+                effectivePrice * qty * fxRate else null
             val positionChangeUsd = if (markPrice != null && closePrice != null && fxRate != null)
-                (markPrice - closePrice) * stock.amount * fxRate else null
+                (markPrice - closePrice) * qty * fxRate else null
             val dayChangeDollars = if (markPrice != null && closePrice != null) markPrice - closePrice else null
             val dayChangePct = if (dayChangeDollars != null && closePrice != null && closePrice != 0.0)
                 dayChangeDollars / closePrice * 100.0 else null
@@ -99,11 +103,11 @@ class StockDisplayService(
             val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)
             val estPriceNative = computeLetfEstVal(
                 stock.letfComponents, quote, NavService.getNav(stock.label),
-                stock.amount, fxRate, nowMs
+                qty, fxRate, nowMs
             )
 
             StockWork(
-                symbol = stock.label, qty = stock.amount,
+                symbol = stock.label, qty = qty,
                 markPrice = markPrice, closePrice = closePrice,
                 fxRateToUsd = fxRate, currency = ccy,
                 targetWeightPct = stock.targetWeight,

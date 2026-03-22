@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.AppConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -14,9 +15,9 @@ class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineS
     private val _stocks = MutableStateFlow(portfolio.getStocks())
     private val _cashEntries = MutableStateFlow(portfolio.getCash())
 
-    val stockDisplay = StockDisplayService(portfolio.slug, _stocks)
+    val stockDisplay = StockDisplayService(portfolio.slug, _stocks, AppConfig.privacyScalePctFlow)
     val stockGross = StockGrossService(stockDisplay, scope)
-    val cashDisplay = CashDisplayService(portfolio.slug, _cashEntries)
+    val cashDisplay = CashDisplayService(portfolio.slug, _cashEntries, AppConfig.privacyScalePctFlow)
     val totals = PortfolioTotalsService(portfolio.slug, stockDisplay, cashDisplay, scope)
     val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay, scope)
 
