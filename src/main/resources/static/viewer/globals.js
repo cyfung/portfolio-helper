@@ -20,7 +20,10 @@ var rawClosePrices = {};        // symbol → raw close price
 var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
 var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
 
-// Per-stock currency (server-rendered + updated via SSE)
+// FX rates (populated via SSE fx-rates event)
+var fxRates = {"USD": 1.0};        // currency → USD rate (e.g. {HKD: 0.128})
+
+// Per-stock currency (populated via SSE stock-display event)
 var stockCurrencies = {};          // symbol → currency code (e.g. 'USD', 'HKD')
 
 // Display state
