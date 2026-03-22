@@ -2,11 +2,11 @@ package com.portfoliohelper.service
 
 import com.portfoliohelper.model.CashEntry
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -33,38 +33,24 @@ data class IbkrInterestSnapshot(
 class IbkrInterestService(
     private val portfolioId: String,
     private val cashEntries: StateFlow<List<CashEntry>>,
-    private val cashSvc: CashDisplayService
+    cashSvc: CashDisplayService,
+    scope: CoroutineScope
 ) {
-    private val _updates = MutableSharedFlow<IbkrInterestSnapshot>(replay = 1, extraBufferCapacity = 8)
-    val updates: SharedFlow<IbkrInterestSnapshot> = _updates.asSharedFlow()
+    val updates: StateFlow<IbkrInterestSnapshot?> = combine(
+        cashEntries,
+        cashSvc.updates,
+        IbkrMarginRateService.updates.onStart { emit(Unit) }
+    ) { entries, cash, _ ->
+        compute(entries, cash)
+    }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    private var lastCash: CashDisplaySnapshot? = null
-
-    fun initialize(scope: CoroutineScope) {
-        scope.launch { IbkrMarginRateService.updates.collect { computeAndEmit() } }
-        scope.launch { cashSvc.updates.collect { synchronized(this@IbkrInterestService) { lastCash = it }; computeAndEmit() } }
-        scope.launch { cashEntries.collect { computeAndEmit() } }
-    }
-
-    private fun computeAndEmit() {
-        val snapshot = compute() ?: return
-        _updates.tryEmit(snapshot)
-    }
-
-    fun compute(): IbkrInterestSnapshot? {
-        val cashSnap = synchronized(this) { lastCash } ?: return null
+    private fun compute(entries: List<CashEntry>, cashSnap: CashDisplaySnapshot): IbkrInterestSnapshot? {
         val allRates = IbkrMarginRateService.getAllRates()
         if (allRates.isEmpty()) return null
 
-        // Collect currencies that have margin entries (negative margin-flagged entries)
         val marginCurrencies = mutableSetOf("USD")
-        for (e in cashSnap.entries) {
-            if (e.isMarginEntry) marginCurrencies.add("USD") // placeholder: resolved to USD already
-        }
-        // Re-read cash entries to get native currency info (CashDisplaySnapshot entries are in USD)
-        // We need native currency amounts for per-currency breakdown
-        val nativeMargin = mutableMapOf<String, Double>() // currency → total borrowed (positive value)
-        for (entry in cashEntries.value) {
+        val nativeMargin = mutableMapOf<String, Double>()
+        for (entry in entries) {
             if (!entry.marginFlag || entry.amount >= 0) continue
             val ccy = if (entry.currency == "USD" || entry.currency == "P") "USD" else entry.currency.uppercase()
             if (ccy != "P") {
@@ -95,12 +81,10 @@ class IbkrInterestService(
             val effectiveRate = blended ?: baseRate
             val days = CurrencyConventions.getDaysInYear(ccy)
 
-            // Actual daily interest for current loan
             val nativeDaily = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days else 0.0
             val dailyInterestUsd = nativeDaily * fxRate
             currentDailyUsd += dailyInterestUsd
 
-            // Hypothetical: if all USD debt were in this currency
             val hypotheticalNative = if (totalMarginUsd > 0) totalMarginUsd / fxRate else nativeLoan
             val hypotheticalBlended = blendedRate(tiers, hypotheticalNative)
             val hypotheticalRate = hypotheticalBlended ?: baseRate
@@ -131,15 +115,13 @@ class IbkrInterestService(
         val savingsUsd = if (cheapestCcy != null && currentDailyUsd > 0)
             currentDailyUsd - cheapestDailyUsd else 0.0
 
-        val label = buildLabel(cheapestCcy, perCurrency)
-
         return IbkrInterestSnapshot(
             portfolioId = portfolioId,
             currentDailyUsd = currentDailyUsd,
             cheapestCcy = cheapestCcy,
             cheapestDailyUsd = cheapestDailyUsd,
             savingsUsd = savingsUsd,
-            label = label,
+            label = buildLabel(cheapestCcy, perCurrency),
             perCurrency = perCurrency
         )
     }
@@ -147,7 +129,7 @@ class IbkrInterestService(
     private fun blendedRate(tiers: List<IbkrMarginRateService.RateTier>, amount: Double): Double? {
         if (amount <= 0 || tiers.isEmpty()) return null
         val baseCap = tiers.first().upTo
-        if (baseCap == null || amount <= baseCap) return null  // below minimum threshold
+        if (baseCap == null || amount <= baseCap) return null
         var remaining = amount
         var totalInterest = 0.0
         var prevUpTo = 0.0

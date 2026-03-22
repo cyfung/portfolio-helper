@@ -15,17 +15,14 @@ class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineS
     private val _cashEntries = MutableStateFlow(portfolio.getCash())
 
     val stockDisplay = StockDisplayService(portfolio.slug, _stocks)
-    val stockGross = StockGrossService(stockDisplay)
+    val stockGross = StockGrossService(stockDisplay, scope)
     val cashDisplay = CashDisplayService(portfolio.slug, _cashEntries)
-    val totals = PortfolioTotalsService(portfolio.slug, stockDisplay, cashDisplay)
-    val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay)
+    val totals = PortfolioTotalsService(portfolio.slug, stockDisplay, cashDisplay, scope)
+    val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay, scope)
 
     fun initialize() {
         stockDisplay.initialize(scope)
-        stockGross.initialize(scope)
         cashDisplay.initialize(scope)
-        totals.initialize(scope)
-        interest.initialize(scope)
     }
 
     fun refreshStocks() {
@@ -108,25 +105,13 @@ object PortfolioMasterService {
 
     // flatMapLatest re-merges whenever the portfolio set changes, so long-lived
     // collectors (e.g. SSE) automatically track portfolios being added/removed.
-    val stockFlow: Flow<StockDisplaySnapshot> = childFlow {
-        it.stockDisplay.updates
-    }
-    val stockGrossFlow: Flow<StockGrossSnapshot> = childFlow {
-        it.stockGross.updates
-    }
+    val stockFlow: Flow<StockDisplaySnapshot> = childFlow { it.stockDisplay.updates }
+    val stockGrossFlow: Flow<StockGrossSnapshot> = childFlow { it.stockGross.updates.filterNotNull() }
+    val cashFlow: Flow<CashDisplaySnapshot> = childFlow { it.cashDisplay.updates }
+    val totalsFlow: Flow<PortfolioTotalsSnapshot> = childFlow { it.totals.updates.filterNotNull() }
+    val interestFlow: Flow<IbkrInterestSnapshot> = childFlow { it.interest.updates.filterNotNull() }
 
-    val cashFlow: Flow<CashDisplaySnapshot> = childFlow {
-         it.cashDisplay.updates
-    }
-    val totalsFlow: Flow<PortfolioTotalsSnapshot> = childFlow {
-        it.totals.updates
-    }
-
-    val interestFlow: Flow<IbkrInterestSnapshot> = childFlow {
-        it.interest.updates
-    }
-
-    private fun <T> childFlow(f: (PortfolioServices) -> SharedFlow<T>): Flow<T> =
+    private fun <T> childFlow(f: (PortfolioServices) -> Flow<T>): Flow<T> =
         _services.flatMapLatest { service ->
             service.values.map(f).merge()
         }
