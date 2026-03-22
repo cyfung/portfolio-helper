@@ -50,7 +50,11 @@ class MarginCheckWorker(
         private const val INTERVAL_MINUTES = 15L
         private const val TAG = "MarginPriceWorker"
 
-        fun schedule(context: Context, shouldRun: Boolean) {
+        fun schedule(
+            context: Context,
+            shouldRun: Boolean,
+            policy: ExistingPeriodicWorkPolicy = ExistingPeriodicWorkPolicy.KEEP
+        ) {
             Log.d(TAG, "Scheduling worker (Price Sync + Margin Check). ShouldRun: $shouldRun")
             val wm = WorkManager.getInstance(context)
 
@@ -71,7 +75,7 @@ class MarginCheckWorker(
 
             wm.enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
+                policy,
                 request
             )
         }
@@ -88,7 +92,11 @@ class MarginCheckWorker(
             .build()
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIF_ID_FOREGROUND, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            ForegroundInfo(
+                NOTIF_ID_FOREGROUND,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
         } else {
             ForegroundInfo(NOTIF_ID_FOREGROUND, notification)
         }
@@ -107,17 +115,7 @@ class MarginCheckWorker(
             try {
                 setForeground(getForegroundInfo())
             } catch (e: Exception) {
-                Log.e(TAG, "Could not run in foreground — worker may be killed early", e)
-                app.settingsRepo.updateMarginCheckStats(
-                    MarginCheckStats(
-                        runTime = System.currentTimeMillis(),
-                        oldestDataTime = 0L,
-                        triggeredPortfolios = emptyList(),
-                        errorMessage = "Foreground failed: ${e.message}"
-                    )
-                )
-                MarginCheckWidgetReceiver.updateAll(context)
-                return Result.retry()
+                Log.w(TAG, "Could not run in foreground — worker may be killed early", e)
             }
 
             val result = kotlinx.coroutines.withTimeout(45_000) { runMarginCheck(app) }
@@ -177,7 +175,8 @@ class MarginCheckWorker(
         val allCashEntries = app.database.cashDao().getAllEntries()
 
         Log.d(TAG, "Fetching latest market prices from Yahoo Finance...")
-        val fetchedPrices = PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
+        val fetchedPrices =
+            PortfolioCalculator.fetchAndCacheMarketData(app.database, allPositions, allCashEntries)
         Log.i(TAG, "Successfully updated prices for ${fetchedPrices.size} symbols.")
 
         // Fill in any symbols Yahoo failed to return with last-known DB cached prices.
@@ -211,7 +210,13 @@ class MarginCheckWorker(
                 return@forEach
             }
 
-            val totals = PortfolioCalculator.computeTotals(positions, cashEntries, prices, "USD", stockValuesUsd)
+            val totals = PortfolioCalculator.computeTotals(
+                positions,
+                cashEntries,
+                prices,
+                "USD",
+                stockValuesUsd
+            )
 
             positions.forEach { pos ->
                 prices[pos.symbol]?.timestamp?.let { if (it < oldestDataTime) oldestDataTime = it }
@@ -224,8 +229,12 @@ class MarginCheckWorker(
                 val hasThresholds = alert.lowerPct > 0 || alert.upperPct > 0
                 if (hasThresholds && notificationsEnabled) {
                     val symbols = positions.map { it.symbol }.distinct()
-                    val currencies = cashEntries.map { it.currency }.distinct().filter { it != "USD" && it != "P" }
-                    val missing = (symbols.filter { it !in prices } + currencies.filter { "${it}USD=X" !in prices }).joinToString(", ")
+                    val currencies = cashEntries.map { it.currency }.distinct()
+                        .filter { it != "USD" && it != "P" }
+                    val missing =
+                        (symbols.filter { it !in prices } + currencies.filter { "${it}USD=X" !in prices }).joinToString(
+                            ", "
+                        )
                     notify(errorNotifId, "⚠️ Margin Check Error ($name)", "Missing data: $missing")
                 }
                 return@forEach
@@ -242,9 +251,15 @@ class MarginCheckWorker(
                 if (notificationsEnabled) {
                     val title = if (isLower) "⚠️ Margin Low — $name" else "⚠️ Margin High — $name"
                     val body = if (isLower) {
-                        "Margin is %.1f%% — below lower threshold of %.1f%%".format(marginPct, alert.lowerPct)
+                        "Margin is %.1f%% — below lower threshold of %.1f%%".format(
+                            marginPct,
+                            alert.lowerPct
+                        )
                     } else {
-                        "Margin is %.1f%% — above upper threshold of %.1f%%".format(marginPct, alert.upperPct)
+                        "Margin is %.1f%% — above upper threshold of %.1f%%".format(
+                            marginPct,
+                            alert.upperPct
+                        )
                     }
                     notify(alertNotifId, title, body)
                 } else {
@@ -291,7 +306,11 @@ class MarginCheckWorker(
 
     private fun notify(id: Int, title: String, body: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
                 return
             }
         }

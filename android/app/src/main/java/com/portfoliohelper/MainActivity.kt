@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.asFlow
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -40,6 +41,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.repository.YahooQuote
 import com.portfoliohelper.ui.components.DynamicCurrencySwitcher
@@ -50,7 +54,9 @@ import com.portfoliohelper.ui.screens.PortfolioScreen
 import com.portfoliohelper.ui.screens.SettingsScreen
 import com.portfoliohelper.ui.theme.PortfolioHelperTheme
 import com.portfoliohelper.ui.theme.ext
+import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
@@ -79,6 +85,19 @@ class MainActivity : ComponentActivity() {
 
         // Request permission only if alerts are enabled AND notifications are turned on
         lifecycleScope.launch {
+
+            val wm = WorkManager.getInstance(this@MainActivity)
+            val infos = wm.getWorkInfosForUniqueWorkLiveData(MarginCheckWorker.WORK_NAME)
+                .asFlow()
+                .first()
+
+            val isStuck = infos.firstOrNull()?.let {
+                it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount > 2
+            } ?: false
+
+            val policy = if (isStuck) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP
+            MarginCheckWorker.schedule(this@MainActivity, true, policy)
+
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 combine(vm.isAnyAlertEnabled, vm.marginCheckNotificationsEnabled) { alertsEnabled, notifsOn ->
                     alertsEnabled && notifsOn

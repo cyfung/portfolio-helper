@@ -12,9 +12,7 @@ import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
-import com.portfoliohelper.data.repository.SyncRepository
 import com.portfoliohelper.data.repository.SyncServerInfo
-import com.portfoliohelper.data.repository.YahooMarketDataService
 import com.portfoliohelper.data.repository.YahooQuote
 import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,7 +20,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
