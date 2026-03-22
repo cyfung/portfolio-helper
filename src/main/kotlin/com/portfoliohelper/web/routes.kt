@@ -227,7 +227,6 @@ fun Application.configureRouting() {
         get("/") {
             val all = ManagedPortfolio.getAll()
             val default = all.first()
-            DividendService.maybeScheduleCalculation(default)
             call.renderPortfolioPage(default, all, default.slug)
         }
 
@@ -235,7 +234,6 @@ fun Application.configureRouting() {
             val slug = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
             val entry =
                 ManagedPortfolio.getBySlug(slug) ?: return@get call.respond(HttpStatusCode.NotFound)
-            DividendService.maybeScheduleCalculation(entry)
             call.renderPortfolioPage(entry, ManagedPortfolio.getAll(), slug)
         }
 
@@ -399,7 +397,6 @@ fun Application.configureRouting() {
                 transaction { portfolioEntry.replacePositions(rows) }
 
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
-                DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondOk()
@@ -456,9 +453,9 @@ fun Application.configureRouting() {
                     }
                 }
 
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshConfig()
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
-                DividendService.invalidate(portfolioEntry)
                 PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondOk()
@@ -523,15 +520,14 @@ fun Application.configureRouting() {
                         if (key == "rebalTarget") portfolioEntry.saveConfig("marginTarget", "")
                         else if (key == "marginTarget") portfolioEntry.saveConfig("rebalTarget", "")
                     }
-                    if (key == "dividendStartDate") DividendService.invalidate(portfolioEntry)
                 } else {
                     // Batch JSON mode (from config page)
                     val json = Json.parseToJsonElement(body).jsonObject
                     for ((k, v) in json) {
                         portfolioEntry.saveConfig(k, v.jsonPrimitive.contentOrNull ?: "")
                     }
-                    if (json.containsKey("dividendStartDate")) DividendService.invalidate(portfolioEntry)
                 }
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshConfig()
                 call.respondOk()
             } catch (e: Exception) {
                 call.respondApiError(e)

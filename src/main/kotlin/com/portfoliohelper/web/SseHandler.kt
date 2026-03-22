@@ -1,6 +1,5 @@
 package com.portfoliohelper.web
 
-import com.portfoliohelper.service.DividendService
 import com.portfoliohelper.service.PortfolioMasterService
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.CashEntryDisplay
@@ -149,11 +148,11 @@ internal suspend fun ServerSSESession.handleSseStream() {
     }
 
     launch {
-        DividendService.updates.collect { update ->
+        PortfolioMasterService.dividendFlow.collect { snap ->
             channel.trySend(appJson.encodeToString<SseEvent>(DividendSseEvent(
-                portfolioId = update.portfolioSlug,
-                total = update.total,
-                calcUpToDate = update.calcUpToDate
+                portfolioId = snap.portfolioId,
+                total = snap.total,
+                calcUpToDate = snap.calcUpToDate
             )))
         }
     }

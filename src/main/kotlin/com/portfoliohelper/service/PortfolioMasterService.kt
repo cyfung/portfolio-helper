@@ -14,12 +14,14 @@ class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineS
 
     private val _stocks = MutableStateFlow(portfolio.getStocks())
     private val _cashEntries = MutableStateFlow(portfolio.getCash())
+    private val _config = MutableStateFlow(portfolio.getAllConfig())
 
     val stockDisplay = StockDisplayService(portfolio.slug, _stocks, AppConfig.privacyScalePctFlow)
     val stockGross = StockGrossService(stockDisplay, scope)
     val cashDisplay = CashDisplayService(portfolio.slug, _cashEntries, AppConfig.privacyScalePctFlow)
     val totals = PortfolioTotalsService(portfolio.slug, stockDisplay, cashDisplay, scope)
     val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay, scope)
+    val dividend = DividendService(portfolio, _stocks, _config, scope)
 
     fun initialize() {
         stockDisplay.initialize(scope)
@@ -32,6 +34,10 @@ class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineS
 
     fun refreshCashEntries() {
         _cashEntries.value = portfolio.getCash()
+    }
+
+    fun refreshConfig() {
+        _config.value = portfolio.getAllConfig()
     }
 
     fun shutdown() = scope.cancel()
@@ -111,6 +117,7 @@ object PortfolioMasterService {
     val cashFlow: Flow<CashDisplaySnapshot> = childFlow { it.cashDisplay.updates }
     val totalsFlow: Flow<PortfolioTotalsSnapshot> = childFlow { it.totals.updates.filterNotNull() }
     val interestFlow: Flow<IbkrInterestSnapshot> = childFlow { it.interest.updates.filterNotNull() }
+    val dividendFlow: Flow<DividendSnapshot> = childFlow { it.dividend.updates.filterNotNull() }
 
     private fun <T> childFlow(f: (PortfolioServices) -> Flow<T>): Flow<T> =
         _services.flatMapLatest { service ->

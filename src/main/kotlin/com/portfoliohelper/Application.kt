@@ -105,10 +105,6 @@ fun main() {
         logger.warn("Application will continue without IBKR margin rate data")
     }
 
-    // ---------------------------------------------------------------
-    // 6b. Initialize dividend auto-calculation service
-    // ---------------------------------------------------------------
-    DividendService.initialize(appScope)
     PortfolioMasterService.initialize(appScope)
 
     // ---------------------------------------------------------------
