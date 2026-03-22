@@ -9,6 +9,7 @@ import com.portfoliohelper.web.configureRouting
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import kotlinx.coroutines.*
+import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -51,11 +52,14 @@ fun main() {
         logger.info("Using existing app.db (size=${Files.size(dbFile)})")
     }
 
-    Database.connect("jdbc:sqlite:${dbFile.toAbsolutePath()}", driver = "org.sqlite.JDBC")
-    transaction {
-        exec("PRAGMA journal_mode=WAL")
-        exec("PRAGMA busy_timeout=5000")
-    }
+    Database.connect(
+        url = "jdbc:sqlite:${dbFile.toAbsolutePath()}",
+        driver = "org.sqlite.JDBC",
+        setupConnection = { conn ->
+            conn.createStatement().use { it.execute("PRAGMA journal_mode=WAL") }
+            conn.createStatement().use { it.execute("PRAGMA busy_timeout=5000") }
+        }
+    )
     logger.info("Connected to database at $dbFile")
 
     val allPortfolios = ManagedPortfolio.getAll()
