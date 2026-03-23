@@ -15,6 +15,7 @@ import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.SyncServerInfo
 import com.portfoliohelper.data.repository.YahooQuote
 import com.portfoliohelper.data.repository.MarginCheckRunner
+import com.portfoliohelper.worker.MarginCheckWidgetReceiver
 import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -370,6 +371,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _isPolling.value = true
                 try {
                     MarginCheckRunner.run(getApplication(), getApplication() as PortfolioHelperApp)
+                    MarginCheckWidgetReceiver.updateAll(getApplication())
                 } catch (e: Exception) {
                     Log.w(TAG, "In-app poll error: ${e.message}")
                 } finally {
