@@ -19,7 +19,8 @@ data class YahooQuote(
     val currency: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val gmtoffset: Int? = null,
-    val localDate: String? = null   // local trading date "YYYY-MM-DD" (tradingPeriodEnd adjusted by gmtoffset)
+    val localDate: String? = null,          // local trading date "YYYY-MM-DD" (tradingPeriodEnd adjusted by gmtoffset)
+    val tradingPeriodStart: Long? = null    // regular session start (Unix seconds)
 )
 
 object YahooFinanceClient {
@@ -126,6 +127,6 @@ object YahooFinanceClient {
             beforeOpen || afterClose
         }
 
-        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency, System.currentTimeMillis(), gmtoffset, localDate)
+        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency, System.currentTimeMillis(), gmtoffset, localDate, tradingPeriodStart)
     }
 }

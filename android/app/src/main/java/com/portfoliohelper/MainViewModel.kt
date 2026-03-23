@@ -104,7 +104,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     it.previousClose,
                     it.isMarketClosed,
                     it.currency,
-                    it.timestamp
+                    it.timestamp,
+                    tradingPeriodStart = it.tradingPeriodStart
                 )
             }
         }

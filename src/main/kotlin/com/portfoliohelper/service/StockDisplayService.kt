@@ -80,7 +80,8 @@ class StockDisplayService(
             val estPriceNative: Double?,
             val isMarketClosed: Boolean,
             val tradingPeriodEnd: Long?,
-            val localDate: String?
+            val localDate: String?,
+            val sessionStarted: Boolean
         )
 
         val scale = privacyScalePct.value
@@ -102,6 +103,7 @@ class StockDisplayService(
                 dayChangeDollars / closePrice * 100.0 else null
 
             val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)
+            val sessionStarted = quote?.tradingPeriodStart?.let { nowMs / 1000 >= it } ?: false
             val estPriceNative = computeLetfEstVal(
                 stock.letfComponents, quote, NavService.getNav(stock.label),
                 qty, fxRate, nowMs
@@ -118,23 +120,22 @@ class StockDisplayService(
                 estPriceNative = estPriceNative,
                 isMarketClosed = quote?.isMarketClosed ?: false,
                 tradingPeriodEnd = quote?.tradingPeriodEnd,
-                localDate = localDate
+                localDate = localDate,
+                sessionStarted = sessionStarted
             )
         }
 
         val stockGrossUsd = work.sumOf { it.positionValueUsd ?: 0.0 }
         val stockGrossKnown = baseStocks.isEmpty() || work.any { it.positionValueUsd != null }
 
-        // Day change: filtered to latest local trading date
-        val latestLocalDate = work.mapNotNull { it.localDate }.maxOrNull()
+        // Day change: only include stocks whose session has started today
         var dayMarkTotal = 0.0
         var dayPrevTotal = 0.0
         for (w in work) {
-            if (latestLocalDate == null || w.localDate == latestLocalDate) {
-                val fx = w.fxRateToUsd ?: continue
-                w.markPrice?.let  { dayMarkTotal += it * w.qty * fx }
-                w.closePrice?.let { dayPrevTotal += it * w.qty * fx }
-            }
+            if (!w.sessionStarted) continue
+            val fx = w.fxRateToUsd ?: continue
+            w.markPrice?.let  { dayMarkTotal += it * w.qty * fx }
+            w.closePrice?.let { dayPrevTotal += it * w.qty * fx }
         }
 
         val stocks = work.map { w ->
@@ -157,13 +158,14 @@ class StockDisplayService(
             )
         }
 
+        val fullPrevUsd = work.sumOf { (it.closePrice ?: 0.0) * it.qty * (it.fxRateToUsd ?: 0.0) }
         return StockDisplaySnapshot(
             portfolioId = portfolioId,
             stocks = stocks,
             stockGrossUsd = stockGrossUsd,
             stockGrossKnown = stockGrossKnown,
             dayChangeUsd = dayMarkTotal - dayPrevTotal,
-            prevDayUsd = dayPrevTotal
+            prevDayUsd = fullPrevUsd
         )
     }
 
