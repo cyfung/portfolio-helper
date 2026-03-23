@@ -68,3 +68,4 @@ var lastServerStocks = {};
 var lastStockDisplayData = null;
 var lastCashDisplayData = null;
 var lastPortfolioTotalsData = null;
+var lastIbkrData = null;

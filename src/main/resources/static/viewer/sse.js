@@ -48,8 +48,8 @@ function initSseConnection() {
                 applyPortfolioTotals(data);
             } else if (data.type === 'ibkr-display') {
                 if (data.portfolioId === portfolioId) {
-                    const display = document.getElementById('ibkr-display');
-                    if (display) display.innerHTML = data.html;
+                    lastIbkrData = data;
+                    renderIbkrDisplay(data);
                     const fetchEl = document.getElementById('ibkr-last-fetch');
                     if (fetchEl && data.lastFetch > 0)
                         fetchEl.textContent = new Date(data.lastFetch).toLocaleTimeString();

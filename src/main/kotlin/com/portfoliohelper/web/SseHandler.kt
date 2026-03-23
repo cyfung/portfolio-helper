@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.service.IbkrCurrencyInterest
 import com.portfoliohelper.service.PortfolioMasterService
 import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.CashEntryDisplay
@@ -62,8 +63,13 @@ private data class PortfolioTotalsEvent(
 @SerialName("ibkr-display")
 private data class IbkrDisplayEvent(
     val portfolioId: String,
-    val html: String,
-    val lastFetch: Long
+    val lastFetch: Long,
+    val currentDailyUsd: Double,
+    val cheapestCcy: String?,
+    val cheapestDailyUsd: Double,
+    val savingsUsd: Double,
+    val label: String,
+    val perCurrency: List<IbkrCurrencyInterest>
 ) : SseEvent()
 
 @Serializable
@@ -135,8 +141,13 @@ internal suspend fun ServerSSESession.handleSseStream() {
         PortfolioMasterService.interestFlow.collect { snap ->
             channel.trySend(appJson.encodeToString<SseEvent>(IbkrDisplayEvent(
                 portfolioId = snap.portfolioId,
-                html = renderIbkrDisplayHtml(snap),
-                lastFetch = snap.lastFetch
+                lastFetch = snap.lastFetch,
+                currentDailyUsd = snap.currentDailyUsd,
+                cheapestCcy = snap.cheapestCcy,
+                cheapestDailyUsd = snap.cheapestDailyUsd,
+                savingsUsd = snap.savingsUsd,
+                label = snap.label,
+                perCurrency = snap.perCurrency
             )))
         }
     }

@@ -44,6 +44,7 @@ function refreshDisplayCurrency() {
     if (lastStockDisplayData) applyStockDisplay(lastStockDisplayData);
     if (lastCashDisplayData) applyCashDisplay(lastCashDisplayData);
     if (lastPortfolioTotalsData) applyPortfolioTotals(lastPortfolioTotalsData);
+    if (lastIbkrData) renderIbkrDisplay(lastIbkrData);
 
     // Convert saved rebal target to new display currency
     const rebalInput = document.getElementById('rebal-target-input');
