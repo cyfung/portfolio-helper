@@ -1334,6 +1334,9 @@ h1 {
     opacity: 0.75;
 }
 
+/* Display-currency estimated values shown in italic */
+.display-currency-est { font-style: italic; }
+
 /* After-hours styling - gray mode (solid gray, default setting) */
 body.after-hours-gray .price.after-hours {
     color: var(--color-text-secondary) !important;

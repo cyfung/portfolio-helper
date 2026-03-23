@@ -23,7 +23,7 @@ object MarginCheckRunner {
 
     suspend fun run(context: Context, app: PortfolioHelperApp) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notificationsEnabled = app.settingsRepo.marginCheckNotificationsEnabled.first()
+        val notificationsEnabled = app.settingsRepo.marginCheckNotificationsEnabled.                           first()
 
         val allAlerts = app.database.portfolioMarginAlertDao().getAll()
         val portfolios = app.database.portfolioDao().getAll().associateBy { it.serialId }

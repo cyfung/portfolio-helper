@@ -20,6 +20,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -264,6 +265,7 @@ fun MonoText(
     text: String,
     color: Color = MaterialTheme.ext.textSecondary,
     fontWeight: FontWeight = FontWeight.Normal,
+    fontStyle: FontStyle = FontStyle.Normal,
     fontSize: TextUnit = 14.sp,
     textAlign: TextAlign = TextAlign.End,
     modifier: Modifier = Modifier
@@ -274,6 +276,7 @@ fun MonoText(
         style    = MaterialTheme.typography.bodySmall.copy(
             fontFamily = DataFont,
             fontWeight = fontWeight,
+            fontStyle  = fontStyle,
             fontSize   = fontSize,
             letterSpacing = (-0.2).sp
         ),

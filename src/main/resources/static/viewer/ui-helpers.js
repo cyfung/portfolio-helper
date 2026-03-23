@@ -142,6 +142,7 @@ function applyStockDisplay(data) {
             posChangeCell.classList.remove('positive', 'negative', 'neutral', 'after-hours');
             posChangeCell.classList.add('loaded', colorClass);
             if (isMarketClosed) posChangeCell.classList.add('after-hours');
+            posChangeCell.classList.toggle('display-currency-est', showStockDisplayCurrency);
         }
 
         // Mkt Val (native ccy)
@@ -154,6 +155,7 @@ function applyStockDisplay(data) {
                     ? formatStockDisplayCurrency(nativeVal, currency)
                     : formatCurrency(nativeVal);
                 valueCell.classList.add('loaded');
+                valueCell.classList.toggle('display-currency-est', showStockDisplayCurrency);
             } else {
                 valueCell.textContent = '—';
                 valueCell.classList.remove('loaded');

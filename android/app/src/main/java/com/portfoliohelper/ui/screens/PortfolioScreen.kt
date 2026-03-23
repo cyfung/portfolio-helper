@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +45,7 @@ private data class StockDisplayData(
     val fmtPnl: String,
     val pnlColor: Color,
     val isMarketClosed: Boolean,
+    val isPnlDisplayCurrency: Boolean,
 )
 
 @Composable
@@ -109,6 +111,7 @@ private fun buildStockDisplayData(
         },
         pnlColor = changeColor(pnl),
         isMarketClosed = quote?.isMarketClosed ?: false,
+        isPnlDisplayCurrency = pnlDisplayMode != "NATIVE",
     )
 }
 
@@ -153,6 +156,7 @@ fun PortfolioScreen(vm: MainViewModel) {
             fmtPnl = "-888.88",
             pnlColor = Color.Green,
             isMarketClosed = false,
+            isPnlDisplayCurrency = false,
         )
 
         val sampleSymbol = widthMeasureData.maxBy { it.symbol.length }.symbol
@@ -397,6 +401,7 @@ private fun PositionRow(
                         else                    -> display.pnlColor.copy(alpha = 0.6f)
                     },
                     fontWeight = FontWeight.Light,
+                    fontStyle = if (display.isPnlDisplayCurrency) FontStyle.Italic else FontStyle.Normal,
                     fontSize = 15.sp,
                     modifier = Modifier.width(pnlW),
                 )
