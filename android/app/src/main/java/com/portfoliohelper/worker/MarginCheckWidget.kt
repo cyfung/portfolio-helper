@@ -153,7 +153,7 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
                 rv.setViewVisibility(R.id.container_no_data, View.GONE)
                 rv.setViewVisibility(R.id.container_running, View.VISIBLE)
                 rv.setViewVisibility(R.id.container_normal, View.GONE)
-                rv.setTextViewText(R.id.text_status_badge, "● Running")
+                rv.setTextViewText(R.id.text_status_badge, "● Run")
                 rv.setTextColor(R.id.text_status_badge, colorWarning)
 
                 val elapsed = System.currentTimeMillis() - stats.runStartTime
