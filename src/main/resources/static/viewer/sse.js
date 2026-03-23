@@ -39,7 +39,7 @@ function initSseConnection() {
                 location.reload();
             } else if (data.type === 'fx-rates') {
                 Object.assign(fxRates, data.rates);
-                scheduleDisplayUpdate();
+                refreshDisplayCurrency();
             } else if (data.type === 'stock-display') {
                 applyStockDisplay(data);
             } else if (data.type === 'cash-display') {

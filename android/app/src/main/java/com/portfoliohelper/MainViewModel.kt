@@ -14,8 +14,10 @@ import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.SyncServerInfo
 import com.portfoliohelper.data.repository.YahooQuote
+import com.portfoliohelper.data.repository.MarginCheckRunner
 import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +41,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val db = (app as PortfolioHelperApp).database
     private val settings = (app as PortfolioHelperApp).settingsRepo
     private val syncRepo = (app as PortfolioHelperApp).syncRepo
+
+    companion object {
+        private const val POLL_INTERVAL_MS = 60_000L
+        private const val TAG = "MainViewModel"
+    }
+
+    init {
+        startInAppPolling()
+    }
 
     // ── Portfolio list & selection ────────────────────────────────────────────
 
@@ -344,6 +355,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val pos = allPositions.value
         if (symbols.isNotEmpty()) {
             PortfolioCalculator.fetchAndCacheMarketData(db, pos, cash)
+        }
+    }
+
+    // ── In-app polling ────────────────────────────────────────────────────────
+
+    private val _isPolling = MutableStateFlow(false)
+    val isPolling: StateFlow<Boolean> = _isPolling
+
+    private fun startInAppPolling() {
+        viewModelScope.launch {
+            while (true) {
+                delay(POLL_INTERVAL_MS)
+                _isPolling.value = true
+                try {
+                    MarginCheckRunner.run(getApplication(), getApplication() as PortfolioHelperApp)
+                } catch (e: Exception) {
+                    Log.w(TAG, "In-app poll error: ${e.message}")
+                } finally {
+                    _isPolling.value = false
+                }
+            }
         }
     }
 }
