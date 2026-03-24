@@ -13,7 +13,7 @@ android {
         applicationId = "com.portfoliohelper"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0.0"
     }
 
@@ -68,6 +68,4 @@ dependencies {
 
     implementation(libs.bundles.ktor)
 
-    implementation(libs.glance.appwidget)
-    implementation(libs.glance.material3)
 }

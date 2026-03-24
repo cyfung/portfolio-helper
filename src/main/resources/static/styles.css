@@ -1323,7 +1323,7 @@ h1 {
 .price-change.negative { color: var(--color-negative); }
 .price-change.neutral { color: var(--color-text-tertiary); }
 
-/* After-hours styling - mark price goes grey */
+/* After-hours styling - colored+dimmed (default CSS, used when gray mode is off) */
 .price.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 0.8;
@@ -1332,6 +1332,19 @@ h1 {
 /* After-hours styling - chg preserves positive/negative color, just dimmed */
 .price-change.after-hours {
     opacity: 0.75;
+}
+
+/* Display-currency estimated values shown in italic */
+.display-currency-est { font-style: italic; }
+
+/* After-hours styling - gray mode (solid gray, default setting) */
+body.after-hours-gray .price.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
+}
+body.after-hours-gray .price-change.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
 }
 
 /* Weight Difference Display */
@@ -2907,14 +2920,16 @@ body.rebalancing-visible .virtual-rebal-btn {
 }
 
 .cash-type-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
     font-size: 0.7em;
     font-weight: var(--font-weight-semibold);
-    padding: 1px 4px;
     border-radius: 3px;
-    margin-left: 0;
     vertical-align: middle;
-    line-height: 1.4;
+    flex-shrink: 0;
 }
 .cash-badge-margin {
     background: color-mix(in srgb, var(--color-warning) 15%, transparent);
@@ -2925,6 +2940,10 @@ body.rebalancing-visible .virtual-rebal-btn {
     background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
     color: var(--color-accent-primary);
     border: 1px solid color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
+}
+.cash-badge-ref svg {
+    width: 12px;
+    height: 12px;
 }
 
 /* Paste / format hint text */
@@ -3781,6 +3800,12 @@ td[id^="est-val-"].loaded {
 
 .mark-day-pct.after-hours {
     opacity: 0.75;
+}
+body.after-hours-gray .mark-day-pct.after-hours {
+    color: var(--color-text-secondary) !important;
+    background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent) !important;
+    border-color: color-mix(in srgb, var(--color-text-secondary) 25%, transparent) !important;
+    opacity: 1;
 }
 
 /* ============================================

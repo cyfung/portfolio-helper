@@ -148,7 +148,7 @@ interface MarketPriceDao {
         MarketPrice::class,
         PortfolioMarginAlert::class
     ],
-    version = 13,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

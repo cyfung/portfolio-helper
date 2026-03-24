@@ -165,9 +165,10 @@ fun CashEntryRow(
     else
         entry.amount
 
-    // 1. Calculate USD Value
-    val valueUsd = if (entry.portfolioRef != null) {
-        (stockValues[entry.portfolioRef]?.first ?: 0.0) * entry.amount
+    // 1. Calculate USD Value — null means broken/unknown ref (portfolio deleted or not yet synced)
+    val valueUsd: Double? = if (entry.portfolioRef != null) {
+        val refData = stockValues[entry.portfolioRef]
+        if (refData == null) null else refData.first * entry.amount
     } else {
         val rateToUsd = if (entry.currency == "USD") 1.0 else fxRates[entry.currency] ?: 1.0
         scaledAmount * rateToUsd
@@ -175,7 +176,7 @@ fun CashEntryRow(
 
     // 2. Calculate Display Value
     val rateDisplayToUsd = if (displayCurrency == "USD") 1.0 else fxRates[displayCurrency] ?: 1.0
-    val valueDisplay = valueUsd / rateDisplayToUsd
+    val valueDisplay: Double? = valueUsd?.let { it / rateDisplayToUsd }
 
     // 3. Original Amount & Currency for Col 3
     val (actualAmount, actualCcy) = if (entry.portfolioRef != null) {
@@ -225,23 +226,25 @@ fun CashEntryRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 MonoText(
-                    text = formatCurrency(actualAmount),
+                    text = if (actualAmount == null) "---" else formatCurrency(actualAmount),
                     color = ext.textTertiary,
                     fontWeight = FontWeight.Normal,
                     fontSize = 15.sp
                 )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = actualCcy,
-                    fontSize = 11.sp,
-                    color = ext.textTertiary,
-                    fontWeight = FontWeight.Medium
-                )
+                if (actualAmount != null) {
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = actualCcy,
+                        fontSize = 11.sp,
+                        color = ext.textTertiary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
             // Col 4: Display Amount
             MonoText(
-                text = formatCurrency(valueDisplay),
+                text = if (valueDisplay == null) "---" else formatCurrency(valueDisplay),
                 color = ext.textSecondary,
                 fontWeight = FontWeight.Normal,
                 fontSize = 16.sp,

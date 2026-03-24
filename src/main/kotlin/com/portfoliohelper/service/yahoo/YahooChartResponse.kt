@@ -30,6 +30,8 @@ data class YahooTradingPeriods(val regular: YahooTradingPeriod? = null)
 
 @Serializable
 data class YahooTradingPeriod(
+    val timezone: String? = null,
+    val gmtoffset: Int? = null,
     val start: Long? = null,
     val end: Long? = null
 )

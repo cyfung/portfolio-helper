@@ -1,14 +1,13 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.*
-import org.jetbrains.exposed.sql.Database
 import com.portfoliohelper.service.nav.NavService
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
-import com.portfoliohelper.service.MarketDataCoordinator
 import com.portfoliohelper.web.configureRouting
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import kotlinx.coroutines.*
+import org.jetbrains.exposed.sql.Database
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -41,17 +40,32 @@ fun main() {
     // Database.connect() will have already created an empty placeholder at that path.
     Files.createDirectories(dataDir)
     val dbFile = dataDir.resolve("app.db")
-    logger.info("DB file: ${dbFile.toAbsolutePath()} (exists=${Files.exists(dbFile)}, size=${if (Files.exists(dbFile)) Files.size(dbFile) else -1})")
+    logger.info(
+        "DB file: ${dbFile.toAbsolutePath()} (exists=${Files.exists(dbFile)}, size=${
+            if (Files.exists(
+                    dbFile
+                )
+            ) Files.size(dbFile) else -1
+        })"
+    )
     if (!Files.exists(dbFile) || Files.size(dbFile) == 0L) {
         logger.info("Seeding bundled app.db...")
         val cl = object {}::class.java.classLoader
-        cl.getResourceAsStream("data/app.db")!!.use { Files.copy(it, dbFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING) }
+        cl.getResourceAsStream("data/app.db")!!
+            .use { Files.copy(it, dbFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING) }
         logger.info("Seeded app.db (size=${Files.size(dbFile)})")
     } else {
         logger.info("Using existing app.db (size=${Files.size(dbFile)})")
     }
 
-    Database.connect("jdbc:sqlite:${dbFile.toAbsolutePath()}", driver = "org.sqlite.JDBC")
+    Database.connect(
+        url = "jdbc:sqlite:${dbFile.toAbsolutePath()}",
+        driver = "org.sqlite.JDBC",
+        setupConnection = { conn ->
+            conn.createStatement().use { it.execute("PRAGMA journal_mode=WAL") }
+            conn.createStatement().use { it.execute("PRAGMA busy_timeout=5000") }
+        }
+    )
     logger.info("Connected to database at $dbFile")
 
     val allPortfolios = ManagedPortfolio.getAll()
@@ -91,16 +105,13 @@ fun main() {
         logger.warn("Application will continue without IBKR margin rate data")
     }
 
-    // ---------------------------------------------------------------
-    // 6b. Initialize dividend auto-calculation service
-    // ---------------------------------------------------------------
-    DividendService.initialize(appScope)
+    PortfolioMasterService.initialize(appScope)
 
     // ---------------------------------------------------------------
     // 7. Shutdown hook
     // ---------------------------------------------------------------
     val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
-    val httpPort  = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
+    val httpPort = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
     var stopServer: () -> Unit = {}
 
     // Load or generate TLS certificate — no hostname binding, Android trusts by fingerprint
@@ -131,7 +142,7 @@ fun main() {
     try {
         val server = embeddedServer(Netty, configure = {
             workerGroupSize = 32
-            callGroupSize  = 32
+            callGroupSize = 32
 
             sslConnector(
                 keyStore = keyStore,

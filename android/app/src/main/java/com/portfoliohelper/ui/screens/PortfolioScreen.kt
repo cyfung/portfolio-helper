@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +45,7 @@ private data class StockDisplayData(
     val fmtPnl: String,
     val pnlColor: Color,
     val isMarketClosed: Boolean,
+    val isPnlDisplayCurrency: Boolean,
 )
 
 @Composable
@@ -109,6 +111,7 @@ private fun buildStockDisplayData(
         },
         pnlColor = changeColor(pnl),
         isMarketClosed = quote?.isMarketClosed ?: false,
+        isPnlDisplayCurrency = pnlDisplayMode != "NATIVE",
     )
 }
 
@@ -124,6 +127,7 @@ fun PortfolioScreen(vm: MainViewModel) {
     val pnlMode by vm.pnlDisplayMode.collectAsState()
     val displayCcy by vm.displayCurrency.collectAsState()
     val scaling by vm.scalingPercent.collectAsState()
+    val afterHoursGray by vm.afterHoursGray.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editPosition by remember { mutableStateOf<Position?>(null) }
@@ -152,6 +156,7 @@ fun PortfolioScreen(vm: MainViewModel) {
             fmtPnl = "-888.88",
             pnlColor = Color.Green,
             isMarketClosed = false,
+            isPnlDisplayCurrency = false,
         )
 
         val sampleSymbol = widthMeasureData.maxBy { it.symbol.length }.symbol
@@ -297,6 +302,7 @@ fun PortfolioScreen(vm: MainViewModel) {
                             onDelete = { vm.deletePosition(pos.symbol) },
                             scrollState = scrollState,
                             layout = layout,
+                            afterHoursGray = afterHoursGray,
                         )
                         Divider()
                     }
@@ -332,6 +338,7 @@ private fun PositionRow(
     onDelete: () -> Unit,
     scrollState: ScrollState,
     layout: TableLayout,
+    afterHoursGray: Boolean = true,
 ) {
     val ext = MaterialTheme.ext
 
@@ -382,14 +389,19 @@ private fun PositionRow(
                         fontSize = 16.sp,
                     )
                     Spacer(Modifier.width(4.dp))
-                    DayPctPill(display.dayPct, afterHours = display.isMarketClosed)
+                    DayPctPill(display.dayPct, afterHours = display.isMarketClosed, grayStyle = afterHoursGray)
                 }
 
                 // P&L
                 MonoText(
                     text = display.fmtPnl,
-                    color = if (display.isMarketClosed) display.pnlColor.copy(alpha = 0.6f) else display.pnlColor,
+                    color = when {
+                        !display.isMarketClosed -> display.pnlColor
+                        afterHoursGray          -> ext.textSecondary
+                        else                    -> display.pnlColor.copy(alpha = 0.6f)
+                    },
                     fontWeight = FontWeight.Light,
+                    fontStyle = if (display.isPnlDisplayCurrency) FontStyle.Italic else FontStyle.Normal,
                     fontSize = 15.sp,
                     modifier = Modifier.width(pnlW),
                 )

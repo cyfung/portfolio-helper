@@ -40,6 +40,12 @@ function initColumnVisibility() {
 // ── Currency controls ─────────────────────────────────────────────────────────
 
 function refreshDisplayCurrency() {
+    // Re-apply server-computed cells in new display currency
+    if (lastStockDisplayData) applyStockDisplay(lastStockDisplayData);
+    if (lastCashDisplayData) applyCashDisplay(lastCashDisplayData);
+    if (lastPortfolioTotalsData) applyPortfolioTotals(lastPortfolioTotalsData);
+    if (lastIbkrData) renderIbkrDisplay(lastIbkrData);
+
     // Convert saved rebal target to new display currency
     const rebalInput = document.getElementById('rebal-target-input');
     if (rebalInput) {
@@ -55,7 +61,7 @@ function refreshDisplayCurrency() {
         }
     }
 
-    // All cells (stock, cash, margin, IBKR interest) re-rendered via worker
+    // Rebal/alloc/weight columns re-computed via worker
     scheduleDisplayUpdate();
 }
 

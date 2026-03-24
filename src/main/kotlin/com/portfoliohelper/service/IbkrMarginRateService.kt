@@ -3,16 +3,14 @@ package com.portfoliohelper.service
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.portfoliohelper.AppConfig
 import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
-import java.util.concurrent.ConcurrentHashMap
 
 object IbkrMarginRateService {
 
@@ -28,19 +26,16 @@ object IbkrMarginRateService {
         val baseRate: Double get() = tiers.first().rate
     }
 
+    data class RatesSnapshot(val rates: Map<String, CurrencyRates>, val lastFetch: Long)
+
     private val logger = LoggerFactory.getLogger(IbkrMarginRateService::class.java)
-    private val ratesCache = ConcurrentHashMap<String, CurrencyRates>()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val lastFetchMillis = java.util.concurrent.atomic.AtomicLong(0L)
 
     private val numberRegex = Regex("[\\d,]+")
     private val rateRegex = Regex("(\\d+\\.\\d+)%")
 
-    private val _updates = MutableSharedFlow<Unit>(
-        replay = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val updates: SharedFlow<Unit> = _updates
+    private val _ratesFlow = MutableStateFlow(RatesSnapshot(emptyMap(), 0L))
+    val ratesFlow: StateFlow<RatesSnapshot> = _ratesFlow
 
     fun initialize() {
         serviceScope.launch {
@@ -52,10 +47,10 @@ object IbkrMarginRateService {
         }
     }
 
-    fun getLastFetchMillis(): Long = lastFetchMillis.get()
+    fun getLastFetchMillis(): Long = _ratesFlow.value.lastFetch
 
     fun canReload(): Boolean {
-        val last = lastFetchMillis.get()
+        val last = _ratesFlow.value.lastFetch
         return last == 0L || System.currentTimeMillis() - last > 10 * 60 * 1000L
     }
 
@@ -124,11 +119,8 @@ object IbkrMarginRateService {
                 .toMap()
 
             if (newRates.isNotEmpty()) {
-                ratesCache.clear()
-                ratesCache.putAll(newRates)
-                lastFetchMillis.set(System.currentTimeMillis())
+                _ratesFlow.value = RatesSnapshot(newRates, System.currentTimeMillis())
                 logger.info("Fetched IBKR margin rates for ${newRates.size} currencies: ${newRates.keys.sorted()}")
-                _updates.tryEmit(Unit)
             } else {
                 logger.warn("IBKR margin rates page parsed but no valid rates found")
             }
@@ -137,5 +129,4 @@ object IbkrMarginRateService {
         }
     }
 
-    fun getAllRates(): Map<String, CurrencyRates> = ratesCache
 }

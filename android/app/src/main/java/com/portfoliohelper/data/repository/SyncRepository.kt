@@ -156,30 +156,33 @@ class SyncRepository(
                 }
             }
 
-            val response = pairClient.post("https://$host:$port/api/sync/pair") {
-                parameter("pin", pin)
-                header("X-Device-ID", clientId)
-                header("X-Device-Name", deviceName)
-            }
+            try {
+                val response = pairClient.post("https://$host:$port/api/sync/pair") {
+                    parameter("pin", pin)
+                    header("X-Device-ID", clientId)
+                    header("X-Device-Name", deviceName)
+                }
 
-            if (response.status != HttpStatusCode.OK) {
+                if (response.status != HttpStatusCode.OK) {
+                    val body = response.bodyAsText()
+                    throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+                }
+
                 val body = response.bodyAsText()
-                throw Exception(if (body.isNotBlank()) body else "Pairing failed: ${response.status}")
+                val json = Json.parseToJsonElement(body).jsonObject
+                val serverAssignedId = json["serverAssignedId"]?.jsonPrimitive?.content
+                    ?: throw Exception("Missing serverAssignedId in response")
+                val aesKey = json["aesKey"]?.jsonPrimitive?.content
+                    ?: throw Exception("Missing aesKey in response")
+
+                settings.saveServerAssignedId(serverAssignedId)
+                settings.saveAesKey(aesKey)
+                capturedFingerprint?.let { settings.saveTlsFingerprint(it) }
+
+                Log.i("SyncRepository", "Paired successfully. serverAssignedId=$serverAssignedId, fingerprint=$capturedFingerprint")
+            } finally {
+                pairClient.close()
             }
-
-            val body = response.bodyAsText()
-            val json = Json.parseToJsonElement(body).jsonObject
-            val serverAssignedId = json["serverAssignedId"]?.jsonPrimitive?.content
-                ?: throw Exception("Missing serverAssignedId in response")
-            val aesKey = json["aesKey"]?.jsonPrimitive?.content
-                ?: throw Exception("Missing aesKey in response")
-
-            settings.saveServerAssignedId(serverAssignedId)
-            settings.saveAesKey(aesKey)
-            capturedFingerprint?.let { settings.saveTlsFingerprint(it) }
-
-            Log.i("SyncRepository", "Paired successfully. serverAssignedId=$serverAssignedId, fingerprint=$capturedFingerprint")
-            pairClient.close()
         } finally {
             client.close()
         }
@@ -231,7 +234,7 @@ class SyncRepository(
             if (e is CancellationException) throw e
             if (e is UnauthorizedException) throw e
             Log.e("SyncRepository", "Sync failed: ${e.message}", e)
-            throw Exception("Connection failed: ${e.message}")
+            throw Exception("Connection failed: ${e.message}", e)
         } finally {
             client.close()
         }
@@ -244,6 +247,17 @@ class SyncRepository(
     }
 
     private suspend fun parseAndSave(response: AllSyncResponse) {
+        if (response.portfolios.isEmpty()) {
+            Log.w("SyncRepository", "Sync skipped: server returned 0 portfolios")
+            throw Exception("Sync response contained no portfolios")
+        }
+
+        val computed = computeSyncChecksum(response.portfolios)
+        if (computed != response.checksum) {
+            Log.e("SyncRepository", "Sync checksum mismatch: expected=${response.checksum} got=$computed")
+            throw Exception("Sync data integrity check failed — data may be incomplete")
+        }
+
         db.withTransaction {
             db.positionDao().hardDeleteAll()
             db.cashDao().deleteAll()
@@ -273,7 +287,9 @@ class SyncRepository(
                         currency = if (isP) "USD" else c.currency,
                         amount = c.amount,
                         isMargin = c.marginFlag,
-                        portfolioRef = c.portfolioRef
+                        // Broken P-entries (currency="P", portfolioRef=null) get "" sentinel so they
+                        // remain identifiable as ref entries rather than becoming a real USD amount.
+                        portfolioRef = if (isP) (c.portfolioRef ?: "") else null
                     )
                     db.cashDao().upsert(cashEntry)
                 }
@@ -295,6 +311,15 @@ class SyncRepository(
         }
     }
 
+    private fun computeSyncChecksum(portfolios: List<PortfolioSyncEntry>): String {
+        val lines = portfolios
+            .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}" } }
+            .sorted()
+            .joinToString("\n")
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(lines.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
     class UnauthorizedException : Exception("Device not paired or authentication failed")
 }
 
@@ -310,7 +335,7 @@ data class PortfolioSyncEntry(
 )
 
 @kotlinx.serialization.Serializable
-data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>)
+data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>, val checksum: String)
 
 @kotlinx.serialization.Serializable
 data class BackupStock(

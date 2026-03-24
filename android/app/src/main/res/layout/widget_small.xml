@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/widget_bg">
+
+    <!-- Header row: "MARGIN CHECK" + status badge -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/text_header_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="MARGIN CHECK"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="11sp" />
+        <TextView
+            android:id="@+id/text_status_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- No data yet -->
+    <FrameLayout
+        android:id="@+id/container_no_data"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="No data yet"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp" />
+    </FrameLayout>
+
+    <!-- Running state -->
+    <LinearLayout
+        android:id="@+id/container_running"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="2dp">
+            <Chronometer
+                android:id="@+id/chronometer_elapsed"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="28sp"
+                android:textColor="@color/widget_warning" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Running..."
+                android:textColor="@color/widget_warning"
+                android:textSize="9sp" />
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="2dp">
+            <TextView
+                android:id="@+id/text_started_time"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/widget_text_muted"
+                android:textSize="9sp" />
+            <TextView
+                android:id="@+id/text_last_run"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/widget_text_muted"
+                android:textSize="9sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Normal state -->
+    <LinearLayout
+        android:id="@+id/container_normal"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="visible">
+        <!-- Time + age inline row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="2dp">
+            <TextView
+                android:id="@+id/text_run_time"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="28sp" />
+            <TextView
+                android:id="@+id/text_data_age"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="10sp" />
+        </LinearLayout>
+        <!-- Detail / error / alert -->
+        <TextView
+            android:id="@+id/text_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="9sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginTop="2dp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+</LinearLayout>

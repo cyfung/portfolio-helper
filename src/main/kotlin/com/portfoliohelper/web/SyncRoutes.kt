@@ -110,7 +110,7 @@ fun Route.configureSyncRoutes() {
             val entries = ManagedPortfolio.getAll().map { entry ->
                 BackupService.exportSyncEntry(entry)
             }
-            val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(entries))
+            val payload = appJson.encodeToString(AllSyncResponse.serializer(), AllSyncResponse(entries, computeSyncChecksum(entries)))
             val encrypted = AesGcm.encrypt(payload.toByteArray(Charsets.UTF_8), aesKey, nonce)
             call.respondBytes(encrypted, ContentType.Application.OctetStream)
         }

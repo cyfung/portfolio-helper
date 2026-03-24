@@ -15,19 +15,21 @@
 // are attached to window and visible across multiple script tags.
 
 // Price/market state
-var componentDayPercents = {};  // symbol → intraday % (for LETF est val)
-var navValues = {};             // symbol → last NAV value (for LETF est val)
 var rawMarkPrices = {};         // symbol → raw mark price
 var rawClosePrices = {};        // symbol → raw close price
 var symbolMarketClosed = {};        // symbol → boolean (isMarketClosed per ticker)
 var symbolTradingPeriodEndMs = {};  // symbol → Unix ms of tradingPeriodEnd
 
-// Per-stock currency (server-rendered + updated via SSE)
+// FX rates (populated via SSE fx-rates event)
+var fxRates = {"USD": 1.0};        // currency → USD rate (e.g. {HKD: 0.128})
+
+// Per-stock currency (populated via SSE stock-display event)
 var stockCurrencies = {};          // symbol → currency code (e.g. 'USD', 'HKD')
 
 // Display state
 var currentDisplayCurrency = 'USD';
 var showStockDisplayCurrency = (typeof savedShowStockDisplayCurrency !== 'undefined') ? savedShowStockDisplayCurrency : false;
+var afterHoursGray = (typeof savedAfterHoursGray !== 'undefined') ? savedAfterHoursGray : true;
 
 // Portfolio totals (updated live)
 var lastStockGrossVal = 0;
@@ -58,5 +60,12 @@ var allocReduceMode = (typeof savedAllocReduceMode !== 'undefined' ? savedAllocR
 // Group view state
 var groupViewActive = false;
 
-// IBKR rates data (set on ibkr-rates SSE, read by display-worker)
-var lastIbkrRatesData = null;
+// Server-computed per-stock display data (set by applyStockDisplay, read by display-worker)
+// symbol → { markPrice, closePrice, positionValueUsd, currency }
+var lastServerStocks = {};
+
+// Last received SSE snapshots (cached for display currency re-apply)
+var lastStockDisplayData = null;
+var lastCashDisplayData = null;
+var lastPortfolioTotalsData = null;
+var lastIbkrData = null;

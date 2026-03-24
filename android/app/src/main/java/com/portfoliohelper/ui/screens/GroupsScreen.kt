@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,7 @@ private data class GroupDisplayData(
     val fmtValue: String,
     val fmtPnl: String,
     val pnlColor: Color,
+    val isPnlDisplayCurrency: Boolean,
 )
 
 @Composable
@@ -44,7 +46,8 @@ private fun buildGroupDisplayData(
     group: GroupRow,
     displayCurrency: String,
     prices: Map<String, YahooQuote>,
-    totalGrossValue: Double
+    totalGrossValue: Double,
+    pnlDisplayMode: String,
 ): GroupDisplayData {
     val usdToDisplayRate = if (displayCurrency == "USD") 1.0 else {
         val pair = "${displayCurrency}USD=X"
@@ -70,7 +73,8 @@ private fun buildGroupDisplayData(
         fmtPnl = if (mktValChgDisp != 0.0) {
             (if (displayCurrency == "USD") formatSignedCurrency(mktValChgDisp) else formatSigned(mktValChgDisp))
         } else "—",
-        pnlColor = changeColor(mktValChgDisp)
+        pnlColor = changeColor(mktValChgDisp),
+        isPnlDisplayCurrency = pnlDisplayMode != "NATIVE",
     )
 }
 
@@ -83,6 +87,7 @@ fun GroupsScreen(vm: MainViewModel) {
     val totals by vm.portfolioTotals.collectAsState()
     val cashTotals by vm.cashTotals.collectAsState()
     val displayCcy by vm.displayCurrency.collectAsState()
+    val pnlMode by vm.pnlDisplayMode.collectAsState()
     val marketData by vm.marketData.collectAsState()
 
     val scrollState = rememberScrollState()
@@ -93,8 +98,8 @@ fun GroupsScreen(vm: MainViewModel) {
         val screenWidth = maxWidth
 
         // ── Build display data once — reused for measurement and row rendering ──
-        val groupData = groups.map { 
-            buildGroupDisplayData(it, displayCcy, marketData, totals.stockGrossValue) 
+        val groupData = groups.map {
+            buildGroupDisplayData(it, displayCcy, marketData, totals.stockGrossValue, pnlMode)
         }
 
         // Add a dummy data row used only for width measurement
@@ -105,7 +110,8 @@ fun GroupsScreen(vm: MainViewModel) {
             targetWeight = 15.0,
             fmtValue = "123,456.78",
             fmtPnl = "-1,234.56",
-            pnlColor = Color.Red
+            pnlColor = Color.Red,
+            isPnlDisplayCurrency = false,
         )
 
         val sampleName = widthMeasureData.maxBy { it.name.length }.name
@@ -304,6 +310,7 @@ private fun GroupRow(
                     text = display.fmtPnl,
                     color = display.pnlColor,
                     fontWeight = FontWeight.Normal,
+                    fontStyle = if (display.isPnlDisplayCurrency) FontStyle.Italic else FontStyle.Normal,
                     fontSize = 16.sp,
                 )
                 Spacer(Modifier.width(4.dp))

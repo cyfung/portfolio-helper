@@ -206,7 +206,7 @@ function buildStockEditTable() {
 
     document.querySelectorAll('#stock-view-table tbody tr').forEach(viewRow => {
         const sym = viewRow.dataset.symbol || '';
-        const qty = viewRow.dataset.qty || '0';
+        const rawQty = viewRow.dataset.rawQty || '0';
         const weight = viewRow.dataset.weight || '0';
         const letfAttr = viewRow.dataset.letf || '';
         let letfStr = '';
@@ -224,7 +224,7 @@ function buildStockEditTable() {
         tdDrag.innerHTML = '<span class="drag-handle" draggable="true">⠿</span>';
         tr.appendChild(tdDrag);
         tr.appendChild(makeInputCell({ cls: 'edit-symbol', col: 'symbol', value: sym, origAttr: 'data-original-symbol', sym }));
-        tr.appendChild(makeInputCell({ cls: 'edit-qty',    col: 'qty',    value: qty,    type: 'number', sym, min: '0', step: 'any' }, 'amount'));
+        tr.appendChild(makeInputCell({ cls: 'edit-qty',    col: 'qty',    value: rawQty, type: 'number', sym, min: '0', step: 'any' }, 'amount'));
         tr.appendChild(makeInputCell({ cls: 'edit-weight', col: 'weight', value: weight, type: 'number', sym, min: '0', max: '100', step: '0.1' }));
         tr.appendChild(makeInputCell({ cls: 'edit-letf',   col: 'letf',   value: letfStr,  sym, style: { textAlign: 'left', width: '180px' } }));
         tr.appendChild(makeInputCell({ cls: 'edit-groups', col: 'groups', value: groupsStr, sym, style: { textAlign: 'left', width: '180px' } }));

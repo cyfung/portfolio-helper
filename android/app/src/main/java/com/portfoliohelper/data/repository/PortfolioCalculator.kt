@@ -136,7 +136,28 @@ object PortfolioCalculator {
         
         val equityUsd = totalUsd + marginUsd
         val marginPct = if (equityUsd != 0.0) abs(marginUsd / equityUsd) * 100.0 else 0.0
-        val changeUsd = totalUsd - prevTotalUsd
+
+        // Day change: only include stocks whose session has started today
+        val nowSec = System.currentTimeMillis() / 1000
+        var filteredMarkUsd = 0.0
+        var filteredPrevUsd = 0.0
+        for (pos in positions) {
+            val quote = prices[pos.symbol] ?: continue
+            val sessionStarted = quote.tradingPeriodStart?.let { nowSec >= it } ?: false
+            if (!sessionStarted) continue
+            val currency = quote.currency ?: "USD"
+            val isPence = currency.length == 3 && currency[2].isLowerCase()
+            val normalizedCcy = if (isPence) currency.uppercase() else currency
+            val rate = if (normalizedCcy == "USD") 1.0 else {
+                val pair = "${normalizedCcy}USD=X"
+                prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: continue
+            }
+            val multiplier = if (isPence) rate / 100.0 else rate
+            val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+            filteredMarkUsd += (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier * qty
+            filteredPrevUsd += (quote.previousClose ?: quote.regularMarketPrice ?: 0.0) * multiplier * qty
+        }
+        val changeUsd = filteredMarkUsd - filteredPrevUsd
         val changePct = if (prevTotalUsd != 0.0) (changeUsd / prevTotalUsd) * 100.0 else 0.0
 
         // Conversion from USD to Display Currency
@@ -214,7 +235,9 @@ object PortfolioCalculator {
                     quote.previousClose,
                     quote.isMarketClosed,
                     timestamp = quote.timestamp,
-                    currency = quote.currency
+                    currency = quote.currency,
+                    localDate = quote.localDate,
+                    tradingPeriodStart = quote.tradingPeriodStart
                 )
             } else null
         }
@@ -239,7 +262,9 @@ object PortfolioCalculator {
                 cached.previousClose,
                 cached.isMarketClosed,
                 cached.currency,
-                cached.timestamp
+                cached.timestamp,
+                localDate = cached.localDate,
+                tradingPeriodStart = cached.tradingPeriodStart
             )
         }
     }

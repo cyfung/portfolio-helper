@@ -1,6 +1,9 @@
 package com.portfoliohelper.ui.screens
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -18,11 +21,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.SyncStatus
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.ui.components.*
+import com.portfoliohelper.worker.MarginCheckWidgetReceiver
 import com.portfoliohelper.ui.theme.ext
 import kotlinx.coroutines.delay
 
@@ -38,6 +43,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val marginStats by vm.marginCheckStats.collectAsState()
     val notificationsEnabled by vm.marginCheckNotificationsEnabled.collectAsState()
     val scalingPercent by vm.scalingPercent.collectAsState()
+    val afterHoursGray by vm.afterHoursGray.collectAsState()
 
     Column(
         modifier = Modifier
@@ -199,6 +205,24 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
 
                 HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
 
+                // After-Hours Style Toggle
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("After-Hours Style: Gray", color = ext.textSecondary, fontSize = 13.sp)
+                        Text("Show after-hours data as gray instead of dimmed colors", color = ext.textTertiary, fontSize = 11.sp)
+                    }
+                    Switch(
+                        checked = afterHoursGray,
+                        onCheckedChange = { vm.saveAfterHoursGray(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = ext.actionPositive,
+                            checkedTrackColor = ext.actionPositive.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
                 // Notification Toggle
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -207,7 +231,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                     }
                     Switch(
                         checked = notificationsEnabled,
-                        onCheckedChange = { 
+                        onCheckedChange = {
                             vm.saveMarginCheckNotificationsEnabled(it)
                             if (it) onAskPermission()
                         },
@@ -216,6 +240,32 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                             checkedTrackColor = ext.actionPositive.copy(alpha = 0.3f)
                         )
                     )
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
+                val context = LocalContext.current
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Home Screen Widget", color = ext.textSecondary, fontSize = 13.sp)
+                        Text("Add the margin check widget to your home screen", color = ext.textTertiary, fontSize = 11.sp)
+                    }
+                    TextButton(onClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            val mgr = AppWidgetManager.getInstance(context)
+                            val provider = ComponentName(context, MarginCheckWidgetReceiver::class.java)
+                            if (mgr.isRequestPinAppWidgetSupported) {
+                                val callback = android.app.PendingIntent.getBroadcast(
+                                    context, 0,
+                                    android.content.Intent(context, MarginCheckWidgetReceiver::class.java),
+                                    android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                                )
+                                mgr.requestPinAppWidget(provider, null, callback)
+                            }
+                        }
+                    }) {
+                        Text("Add")
+                    }
                 }
             }
         }

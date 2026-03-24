@@ -2,16 +2,14 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.model.CashEntry
-import com.portfoliohelper.model.Portfolio
+import com.portfoliohelper.model.Stock
 import com.portfoliohelper.service.ManagedPortfolio
-import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
 import kotlinx.html.*
 import kotlinx.serialization.Serializable
-import kotlin.math.abs
 
 @Serializable
 private data class PortfolioOption(val slug: String, val name: String)
@@ -21,68 +19,37 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     allPortfolios: Collection<ManagedPortfolio>,
     activePortfolioId: String
 ) {
-    val portfolio = YahooMarketDataService.getCurrentPortfolio(entry.getStocks())
+    val stocks = entry.getStocks()
     val cashEntries = entry.getCash()
 
-    // Build per-stock currency map from cached Yahoo quotes
-    val stockCurrenciesMap: Map<String, String> = portfolio.stocks.associate { s ->
-        s.label to (YahooMarketDataService.getQuote(s.label)?.currency ?: "USD")
-    }
     val showStockDisplayCurrency = AppConfig.showStockDisplayCurrency
     val privacyScalePct: Double? = AppConfig.privacyScalePct
-    fun scaleCash(amount: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(amount * privacyScalePct) / 100.0 else amount
-    fun scaleQty(qty: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(qty * privacyScalePct / 100.0).toDouble() else qty
-    val displayStockGross = if (privacyScalePct != null) portfolio.stockGrossValue * privacyScalePct / 100.0
-                            else portfolio.stockGrossValue
-
-    // Build FX rate map for non-USD currencies from cached Yahoo quotes (e.g. HKDUSD=X → 0.1286)
-    val fxRateMap: Map<String, Double> = cashEntries
-        .map { it.currency }.distinct()
-        .filter { it != "USD" && it != "P" }
-        .mapNotNull { ccy ->
-            val rate = YahooMarketDataService.getQuote("${ccy}USD=X")?.regularMarketPrice
-            if (rate != null) ccy to rate else null
-        }
-        .toMap()
-
-    // Helper to resolve a cash entry to its USD value (handles regular, P-reference, and FX entries)
-    fun resolveEntryUsd(e: CashEntry): Double? {
-        return when (e.currency) {
-            "USD" -> scaleCash(e.amount)
-            "P" -> {
-                val ref =
-                    ManagedPortfolio.getBySlug(e.portfolioRef ?: return null)
-                        ?: return null
-                val rawValue = e.amount * YahooMarketDataService.getCurrentPortfolio(ref.getStocks()).stockGrossValue
-                if (privacyScalePct != null) rawValue * privacyScalePct / 100.0 else rawValue
-            }
-
-            else -> fxRateMap[e.currency]?.let { scaleCash(e.amount) * it }
-        }
-    }
 
     // Load per-portfolio config from SQLite (PortfolioCfgTable)
     val portfolioConf: Map<String, String> = entry.getAllConfig()
     val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
-    val displayRebalTarget = if (privacyScalePct != null) savedRebalTargetUsd * privacyScalePct / 100.0
-                             else savedRebalTargetUsd
+    val displayRebalTarget =
+        if (privacyScalePct != null) savedRebalTargetUsd * privacyScalePct / 100.0
+        else savedRebalTargetUsd
     val savedMarginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0
     val savedAllocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL"
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
     val virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true"
 
     // Inject dividend total as a virtual cash entry when virtualBalance is enabled and total is available
-    val dividendTotal = if (virtualBalanceEnabled) portfolioConf["dividendTotal"]?.toDoubleOrNull() else null
+    val dividendTotal =
+        if (virtualBalanceEnabled) portfolioConf["dividendTotal"]?.toDoubleOrNull() else null
     val effectiveCashEntries = if (dividendTotal != null) {
-        cashEntries + CashEntry(label = "Dividend", currency = "USD", marginFlag = false, amount = dividendTotal)
+        cashEntries + CashEntry(
+            label = "Dividend",
+            currency = "USD",
+            marginFlag = false,
+            amount = dividendTotal
+        )
     } else {
         cashEntries
     }
 
-    // Compute totals and display currencies at function level so they can be used in both head and body
-    val cashTotalUsd = effectiveCashEntries.sumOf { ce -> resolveEntryUsd(ce) ?: 0.0 }
     val displayCurrencies: List<String> = buildList {
         add("USD")
         allPortfolios.asSequence().flatMap { it.getCash() }
@@ -106,7 +73,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         """
                         var portfolioId = "${entry.slug}";
                         var portfolioName = "${entry.name}";
-                        var fxRates = ${appJson.encodeToString(buildMap { put("USD", 1.0); putAll(fxRateMap) })};
                         var displayCurrencies = ${appJson.encodeToString(displayCurrencies)};
                         var savedRebalTargetUsd = ${"%.2f".format(displayRebalTarget)};
                         var savedMarginTargetPct = ${"%.4f".format(savedMarginTargetPct)};
@@ -114,9 +80,16 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         var savedAllocReduceMode = "$savedAllocReduceMode";
                         var virtualBalanceEnabled = $virtualBalanceEnabled;
                         var dividendCalcUpToDate = "${portfolioConf["dividendCalcUpToDate"] ?: ""}";
-                        var stockCurrencies = ${appJson.encodeToString(stockCurrenciesMap)};
                         var savedShowStockDisplayCurrency = $showStockDisplayCurrency;
-                        var allPortfolioOptions = ${appJson.encodeToString(allPortfolios.map { p -> PortfolioOption(p.slug, p.name) })};
+                        var savedAfterHoursGray = ${AppConfig.afterHoursGray};
+                        var allPortfolioOptions = ${
+                            appJson.encodeToString(allPortfolios.map { p ->
+                                PortfolioOption(
+                                    p.slug,
+                                    p.name
+                                )
+                            })
+                        };
                         """.trimIndent()
                     )
                 }
@@ -269,31 +242,33 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             tbody {
                                 buildSummaryRows(
                                     effectiveCashEntries,
-                                    ::resolveEntryUsd,
-                                    portfolio,
-                                    cashTotalUsd,
-                                    displayStockGross,
                                     privacyScalePct
                                 )
                             }
                         }
 
-                        buildCashEditTable(cashEntries.sortedBy { it.label.lowercase() }, allPortfolios.toList())
+                        buildCashEditTable(
+                            cashEntries.sortedBy { it.label.lowercase() },
+                            allPortfolios.toList()
+                        )
 
                         if (virtualBalanceEnabled) {
                             div(classes = "dividend-from-section") {
-                                label { attributes["for"] = "dividend-from-input"; +"Dividend From" }
+                                label {
+                                    attributes["for"] = "dividend-from-input"; +"Dividend From"
+                                }
                                 input(type = InputType.date, classes = "dividend-from-input") {
                                     id = "dividend-from-input"
                                     value = portfolioConf["dividendStartDate"] ?: ""
-                                    attributes["data-original-value"] = portfolioConf["dividendStartDate"] ?: ""
+                                    attributes["data-original-value"] =
+                                        portfolioConf["dividendStartDate"] ?: ""
                                     attributes["autocomplete"] = "off"
                                 }
                             }
                         }
 
                         if (effectiveCashEntries.any { it.marginFlag }) {
-                            buildIbkrRatesTable()
+                            buildIbkrRatesSection()
                         }
                     }
 
@@ -316,7 +291,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
-                        buildStockTable(portfolio, displayStockGross, privacyScalePct)
+                        buildStockTable(stocks, privacyScalePct)
 
                         div {
                             id = "group-table-container"
@@ -351,10 +326,6 @@ private fun DIV.allocMode(id: String) {
 
 private fun TBODY.buildSummaryRows(
     cashEntries: List<CashEntry>,
-    resolveEntryUsd: (CashEntry) -> Double?,
-    portfolio: Portfolio,
-    cashTotalUsd: Double,
-    stockGrossForDisplay: Double = portfolio.stockGrossValue,
     privacyScalePct: Double? = null
 ) {
     fun scaleCash(x: Double): Double =
@@ -368,7 +339,7 @@ private fun TBODY.buildSummaryRows(
         td {
             span {
                 id = "portfolio-total"
-                +"%,.2f".format(stockGrossForDisplay + cashTotalUsd)
+                +"—"
             }
             div(classes = "summary-subvalue") { id = "total-day-change" }
         }
@@ -386,12 +357,14 @@ private fun TBODY.buildSummaryRows(
     for (entry in sortedCashEntries) {
         val displayLabel = if (entry.label == prevLabel) "" else entry.label
         prevLabel = entry.label
+        val isRef = entry.currency == "P"
+        val isBrokenRef = isRef && entry.portfolioRef == null
         tr {
             attributes["data-cash-entry"] = "true"
             // P entries: JS treats them as USD (rate=1.0) with pre-resolved amount
-            attributes["data-currency"] = if (entry.portfolioRef != null) "USD" else entry.currency
-            attributes["data-amount"] = if (entry.portfolioRef != null) {
-                resolveEntryUsd(entry)?.toString() ?: "0"
+            attributes["data-currency"] = if (isRef) "USD" else entry.currency
+            attributes["data-amount"] = if (isRef) {
+                "0"  // updated by updatePortfolioRefValues via SSE (or left as 0 for broken refs)
             } else {
                 scaleCash(entry.amount).toString()
             }
@@ -403,7 +376,8 @@ private fun TBODY.buildSummaryRows(
             }
             classes = buildSet {
                 if (entry.marginFlag) add("cash-margin-entry")
-                if (entry.portfolioRef != null) add("cash-ref-entry")
+                if (isRef) add("cash-ref-entry")
+                if (isBrokenRef) add("cash-ref-broken")
             }
 
             td { +displayLabel }
@@ -411,14 +385,15 @@ private fun TBODY.buildSummaryRows(
                 if (entry.marginFlag) {
                     span(classes = "cash-type-badge cash-badge-margin") { +"M" }
                 }
-                if (entry.portfolioRef != null) {
-                    span(classes = "cash-type-badge cash-badge-ref") { +"\u2197" }
+                if (isRef) {
+                    span(classes = "cash-type-badge cash-badge-ref") {
+                        unsafe { +"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z"/></svg>""" }
+                    }
                 }
             }
             td(classes = "cash-raw-col") {
-                if (entry.portfolioRef != null) {
-                    val resolvedUsd = resolveEntryUsd(entry)
-                    if (resolvedUsd != null) +"${"%,.2f".format(resolvedUsd)} USD" else +"--- USD"
+                if (isRef) {
+                    +"--- USD"  // updated by updatePortfolioRefValues via SSE (broken refs stay as ---)
                 } else {
                     +"${"%,.2f".format(scaleCash(entry.amount))} ${entry.currency}"
                 }
@@ -426,8 +401,7 @@ private fun TBODY.buildSummaryRows(
             td(classes = "cash-converted-col") {
                 span {
                     id = "cash-usd-${entry.label}-${entry.currency}"
-                    val resolvedUsd = resolveEntryUsd(entry)
-                    if (resolvedUsd != null) +"%,.2f".format(resolvedUsd) else +"---"
+                    // Left blank; SSE applyCashDisplay fills in the correct scaled value
                 }
             }
         }
@@ -444,34 +418,26 @@ private fun TBODY.buildSummaryRows(
             td {
                 span {
                     id = "cash-total-usd"
-                    +"%,.2f".format(cashTotalUsd)
+                    +"—"
                 }
             }
         }
 
-        // Margin row (only when M-flagged entries exist)
-        val hasMarginEntries = cashEntries.any { it.marginFlag }
-        if (hasMarginEntries) {
-            val marginUsd = cashEntries.filter { it.marginFlag }
-                .sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-            val marginDenominator = stockGrossForDisplay + marginUsd
+        // Margin row (only when M-flagged entries exist; always hidden initially — JS shows/hides via SSE)
+        if (cashEntries.any { it.marginFlag }) {
             tr(classes = "margin-row") {
                 attributes["data-margin-row"] = "true"
-                if (marginUsd >= 0) style = "display:none;"
+                style = "display:none;"
                 td { +"Margin" }
                 td {}
                 td {}
                 td {
                     span {
                         id = "margin-total-usd"
-                        +"%,.2f".format(abs(marginUsd))
+                        +"—"
                     }
-                    val marginPct = if (marginDenominator != 0.0 && marginUsd < 0)
-                        (marginUsd / marginDenominator) * 100.0 else 0.0
                     span(classes = "margin-percent") {
                         id = "margin-percent"
-                        if (marginUsd >= 0) style = "display:none;"
-                        else +" (${"%.1f%%".format(abs(marginPct))})"
                     }
                 }
             }
@@ -489,7 +455,7 @@ private fun TBODY.buildSummaryRows(
             td {
                 div {
                     id = "stock-gross-total"
-                    +"%,.2f".format(stockGrossForDisplay)
+                    +"—"
                 }
                 div(classes = "summary-subvalue") { id = "portfolio-day-change" }
             }
@@ -504,7 +470,6 @@ private fun TBODY.buildSummaryRows(
         td {
             input(type = InputType.text, classes = "rebal-target-input") {
                 attributes["id"] = "rebal-target-input"
-                attributes["placeholder"] = "%,.2f".format(stockGrossForDisplay)
                 attributes["autocomplete"] = "off"
             }
         }
@@ -512,9 +477,6 @@ private fun TBODY.buildSummaryRows(
 
     // Margin Target row — only rendered when margin entries are configured
     if (cashEntries.any { it.marginFlag }) {
-        val mUsd = cashEntries.filter { it.marginFlag }.sumOf { e -> resolveEntryUsd(e) ?: 0.0 }
-        val mDenom = stockGrossForDisplay + mUsd
-        val mPct = if (mDenom != 0.0 && mUsd < 0) (mUsd / mDenom) * 100.0 else 0.0
         tr(classes = "margin-row") {
             attributes["id"] = "margin-target-row"
             td { +"Margin Target" }
@@ -523,7 +485,6 @@ private fun TBODY.buildSummaryRows(
             td {
                 input(type = InputType.text, classes = "margin-target-input") {
                     attributes["id"] = "margin-target-input"
-                    attributes["placeholder"] = "%.1f".format(abs(mPct))
                     attributes["autocomplete"] = "off"
                 }
                 +" %"
@@ -533,12 +494,11 @@ private fun TBODY.buildSummaryRows(
 }
 
 private fun FlowContent.buildStockTable(
-    portfolio: Portfolio,
-    stockGrossForDisplay: Double = portfolio.stockGrossValue,
+    stocks: List<Stock>,
     privacyScalePct: Double? = null
 ) {
     fun scaleQty(q: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0).toDouble() else q
+        if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0) else q
     table(classes = "portfolio-table") {
         id = "stock-view-table"
         thead {
@@ -570,11 +530,12 @@ private fun FlowContent.buildStockTable(
             }
         }
         tbody {
-            for (stock in portfolio.stocks) {
+            for (stock in stocks) {
                 val effectiveTarget = stock.targetWeight ?: 0.0
                 tr {
                     attributes["data-symbol"] = stock.label
                     attributes["data-qty"] = formatQty(scaleQty(stock.amount))
+                    attributes["data-raw-qty"] = stock.amount.toString()
                     attributes["data-weight"] = effectiveTarget.toString()
                     if (stock.letfComponents != null) {
                         attributes["data-letf"] =
@@ -594,10 +555,10 @@ private fun FlowContent.buildStockTable(
                         +formatQty(scaleQty(stock.amount))
                     }
 
-                    // Last NAV — kept server-side as it comes from a separate NAV feed, not SSE
-                    td(classes = if (stock.lastNav != null) "col-market-data price loaded muted col-moreinfo" else "col-market-data price muted col-moreinfo") {
+                    // Last NAV — SSE applyStockDisplay updates this cell
+                    td(classes = "col-market-data price muted col-moreinfo") {
                         id = "nav-${stock.label}"
-                        +(if (stock.lastNav != null) "%.2f".format(stock.lastNav) else "—")
+                        +"—"
                     }
 
                     // EST — always blank; fully owned by letf.js via SSE component prices
@@ -606,17 +567,17 @@ private fun FlowContent.buildStockTable(
                         +"—"
                     }
 
-                    // Last Close Price — kept for first paint; SSE overwrites immediately
-                    td(classes = if (stock.lastClosePrice != null) "col-market-data price loaded col-moreinfo" else "col-market-data price col-moreinfo") {
+                    // Last Close Price — SSE overwrites immediately; render placeholder
+                    td(classes = "col-market-data price col-moreinfo") {
                         id = "close-${stock.label}"
-                        +(if (stock.lastClosePrice != null) "%.2f".format(stock.lastClosePrice) else "—")
+                        +"—"
                     }
 
-                    // Mark Price — kept for first paint; SSE overwrites immediately
-                    td(classes = if (stock.markPrice != null) "col-market-data price loaded" else "col-market-data price") {
+                    // Mark Price — SSE overwrites immediately; render placeholder
+                    td(classes = "col-market-data price") {
                         id = "mark-${stock.label}"
                         span(classes = "mark-price-value") {
-                            +(if (stock.markPrice != null) "%.2f".format(stock.markPrice) else "—")
+                            +"—"
                         }
                         span(classes = "mark-day-pct") {
                             id = "day-percent-${stock.label}"
@@ -633,13 +594,10 @@ private fun FlowContent.buildStockTable(
                         id = "position-change-${stock.label}"
                     }
 
-                    // Mkt Val — kept for first paint; SSE overwrites immediately
-                    val mktVal = stock.value
-                    td(classes = if (mktVal != null) "col-market-data value loaded col-moreinfo" else "col-market-data value col-moreinfo") {
+                    // Mkt Val — SSE overwrites immediately; render placeholder
+                    td(classes = "col-market-data value col-moreinfo") {
                         id = "value-${stock.label}"
-                        +(if (mktVal != null) "%,.2f".format(
-                            if (privacyScalePct != null) mktVal * privacyScalePct / 100.0 else mktVal
-                        ) else "—")
+                        +"—"
                     }
 
                     // Weight — owned by JS (updateCurrentWeights); render empty

@@ -1,5 +1,35 @@
-// ── backup.js — Backup/restore modal, TWS sync, save-to-backtest ─────────────
+// ── backup.js — Backup/restore modal, TWS sync, save-to-backtest, IBKR display
 // Depends on: utils.js, edit-mode.js, rebalance.js
+
+function renderIbkrDisplay(data) {
+    const el = document.getElementById('ibkr-display');
+    if (!el) return;
+    if (!data.perCurrency || data.perCurrency.length === 0) { el.innerHTML = ''; return; }
+
+    const showSavings = data.savingsUsd >= 0.005;
+
+    let html = '<table class="ibkr-rates-table"><thead><tr><th>CCY</th><th>IBKR Pro Rate</th></tr></thead><tbody>';
+    for (const ci of data.perCurrency) {
+        html += `<tr><td class="ibkr-rate-currency">${ci.currency}</td><td class="ibkr-rate-value">${ci.displayRateText}</td></tr>`;
+    }
+    html += '</tbody></table>';
+
+    const currentVal = data.currentDailyUsd > 0 ? formatDisplayCurrency(data.currentDailyUsd) : '\u2014';
+    const cheapestVal = data.cheapestCcy != null ? formatDisplayCurrency(data.cheapestDailyUsd) : '\u2014';
+    const cheapestLabel = data.cheapestCcy != null
+        ? `Cheapest <span>(${data.cheapestCcy})</span>`
+        : 'Cheapest';
+    const savingsVal = showSavings ? formatDisplayCurrency(data.savingsUsd) : '\u2014';
+    const savingsTdClass = showSavings ? ' class="ibkr-rate-diff"' : '';
+
+    html += `<table class="ibkr-interest-summary"><tbody>
+<tr><td>Current Daily Interest</td><td class="ibkr-value-muted">${currentVal}</td></tr>
+<tr><td>${cheapestLabel}</td><td class="ibkr-value-muted">${cheapestVal}</td></tr>
+<tr><td>${data.label}</td><td${savingsTdClass}>${savingsVal}</td></tr>
+</tbody></table>`;
+
+    el.innerHTML = html;
+}
 
 function formatSavedAt(millis) {
     const d = new Date(millis);

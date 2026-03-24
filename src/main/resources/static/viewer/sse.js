@@ -37,32 +37,27 @@ function initSseConnection() {
             if (data.type === 'reload') {
                 console.log('Portfolio reloaded, refreshing page...');
                 location.reload();
-            } else if (data.type === 'nav') {
-                updateNavInUI(data.symbol, data.nav);
-            } else if (data.type === 'portfolio-value') {
-                updatePortfolioRefValues(data.portfolioId, data.value);
+            } else if (data.type === 'fx-rates') {
+                Object.assign(fxRates, data.rates);
+                refreshDisplayCurrency();
+            } else if (data.type === 'stock-display') {
+                applyStockDisplay(data);
+            } else if (data.type === 'cash-display') {
+                applyCashDisplay(data);
+            } else if (data.type === 'portfolio-totals') {
+                applyPortfolioTotals(data);
+            } else if (data.type === 'ibkr-display') {
+                if (data.portfolioId === portfolioId) {
+                    lastIbkrData = data;
+                    renderIbkrDisplay(data);
+                    const fetchEl = document.getElementById('ibkr-last-fetch');
+                    if (fetchEl && data.lastFetch > 0)
+                        fetchEl.textContent = new Date(data.lastFetch).toLocaleTimeString();
+                    const reloadBtn = document.getElementById('ibkr-reload-btn');
+                    if (reloadBtn) reloadBtn.dataset.lastFetch = data.lastFetch;
+                }
             } else if (data.type === 'dividend') {
                 updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
-            } else if (data.type === 'ibkr-rates') {
-                buildIbkrRatesTable(data);
-                lastIbkrRatesData = data;
-                scheduleDisplayUpdate();
-            } else {
-                // FX rate update
-                if (data.symbol && data.symbol.endsWith('USD=X')) {
-                    const ccy = data.symbol.replace('USD=X', '');
-                    if (data.markPrice !== null && data.markPrice !== undefined) {
-                        fxRates[ccy] = data.markPrice;
-                        scheduleDisplayUpdate();
-                    }
-                    return;
-                }
-
-                if (data.currency) {
-                    stockCurrencies[data.symbol] = data.currency;
-                }
-                updateGlobalTimestamp(data.timestamp);
-                updatePriceInUI(data.symbol, data.markPrice, data.lastClosePrice, data.isMarketClosed || false, data.tradingPeriodEnd);
             }
         } catch (e) {
             console.error('Failed to parse SSE data:', e);

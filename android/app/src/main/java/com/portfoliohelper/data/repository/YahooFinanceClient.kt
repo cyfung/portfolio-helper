@@ -17,7 +17,10 @@ data class YahooQuote(
     val previousClose: Double?,
     val isMarketClosed: Boolean = false,
     val currency: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val gmtoffset: Int? = null,
+    val localDate: String? = null,          // local trading date "YYYY-MM-DD" (tradingPeriodEnd adjusted by gmtoffset)
+    val tradingPeriodStart: Long? = null    // regular session start (Unix seconds)
 )
 
 object YahooFinanceClient {
@@ -94,6 +97,12 @@ object YahooFinanceClient {
         }.awaitAll().filterNotNull()
     }
 
+    private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): String? {
+        if (tradingPeriodEndSec == null || gmtoffset == null) return null
+        return java.time.Instant.ofEpochSecond(tradingPeriodEndSec + gmtoffset)
+            .atOffset(java.time.ZoneOffset.UTC).toLocalDate().toString()
+    }
+
     private fun parseChartResponse(symbol: String, jsonBody: String): YahooQuote {
         val jsonElement = json.parseToJsonElement(jsonBody)
         val result = jsonElement.jsonObject["chart"]?.jsonObject?.get("result")?.jsonArray?.get(0)?.jsonObject
@@ -108,6 +117,8 @@ object YahooFinanceClient {
         val regularPeriod = currentTradingPeriod?.get("regular")?.jsonObject
         val tradingPeriodStart = regularPeriod?.get("start")?.jsonPrimitive?.longOrNull
         val tradingPeriodEnd = regularPeriod?.get("end")?.jsonPrimitive?.longOrNull
+        val gmtoffset = regularPeriod?.get("gmtoffset")?.jsonPrimitive?.intOrNull
+        val localDate = computeLocalDate(tradingPeriodEnd, gmtoffset)
 
         val isMarketClosed = run {
             val currentTimeSeconds = System.currentTimeMillis() / 1000
@@ -116,6 +127,6 @@ object YahooFinanceClient {
             beforeOpen || afterClose
         }
 
-        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency, System.currentTimeMillis())
+        return YahooQuote(symbol, regularMarketPrice, previousClose, isMarketClosed, currency, System.currentTimeMillis(), gmtoffset, localDate, tradingPeriodStart)
     }
 }

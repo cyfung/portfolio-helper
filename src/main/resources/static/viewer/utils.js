@@ -36,11 +36,13 @@ function formatSignedCurrency(val) {
 
 function toDisplayCurrency(usdVal) {
     const rate = fxRates[currentDisplayCurrency];
-    return (rate && rate !== 0) ? usdVal / rate : usdVal;
+    if (!rate || rate === 0) return null;
+    return usdVal / rate;
 }
 
 function formatDisplayCurrency(usdVal) {
     const converted = toDisplayCurrency(usdVal);
+    if (converted === null) return '\u2014';
     const absVal = Math.abs(converted);
     const sign = converted < 0 ? '-' : '';
     return sign + absVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -48,6 +50,7 @@ function formatDisplayCurrency(usdVal) {
 
 function formatSignedDisplayCurrency(usdVal) {
     const converted = toDisplayCurrency(usdVal);
+    if (converted === null) return '\u2014';
     return (converted >= 0 ? '+' : '') + formatDisplayCurrency(usdVal);
 }
 
@@ -68,17 +71,20 @@ function getStockFxRate(stockCcy) {
 
 function toStockDisplayCurrency(nativeVal, stockCcy) {
     const toUsd = getStockFxRate(stockCcy);    // 1 stockCcy = toUsd USD
+    if (toUsd === null) return null;
     const usdVal = nativeVal * toUsd;
     return toDisplayCurrency(usdVal);           // USD → displayCurrency
 }
 
 function formatStockDisplayCurrency(nativeVal, stockCcy) {
     const converted = toStockDisplayCurrency(nativeVal, stockCcy);
+    if (converted === null) return '\u2014';
     const sign = converted < 0 ? '-' : '';
     return sign + Math.abs(converted).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatSignedStockDisplayCurrency(nativeVal, stockCcy) {
     const converted = toStockDisplayCurrency(nativeVal, stockCcy);
+    if (converted === null) return '\u2014';
     return (converted >= 0 ? '+' : '') + formatStockDisplayCurrency(nativeVal, stockCcy);
 }

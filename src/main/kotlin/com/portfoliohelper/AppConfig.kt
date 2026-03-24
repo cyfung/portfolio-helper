@@ -1,6 +1,9 @@
 package com.portfoliohelper
 
 import com.portfoliohelper.service.db.GlobalSettingsTable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.upsert
@@ -18,6 +21,7 @@ object AppConfig {
     const val KEY_SHOW_STOCK_DISPLAY_CURRENCY = "showStockDisplayCurrency"
     const val KEY_DIVIDEND_SAFE_LAG_DAYS = "dividendSafeLagDays"
     const val KEY_PRIVACY_SCALE_PCT = "privacyScalePct"
+    const val KEY_AFTER_HOURS_GRAY  = "afterHoursGray"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -31,7 +35,8 @@ object AppConfig {
         KEY_UPDATE_CHECK_INTERVAL to "86400",
         KEY_SHOW_STOCK_DISPLAY_CURRENCY to "false",
         KEY_DIVIDEND_SAFE_LAG_DAYS to "5",
-        KEY_PRIVACY_SCALE_PCT   to ""
+        KEY_PRIVACY_SCALE_PCT   to "",
+        KEY_AFTER_HOURS_GRAY    to "true"
     )
 
     fun get(key: String): String {
@@ -52,6 +57,7 @@ object AppConfig {
                 }
             }
         }
+        if (KEY_PRIVACY_SCALE_PCT in updates) _privacyScalePct.value = privacyScalePct
     }
 
     // Typed accessors
@@ -68,6 +74,11 @@ object AppConfig {
     val showStockDisplayCurrency: Boolean get() = get(KEY_SHOW_STOCK_DISPLAY_CURRENCY).lowercase() == "true"
     val dividendSafeLagDays: Long get() = get(KEY_DIVIDEND_SAFE_LAG_DAYS).toLongOrNull()?.takeIf { it >= 0 } ?: 5L
     val privacyScalePct: Double? get() = get(KEY_PRIVACY_SCALE_PCT).toDoubleOrNull()?.takeIf { it > 0 }
+    private val _privacyScalePct: MutableStateFlow<Double?> by lazy {
+        MutableStateFlow(privacyScalePct)
+    }
+    val privacyScalePctFlow: StateFlow<Double?> by lazy { _privacyScalePct.asStateFlow() }
+    val afterHoursGray: Boolean get() = get(KEY_AFTER_HOURS_GRAY).lowercase() != "false"
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

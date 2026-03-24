@@ -3,10 +3,11 @@ package com.portfoliohelper.web
 import com.portfoliohelper.service.IbkrMarginRateService
 import kotlinx.html.*
 
-internal fun FlowContent.buildIbkrRatesTable() {
+internal fun FlowContent.buildIbkrRatesSection() {
     val lastFetchMillis = IbkrMarginRateService.getLastFetchMillis()
 
     div(classes = "ibkr-rates-wrapper") {
+        div { id = "ibkr-display" }
         div(classes = "ibkr-rates-footer") {
             span(classes = "ibkr-last-fetch") {
                 id = "ibkr-last-fetch"
@@ -28,3 +29,4 @@ internal fun FlowContent.buildIbkrRatesTable() {
         }
     }
 }
+

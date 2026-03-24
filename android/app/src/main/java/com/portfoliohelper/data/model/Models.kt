@@ -59,7 +59,9 @@ data class MarketPrice(
     val previousClose: Double?,
     val isMarketClosed: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
-    val currency: String? = null
+    val currency: String? = null,
+    val localDate: String? = null,          // local trading date "YYYY-MM-DD"
+    val tradingPeriodStart: Long? = null    // regular session start (Unix seconds)
 )
 
 // ── Per-portfolio margin alert settings ───────────────────────────────────────

@@ -20,6 +20,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -264,6 +265,7 @@ fun MonoText(
     text: String,
     color: Color = MaterialTheme.ext.textSecondary,
     fontWeight: FontWeight = FontWeight.Normal,
+    fontStyle: FontStyle = FontStyle.Normal,
     fontSize: TextUnit = 14.sp,
     textAlign: TextAlign = TextAlign.End,
     modifier: Modifier = Modifier
@@ -274,6 +276,7 @@ fun MonoText(
         style    = MaterialTheme.typography.bodySmall.copy(
             fontFamily = DataFont,
             fontWeight = fontWeight,
+            fontStyle  = fontStyle,
             fontSize   = fontSize,
             letterSpacing = (-0.2).sp
         ),
@@ -283,15 +286,16 @@ fun MonoText(
 }
 
 @Composable
-fun DayPctPill(pct: Double, afterHours: Boolean = false) {
+fun DayPctPill(pct: Double, afterHours: Boolean = false, grayStyle: Boolean = true) {
     val ext    = MaterialTheme.ext
     val isZero = abs(pct) < 0.1
     val color  = when {
-        isZero   -> ext.textTertiary
-        pct > 0  -> ext.positive
-        else     -> ext.negative
+        afterHours && grayStyle -> ext.textSecondary
+        isZero                  -> ext.textTertiary
+        pct > 0                 -> ext.positive
+        else                    -> ext.negative
     }
-    val alpha  = if (afterHours) 0.55f else 1f
+    val alpha  = if (afterHours && !grayStyle) 0.55f else 1f
     val text   = formatSignedPct(pct)
     Box(
         modifier = Modifier
@@ -545,7 +549,7 @@ fun MarginStatsWidget(stats: MarginCheckStats, ext: com.portfoliohelper.ui.theme
 
             if (isError) {
                 Text(
-                    text = stats.errorMessage ?: "Check failed. Using cached data.",
+                    text = stats.errorMessage,
                     color = ext.negative,
                     fontSize = 12.sp,
                     lineHeight = 16.sp

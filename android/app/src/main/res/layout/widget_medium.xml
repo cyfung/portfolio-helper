@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/widget_bg">
+
+    <!-- Header row: "MARGIN CHECK" + status badge -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/text_header_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="MARGIN CHECK"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="11sp" />
+        <TextView
+            android:id="@+id/text_status_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- No data yet -->
+    <FrameLayout
+        android:id="@+id/container_no_data"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="No data yet"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp" />
+    </FrameLayout>
+
+    <!-- Running state -->
+    <LinearLayout
+        android:id="@+id/container_running"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+        <Chronometer
+            android:id="@+id/chronometer_elapsed"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="28sp"
+            android:textColor="@color/widget_warning"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+        <!-- Divider: ImageView instead of View (View not in RemoteViews supported list) -->
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:src="@color/widget_divider"
+            android:scaleType="fitXY" />
+        <TextView
+            android:id="@+id/text_started_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp"
+            android:paddingTop="10dp" />
+        <TextView
+            android:id="@+id/text_last_run"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp"
+            android:paddingTop="4dp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Normal state -->
+    <LinearLayout
+        android:id="@+id/container_normal"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="visible">
+        <!-- Hero time: bottom padding acts as the 6dp + 10dp spacer after divider -->
+        <TextView
+            android:id="@+id/text_run_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="28sp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+        <!-- Divider: ImageView instead of View -->
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:src="@color/widget_divider"
+            android:scaleType="fitXY" />
+        <!-- Error / Alert detail text: paddingTop replaces the spacer View -->
+        <TextView
+            android:id="@+id/text_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="10sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:paddingTop="10dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone" />
+        <!-- Data age row (always visible): paddingTop replaces the spacer View when text_detail is gone -->
+        <LinearLayout
+            android:id="@+id/row_data_age"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="10dp">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Data age"
+                android:textColor="@color/widget_text_muted"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/text_data_age_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="10sp" />
+        </LinearLayout>
+        <!-- Portfolios row (OK state only) -->
+        <LinearLayout
+            android:id="@+id/row_portfolios"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="6dp"
+            android:visibility="gone">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Portfolios"
+                android:textColor="@color/widget_text_muted"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/text_portfolios_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
