@@ -69,6 +69,7 @@ object PortfolioMasterService {
         val svc = PortfolioServices(portfolio, _scope).also { it.initialize() }
         _services.value = LinkedHashMap(_services.value).also { it[slug] = svc }
         PortfolioUpdateBroadcaster.broadcastReload()
+        MarketDataCoordinator.refresh()
         portfolio
     }
 
@@ -81,7 +82,8 @@ object PortfolioMasterService {
             val oldSlug = portfolio.slug
             val oldSvc = _services.value[oldSlug]
             portfolio.rename(newSlug)
-            val newSvc = PortfolioServices(portfolio, _scope).also { it.initialize() }
+            val renamedPortfolio = ManagedPortfolio(portfolio.serialId, newSlug)
+            val newSvc = PortfolioServices(renamedPortfolio, _scope).also { it.initialize() }
             _services.value = LinkedHashMap<String, PortfolioServices>().also { copy ->
                 _services.value.forEach { (k, v) ->
                     copy[if (k == oldSlug) newSlug else k] = if (k == oldSlug) newSvc else v
@@ -89,7 +91,8 @@ object PortfolioMasterService {
             }
             oldSvc?.shutdown()
             PortfolioUpdateBroadcaster.broadcastReload()
-            portfolio
+            MarketDataCoordinator.refresh()
+            renamedPortfolio
         }
 
     /** Throws IllegalStateException if trying to delete the default portfolio. */

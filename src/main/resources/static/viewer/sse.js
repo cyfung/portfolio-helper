@@ -12,6 +12,7 @@ function initSseConnection() {
     }
 
     let sseLastActivity = Date.now();
+    let hadConnectionError = false;
 
     function setSseStatus(ok) {
         const dot = document.getElementById('sse-status-dot');
@@ -25,6 +26,10 @@ function initSseConnection() {
 
     eventSource.onopen = () => {
         sseLastActivity = Date.now();
+        if (hadConnectionError) {
+            location.reload();
+            return;
+        }
         setSseStatus(true);
     };
 

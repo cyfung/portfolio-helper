@@ -452,6 +452,33 @@ async function initTwsSync() {
                 updateOrAddCashRow('MTD Interest.' + ccy, String(amt));
             }
 
+            // Remove empty placeholder rows that were auto-added on edit mode entry
+            document.querySelectorAll('#stock-edit-table tbody tr[data-new-stock]').forEach(tr => {
+                const [symIn, qtyIn] = getStockRowInputs(tr);
+                const symVal = symIn?.value.trim() ?? '';
+                const qtyVal = qtyIn?.value.trim() ?? '';
+                if (!symVal && (!qtyVal || qtyVal === '0')) {
+                    tr.remove();
+                }
+            });
+            document.querySelectorAll('.cash-edit-table tbody tr[data-new-cash]').forEach(tr => {
+                const labelIn = tr.querySelector('.cash-edit-label');
+                const amtIn = tr.querySelector('.cash-edit-amount');
+                if ((!labelIn || !labelIn.value.trim()) && (!amtIn || !amtIn.value.trim())) {
+                    tr.remove();
+                }
+            });
+
+            // Re-add empty row if table is still empty (sync returned nothing)
+            const stockTbody = document.querySelector('#stock-edit-table tbody');
+            if (stockTbody && stockTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
+                addStockRow();
+            }
+            const cashTbody = document.querySelector('.cash-edit-table tbody');
+            if (cashTbody && cashTbody.querySelectorAll('tr:not([data-deleted])').length === 0) {
+                addCashRow();
+            }
+
             updateTargetWeightTotal();
         } catch (e) {
             showTwsSyncError('TWS sync failed: ' + e.message);
