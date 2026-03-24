@@ -357,12 +357,14 @@ private fun TBODY.buildSummaryRows(
     for (entry in sortedCashEntries) {
         val displayLabel = if (entry.label == prevLabel) "" else entry.label
         prevLabel = entry.label
+        val isRef = entry.currency == "P"
+        val isBrokenRef = isRef && entry.portfolioRef == null
         tr {
             attributes["data-cash-entry"] = "true"
             // P entries: JS treats them as USD (rate=1.0) with pre-resolved amount
-            attributes["data-currency"] = if (entry.portfolioRef != null) "USD" else entry.currency
-            attributes["data-amount"] = if (entry.portfolioRef != null) {
-                "0"  // updated by updatePortfolioRefValues via SSE
+            attributes["data-currency"] = if (isRef) "USD" else entry.currency
+            attributes["data-amount"] = if (isRef) {
+                "0"  // updated by updatePortfolioRefValues via SSE (or left as 0 for broken refs)
             } else {
                 scaleCash(entry.amount).toString()
             }
@@ -374,7 +376,8 @@ private fun TBODY.buildSummaryRows(
             }
             classes = buildSet {
                 if (entry.marginFlag) add("cash-margin-entry")
-                if (entry.portfolioRef != null) add("cash-ref-entry")
+                if (isRef) add("cash-ref-entry")
+                if (isBrokenRef) add("cash-ref-broken")
             }
 
             td { +displayLabel }
@@ -382,13 +385,13 @@ private fun TBODY.buildSummaryRows(
                 if (entry.marginFlag) {
                     span(classes = "cash-type-badge cash-badge-margin") { +"M" }
                 }
-                if (entry.portfolioRef != null) {
+                if (isRef) {
                     span(classes = "cash-type-badge cash-badge-ref") { +"\u2197" }
                 }
             }
             td(classes = "cash-raw-col") {
-                if (entry.portfolioRef != null) {
-                    +"--- USD"  // updated by updatePortfolioRefValues via SSE
+                if (isRef) {
+                    +"--- USD"  // updated by updatePortfolioRefValues via SSE (broken refs stay as ---)
                 } else {
                     +"${"%,.2f".format(scaleCash(entry.amount))} ${entry.currency}"
                 }

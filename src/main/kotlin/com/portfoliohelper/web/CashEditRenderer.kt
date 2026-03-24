@@ -12,7 +12,7 @@ internal fun FlowContent.buildCashEditTable(
         table(classes = "cash-edit-table") {
             tbody {
                 for (entry in sortedEntries) {
-                    val isRef = entry.portfolioRef != null
+                    val isRef = entry.currency == "P"
                     val entryType = when {
                         isRef && entry.marginFlag -> "ref-margin"
                         isRef -> "ref"
@@ -28,7 +28,7 @@ internal fun FlowContent.buildCashEditTable(
                         attributes["data-original-margin"] = entry.marginFlag.toString()
                         attributes["data-original-is-ref"] = isRef.toString()
                         if (isRef) {
-                            attributes["data-original-portfolio-ref"] = entry.portfolioRef
+                            attributes["data-original-portfolio-ref"] = entry.portfolioRef ?: ""
                             attributes["data-original-multiplier"] = entry.amount.toString()
                         }
 
@@ -69,6 +69,14 @@ internal fun FlowContent.buildCashEditTable(
                         td(classes = "cash-ref-fields") {
                             if (!isRef) style = "display:none"
                             select(classes = "cash-edit-portfolio-ref") {
+                                if (isRef && entry.portfolioRef == null) {
+                                    option {
+                                        attributes["value"] = ""
+                                        attributes["disabled"] = "disabled"
+                                        attributes["selected"] = "selected"
+                                        +"— (portfolio deleted) —"
+                                    }
+                                }
                                 for (p in allPortfolios) {
                                     option {
                                         attributes["value"] = p.slug

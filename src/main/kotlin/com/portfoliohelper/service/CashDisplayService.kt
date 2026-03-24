@@ -87,12 +87,6 @@ class CashDisplayService(
         )
     }
 
-    /**
-     * Returns the portfolio's total cash (USD) for use in server-side page rendering
-     * (PortfolioRenderer.resolveEntryUsd for P-ref entries).
-     */
-    fun computeTotal(): Double = compute().totalUsd
-
     private fun resolveEntryUsd(entry: CashEntry): Double? {
         val scale = privacyScalePct.value
         val amount = if (scale != null) entry.amount * scale / 100.0 else entry.amount

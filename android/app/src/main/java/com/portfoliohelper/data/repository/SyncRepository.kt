@@ -287,7 +287,9 @@ class SyncRepository(
                         currency = if (isP) "USD" else c.currency,
                         amount = c.amount,
                         isMargin = c.marginFlag,
-                        portfolioRef = c.portfolioRef
+                        // Broken P-entries (currency="P", portfolioRef=null) get "" sentinel so they
+                        // remain identifiable as ref entries rather than becoming a real USD amount.
+                        portfolioRef = if (isP) (c.portfolioRef ?: "") else null
                     )
                     db.cashDao().upsert(cashEntry)
                 }

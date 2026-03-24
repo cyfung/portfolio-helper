@@ -100,8 +100,12 @@ object PortfolioMasterService {
         val slug = portfolio.slug
         val svc = _services.value[slug]
         portfolio.delete()
-        _services.value = LinkedHashMap(_services.value).also { it.remove(slug) }
+        val newServices = LinkedHashMap(_services.value).also { it.remove(slug) }
+        _services.value = newServices
         svc?.shutdown()
+        // Refresh cash entries on all remaining portfolios so P-entries that referenced
+        // the deleted portfolio recompute immediately (portfolioRef resolves to null via DB join)
+        newServices.values.forEach { it.refreshCashEntries() }
         PortfolioUpdateBroadcaster.broadcastReload()
         MarketDataCoordinator.refresh()
     }
