@@ -86,13 +86,6 @@ private data class ReloadSseEvent(
     val timestamp: Long
 ) : SseEvent()
 
-@Serializable
-@SerialName("dividend")
-private data class DividendSseEvent(
-    val portfolioId: String,
-    val total: Double,
-    val calcUpToDate: String
-) : SseEvent()
 
 internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
@@ -171,16 +164,6 @@ internal suspend fun ServerSSESession.handleSseStream() {
     launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
             channel.trySend(appJson.encodeToString<SseEvent>(ReloadSseEvent(timestamp = it.timestamp)))
-        }
-    }
-
-    launch {
-        PortfolioMasterService.dividendFlow.collect { snap ->
-            channel.trySend(appJson.encodeToString<SseEvent>(DividendSseEvent(
-                portfolioId = snap.portfolioId,
-                total = snap.total,
-                calcUpToDate = snap.calcUpToDate
-            )))
         }
     }
 

@@ -36,20 +36,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
     val savedAllocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL"
     val virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true"
 
-    // Inject dividend total as a virtual cash entry when virtualBalance is enabled and total is available
-    val dividendTotal =
-        if (virtualBalanceEnabled) portfolioConf["dividendTotal"]?.toDoubleOrNull() else null
-    val effectiveCashEntries = if (dividendTotal != null) {
-        cashEntries + CashEntry(
-            label = "Dividend",
-            currency = "USD",
-            marginFlag = false,
-            amount = dividendTotal
-        )
-    } else {
-        cashEntries
-    }
-
     val displayCurrencies: List<String> = buildList {
         add("USD")
         allPortfolios.asSequence().flatMap { it.getCash() }
@@ -240,7 +226,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                         table(classes = "portfolio-cash-table") {
                             tbody {
                                 buildSummaryRows(
-                                    effectiveCashEntries,
+                                    cashEntries,
                                     privacyScalePct
                                 )
                             }
@@ -266,7 +252,7 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             }
                         }
 
-                        if (effectiveCashEntries.any { it.marginFlag }) {
+                        if (cashEntries.any { it.marginFlag }) {
                             buildIbkrRatesSection()
                         }
                     }
@@ -327,8 +313,6 @@ private fun TBODY.buildSummaryRows(
     cashEntries: List<CashEntry>,
     privacyScalePct: Double? = null
 ) {
-    fun scaleCash(x: Double): Double =
-        if (privacyScalePct != null) kotlin.math.round(x * privacyScalePct) / 100.0 else x
     // Portfolio Value row — at the top of the summary table (stocks + cash grand total)
     // Day change innerHTML is fully owned by JS (updateTotalValue); render empty
     tr(classes = "grand-total-row") {
@@ -344,66 +328,10 @@ private fun TBODY.buildSummaryRows(
         }
     }
 
-    if (cashEntries.isNotEmpty()) {
-        tr(classes = "summary-section-break") {
-            td { attributes["colspan"] = "4" }
-        }
-    }
-
-    // Cash entry rows — sorted by label, duplicate labels suppressed
-    val sortedCashEntries = cashEntries.sortedBy { it.label.lowercase() }
-    var prevLabel: String? = null
-    for (entry in sortedCashEntries) {
-        val displayLabel = if (entry.label == prevLabel) "" else entry.label
-        prevLabel = entry.label
-        val isRef = entry.currency == "P"
-        val isBrokenRef = isRef && entry.portfolioRef == null
-        tr {
-            attributes["data-cash-entry"] = "true"
-            // P entries: JS treats them as USD (rate=1.0) with pre-resolved amount
-            attributes["data-currency"] = if (isRef) "USD" else entry.currency
-            attributes["data-amount"] = if (isRef) {
-                "0"  // updated by updatePortfolioRefValues via SSE (or left as 0 for broken refs)
-            } else {
-                scaleCash(entry.amount).toString()
-            }
-            attributes["data-entry-id"] = "${entry.label}-${entry.currency}"
-            attributes["data-margin-flag"] = entry.marginFlag.toString()
-            if (entry.portfolioRef != null) {
-                attributes["data-portfolio-ref"] = entry.portfolioRef
-                attributes["data-portfolio-multiplier"] = entry.amount.toString()
-            }
-            classes = buildSet {
-                if (entry.marginFlag) add("cash-margin-entry")
-                if (isRef) add("cash-ref-entry")
-                if (isBrokenRef) add("cash-ref-broken")
-            }
-
-            td { +displayLabel }
-            td(classes = "cash-badge-col") {
-                if (entry.marginFlag) {
-                    span(classes = "cash-type-badge cash-badge-margin") { +"M" }
-                }
-                if (isRef) {
-                    span(classes = "cash-type-badge cash-badge-ref") {
-                        unsafe { +"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z"/></svg>""" }
-                    }
-                }
-            }
-            td(classes = "cash-raw-col") {
-                if (isRef) {
-                    +"--- USD"  // updated by updatePortfolioRefValues via SSE (broken refs stay as ---)
-                } else {
-                    +"${"%,.2f".format(scaleCash(entry.amount))} ${entry.currency}"
-                }
-            }
-            td(classes = "cash-converted-col") {
-                span {
-                    id = "cash-usd-${entry.label}-${entry.currency}"
-                    // Left blank; SSE applyCashDisplay fills in the correct scaled value
-                }
-            }
-        }
+    // Anchor row: JS renders cash entry rows after this element via applyCashDisplay
+    tr {
+        id = "cash-rows-anchor"
+        style = "display:none"
     }
 
     if (cashEntries.isNotEmpty()) {

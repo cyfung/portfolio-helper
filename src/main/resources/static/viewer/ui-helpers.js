@@ -209,12 +209,19 @@ function applyCashDisplay(data) {
     if (data.portfolioId !== portfolioId) return;
     lastCashDisplayData = data;
 
-    // Update per-entry cash USD cells
-    for (const entry of data.entries) {
-        const el = document.getElementById('cash-usd-' + entry.entryId);
-        if (el) {
-            el.textContent = entry.valueUsd !== null ? formatDisplayCurrency(entry.valueUsd) : '\u2014';
+    // Rebuild cash entry rows from SSE data
+    const anchor = document.getElementById('cash-rows-anchor');
+    if (anchor) {
+        anchor.parentNode.querySelectorAll('[data-cash-entry]').forEach(r => r.remove());
+        const sorted = [...data.entries].sort((a, b) =>
+            a.label.localeCompare(b.label, undefined, {sensitivity: 'base'}));
+        const fragment = document.createDocumentFragment();
+        let prevLabel = null;
+        for (const entry of sorted) {
+            fragment.appendChild(_buildCashRow(entry, prevLabel));
+            prevLabel = entry.label;
         }
+        anchor.after(fragment);
     }
 
     // Cash total
@@ -226,6 +233,61 @@ function applyCashDisplay(data) {
     cashTotalKnown = data.totalKnown;
     lastMarginUsd = data.marginUsd;
     marginKnown = data.totalKnown;
+}
+
+function _buildCashRow(entry, prevLabel) {
+    const isRef = entry.portfolioRef != null || entry.portfolioMultiplier != null;
+    const isBrokenRef = isRef && entry.portfolioRef == null;
+    const tr = document.createElement('tr');
+    tr.dataset.cashEntry = 'true';
+    tr.dataset.currency = isRef ? 'USD' : entry.currency;
+    tr.dataset.amount = (entry.rawAmount ?? 0).toString();
+    tr.dataset.entryId = entry.entryId;
+    tr.dataset.marginFlag = entry.isMarginEntry.toString();
+    if (entry.portfolioRef) tr.dataset.portfolioRef = entry.portfolioRef;
+    if (entry.portfolioMultiplier != null) tr.dataset.portfolioMultiplier = entry.portfolioMultiplier.toString();
+    if (entry.isMarginEntry) tr.classList.add('cash-margin-entry');
+    if (isRef) tr.classList.add('cash-ref-entry');
+    if (isBrokenRef) tr.classList.add('cash-ref-broken');
+
+    // Label cell (suppress duplicate consecutive labels)
+    const tdLabel = document.createElement('td');
+    tdLabel.textContent = entry.label === prevLabel ? '' : entry.label;
+
+    // Badge cell
+    const tdBadge = document.createElement('td');
+    tdBadge.className = 'cash-badge-col';
+    if (entry.isMarginEntry) {
+        const b = document.createElement('span');
+        b.className = 'cash-type-badge cash-badge-margin';
+        b.textContent = 'M';
+        tdBadge.appendChild(b);
+    }
+    if (isRef) {
+        const b = document.createElement('span');
+        b.className = 'cash-type-badge cash-badge-ref';
+        b.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z"/></svg>';
+        tdBadge.appendChild(b);
+    }
+
+    // Raw amount cell
+    const tdRaw = document.createElement('td');
+    tdRaw.className = 'cash-raw-col';
+    const displayCurrency = isRef ? 'USD' : entry.currency;
+    tdRaw.textContent = (isRef && entry.rawAmount === 0 && entry.valueUsd === null)
+        ? '--- USD'
+        : formatCurrency(Math.abs(entry.rawAmount)) + ' ' + displayCurrency;
+
+    // Converted USD cell
+    const tdUsd = document.createElement('td');
+    tdUsd.className = 'cash-converted-col';
+    const span = document.createElement('span');
+    span.id = 'cash-usd-' + entry.entryId;
+    span.textContent = entry.valueUsd !== null ? formatDisplayCurrency(entry.valueUsd) : '\u2014';
+    tdUsd.appendChild(span);
+
+    tr.append(tdLabel, tdBadge, tdRaw, tdUsd);
+    return tr;
 }
 
 function applyPortfolioTotals(data) {

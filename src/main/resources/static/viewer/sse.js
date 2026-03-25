@@ -61,8 +61,6 @@ function initSseConnection() {
                     const reloadBtn = document.getElementById('ibkr-reload-btn');
                     if (reloadBtn) reloadBtn.dataset.lastFetch = data.lastFetch;
                 }
-            } else if (data.type === 'dividend') {
-                updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
             } else if (data.type === 'rebal-alloc') {
                 if (data.portfolioId === portfolioId) {
                     lastAllocData = data;
