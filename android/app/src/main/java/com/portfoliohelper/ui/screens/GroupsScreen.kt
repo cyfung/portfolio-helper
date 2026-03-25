@@ -12,7 +12,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,7 +37,6 @@ private data class GroupDisplayData(
     val fmtValue: String,
     val fmtPnl: String,
     val pnlColor: Color,
-    val isPnlDisplayCurrency: Boolean,
 )
 
 @Composable
@@ -74,7 +72,6 @@ private fun buildGroupDisplayData(
             (if (displayCurrency == "USD") formatSignedCurrency(mktValChgDisp) else formatSigned(mktValChgDisp))
         } else "—",
         pnlColor = changeColor(mktValChgDisp),
-        isPnlDisplayCurrency = pnlDisplayMode != "NATIVE",
     )
 }
 
@@ -310,7 +307,6 @@ private fun GroupRow(
                     text = display.fmtPnl,
                     color = display.pnlColor,
                     fontWeight = FontWeight.Normal,
-                    fontStyle = if (display.isPnlDisplayCurrency) FontStyle.Italic else FontStyle.Normal,
                     fontSize = 16.sp,
                 )
                 Spacer(Modifier.width(4.dp))

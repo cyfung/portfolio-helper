@@ -130,9 +130,8 @@ function _renderGroupTableBase(container, groups, rebalTotal) {
 
         mk(name, '');
         mk(dayPctHtml, 'col-num col-market-data', true);
-        const estCls = showStockDisplayCurrency ? ' display-currency-est' : '';
-        mk(isZeroChg ? '—' : formatSignedDisplayCurrency(mktValChg), 'price-change ' + chgCls + estCls);
-        mk(formatDisplayCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo' + estCls);
+        mk(isZeroChg ? '—' : formatSignedDisplayCurrency(mktValChg), 'price-change ' + chgCls);
+        mk(formatDisplayCurrency(g.mktVal), 'col-num col-market-data value col-moreinfo');
 
         if (!stockGrossValueKnown) {
             mk('N/A', 'col-num value');
