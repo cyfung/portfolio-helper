@@ -2,6 +2,7 @@ package com.portfoliohelper.web
 
 import com.portfoliohelper.service.AdminService
 import com.portfoliohelper.service.CodeResult
+import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PairingService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
@@ -16,6 +17,9 @@ private val logger = LoggerFactory.getLogger("AdminRoutes")
 
 @Serializable
 private data class AdminLoginRequest(val passcode: String)
+
+@Serializable
+private data class MoveTabRequest(val slug: String, val seqOrder: Double)
 
 @Serializable
 private data class PairedDeviceResponse(
@@ -134,6 +138,18 @@ fun Route.configureAdminRoutes() {
         }
         AdminService.invalidateSession(token)
         call.respond(HttpStatusCode.OK, "Session removed")
+    }
+
+    /** Move a portfolio tab to a new position (drag-and-drop). Accepts midpoint seq_order. */
+    post("/api/portfolios/move-tab") {
+        val req = try {
+            call.receiveText().let { appJson.decodeFromString<MoveTabRequest>(it) }
+        } catch (e: Exception) {
+            call.respond(HttpStatusCode.BadRequest, "Invalid request body")
+            return@post
+        }
+        ManagedPortfolio.moveTab(req.slug, req.seqOrder)
+        call.respond(HttpStatusCode.OK)
     }
 
     /** Unpair all paired devices */

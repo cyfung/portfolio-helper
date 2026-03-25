@@ -24,6 +24,7 @@ class ManagedPortfolio(
     val serialId: Int,
     val slug: String,
     val name: String,
+    val seqOrder: Double = 0.0,
 ) {
 
     fun getStocks(): List<Stock> {
@@ -133,11 +134,11 @@ class ManagedPortfolio(
     fun getTwsAccount(): String? = getConfig("twsAccount")
 
     companion object {
-        /** All portfolios ordered by serial id (default/oldest first). */
+        /** All portfolios ordered by seq_order (user-defined), then id as tiebreaker. */
         fun getAll(): List<ManagedPortfolio> = transaction {
             PortfoliosTable.selectAll()
-                .orderBy(PortfoliosTable.id to SortOrder.ASC)
-                .map { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name]) }
+                .orderBy(PortfoliosTable.seqOrder to SortOrder.ASC, PortfoliosTable.id to SortOrder.ASC)
+                .map { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name], it[PortfoliosTable.seqOrder]) }
         }
 
         /** Look up a portfolio by its URL slug. Returns null if not found. */
@@ -145,25 +146,36 @@ class ManagedPortfolio(
             PortfoliosTable.selectAll()
                 .where { PortfoliosTable.slug eq slug }
                 .singleOrNull()
-                ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name]) }
+                ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name], it[PortfoliosTable.seqOrder]) }
         }
 
         /** Insert a new portfolio row. Returns the new instance. Caller must ensure slug is unique. */
         fun create(slug: String, name: String): ManagedPortfolio = transaction {
+            val maxSeqOrder = PortfoliosTable.select(PortfoliosTable.seqOrder)
+                .maxOfOrNull { it[PortfoliosTable.seqOrder] } ?: 0.0
+            val newSeqOrder = maxSeqOrder + 1.0
             val newId = PortfoliosTable.insert {
                 it[PortfoliosTable.slug] = slug
                 it[PortfoliosTable.name] = name
+                it[PortfoliosTable.seqOrder] = newSeqOrder
             } get PortfoliosTable.id
-            ManagedPortfolio(newId, slug, name)
+            ManagedPortfolio(newId, slug, name, newSeqOrder)
         }
 
-        /** Returns the first (default) portfolio — the one with the lowest serial id. */
+        /** Returns the first (default) portfolio — the one with the lowest seq_order. */
         fun getDefault(): ManagedPortfolio = transaction {
             PortfoliosTable.selectAll()
-                .orderBy(PortfoliosTable.id to SortOrder.ASC)
+                .orderBy(PortfoliosTable.seqOrder to SortOrder.ASC, PortfoliosTable.id to SortOrder.ASC)
                 .limit(1)
                 .single()
-                .let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name]) }
+                .let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name], it[PortfoliosTable.seqOrder]) }
+        }
+
+        /** Update seq_order for a single portfolio (drag-and-drop midpoint insertion). */
+        fun moveTab(slug: String, newSeqOrder: Double) = transaction {
+            PortfoliosTable.update({ PortfoliosTable.slug eq slug }) {
+                it[seqOrder] = newSeqOrder
+            }
         }
 
         /** Returns the serial id of the first (default) portfolio, used to guard against deletion. */

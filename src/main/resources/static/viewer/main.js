@@ -48,4 +48,123 @@ initBackupPanel();
     }
 
     updateTargetWeightTotal();
+
+    initTabDragAndDrop();
 });
+
+function initTabDragAndDrop() {
+    const container = document.querySelector('.portfolio-tabs');
+    const tabs = Array.from(container.querySelectorAll('.tab-link'));
+    const toggleBtn = document.getElementById('reorder-tabs-btn');
+
+    if (tabs.length < 2) {
+        localStorage.removeItem('tabReorderMode');
+        if (toggleBtn) toggleBtn.style.display = 'none';
+        return;
+    }
+
+    if (!toggleBtn) return;
+
+    let dragged = null;
+    let dragModeOn = false;
+
+    // Single indicator line — repositioned in the flex container during drag
+    const indicator = document.createElement('div');
+    indicator.className = 'tab-drop-indicator';
+    indicator.style.display = 'none';
+    container.appendChild(indicator);
+
+    function clickBlocker(e) { e.preventDefault(); }
+
+    function setDragMode(on) {
+        dragModeOn = on;
+        localStorage.setItem('tabReorderMode', on ? '1' : '0');
+        container.classList.toggle('drag-mode', on);
+        toggleBtn.classList.toggle('active', on);
+        tabs.forEach(tab => {
+            tab.setAttribute('draggable', on ? 'true' : 'false');
+            if (on) tab.addEventListener('click', clickBlocker);
+            else    tab.removeEventListener('click', clickBlocker);
+        });
+        if (!on) indicator.style.display = 'none';
+    }
+
+    toggleBtn.addEventListener('click', () => setDragMode(!dragModeOn));
+
+    // Restore drag mode state across reloads
+    if (localStorage.getItem('tabReorderMode') === '1') setDragMode(true);
+
+    function postMove(slug, newSeqOrder) {
+        fetch('/api/portfolios/move-tab', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slug, seqOrder: newSeqOrder })
+        }).then(r => { if (r.ok) location.reload(); });
+    }
+
+    function computeSeqOrder(reordered, newIdx) {
+        const prevOrder = newIdx > 0
+            ? parseFloat(reordered[newIdx - 1].dataset.seqOrder)
+            : parseFloat(reordered[newIdx + 1].dataset.seqOrder) - 2;
+        const nextOrder = newIdx < reordered.length - 1
+            ? parseFloat(reordered[newIdx + 1].dataset.seqOrder)
+            : parseFloat(reordered[newIdx - 1].dataset.seqOrder) + 2;
+        return (prevOrder + nextOrder) / 2;
+    }
+
+    function buildReordered(fromIdx, targetPos) {
+        const reordered = tabs.slice();
+        reordered.splice(fromIdx, 1);
+        const insertAt = fromIdx < targetPos ? targetPos - 1 : targetPos;
+        reordered.splice(insertAt, 0, dragged);
+        return reordered;
+    }
+
+    tabs.forEach(tab => {
+        tab.addEventListener('dragstart', e => {
+            if (!dragModeOn) { e.preventDefault(); return; }
+            dragged = tab;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setDragImage(tab, 20, tab.offsetHeight / 2);
+            requestAnimationFrame(() => tab.classList.add('dragging'));
+        });
+
+        tab.addEventListener('dragend', () => {
+            tab.classList.remove('dragging');
+            indicator.style.display = 'none';
+            dragged = null;
+        });
+
+        tab.addEventListener('dragover', e => {
+            if (!dragged || tab === dragged) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const rect = tab.getBoundingClientRect();
+            const isLeft = e.clientX < rect.left + rect.width / 2;
+            indicator.style.display = '';
+            container.insertBefore(indicator, isLeft ? tab : tab.nextSibling);
+        });
+
+        tab.addEventListener('drop', e => {
+            e.preventDefault();
+            indicator.style.display = 'none';
+            if (!dragged || dragged === tab) return;
+
+            const slug = dragged.dataset.slug;
+            const rect = tab.getBoundingClientRect();
+            const isLeft = e.clientX < rect.left + rect.width / 2;
+            const fromIdx = tabs.indexOf(dragged);
+            const toIdx   = tabs.indexOf(tab);
+            const targetPos = isLeft ? toIdx : toIdx + 1;
+            const reordered = buildReordered(fromIdx, targetPos);
+            postMove(slug, computeSeqOrder(reordered, reordered.indexOf(dragged)));
+        });
+    });
+
+    // Hide indicator when cursor leaves the tab bar
+    container.addEventListener('dragleave', e => {
+        if (!container.contains(e.relatedTarget)) {
+            indicator.style.display = 'none';
+        }
+    });
+}

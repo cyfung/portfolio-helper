@@ -1075,6 +1075,7 @@ h1 {
 }
 
 .tab-link {
+    position: relative;
     padding: var(--spacing-sm) var(--spacing-2xl);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
@@ -1093,6 +1094,36 @@ h1 {
     color: var(--color-accent-primary);
     border-bottom-color: var(--color-accent-primary);
     font-weight: var(--font-weight-semibold);
+}
+
+.tab-drag-handle {
+    display: none;
+    position: absolute;
+    left: var(--spacing-xs);
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.5;
+    font-size: var(--font-size-sm);
+    user-select: none;
+    pointer-events: none;
+}
+.portfolio-tabs.drag-mode .tab-drag-handle {
+    display: block;
+}
+.portfolio-tabs.drag-mode .tab-link {
+    cursor: grab;
+}
+.portfolio-tabs.drag-mode .tab-link.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+}
+.tab-drop-indicator {
+    width: 2px;
+    align-self: stretch;
+    background: var(--color-accent-primary);
+    margin-bottom: -2px;
+    pointer-events: none;
+    flex-shrink: 0;
 }
 
 /* ============================================
@@ -3555,7 +3586,8 @@ body.rebalancing-visible .virtual-rebal-btn {
    here so they share the same base without needing HTML changes.          */
 .btn-outline-accent,
 .save-portfolio-btn,
-.backtest-config-btn {
+.backtest-config-btn,
+.reorder-tabs-btn {
     border: 1px solid var(--color-accent-primary);
     border-radius: 4px;
     background: transparent;
@@ -3631,6 +3663,22 @@ body.rebalancing-visible .virtual-rebal-btn {
 .save-portfolio-btn {
     font-size: 0.78rem;
     padding: 0.2rem 0.6rem;
+}
+
+/* Reorder tabs toggle button */
+.reorder-tabs-btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: var(--spacing-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.reorder-tabs-btn.active {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
 }
 
 .clear-portfolio-btn {
