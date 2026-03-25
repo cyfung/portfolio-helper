@@ -104,9 +104,9 @@ class StockDisplayService(
 
             val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)
             val sessionStarted = quote?.tradingPeriodStart?.let { nowMs / 1000 >= it } ?: false
-            val estPriceNative = computeLetfEstVal(
+            val estPriceNative = if (!sessionStarted) null else computeLetfEstVal(
                 stock.letfComponents, quote, NavService.getNav(stock.label),
-                qty, fxRate, nowMs
+                qty, fxRate
             )
 
             StockWork(
@@ -185,14 +185,10 @@ class StockDisplayService(
         quote: com.portfoliohelper.service.yahoo.YahooQuote?,
         nav: Double?,
         @Suppress("UNUSED_PARAMETER") qty: Double,
-        @Suppress("UNUSED_PARAMETER") fxRateToUsd: Double?,
-        nowMs: Long
+        @Suppress("UNUSED_PARAMETER") fxRateToUsd: Double?
     ): Double? {
         if (components.isNullOrEmpty()) return null
-        val tradingPeriodEndMs = (quote?.tradingPeriodEnd ?: return null) * 1000L
-        val isStale = (quote.isMarketClosed) && (nowMs - tradingPeriodEndMs > 12L * 3600 * 1000)
-        if (isStale) return null
-        val closePrice = quote.previousClose ?: return null
+        val closePrice = quote?.previousClose ?: return null
         val basePrice = nav ?: closePrice
         var sumComponent = 0.0
         for ((mult, sym) in components) {
