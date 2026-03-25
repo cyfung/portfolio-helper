@@ -2917,6 +2917,10 @@ body.rebalancing-visible .virtual-rebal-btn {
 .portfolio-cash-table .cash-badge-col {
     padding: 0 2px;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
 }
 
 .cash-type-badge {
@@ -2925,7 +2929,7 @@ body.rebalancing-visible .virtual-rebal-btn {
     justify-content: center;
     width: 18px;
     height: 18px;
-    font-size: 0.7em;
+    font-size: 0.7rem;
     font-weight: var(--font-weight-semibold);
     border-radius: 3px;
     vertical-align: middle;

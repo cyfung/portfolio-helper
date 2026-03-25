@@ -18,7 +18,7 @@ function makeCashRowHtml() {
         .join('');
     return (
         '<td><input type="text" class="edit-input cash-edit-label" placeholder="Label" /></td>' +
-        '<td><label class="cash-ref-toggle-label"><input type="checkbox" class="cash-edit-is-ref" />Ref</label></td>' +
+        '<td><label class="cash-ref-toggle-label"><input type="checkbox" class="cash-edit-is-ref" /><span class="cash-type-badge cash-badge-ref"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z"/></svg></span></label></td>' +
         '<td class="cash-normal-fields">' +
             '<input type="text" class="edit-input cash-edit-currency" value="USD" placeholder="USD" autocomplete="off" />' +
             '<input type="number" class="edit-input cash-edit-amount" placeholder="0" step="any" />' +
@@ -27,7 +27,7 @@ function makeCashRowHtml() {
             '<select class="cash-edit-portfolio-ref">' + portfolioOptions + '</select>' +
             '<input type="number" class="edit-input cash-edit-multiplier" value="1" step="any" placeholder="1" />' +
         '</td>' +
-        '<td><label class="cash-margin-toggle"><input type="checkbox" class="cash-edit-margin" />M</label></td>' +
+        '<td><label class="cash-margin-toggle"><input type="checkbox" class="cash-edit-margin" /><span class="cash-type-badge cash-badge-margin">M</span></label></td>' +
         '<td><button type="button" class="delete-cash-btn">\u00d7</button></td>'
     );
 }
