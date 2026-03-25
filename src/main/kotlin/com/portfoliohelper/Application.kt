@@ -68,6 +68,17 @@ fun main() {
     )
     logger.info("Connected to database at $dbFile")
 
+    // Run Flyway migrations before using the DB.
+    // baselineOnMigrate handles pre-Flyway DBs: marks existing schema as V1 baseline, then applies V2+.
+    val flywayResult = org.flywaydb.core.Flyway.configure()
+        .dataSource("jdbc:sqlite:${dbFile.toAbsolutePath()}", "", "")
+        .locations("classpath:db/migration")
+        .baselineOnMigrate(true)
+        .baselineVersion("1")
+        .load()
+        .migrate()
+    logger.info("Flyway: ${flywayResult.migrationsExecuted} migration(s) applied")
+
     val allPortfolios = ManagedPortfolio.getAll()
     logger.info("Loaded ${allPortfolios.size} portfolio(s): ${allPortfolios.map { it.slug }}")
 

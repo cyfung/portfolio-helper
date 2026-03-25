@@ -1,7 +1,7 @@
 package com.portfoliohelper.service.db
 
+import org.flywaydb.core.Flyway
 import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
@@ -17,12 +17,19 @@ fun main(args: Array<String>) {
 }
 
 fun newDB(outPath: String) {
+    Flyway.configure()
+        .dataSource("jdbc:sqlite:$outPath", "", "")
+        .locations("classpath:db/migration")
+        .load()
+        .migrate()
+
     Database.connect("jdbc:sqlite:$outPath", driver = "org.sqlite.JDBC")
 
     transaction {
-        SchemaUtils.create(*AppDatabase.allTables)
-
-        val mainId = PortfoliosTable.insert { it[slug] = "main" } get PortfoliosTable.id
+        val mainId = PortfoliosTable.insert {
+            it[slug] = "main"
+            it[name] = "Main"
+        } get PortfoliosTable.id
 
         PositionsTable.insert {
             it[portfolioId]  = mainId

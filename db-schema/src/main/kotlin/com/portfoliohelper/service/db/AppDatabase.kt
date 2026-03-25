@@ -6,10 +6,11 @@ import org.jetbrains.exposed.sql.Table
 // Table definitions
 // ---------------------------------------------------------------------------
 
-/** One row per portfolio. `id` is the stable serial PK; `slug` is the URL-facing identifier. */
+/** One row per portfolio. `id` is the stable serial PK; `slug` is the URL-facing identifier; `name` is the display name as entered by the user. */
 object PortfoliosTable : Table("portfolios") {
-    val id = integer("id").autoIncrement()
+    val id   = integer("id").autoIncrement()
     val slug = varchar("slug", 64).uniqueIndex()
+    val name = varchar("name", 256).default("")
     override val primaryKey = PrimaryKey(id)
 }
 

@@ -65,6 +65,9 @@ dependencies {
     // DB schema, table definitions, and initialization
     implementation(project(":db-schema"))
 
+    // DB migrations
+    implementation("org.flywaydb:flyway-core:12.1.1")
+
     // TLS — Bouncy Castle for self-signed cert generation
     implementation("org.bouncycastle:bcpkix-jdk18on:1.83")
 

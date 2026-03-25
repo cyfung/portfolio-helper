@@ -23,8 +23,8 @@ import org.jetbrains.exposed.sql.transactions.transaction
 class ManagedPortfolio(
     val serialId: Int,
     val slug: String,
+    val name: String,
 ) {
-    val name: String get() = slug.replaceFirstChar { it.uppercase() }
 
     fun getStocks(): List<Stock> {
         val pid = serialId
@@ -137,7 +137,7 @@ class ManagedPortfolio(
         fun getAll(): List<ManagedPortfolio> = transaction {
             PortfoliosTable.selectAll()
                 .orderBy(PortfoliosTable.id to SortOrder.ASC)
-                .map { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
+                .map { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name]) }
         }
 
         /** Look up a portfolio by its URL slug. Returns null if not found. */
@@ -145,13 +145,16 @@ class ManagedPortfolio(
             PortfoliosTable.selectAll()
                 .where { PortfoliosTable.slug eq slug }
                 .singleOrNull()
-                ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
+                ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name]) }
         }
 
         /** Insert a new portfolio row. Returns the new instance. Caller must ensure slug is unique. */
-        fun create(slug: String): ManagedPortfolio = transaction {
-            val newId = PortfoliosTable.insert { it[PortfoliosTable.slug] = slug } get PortfoliosTable.id
-            ManagedPortfolio(newId, slug)
+        fun create(slug: String, name: String): ManagedPortfolio = transaction {
+            val newId = PortfoliosTable.insert {
+                it[PortfoliosTable.slug] = slug
+                it[PortfoliosTable.name] = name
+            } get PortfoliosTable.id
+            ManagedPortfolio(newId, slug, name)
         }
 
         /** Returns the first (default) portfolio — the one with the lowest serial id. */
@@ -160,7 +163,7 @@ class ManagedPortfolio(
                 .orderBy(PortfoliosTable.id to SortOrder.ASC)
                 .limit(1)
                 .single()
-                .let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug]) }
+                .let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name]) }
         }
 
         /** Returns the serial id of the first (default) portfolio, used to guard against deletion. */
@@ -175,12 +178,13 @@ class ManagedPortfolio(
             if (slug != null) getBySlug(slug) else getDefault()
     }
 
-    /** Rename this portfolio to [newSlug]. Caller must ensure uniqueness. */
-    fun rename(newSlug: String) {
+    /** Rename this portfolio to [newSlug]/[newName]. Caller must ensure slug uniqueness. */
+    fun rename(newSlug: String, newName: String) {
         val pid = serialId
         transaction {
             PortfoliosTable.update({ PortfoliosTable.id eq pid }) {
                 it[slug] = newSlug
+                it[name] = newName
             }
         }
     }

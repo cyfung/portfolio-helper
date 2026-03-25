@@ -63,9 +63,9 @@ object PortfolioMasterService {
     // --- CRUD (suspend, Mutex-guarded) ---
 
     /** Throws IllegalArgumentException if slug already exists. */
-    suspend fun create(slug: String): ManagedPortfolio = mutex.withLock {
-        require(ManagedPortfolio.getBySlug(slug) == null) { "A portfolio named '$slug' already exists." }
-        val portfolio = ManagedPortfolio.create(slug)
+    suspend fun create(slug: String, name: String): ManagedPortfolio = mutex.withLock {
+        require(ManagedPortfolio.getBySlug(slug) == null) { "A portfolio named '$name' already exists." }
+        val portfolio = ManagedPortfolio.create(slug, name)
         val svc = PortfolioServices(portfolio, _scope).also { it.initialize() }
         _services.value = LinkedHashMap(_services.value).also { it[slug] = svc }
         PortfolioUpdateBroadcaster.broadcastReload()
@@ -74,15 +74,15 @@ object PortfolioMasterService {
     }
 
     /** Throws IllegalArgumentException on slug conflict. */
-    suspend fun rename(portfolio: ManagedPortfolio, newSlug: String): ManagedPortfolio =
+    suspend fun rename(portfolio: ManagedPortfolio, newSlug: String, newName: String): ManagedPortfolio =
         mutex.withLock {
             require(newSlug == portfolio.slug || ManagedPortfolio.getBySlug(newSlug) == null) {
-                "A portfolio named '$newSlug' already exists."
+                "A portfolio named '$newName' already exists."
             }
             val oldSlug = portfolio.slug
             val oldSvc = _services.value[oldSlug]
-            portfolio.rename(newSlug)
-            val renamedPortfolio = ManagedPortfolio(portfolio.serialId, newSlug)
+            portfolio.rename(newSlug, newName)
+            val renamedPortfolio = ManagedPortfolio(portfolio.serialId, newSlug, newName)
             val newSvc = PortfolioServices(renamedPortfolio, _scope).also { it.initialize() }
             _services.value = LinkedHashMap<String, PortfolioServices>().also { copy ->
                 _services.value.forEach { (k, v) ->

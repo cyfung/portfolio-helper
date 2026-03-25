@@ -122,6 +122,8 @@ private fun String.toSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim
 private fun JsonObject.parseSlug() =
     this["name"]?.jsonPrimitive?.contentOrNull?.trim()
         ?.takeIf { it.isNotBlank() }?.toSlug()?.takeIf { it.isNotBlank() }
+private fun JsonObject.parseDisplayName() =
+    this["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
 private fun JsonArray.parseCashEntries() = mapNotNull { el ->
     val obj = el.jsonObject
     val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -539,9 +541,10 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                val slug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val displayName = json.parseDisplayName() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val slug = displayName.toSlug().takeIf { it.isNotBlank() } ?: return@post call.respond(HttpStatusCode.BadRequest)
                 val portfolio = try {
-                    PortfolioMasterService.create(slug)
+                    PortfolioMasterService.create(slug, displayName)
                 } catch (e: IllegalArgumentException) {
                     return@post call.respondText(
                         "{\"status\":\"error\",\"message\":\"${e.message}\"}",
@@ -564,9 +567,10 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                val newSlug = json.parseSlug() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val newName = json.parseDisplayName() ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val newSlug = newName.toSlug().takeIf { it.isNotBlank() } ?: return@post call.respond(HttpStatusCode.BadRequest)
                 try {
-                    PortfolioMasterService.rename(portfolio, newSlug)
+                    PortfolioMasterService.rename(portfolio, newSlug, newName)
                 } catch (e: IllegalArgumentException) {
                     return@post call.respondText(
                         "{\"status\":\"error\",\"message\":\"${e.message}\"}",
