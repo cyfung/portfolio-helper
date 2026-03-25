@@ -69,3 +69,6 @@ var lastStockDisplayData = null;
 var lastCashDisplayData = null;
 var lastPortfolioTotalsData = null;
 var lastIbkrData = null;
+
+// Latest server-computed rebalance allocations (rebal-alloc SSE event)
+var lastAllocData = null;

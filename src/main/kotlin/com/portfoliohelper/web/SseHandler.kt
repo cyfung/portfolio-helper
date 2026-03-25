@@ -6,6 +6,7 @@ import com.portfoliohelper.service.PortfolioUpdateBroadcaster
 import com.portfoliohelper.service.CashEntryDisplay
 import com.portfoliohelper.service.StockDisplay
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.service.RebalAllocSnapshot
 import com.portfoliohelper.util.appJson
 import io.ktor.server.sse.*
 import io.ktor.sse.*
@@ -70,6 +71,13 @@ private data class IbkrDisplayEvent(
     val savingsUsd: Double,
     val label: String,
     val perCurrency: List<IbkrCurrencyInterest>
+) : SseEvent()
+
+@Serializable
+@SerialName("rebal-alloc")
+private data class RebalAllocSseEvent(
+    val portfolioId: String,
+    val perSymbolAllocUsd: Map<String, Double>
 ) : SseEvent()
 
 @Serializable
@@ -149,6 +157,14 @@ internal suspend fun ServerSSESession.handleSseStream() {
                 label = snap.label,
                 perCurrency = snap.perCurrency
             )))
+        }
+    }
+
+    launch {
+        PortfolioMasterService.rebalAllocFlow.collect { snap ->
+            channel.trySend(appJson.encodeToString<SseEvent>(
+                RebalAllocSseEvent(snap.portfolioId, snap.perSymbolAllocUsd)
+            ))
         }
     }
 

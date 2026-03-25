@@ -63,6 +63,13 @@ function initSseConnection() {
                 }
             } else if (data.type === 'dividend') {
                 updateDividendInUI(data.portfolioId, data.total, data.calcUpToDate);
+            } else if (data.type === 'rebal-alloc') {
+                if (data.portfolioId === portfolioId) {
+                    lastAllocData = data;
+                    if (groupViewActive && typeof updateGroupTable === 'function') {
+                        updateGroupTable();
+                    }
+                }
             }
         } catch (e) {
             console.error('Failed to parse SSE data:', e);

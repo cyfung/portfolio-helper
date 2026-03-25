@@ -1,5 +1,5 @@
 // ── groups.js — Group table aggregation and toggle ──────────────────────────
-// Depends on: globals.js, utils.js, rebalance.js, rebalance-ga.js
+// Depends on: globals.js, utils.js, rebalance.js
 
 function parseGroupsAttr(attrValue, symbol) {
     const raw = (attrValue || '').trim();
@@ -161,56 +161,51 @@ function _renderGroupTableBase(container, groups, rebalTotal) {
 }
 
 function _fillGroupAllocColumn(version) {
-    if (_gaRunning) _addAllocSpinner();
+    if (!lastAllocData || lastAllocData.portfolioId !== portfolioId) {
+        _addAllocSpinner();
+        return;
+    }
+    if (version !== _groupTableVersion) return;
+    const table = document.getElementById('group-view-table');
+    if (!table) return;
 
-    computeGAAllocations((perSymbolAlloc) => {
-        if (version !== _groupTableVersion) return; // newer updateGroupTable() call supersedes this
-        const table = document.getElementById('group-view-table');
-        if (!table) return;
+    // Remove spinner (server has delivered alloc data)
+    const spinner = table.querySelector('thead th.alloc-column .ga-spinner');
+    if (spinner) spinner.remove();
 
-        // Aggregate per-symbol alloc → per-group (respecting multipliers)
-        const groupAllocMap = new Map();
-        const groupAllocMembersMap = new Map();
-        document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
-            if (row.dataset.deleted) return;
-            const symbol = row.dataset.symbol;
-            if (!symbol || !row.dataset.groups) return;
-            const symAlloc = perSymbolAlloc[symbol];
-            if (symAlloc == null) return;
-            const allocStockCcy = stockCurrencies[symbol] ?? 'USD';
-            const allocFxRate = getStockFxRate(allocStockCcy);
-            const symAllocUsd = (allocFxRate !== null && allocFxRate > 0) ? symAlloc * allocFxRate : symAlloc;
-            for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
-                groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAllocUsd * multiplier);
-                if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
-                groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
-            }
-        });
+    // Aggregate per-symbol USD alloc → per-group (server values are already in USD)
+    const perSymbolAllocUsd = lastAllocData.perSymbolAllocUsd;
+    const groupAllocMap = new Map();
+    const groupAllocMembersMap = new Map();
+    document.querySelectorAll('#stock-view-table tbody tr').forEach(row => {
+        if (row.dataset.deleted) return;
+        const symbol = row.dataset.symbol;
+        if (!symbol || !row.dataset.groups) return;
+        const symAllocUsd = perSymbolAllocUsd[symbol] ?? 0;
+        for (const { multiplier, name } of parseGroupsAttr(row.dataset.groups, symbol)) {
+            groupAllocMap.set(name, (groupAllocMap.get(name) ?? 0) + symAllocUsd * multiplier);
+            if (!groupAllocMembersMap.has(name)) groupAllocMembersMap.set(name, {});
+            groupAllocMembersMap.get(name)[symbol] = symAllocUsd * multiplier;
+        }
+    });
 
-        // Remove spinner now that GA has finished
-        const spinner = table.querySelector('thead th.alloc-column .ga-spinner');
-        if (spinner) spinner.remove();
-
-        // Patch alloc cells in the existing table
-        table.querySelectorAll('tbody tr[data-group-name]').forEach(tr => {
-            const name = tr.dataset.groupName;
-            const allocDollars = groupAllocMap.get(name) ?? 0;
-            tr.dataset.groupMemberAllocs = JSON.stringify(groupAllocMembersMap.get(name) ?? {});
-            const allocTd = tr.querySelector('td.alloc-column');
-            if (!allocTd) return;
-            if (!stockGrossValueKnown) {
-                allocTd.textContent = 'N/A';
-                allocTd.className = 'action-neutral alloc-column';
-            } else {
-                const allocDir = Math.abs(allocDollars) > 0.50
-                    ? (allocDollars > 0 ? 'action-positive' : 'action-negative')
-                    : 'action-neutral';
-                allocTd.textContent = formatSignedDisplayCurrency(allocDollars);
-                allocTd.className = 'action-neutral ' + allocDir + ' alloc-column';
-            }
-        });
-
-        if (_gaPending) _addAllocSpinner();
+    // Patch alloc cells in the existing table
+    table.querySelectorAll('tbody tr[data-group-name]').forEach(tr => {
+        const name = tr.dataset.groupName;
+        const allocDollars = groupAllocMap.get(name) ?? 0;
+        tr.dataset.groupMemberAllocs = JSON.stringify(groupAllocMembersMap.get(name) ?? {});
+        const allocTd = tr.querySelector('td.alloc-column');
+        if (!allocTd) return;
+        if (!stockGrossValueKnown) {
+            allocTd.textContent = 'N/A';
+            allocTd.className = 'action-neutral alloc-column';
+        } else {
+            const allocDir = Math.abs(allocDollars) > 0.50
+                ? (allocDollars > 0 ? 'action-positive' : 'action-negative')
+                : 'action-neutral';
+            allocTd.textContent = formatSignedDisplayCurrency(allocDollars);
+            allocTd.className = 'action-neutral ' + allocDir + ' alloc-column';
+        }
     });
 }
 

@@ -22,6 +22,7 @@ class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineS
     val totals = PortfolioTotalsService(portfolio.slug, stockDisplay, cashDisplay, scope)
     val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay, scope)
     val dividend = DividendService(portfolio, _stocks, _config, scope)
+    val rebalGa = RebalGaService(portfolio.slug, _stocks, stockDisplay, cashDisplay, _config, scope)
 
     fun initialize() {
         stockDisplay.initialize(scope)
@@ -125,6 +126,7 @@ object PortfolioMasterService {
     val totalsFlow: Flow<PortfolioTotalsSnapshot> = childFlow { it.totals.updates.filterNotNull() }
     val interestFlow: Flow<IbkrInterestSnapshot> = childFlow { it.interest.updates.filterNotNull() }
     val dividendFlow: Flow<DividendSnapshot> = childFlow { it.dividend.updates.filterNotNull() }
+    val rebalAllocFlow: Flow<RebalAllocSnapshot> = childFlow { it.rebalGa.updates }
 
     private fun <T> childFlow(f: (PortfolioServices) -> Flow<T>): Flow<T> =
         _services.flatMapLatest { service ->
