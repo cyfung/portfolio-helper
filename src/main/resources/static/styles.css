@@ -1109,8 +1109,7 @@ h1 {
 }
 .portfolio-tabs.drag-mode .tab-drag-handle {
     display: block;
-}
-.portfolio-tabs.drag-mode .tab-link {
+    pointer-events: auto;
     cursor: grab;
 }
 .portfolio-tabs.drag-mode .tab-link.dragging {
@@ -3665,21 +3664,6 @@ body.rebalancing-visible .virtual-rebal-btn {
     padding: 0.2rem 0.6rem;
 }
 
-/* Reorder tabs toggle button */
-.reorder-tabs-btn {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    margin-left: var(--spacing-md);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-.reorder-tabs-btn.active {
-    background: var(--color-accent-primary);
-    color: var(--color-text-inverse);
-}
 
 .clear-portfolio-btn {
     font-size: 0.78rem;

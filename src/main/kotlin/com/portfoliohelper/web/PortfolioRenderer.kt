@@ -218,14 +218,6 @@ internal suspend fun ApplicationCall.renderPortfolioPage(
                             +p.name
                         }
                     }
-                    button(classes = "reorder-tabs-btn") {
-                        attributes["id"] = "reorder-tabs-btn"
-                        attributes["type"] = "button"
-                        attributes["title"] = "Toggle tab reorder mode"
-                        unsafe {
-                            raw("""<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8H1M1 8l3-3M1 8l3 3"/><path d="M10 8h5M15 8l-3-3M15 8l-3 3"/></svg>""")
-                        }
-                    }
                     button(classes = "save-portfolio-btn") {
                         attributes["id"] = "save-to-backtest-btn"
                         attributes["type"] = "button"

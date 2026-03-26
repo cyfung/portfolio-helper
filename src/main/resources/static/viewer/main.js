@@ -55,18 +55,12 @@ initBackupPanel();
 function initTabDragAndDrop() {
     const container = document.querySelector('.portfolio-tabs');
     const tabs = Array.from(container.querySelectorAll('.tab-link'));
-    const toggleBtn = document.getElementById('reorder-tabs-btn');
 
-    if (tabs.length < 2) {
-        localStorage.removeItem('tabReorderMode');
-        if (toggleBtn) toggleBtn.style.display = 'none';
-        return;
-    }
-
-    if (!toggleBtn) return;
+    if (tabs.length < 2) return;
 
     let dragged = null;
     let dragModeOn = false;
+    let didDrag = false;
 
     // Single indicator line — repositioned in the flex container during drag
     const indicator = document.createElement('div');
@@ -74,32 +68,31 @@ function initTabDragAndDrop() {
     indicator.style.display = 'none';
     container.appendChild(indicator);
 
-    function clickBlocker(e) { e.preventDefault(); }
-
     function setDragMode(on) {
         dragModeOn = on;
-        localStorage.setItem('tabReorderMode', on ? '1' : '0');
         container.classList.toggle('drag-mode', on);
-        toggleBtn.classList.toggle('active', on);
-        tabs.forEach(tab => {
-            tab.setAttribute('draggable', on ? 'true' : 'false');
-            if (on) tab.addEventListener('click', clickBlocker);
-            else    tab.removeEventListener('click', clickBlocker);
-        });
+        tabs.forEach(tab => tab.setAttribute('draggable', on ? 'true' : 'false'));
         if (!on) indicator.style.display = 'none';
     }
 
-    toggleBtn.addEventListener('click', () => setDragMode(!dragModeOn));
-
-    // Restore drag mode state across reloads
-    if (localStorage.getItem('tabReorderMode') === '1') setDragMode(true);
+    // Sync drag mode with edit mode
+    new MutationObserver(() => {
+        setDragMode(document.body.classList.contains('editing-active'));
+    }).observe(document.body, { attributeFilter: ['class'] });
+    setDragMode(document.body.classList.contains('editing-active'));
 
     function postMove(slug, newSeqOrder) {
         fetch('/api/portfolios/move-tab', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ slug, seqOrder: newSeqOrder })
-        }).then(r => { if (r.ok) location.reload(); });
+        }).then(r => {
+            if (r.ok) {
+                if (document.body.classList.contains('editing-active'))
+                    sessionStorage.setItem('restoreEditMode', '1');
+                location.reload();
+            }
+        });
     }
 
     function computeSeqOrder(reordered, newIdx) {
@@ -121,8 +114,15 @@ function initTabDragAndDrop() {
     }
 
     tabs.forEach(tab => {
+        tab.addEventListener('click', e => {
+            if (didDrag) { didDrag = false; e.preventDefault(); return; }
+            if (document.body.classList.contains('editing-active'))
+                sessionStorage.setItem('restoreEditMode', '1');
+        });
+
         tab.addEventListener('dragstart', e => {
             if (!dragModeOn) { e.preventDefault(); return; }
+            didDrag = true;
             dragged = tab;
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setDragImage(tab, 20, tab.offsetHeight / 2);

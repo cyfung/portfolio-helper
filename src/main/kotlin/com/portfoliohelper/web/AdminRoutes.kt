@@ -50,7 +50,7 @@ fun Route.configureAdminRoutes() {
     post("/api/admin/login") {
         val body = try {
             call.receiveText().let { appJson.decodeFromString<AdminLoginRequest>(it) }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             call.respond(HttpStatusCode.BadRequest, "Invalid request body")
             return@post
         }
@@ -144,7 +144,7 @@ fun Route.configureAdminRoutes() {
     post("/api/portfolios/move-tab") {
         val req = try {
             call.receiveText().let { appJson.decodeFromString<MoveTabRequest>(it) }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             call.respond(HttpStatusCode.BadRequest, "Invalid request body")
             return@post
         }

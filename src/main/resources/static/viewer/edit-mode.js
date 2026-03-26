@@ -467,6 +467,11 @@ function initEditMode() {
             input.value = parseFloat(((targetWeight / 100) * portfolioTotal / markPrice).toFixed(2));
         });
     });
+
+    if (sessionStorage.getItem('restoreEditMode') === '1') {
+        sessionStorage.removeItem('restoreEditMode');
+        editToggle.click();
+    }
 }
 
 // ── Drag-and-drop row reordering ──────────────────────────────────────────────
