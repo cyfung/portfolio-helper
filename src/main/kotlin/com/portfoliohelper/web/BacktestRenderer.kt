@@ -99,6 +99,18 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                     }
                     canvas { id = "backtest-chart" }
                 }
+
+                div(classes = "backtest-chart-container") {
+                    id = "drawdown-container"
+                    style = "display:none;"
+                    canvas { id = "drawdown-chart" }
+                }
+
+                div(classes = "backtest-chart-container") {
+                    id = "rtr-container"
+                    style = "display:none;"
+                    canvas { id = "rtr-chart" }
+                }
             }
         }
     }

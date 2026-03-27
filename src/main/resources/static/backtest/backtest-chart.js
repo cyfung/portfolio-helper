@@ -1,7 +1,9 @@
 // ── backtest-chart.js — Chart rendering and stats table ──────────────────────
 // Depends on: PALETTE (backtest-blocks.js), stats-formatters.js, Chart.js (external)
 
-var chartInstance = null;
+var chartInstance         = null;
+var drawdownChartInstance = null;
+var rtrChartInstance      = null;
 var selectedCurves = new Set();
 var backtestLastData = null;
 var logScaleEnabled = false;
@@ -12,8 +14,58 @@ function showError(msg) {
     const errorMsg = document.getElementById('error-msg');
     errorMsg.textContent = msg;
     errorMsg.style.display = '';
-    document.getElementById('chart-container').style.display = 'none';
-    document.getElementById('stats-container').style.display = 'none';
+    document.getElementById('chart-container').style.display    = 'none';
+    document.getElementById('drawdown-container').style.display = 'none';
+    document.getElementById('rtr-container').style.display      = 'none';
+    document.getElementById('stats-container').style.display    = 'none';
+}
+
+function buildCommonLabels(data) {
+    let commonDates = new Set(data.portfolios[0].curves[0].points.map(p => p.date));
+    for (let i = 1; i < data.portfolios.length; i++) {
+        const portfolioDates = new Set(data.portfolios[i].curves[0].points.map(p => p.date));
+        for (const d of commonDates) { if (!portfolioDates.has(d)) commonDates.delete(d); }
+    }
+    return [...commonDates].sort();
+}
+
+function buildCurveDatasets(data, labels, valueExtractor) {
+    const datasets = [];
+    data.portfolios.forEach((portfolio, pi) => {
+        const palette = PALETTE[pi % PALETTE.length];
+        portfolio.curves.forEach((curve, ci) => {
+            if (selectedCurves.size > 0 && !selectedCurves.has(`${pi}-${ci}`)) return;
+            const derived = valueExtractor(curve.points);
+            const derivedByDate = new Map(curve.points.map((p, i) => [p.date, derived[i]]));
+            datasets.push({
+                label: `${portfolio.label} \u2013 ${curve.label}`,
+                data: labels.map(d => derivedByDate.get(d) ?? null),
+                spanGaps: false,
+                borderColor: palette[ci % palette.length],
+                backgroundColor: 'transparent',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                pointHoverRadius: 4
+            });
+        });
+    });
+    return datasets;
+}
+
+function computeDrawdown(points) {
+    let peak = -Infinity;
+    return points.map(p => {
+        if (p.value > peak) peak = p.value;
+        return (p.value / peak) - 1;
+    });
+}
+
+function computeRTR(points) {
+    let peak = -Infinity;
+    return points.map(p => {
+        if (p.value > peak) peak = p.value;
+        return p.value > 0 ? peak / p.value : null;
+    });
 }
 
 function renderChart(data) {
@@ -30,38 +82,8 @@ function renderChart(data) {
     const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
     const textColor = isDark ? '#c0c0c0' : '#495057';
 
-    // Build sorted intersection of dates across all portfolios so the chart
-    // starts at the latest common start date and every curve has a value at
-    // every x-axis position (no leading gaps from differing ticker histories).
-    let commonDates = new Set(data.portfolios[0].curves[0].points.map(p => p.date));
-    for (let i = 1; i < data.portfolios.length; i++) {
-        const portfolioDates = new Set(data.portfolios[i].curves[0].points.map(p => p.date));
-        for (const d of commonDates) {
-            if (!portfolioDates.has(d)) commonDates.delete(d);
-        }
-    }
-    const labels = [...commonDates].sort();
-
-    // Map each dataset's values by date; use null for dates outside its range
-    // so Chart.js auto-scales the y-axis correctly across all curves.
-    const datasets = [];
-    data.portfolios.forEach((portfolio, pi) => {
-        const palette = PALETTE[pi % PALETTE.length];
-        portfolio.curves.forEach((curve, ci) => {
-            if (selectedCurves.size > 0 && !selectedCurves.has(`${pi}-${ci}`)) return;
-            const valueMap = new Map(curve.points.map(p => [p.date, p.value]));
-            datasets.push({
-                label: `${portfolio.label} \u2013 ${curve.label}`,
-                data: labels.map(d => valueMap.get(d) ?? null),
-                spanGaps: false,
-                borderColor: palette[ci % palette.length],
-                backgroundColor: 'transparent',
-                borderWidth: 1.5,
-                pointRadius: 0,
-                pointHoverRadius: 4
-            });
-        });
-    });
+    const labels = buildCommonLabels(data);
+    const datasets = buildCurveDatasets(data, labels, points => points.map(p => p.value));
 
     const ctx = document.getElementById('backtest-chart').getContext('2d');
     chartInstance = new Chart(ctx, {
@@ -73,6 +95,7 @@ function renderChart(data) {
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
+                title: { display: true, text: 'Portfolio Value', color: textColor, font: { size: 13 } },
                 legend: { labels: { color: textColor } },
                 tooltip: {
                     mode: 'index',
@@ -104,6 +127,105 @@ function renderChart(data) {
             if (backtestLastData) renderChart(backtestLastData);
         };
     }
+
+    renderDrawdownChart(data);
+    renderRTRChart(data);
+}
+
+function renderDrawdownChart(data) {
+    if (drawdownChartInstance) {
+        drawdownChartInstance.destroy();
+        drawdownChartInstance = null;
+    }
+
+    const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+    const textColor = isDark ? '#c0c0c0' : '#495057';
+    const labels    = buildCommonLabels(data);
+    const datasets  = buildCurveDatasets(data, labels, computeDrawdown);
+
+    const ctx = document.getElementById('drawdown-chart').getContext('2d');
+    drawdownChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                title: { display: true, text: 'Drawdown', color: textColor, font: { size: 13 } },
+                legend: { labels: { color: textColor } },
+                tooltip: {
+                    mode: 'index',
+                    callbacks: {
+                        title: items => items[0]?.label || '',
+                        label: item => ` ${item.dataset.label}: ${(item.raw * 100).toFixed(2)}%`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 },
+                    grid: { color: gridColor }
+                },
+                y: {
+                    ticks: { color: textColor, callback: v => (v * 100).toFixed(1) + '%' },
+                    grid: { color: gridColor }
+                }
+            }
+        }
+    });
+
+    document.getElementById('drawdown-container').style.display = '';
+}
+
+function renderRTRChart(data) {
+    if (rtrChartInstance) {
+        rtrChartInstance.destroy();
+        rtrChartInstance = null;
+    }
+
+    const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+    const textColor = isDark ? '#c0c0c0' : '#495057';
+    const labels    = buildCommonLabels(data);
+    const datasets  = buildCurveDatasets(data, labels, computeRTR);
+
+    const ctx = document.getElementById('rtr-chart').getContext('2d');
+    rtrChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                title: { display: true, text: 'Return Required to Recover', color: textColor, font: { size: 13 } },
+                legend: { labels: { color: textColor } },
+                tooltip: {
+                    mode: 'index',
+                    callbacks: {
+                        title: items => items[0]?.label || '',
+                        label: item => ` ${item.dataset.label}: ${item.raw.toFixed(2)}x`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 },
+                    grid: { color: gridColor }
+                },
+                y: {
+                    ticks: { color: textColor, callback: v => v.toFixed(2) + 'x' },
+                    grid: { color: gridColor }
+                }
+            }
+        }
+    });
+
+    document.getElementById('rtr-container').style.display = '';
 }
 
 function renderStats(data) {
