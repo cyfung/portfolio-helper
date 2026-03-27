@@ -436,7 +436,7 @@ private fun FlowContent.buildStockTable(
         thead {
             tr {
                 th { +"Symbol" }
-                th(classes = "col-num") { +"Qty" }
+                th(classes = "col-num col-moreinfo") { +"Qty" }
                 th(classes = "col-num col-market-data col-moreinfo") { +"Last NAV" }
                 th(classes = "col-num col-market-data") {
                     id = "th-est-val"
@@ -482,7 +482,7 @@ private fun FlowContent.buildStockTable(
                     td { +stock.label }
 
                     // Qty (Amount)
-                    td(classes = "amount") {
+                    td(classes = "amount col-moreinfo") {
                         id = "amount-${stock.label}"
                         +formatQty(scaleQty(stock.amount))
                     }

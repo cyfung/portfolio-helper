@@ -3223,6 +3223,30 @@ body.rebalancing-visible .virtual-rebal-btn {
     background: var(--color-bg-elevated);
     padding: 1rem;
     box-sizing: border-box;
+    position: relative;
+}
+
+.chart-scale-toggle {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    z-index: 1;
+    font-size: var(--font-size-sm);
+    padding: 2px 10px;
+    background: var(--color-surface-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 4px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chart-scale-toggle:hover { opacity: 1; }
+.chart-scale-toggle.active {
+    background: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    color: #fff;
+    opacity: 1;
 }
 
 /* Error message */
@@ -3263,12 +3287,29 @@ body.rebalancing-visible .virtual-rebal-btn {
     font-size: var(--font-size-sm);
 }
 
+.backtest-stats-table th {
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--spacing-xs) var(--spacing-lg);
+    white-space: nowrap;
+}
+
 .backtest-stats-table th:not(:first-child) {
     text-align: center;
 }
 
 .backtest-stats-table td:not(:first-child):not(:nth-child(2)) {
     text-align: right;
+}
+
+.backtest-stats-table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--color-text-primary) 3%, transparent);
+}
+
+.backtest-stats-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, transparent);
 }
 
 /* Curve visibility toggle checkbox */

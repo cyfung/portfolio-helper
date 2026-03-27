@@ -5,6 +5,7 @@ var mcChartInstance = null;
 var mcCurrentPercentile = 50;
 var mcLastData = null;
 var selectedMcCurves = new Set();
+var mcLogScaleEnabled = false;
 
 const PERCENTILE_COLORS = ['#e05c5c','#e0955c','#d4c84a','#4caf50','#4aabcf','#4a6fcf','#7c4acf'];
 // index 0=P5, 1=P10, 2=P25, 3=P50, 4=P75, 5=P90, 6=P95
@@ -130,12 +131,22 @@ function renderMcChart(data, percentile) {
                     grid: { color: gridColor }
                 },
                 y: {
+                    type: mcLogScaleEnabled ? 'logarithmic' : 'linear',
                     ticks: { color: textColor, callback: v => '$' + v.toFixed(0) },
                     grid: { color: gridColor }
                 }
             }
         }
     });
+
+    const logBtn = document.getElementById('log-scale-toggle');
+    if (logBtn) {
+        logBtn.classList.toggle('active', mcLogScaleEnabled);
+        logBtn.onclick = () => {
+            mcLogScaleEnabled = !mcLogScaleEnabled;
+            if (mcLastData) renderMcChart(mcLastData, mcCurrentPercentile);
+        };
+    }
 }
 
 function renderMcStats(data, percentile) {

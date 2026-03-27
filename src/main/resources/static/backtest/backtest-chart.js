@@ -4,6 +4,7 @@
 var chartInstance = null;
 var selectedCurves = new Set();
 var backtestLastData = null;
+var logScaleEnabled = false;
 
 function resetCurveSelection() { selectedCurves.clear(); }
 
@@ -87,12 +88,22 @@ function renderChart(data) {
                     grid: { color: gridColor }
                 },
                 y: {
+                    type: logScaleEnabled ? 'logarithmic' : 'linear',
                     ticks: { color: textColor, callback: v => '$' + v.toFixed(0) },
                     grid: { color: gridColor }
                 }
             }
         }
     });
+
+    const logBtn = document.getElementById('log-scale-toggle');
+    if (logBtn) {
+        logBtn.classList.toggle('active', logScaleEnabled);
+        logBtn.onclick = () => {
+            logScaleEnabled = !logScaleEnabled;
+            if (backtestLastData) renderChart(backtestLastData);
+        };
+    }
 }
 
 function renderStats(data) {

@@ -92,6 +92,11 @@ internal suspend fun ApplicationCall.renderBacktestPage() {
                 div(classes = "backtest-chart-container") {
                     id = "chart-container"
                     style = "display:none;"
+                    button(classes = "chart-scale-toggle") {
+                        id = "log-scale-toggle"
+                        attributes["type"] = "button"
+                        +"Log"
+                    }
                     canvas { id = "backtest-chart" }
                 }
             }
