@@ -10,11 +10,15 @@ import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.repository.IbkrInterestCalculator
+import com.portfoliohelper.data.repository.IbkrInterestResult
+import com.portfoliohelper.data.repository.IbkrRateFetcher
+import com.portfoliohelper.data.repository.IbkrRatesSnapshot
+import com.portfoliohelper.data.repository.MarginCheckRunner
 import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.SyncServerInfo
 import com.portfoliohelper.data.repository.YahooQuote
-import com.portfoliohelper.data.repository.MarginCheckRunner
 import com.portfoliohelper.worker.MarginCheckWidgetReceiver
 import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -189,6 +193,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         CashTotals(totals.cashTotal, totals.margin, totals.isReady)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, CashTotals(0.0, 0.0, false))
 
+    // ── IBKR margin rates ─────────────────────────────────────────────────────
+
+    private val _ibkrRates = MutableStateFlow(IbkrRatesSnapshot(emptyMap(), 0L))
+
+    val ibkrInterest: StateFlow<IbkrInterestResult?> = combine(_ibkrRates, cashEntries, fxRates) { rates, entries, fx ->
+        if (rates.rates.isEmpty()) return@combine null
+        if (entries.none { it.isMargin && it.amount < 0 }) return@combine null
+        IbkrInterestCalculator.compute(entries, fx, rates)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     // ── Derived: portfolio totals ─────────────────────────────────────────────
 
     val portfolioTotals: StateFlow<PortfolioCalculator.PortfolioTotals> =
@@ -323,6 +337,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             performSync()
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
+            refreshIbkrRates()
         } catch (e: Exception) {
             _syncStatus.value = SyncStatus.Error(e.message ?: "Unknown error")
         }
@@ -352,6 +367,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             performSync()
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
+            refreshIbkrRates()
         } catch (e: Exception) {
             _syncStatus.value = SyncStatus.Error(e.message ?: "Sync failed")
         }
@@ -362,6 +378,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
+
+    fun refreshIbkrRates() = viewModelScope.launch {
+        val last = _ibkrRates.value.lastFetch
+        if (last > 0 && System.currentTimeMillis() - last < 60 * 60_000L) return@launch
+        val snapshot = IbkrRateFetcher.fetch() ?: return@launch
+        _ibkrRates.value = snapshot
+    }
 
     fun refreshMarketData() = viewModelScope.launch {
         val symbols = activeSymbols.value

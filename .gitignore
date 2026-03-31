@@ -12,4 +12,4 @@ docs/
 *.exe
 
 /data/
-
+local.properties

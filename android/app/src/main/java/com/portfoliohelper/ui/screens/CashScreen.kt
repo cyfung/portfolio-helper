@@ -25,12 +25,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.data.model.CashEntry
+import com.portfoliohelper.data.repository.IbkrInterestResult
 import com.portfoliohelper.ui.components.Divider
 import com.portfoliohelper.ui.components.MonoText
 import com.portfoliohelper.ui.components.SummaryCard
 import com.portfoliohelper.ui.components.formatCurrency
 import com.portfoliohelper.ui.components.formatPct
 import com.portfoliohelper.ui.components.formatSmart
+import com.portfoliohelper.ui.theme.ExtendedColors
 import com.portfoliohelper.ui.theme.ext
 import java.util.Locale
 import kotlin.math.abs
@@ -45,6 +47,9 @@ fun CashScreen(vm: MainViewModel) {
     val stockValues by vm.allPortfolioStockValuesUsd.collectAsState()
     val displayCurrency by vm.displayCurrency.collectAsState()
     val scalingPercent by vm.scalingPercent.collectAsState()
+    val ibkrInterest by vm.ibkrInterest.collectAsState()
+
+    LaunchedEffect(Unit) { vm.refreshIbkrRates() }
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editEntry by remember { mutableStateOf<CashEntry?>(null) }
@@ -113,6 +118,13 @@ fun CashScreen(vm: MainViewModel) {
 
             item { Divider() }
 
+            ibkrInterest?.let { snap ->
+                item {
+                    IbkrRatesSection(snap, displayCurrency, fxRates)
+                    Divider()
+                }
+            }
+
             itemsIndexed(cashEntries, key = { _, it -> it.id }) { index, entry ->
                 val showLabel = index == 0 || entry.label != cashEntries[index - 1].label
                 CashEntryRow(
@@ -144,6 +156,127 @@ fun CashScreen(vm: MainViewModel) {
             onDismiss = { editEntry = null },
             onSave = { vm.upsertCashEntry(it); editEntry = null }
         )
+    }
+}
+
+@Composable
+fun IbkrRatesSection(
+    result: IbkrInterestResult,
+    displayCurrency: String,
+    fxRates: Map<String, Double>
+) {
+    val ext = MaterialTheme.ext
+    val fxToDisplay = if (displayCurrency == "USD") 1.0 else 1.0 / (fxRates[displayCurrency] ?: 1.0)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            "IBKR Pro Rates",
+            fontSize = 11.sp,
+            color = ext.textTertiary,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Spacer(Modifier.height(2.dp))
+
+        for (ci in result.perCurrency) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Col 1: Currency code
+                MonoText(
+                    ci.currency,
+                    color = ext.textSecondary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1.5f)
+                )
+                // Col 2: empty (icons placeholder)
+                Box(Modifier.weight(0.4f))
+                // Col 3: rate text, right-aligned
+                Row(modifier = Modifier.weight(1.5f), horizontalArrangement = Arrangement.End) {
+                    MonoText(ci.displayRateText, color = ext.textSecondary, fontSize = 13.sp)
+                }
+                // Col 4: daily interest in display currency, right-aligned
+                val dailyDisplay = ci.dailyInterestUsd * fxToDisplay
+                Row(
+                    modifier = Modifier.weight(1.3f),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MonoText(
+                        if (dailyDisplay > 0) formatCurrency(dailyDisplay) else "—",
+                        color = ext.textSecondary,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+            thickness = 0.5.dp
+        )
+        Spacer(Modifier.height(4.dp))
+
+        val currentDisplay = result.currentDailyUsd * fxToDisplay
+        IbkrSummaryRow(
+            "Current Daily Interest",
+            if (currentDisplay > 0) formatCurrency(currentDisplay) else "—",
+            ext
+        )
+
+        val cheapestLabel = if (result.cheapestCcy != null) "Cheapest (${result.cheapestCcy})" else "Cheapest"
+        val cheapestDisplay = result.cheapestDailyUsd * fxToDisplay
+        IbkrSummaryRow(
+            cheapestLabel,
+            if (result.cheapestCcy != null) formatCurrency(cheapestDisplay) else "—",
+            ext
+        )
+
+        val savingsDisplay = result.savingsUsd * fxToDisplay
+        val showSavings = savingsDisplay >= 0.005
+        IbkrSummaryRow(
+            result.label,
+            if (showSavings) formatCurrency(savingsDisplay) else "—",
+            ext,
+            highlight = showSavings
+        )
+    }
+}
+
+@Composable
+private fun IbkrSummaryRow(
+    label: String,
+    value: String,
+    ext: ExtendedColors,
+    highlight: Boolean = false
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 12.sp, color = ext.textSecondary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MonoText(
+                value,
+                fontSize = 12.sp,
+                color = if (highlight) ext.warning else ext.textSecondary,
+                fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
     }
 }
 

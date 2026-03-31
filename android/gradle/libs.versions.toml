@@ -1,5 +1,6 @@
 [versions]
 agp = "9.1.0"
+jsoup = "1.18.3"
 kotlin = "2.3.10"
 compose-bom = "2026.03.00"
 navigation = "2.9.7"
@@ -42,6 +43,7 @@ ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.r
 ktor-client-serialization = { group = "io.ktor", name = "ktor-client-serialization", version.ref = "ktor" }
 ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 
 [bundles]
 compose = [
