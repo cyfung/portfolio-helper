@@ -15,7 +15,9 @@ data class IbkrCurrencyInterest(
     val blendedRatePct: Double?,             // null if loan is below minimum tier
     val dailyInterestUsd: Double,            // actual daily interest for current loan
     val hypotheticalDailyUsd: Double,        // daily interest if all debt moved to this ccy
-    val displayRateText: String              // e.g. "5.123% (4.830%)" or "4.830%"
+    val displayRateText: String,             // e.g. "5.123% (4.830%)" or "4.830%"
+    val nativeBalance: Double,               // actual signed balance (positive = holding, negative = borrowing)
+    val fxRateUsd: Double                    // price of 1 unit of this ccy in USD (USD itself = 1.0)
 )
 
 @Serializable
@@ -109,7 +111,9 @@ class IbkrInterestService(
                 blendedRatePct = blended,
                 dailyInterestUsd = dailyInterestUsd,
                 hypotheticalDailyUsd = hypotheticalDaily,
-                displayRateText = displayRateText
+                displayRateText = displayRateText,
+                nativeBalance = nativeMargin[ccy] ?: 0.0,
+                fxRateUsd = fxRate
             )
         }
 
@@ -158,11 +162,29 @@ class IbkrInterestService(
 
     private fun buildLabel(cheapestCcy: String?, perCurrency: List<IbkrCurrencyInterest>): String {
         if (cheapestCcy == null || perCurrency.size != 2) return "Saving"
-        return if (cheapestCcy == "USD") {
-            val other = perCurrency.firstOrNull { it.currency.uppercase() != "USD" }?.currency
-            if (other != null) "Saving (Sell USD.$other)" else "Saving"
+        val usdEntry = perCurrency.firstOrNull { it.currency.uppercase() == "USD" } ?: return "Saving"
+        val otherEntry = perCurrency.firstOrNull { it.currency.uppercase() != "USD" } ?: return "Saving"
+        val other = otherEntry.currency
+
+        // Buy USD only when actively borrowing USD AND the other currency is cheapest (switch to borrowing other).
+        // In all other cases (positive USD, or USD is cheapest), sell USD to pay off non-USD borrowing.
+        val action = if (usdEntry.currentLoanNative > 0 && cheapestCcy.uppercase() != "USD") "Buy" else "Sell"
+
+        val fxRate = otherEntry.fxRateUsd  // 1 unit of other = fxRate USD
+        val amountStr = if (action == "Sell") {
+            // Sell USD, receive other currency; sell min(positive USD balance, value of other loan)
+            val otherLoanInUsd = otherEntry.currentLoanNative * fxRate
+            val sellUsd = minOf(usdEntry.nativeBalance.coerceAtLeast(0.0), otherLoanInUsd)
+            val buyOther = if (fxRate > 0) sellUsd / fxRate else 0.0
+            if (sellUsd > 0) ": \$%.2f → %s%.0f".format(sellUsd, other, buyOther) else ""
         } else {
-            "Saving (Buy USD.$cheapestCcy)"
+            // Buy USD, spend other currency; buy min(USD loan, value of positive other balance)
+            val otherBalInUsd = otherEntry.nativeBalance.coerceAtLeast(0.0) * fxRate
+            val buyUsd = minOf(usdEntry.currentLoanNative, otherBalInUsd)
+            val sellOther = if (fxRate > 0) buyUsd / fxRate else 0.0
+            if (buyUsd > 0) ": %s%.0f → \$%.2f".format(other, sellOther, buyUsd) else ""
         }
+
+        return "Saving ($action USD.$other$amountStr)"
     }
 }

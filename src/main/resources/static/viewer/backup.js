@@ -22,10 +22,15 @@ function renderIbkrDisplay(data) {
     const savingsVal = showSavings ? formatDisplayCurrency(data.savingsUsd) : '\u2014';
     const savingsTdClass = showSavings ? ' class="ibkr-rate-diff"' : '';
 
+    const labelMatch = data.label.match(/^([^(]+?)(?:\s*\((.+)\))?$/);
+    const labelBase = labelMatch?.[1]?.trim() || data.label;
+    const labelAction = labelMatch?.[2] || null;
+
     html += `<table class="ibkr-interest-summary"><tbody>
 <tr><td>Current Daily Interest</td><td class="ibkr-value-muted">${currentVal}</td></tr>
 <tr><td>${cheapestLabel}</td><td class="ibkr-value-muted">${cheapestVal}</td></tr>
-<tr><td>${data.label}</td><td${savingsTdClass}>${savingsVal}</td></tr>
+<tr><td>${labelBase}</td><td${savingsTdClass}>${savingsVal}</td></tr>
+${labelAction ? `<tr><td colspan="2" class="ibkr-action-hint">${labelAction}</td></tr>` : ''}
 </tbody></table>`;
 
     el.innerHTML = html;

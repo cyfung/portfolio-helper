@@ -251,6 +251,15 @@ fun IbkrRatesSection(
             ext,
             highlight = showSavings
         )
+        if (result.labelAction != null) {
+            Text(
+                result.labelAction,
+                fontSize = 11.sp,
+                color = ext.textTertiary,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+        }
     }
 }
 

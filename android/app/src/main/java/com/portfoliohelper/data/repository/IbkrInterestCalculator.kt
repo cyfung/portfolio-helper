@@ -6,7 +6,9 @@ data class IbkrCurrencyInterest(
     val currency: String,
     val displayRateText: String,
     val dailyInterestUsd: Double,
-    val hypotheticalDailyUsd: Double
+    val hypotheticalDailyUsd: Double,
+    val nativeBalance: Double,   // actual signed balance (positive = holding, negative = borrowing)
+    val fxRateUsd: Double        // price of 1 unit of this ccy in USD (USD itself = 1.0)
 )
 
 data class IbkrInterestResult(
@@ -15,6 +17,7 @@ data class IbkrInterestResult(
     val cheapestDailyUsd: Double,
     val savingsUsd: Double,
     val label: String,
+    val labelAction: String?,    // e.g. "Sell USD.HKD: $10.00 → HKD78", shown below the Saving row
     val perCurrency: List<IbkrCurrencyInterest>
 )
 
@@ -88,7 +91,14 @@ object IbkrInterestCalculator {
             else
                 "%.3f%%".format(baseRate)
 
-            perCurrency += IbkrCurrencyInterest(ccy, displayRateText, dailyInterestUsd, hypotheticalDaily)
+            perCurrency += IbkrCurrencyInterest(
+                currency = ccy,
+                displayRateText = displayRateText,
+                dailyInterestUsd = dailyInterestUsd,
+                hypotheticalDailyUsd = hypotheticalDaily,
+                nativeBalance = nativeMargin[ccy] ?: 0.0,
+                fxRateUsd = fxRate
+            )
         }
 
         if (perCurrency.isEmpty()) return null
@@ -105,12 +115,14 @@ object IbkrInterestCalculator {
 
         val savingsUsd = if (currentDailyUsd > 0) currentDailyUsd - cheapestDailyUsd else 0.0
 
+        val (label, labelAction) = buildLabel(cheapestCcy, perCurrency)
         return IbkrInterestResult(
             currentDailyUsd = currentDailyUsd,
             cheapestCcy = cheapestCcy,
             cheapestDailyUsd = cheapestDailyUsd,
             savingsUsd = savingsUsd,
-            label = buildLabel(cheapestCcy, perCurrency),
+            label = label,
+            labelAction = labelAction,
             perCurrency = perCurrency
         )
     }
@@ -133,11 +145,31 @@ object IbkrInterestCalculator {
         return (totalInterest / amount) * 100.0
     }
 
-    private fun buildLabel(cheapestCcy: String?, perCurrency: List<IbkrCurrencyInterest>): String {
-        if (cheapestCcy == null || perCurrency.size != 2) return "Saving"
-        return if (cheapestCcy == "USD") {
-            val other = perCurrency.firstOrNull { it.currency != "USD" }?.currency
-            if (other != null) "Saving (Sell USD.$other)" else "Saving"
-        } else "Saving (Buy USD.$cheapestCcy)"
+    private fun buildLabel(cheapestCcy: String?, perCurrency: List<IbkrCurrencyInterest>): Pair<String, String?> {
+        if (cheapestCcy == null || perCurrency.size != 2) return Pair("Saving", null)
+        val usdEntry = perCurrency.firstOrNull { it.currency == "USD" } ?: return Pair("Saving", null)
+        val otherEntry = perCurrency.firstOrNull { it.currency != "USD" } ?: return Pair("Saving", null)
+        val other = otherEntry.currency
+
+        // Buy USD only when actively borrowing USD AND the other currency is cheapest (switch to borrowing other).
+        // In all other cases (positive USD, or USD is cheapest), sell USD to pay off non-USD borrowing.
+        val usdLoan = usdEntry.nativeBalance.coerceAtMost(0.0).let { -it }  // abs value of USD debt, 0 if positive
+        val action = if (usdLoan > 0 && cheapestCcy != "USD") "Buy" else "Sell"
+
+        val fxRate = otherEntry.fxRateUsd  // 1 unit of other = fxRate USD
+        val amountStr = if (action == "Sell") {
+            val otherLoanInUsd = (-otherEntry.nativeBalance).coerceAtLeast(0.0) * fxRate
+            val sellUsd = minOf(usdEntry.nativeBalance.coerceAtLeast(0.0), otherLoanInUsd)
+            val buyOther = if (fxRate > 0) sellUsd / fxRate else 0.0
+            if (sellUsd > 0) "\$%.2f → %s%.0f".format(sellUsd, other, buyOther) else null
+        } else {
+            val otherBalInUsd = otherEntry.nativeBalance.coerceAtLeast(0.0) * fxRate
+            val buyUsd = minOf(usdLoan, otherBalInUsd)
+            val sellOther = if (fxRate > 0) buyUsd / fxRate else 0.0
+            if (buyUsd > 0) "%s%.0f → \$%.2f".format(other, sellOther, buyUsd) else null
+        }
+
+        val actionStr = if (amountStr != null) "$action USD.$other: $amountStr" else "$action USD.$other"
+        return Pair("Saving", actionStr)
     }
 }

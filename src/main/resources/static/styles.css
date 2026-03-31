@@ -2505,6 +2505,12 @@ a.loan-calc-link:hover {
     color: var(--color-warning);
 }
 
+.ibkr-interest-summary td.ibkr-action-hint {
+    color: var(--color-text-secondary);
+    font-style: italic;
+    padding-top: 0;
+}
+
 .ibkr-rates-footer {
     display: flex;
     align-items: center;
