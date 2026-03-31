@@ -51,14 +51,15 @@ class IbkrInterestService(
         val marginCurrencies = mutableSetOf("USD")
         val nativeMargin = mutableMapOf<String, Double>()
         for (entry in entries) {
-            if (!entry.marginFlag || entry.amount >= 0) continue
+            if (!entry.marginFlag) continue
             val ccy = if (entry.currency == "USD" || entry.currency == "P") "USD" else entry.currency.uppercase()
             if (ccy != "P") {
-                nativeMargin[ccy] = (nativeMargin[ccy] ?: 0.0) + (-entry.amount)
+                nativeMargin[ccy] = (nativeMargin[ccy] ?: 0.0) + entry.amount  // signed net per currency
                 marginCurrencies.add(ccy)
             }
         }
 
+        // cashSnap.marginUsd is already the NET of all margin entries; negative = net borrowing
         val totalMarginUsd = if (cashSnap.marginUsd < 0) -cashSnap.marginUsd else 0.0
         val perCurrency = mutableListOf<IbkrCurrencyInterest>()
         var currentDailyUsd = 0.0
@@ -76,7 +77,8 @@ class IbkrInterestService(
                     .getQuote("${ccy}USD=X")?.regularMarketPrice ?: continue
             }
 
-            val nativeLoan = nativeMargin[ccy] ?: 0.0
+            // Interest charged on net loan per currency only (positive balance = no interest)
+            val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0))
             val blended = if (nativeLoan > 0) blendedRate(tiers, nativeLoan) else null
             val effectiveRate = blended ?: baseRate
             val days = CurrencyConventions.getDaysInYear(ccy)
@@ -85,7 +87,8 @@ class IbkrInterestService(
             val dailyInterestUsd = nativeDaily * fxRate
             currentDailyUsd += dailyInterestUsd
 
-            val hypotheticalNative = if (totalMarginUsd > 0) totalMarginUsd / fxRate else nativeLoan
+            // Use 0.0 when totalMarginUsd == 0 so blendedRate returns null (base tier shown)
+            val hypotheticalNative = if (totalMarginUsd > 0) totalMarginUsd / fxRate else 0.0
             val hypotheticalBlended = blendedRate(tiers, hypotheticalNative)
             val hypotheticalRate = hypotheticalBlended ?: baseRate
             val hypotheticalDaily = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
@@ -112,8 +115,16 @@ class IbkrInterestService(
 
         if (perCurrency.isEmpty()) return null
 
-        val savingsUsd = if (cheapestCcy != null && currentDailyUsd > 0)
-            currentDailyUsd - cheapestDailyUsd else 0.0
+        // When net borrowing is zero but individual-currency interest exists, converting
+        // positive-balance currencies to loan currencies eliminates all interest — savings = full cost
+        if (totalMarginUsd == 0.0 && currentDailyUsd > 0) {
+            cheapestDailyUsd = 0.0
+            cheapestCcy = nativeMargin.filter { it.value > 0 }
+                .maxByOrNull { (k, v) -> v * (if (k == "USD") 1.0 else com.portfoliohelper.service.yahoo.YahooMarketDataService.getQuote("${k}USD=X")?.regularMarketPrice ?: 1.0) }
+                ?.key
+        }
+
+        val savingsUsd = if (currentDailyUsd > 0) currentDailyUsd - cheapestDailyUsd else 0.0
 
         return IbkrInterestSnapshot(
             portfolioId = portfolioId,
