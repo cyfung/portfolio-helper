@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Restore saved MC settings
     try {
         const res = await fetch('/api/montecarlo/settings');
+        if (!res.ok) { console.warn('[mc-main] settings fetch failed:', res.status); return; }
         const req = await res.json();
         if (!req || !Object.keys(req).length) return;
         if (req.fromDate) document.getElementById('mc-from-date').value = req.fromDate;
@@ -34,5 +35,5 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (req.portfolios) req.portfolios.forEach((p, i) => {
             if (i < 3) loadPortfolioIntoBlock(i, p, p.label || '');
         });
-    } catch (_) { /* silently ignore if settings unavailable */ }
+    } catch (e) { console.error('[mc-main] settings restore failed:', e); }
 });

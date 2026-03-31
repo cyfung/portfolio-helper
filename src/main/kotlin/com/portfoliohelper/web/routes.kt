@@ -335,7 +335,7 @@ fun Application.configureRouting() {
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
-                    "{\"error\":\"${e.message?.replace("\"", "\\\"")}\"}",
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
                     ContentType.Application.Json,
                     HttpStatusCode.InternalServerError
                 )

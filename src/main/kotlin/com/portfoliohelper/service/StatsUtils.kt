@@ -8,7 +8,9 @@ data class PortfolioStats(
     val maxDrawdown: Double,
     val sharpe: Double,
     val ulcerIndex: Double,
-    val upi: Double
+    val upi: Double,
+    val annualVolatility: Double,
+    val longestDrawdownDays: Int   // trading days below previous peak (peak-to-recovery)
 )
 
 /**
@@ -19,7 +21,7 @@ data class PortfolioStats(
  * @param rfAnnualized annualised risk-free rate as a decimal (e.g. 0.05 = 5%)
  */
 fun computeStats(values: List<Double>, years: Double, rfAnnualized: Double): PortfolioStats {
-    if (values.size < 2) return PortfolioStats(0.0, 0.0, 0.0, 0.0, 0.0)
+    if (values.size < 2) return PortfolioStats(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
 
     val cagr = if (years > 0 && values.last() > 0)
         (values.last() / values.first()).pow(1.0 / years) - 1.0 else 0.0
@@ -39,7 +41,8 @@ fun computeStats(values: List<Double>, years: Double, rfAnnualized: Double): Por
         n++; val delta = r - mean; mean += delta / n; m2 += delta * (r - mean)
     }
     val stdDev = if (n > 1) sqrt(m2 / (n - 1)) else 0.0
-    val sharpe = if (stdDev > 0) (cagr - rfAnnualized) / (stdDev * sqrt(252.0)) else 0.0
+    val annualVolatility = stdDev * sqrt(252.0)
+    val sharpe = if (stdDev > 0) (cagr - rfAnnualized) / annualVolatility else 0.0
 
     // Ulcer Index: RMS of drawdowns from running peak
     var peakUI = values[0]; var sumSq = 0.0; var count = 0
@@ -50,5 +53,13 @@ fun computeStats(values: List<Double>, years: Double, rfAnnualized: Double): Por
     val ulcerIndex = if (count > 0) sqrt(sumSq / count) else 0.0
     val upi = if (ulcerIndex > 0) (cagr - rfAnnualized) / ulcerIndex else 0.0
 
-    return PortfolioStats(cagr, maxDD, sharpe, ulcerIndex, upi)
+    // Longest drawdown: max consecutive trading days below the running peak
+    var peakLD = values[0]; var ddLen = 0; var longestDD = 0
+    for (v in values) {
+        if (v >= peakLD) { peakLD = v; longestDD = max(longestDD, ddLen); ddLen = 0 }
+        else ddLen++
+    }
+    longestDD = max(longestDD, ddLen)  // still in drawdown at end of series
+
+    return PortfolioStats(cagr, maxDD, sharpe, ulcerIndex, upi, annualVolatility, longestDD)
 }

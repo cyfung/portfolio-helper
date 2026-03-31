@@ -49,9 +49,7 @@ function renderMcChart(data, percentile) {
 
     if (mcChartInstance) { mcChartInstance.destroy(); mcChartInstance = null; }
 
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const gridColor  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-    const textColor  = isDark ? '#c0c0c0' : '#495057';
+    const { gridColor, textColor } = getChartTheme();
 
     const simulatedYears = data.simulatedYears;
     const targetDays = simulatedYears * 252;
@@ -156,12 +154,14 @@ function renderMcStats(data, percentile) {
     const pctIdx = PERCENTILE_LIST.indexOf(percentile);
 
     const cols = [
-        { metric: 'END_VALUE',   label: 'End Value' },
-        { metric: 'CAGR',        label: 'CAGR' },
-        { metric: 'MAX_DD',      label: 'Max DD' },
-        { metric: 'SHARPE',      label: 'Sharpe' },
-        { metric: 'ULCER_INDEX', label: 'Ulcer' },
-        { metric: 'UPI',         label: 'UPI' }
+        { metric: 'END_VALUE',    label: 'End Value' },
+        { metric: 'CAGR',         label: 'CAGR' },
+        { metric: 'MAX_DD',       label: 'Max DD' },
+        { metric: 'LONGEST_DD',   label: 'Longest DD' },
+        { metric: 'ANN_VOL',      label: 'Volatility' },
+        { metric: 'SHARPE',       label: 'Sharpe' },
+        { metric: 'ULCER_INDEX',  label: 'Ulcer' },
+        { metric: 'UPI',          label: 'UPI' }
     ];
 
     function cellValue(curve, pp, idx, metric) {
@@ -169,6 +169,8 @@ function renderMcStats(data, percentile) {
             case 'END_VALUE':   return money(pp.endValue);
             case 'CAGR':        return pct(pp.cagr);
             case 'MAX_DD':      return pct(curve.maxDdPercentiles[idx]);
+            case 'LONGEST_DD':  return dur(curve.longestDrawdownPercentiles[idx]);
+            case 'ANN_VOL':     return pct(curve.volatilityPercentiles[idx]);
             case 'SHARPE':      return fmt2(curve.sharpePercentiles[idx]);
             case 'ULCER_INDEX': return pct(curve.ulcerPercentiles[idx]);
             case 'UPI':         return fmt2(curve.upiPercentiles[idx]);

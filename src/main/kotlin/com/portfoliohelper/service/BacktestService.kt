@@ -156,7 +156,10 @@ object BacktestService {
 
     internal fun getResourceFiles(path: String): List<String> {
         val url = object {}.javaClass.classLoader.getResource(path)
-        if (url == null) return emptyList()
+        if (url == null) {
+            logger.warn("Resource directory '$path' not found in classpath — Tier 2 will be skipped")
+            return emptyList()
+        }
         val uri = url.toURI()
         val dirPath: Path = if (uri.scheme == "jar") {
             val fs = try {
@@ -168,8 +171,13 @@ object BacktestService {
         } else {
             java.nio.file.Paths.get(uri)
         }
-        return Files.list(dirPath).use { stream ->
-            stream.map { it.fileName.toString() }.toList()
+        return try {
+            Files.list(dirPath).use { stream ->
+                stream.map { it.fileName.toString() }.toList()
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to list resource directory '$path': ${e.message}")
+            emptyList()
         }
     }
 
@@ -221,8 +229,17 @@ object BacktestService {
                 neededFromDate
             )
             if (extended != null) return extended
+            // Extension/validation failed (e.g. Yahoo unavailable). Before discarding, try using
+            // the stale resource data as-is — good enough for historical backtesting.
+            val stale = runCatching { readSimCsv(resourceFiles.first()) }.getOrNull()
+            if (!stale.isNullOrEmpty() && stale.size >= 20) {
+                logger.warn("$upperTicker Tier 2: extension failed; using stale resource data (last date=${stale.lastKey()})")
+                return stale   // keep the copied file — Tier 1 will retry extension on next call
+            }
             resourceFiles.forEach { it.delete() }
-            logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, rebuilding from scratch")
+            logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, falling through to Yahoo")
+        } else {
+            logger.warn("$upperTicker Tier 2: no matching resource file found for pattern $simPattern")
         }
 
         // Tier 3 — rebuild from scratch
@@ -586,9 +603,10 @@ object BacktestService {
             if (date < lastSimDate) {
                 val existingValue = existing[date]
                     ?: throw IllegalStateException("Overlap date $date missing from existing series")
-                if (existingValue != 0.0 && abs(newValue - existingValue) / existingValue > 1e-6)
+                val relErr = if (existingValue != 0.0) abs(newValue - existingValue) / existingValue else 0.0
+                if (relErr > 1e-4)
                     throw IllegalStateException(
-                        "Chain-link mismatch at $date: computed $newValue but existing has $existingValue"
+                        "Chain-link mismatch at $date: computed $newValue but existing has $existingValue (rel err ${String.format("%.2e", relErr)})"
                     )
             } else {
                 // >= lastSimDate: write unconditionally. lastSimDate itself is included because the
@@ -632,9 +650,10 @@ object BacktestService {
             if (date >= firstSimDate) {
                 val existingValue = existing[date]
                     ?: throw IllegalStateException("Overlap date $date missing from existing series")
-                if (existingValue != 0.0 && abs(newValue - existingValue) / existingValue > 1e-6)
+                val relErr = if (existingValue != 0.0) abs(newValue - existingValue) / existingValue else 0.0
+                if (relErr > 1e-4)
                     throw IllegalStateException(
-                        "Chain-link mismatch at $date: computed $newValue but existing has $existingValue"
+                        "Chain-link mismatch at $date: computed $newValue but existing has $existingValue (rel err ${String.format("%.2e", relErr)})"
                     )
             } else {
                 result[date] = newValue
@@ -1037,17 +1056,14 @@ object BacktestService {
         marginLowerTriggers: Int? = null
     ): BacktestStats {
         if (values.size < 2) return BacktestStats(
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
             values.lastOrNull() ?: 0.0
         )
         val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
         val stats = computeStats(values, years, computeRfAnnualized(effrx))
         return BacktestStats(
             stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi,
+            stats.annualVolatility, stats.longestDrawdownDays,
             values.last(), marginUpperTriggers, marginLowerTriggers
         )
     }

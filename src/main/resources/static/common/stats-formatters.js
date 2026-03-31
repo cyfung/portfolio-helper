@@ -3,6 +3,12 @@
 function pct(v)   { return (v * 100).toFixed(2) + '%'; }
 function fmt2(v)  { return v.toFixed(2); }
 function money(v) { return '$' + v.toFixed(0); }
+// Format trading-day count as a human-readable duration (e.g. "2.5y", "8m", "0d")
+function dur(tradingDays) {
+    if (tradingDays <= 0) return '0d';
+    if (tradingDays >= 252) return (tradingDays / 252).toFixed(1) + 'y';
+    return Math.round(tradingDays / 21) + 'm';
+}
 
 // Wire curve-visibility toggle checkboxes in a stats table.
 // selectedSet: module-level Set of "pi-ci" keys; headerId: id of the header checkbox.

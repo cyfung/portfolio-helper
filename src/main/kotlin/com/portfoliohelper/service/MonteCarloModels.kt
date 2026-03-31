@@ -24,17 +24,21 @@ data class MonteCarloPercentilePath(
     val maxDrawdown: Double,
     val sharpe: Double,
     val ulcerIndex: Double,
-    val upi: Double
+    val upi: Double,
+    val annualVolatility: Double,
+    val longestDrawdownDays: Int
 )
 
 @Serializable
 data class MonteCarloCurveResult(
     val label: String,
     val percentilePaths: List<MonteCarloPercentilePath>,  // CAGR-sorted, full paths
-    val maxDdPercentiles: List<Double>,   // MaxDD-sorted, raw drawdown values
-    val sharpePercentiles: List<Double>,  // Sharpe-sorted
-    val ulcerPercentiles: List<Double>,   // UlcerIndex-sorted (lower=better → inverted sort)
-    val upiPercentiles: List<Double>      // UPI-sorted
+    val maxDdPercentiles: List<Double>,           // MaxDD-sorted, raw drawdown values
+    val sharpePercentiles: List<Double>,          // Sharpe-sorted
+    val ulcerPercentiles: List<Double>,           // UlcerIndex-sorted (lower=better → inverted sort)
+    val upiPercentiles: List<Double>,             // UPI-sorted
+    val volatilityPercentiles: List<Double>,      // Volatility-sorted (lower=better → inverted sort)
+    val longestDrawdownPercentiles: List<Double>  // Longest drawdown (trading days), lower=better → inverted sort
 )
 
 @Serializable
@@ -58,7 +62,9 @@ internal data class SimPassMetrics(
     val maxDD: Double,
     val sharpe: Double,
     val ulcerIndex: Double,
-    val upi: Double
+    val upi: Double,
+    val volatility: Double,
+    val longestDrawdownDays: Int
 )
 
 internal data class AssembledDay(

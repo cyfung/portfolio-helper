@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (i >= 3) return;
                 loadPortfolioIntoBlock(i, p, p.label || '');
             });
-        } catch (_) { /* silently ignore */ }
+        } catch (e) { console.error('[backtest-main] settings restore failed:', e); }
     })();
 
     // Wire up run button, date selectors, import/export

@@ -68,6 +68,46 @@ function computeRTR(points) {
     });
 }
 
+function renderAuxChart(data, labels, { prevInstance, canvasId, containerId, computeFn, title, tooltipLabel, yTickFmt }) {
+    if (prevInstance) prevInstance.destroy();
+    const { gridColor, textColor } = getChartTheme();
+    const datasets = buildCurveDatasets(data, labels, computeFn);
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    const instance = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                title: { display: true, text: title, color: textColor, font: { size: 13 } },
+                legend: { labels: { color: textColor } },
+                tooltip: {
+                    mode: 'index',
+                    callbacks: {
+                        title: items => items[0]?.label || '',
+                        label: tooltipLabel
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 },
+                    grid: { color: gridColor }
+                },
+                y: {
+                    ticks: { color: textColor, callback: yTickFmt },
+                    grid: { color: gridColor }
+                }
+            }
+        }
+    });
+    document.getElementById(containerId).style.display = '';
+    return instance;
+}
+
 function renderChart(data) {
     backtestLastData = data;
     const chartContainer = document.getElementById('chart-container');
@@ -78,10 +118,7 @@ function renderChart(data) {
         chartInstance = null;
     }
 
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-    const textColor = isDark ? '#c0c0c0' : '#495057';
-
+    const { gridColor, textColor } = getChartTheme();
     const labels = buildCommonLabels(data);
     const datasets = buildCurveDatasets(data, labels, points => points.map(p => p.value));
 
@@ -128,104 +165,25 @@ function renderChart(data) {
         };
     }
 
-    renderDrawdownChart(data);
-    renderRTRChart(data);
-}
-
-function renderDrawdownChart(data) {
-    if (drawdownChartInstance) {
-        drawdownChartInstance.destroy();
-        drawdownChartInstance = null;
-    }
-
-    const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-    const textColor = isDark ? '#c0c0c0' : '#495057';
-    const labels    = buildCommonLabels(data);
-    const datasets  = buildCurveDatasets(data, labels, computeDrawdown);
-
-    const ctx = document.getElementById('drawdown-chart').getContext('2d');
-    drawdownChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets },
-        options: {
-            animation: false,
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                title: { display: true, text: 'Drawdown', color: textColor, font: { size: 13 } },
-                legend: { labels: { color: textColor } },
-                tooltip: {
-                    mode: 'index',
-                    callbacks: {
-                        title: items => items[0]?.label || '',
-                        label: item => ` ${item.dataset.label}: ${(item.raw * 100).toFixed(2)}%`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 },
-                    grid: { color: gridColor }
-                },
-                y: {
-                    ticks: { color: textColor, callback: v => (v * 100).toFixed(1) + '%' },
-                    grid: { color: gridColor }
-                }
-            }
-        }
+    drawdownChartInstance = renderAuxChart(data, labels, {
+        prevInstance: drawdownChartInstance,
+        canvasId: 'drawdown-chart',
+        containerId: 'drawdown-container',
+        computeFn: computeDrawdown,
+        title: 'Drawdown',
+        tooltipLabel: item => ` ${item.dataset.label}: ${(item.raw * 100).toFixed(2)}%`,
+        yTickFmt: v => (v * 100).toFixed(1) + '%'
     });
 
-    document.getElementById('drawdown-container').style.display = '';
-}
-
-function renderRTRChart(data) {
-    if (rtrChartInstance) {
-        rtrChartInstance.destroy();
-        rtrChartInstance = null;
-    }
-
-    const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-    const textColor = isDark ? '#c0c0c0' : '#495057';
-    const labels    = buildCommonLabels(data);
-    const datasets  = buildCurveDatasets(data, labels, computeRTR);
-
-    const ctx = document.getElementById('rtr-chart').getContext('2d');
-    rtrChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { labels, datasets },
-        options: {
-            animation: false,
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                title: { display: true, text: 'Return Required to Recover', color: textColor, font: { size: 13 } },
-                legend: { labels: { color: textColor } },
-                tooltip: {
-                    mode: 'index',
-                    callbacks: {
-                        title: items => items[0]?.label || '',
-                        label: item => ` ${item.dataset.label}: ${item.raw.toFixed(2)}x`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 },
-                    grid: { color: gridColor }
-                },
-                y: {
-                    ticks: { color: textColor, callback: v => v.toFixed(2) + 'x' },
-                    grid: { color: gridColor }
-                }
-            }
-        }
+    rtrChartInstance = renderAuxChart(data, labels, {
+        prevInstance: rtrChartInstance,
+        canvasId: 'rtr-chart',
+        containerId: 'rtr-container',
+        computeFn: computeRTR,
+        title: 'Return Required to Recover',
+        tooltipLabel: item => ` ${item.dataset.label}: ${item.raw.toFixed(2)}x`,
+        yTickFmt: v => v.toFixed(2) + 'x'
     });
-
-    document.getElementById('rtr-container').style.display = '';
 }
 
 function renderStats(data) {
@@ -241,7 +199,10 @@ function renderStats(data) {
 
     let html = '<table class="backtest-stats-table"><thead><tr>' +
         '<th><input type="checkbox" class="curve-toggle" id="curve-toggle-all"></th>' +
-        '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th><th>Sharpe</th>' +
+        '<th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th>' +
+        '<th title="Peak-to-recovery duration of the worst drawdown">Longest DD</th>' +
+        '<th title="Annualised volatility of daily returns">Volatility</th>' +
+        '<th>Sharpe</th>' +
         '<th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>' +
         '<th title="Ulcer Performance Index (Martin Ratio): excess return / Ulcer Index">UPI</th>' +
         '<th title="# of times the margin ratio exceeded target + upper deviation band (market fell → over-leveraged), triggering an extra rebalance">Rebal\u2191</th>' +
@@ -259,6 +220,8 @@ function renderStats(data) {
                 `<td>${money(s.endingValue)}</td>` +
                 `<td>${pct(s.cagr)}</td>` +
                 `<td>${pct(s.maxDrawdown)}</td>` +
+                `<td>${dur(s.longestDrawdownDays)}</td>` +
+                `<td>${pct(s.annualVolatility)}</td>` +
                 `<td>${fmt2(s.sharpe)}</td>` +
                 `<td>${pct(s.ulcerIndex)}</td>` +
                 `<td>${fmt2(s.upi)}</td>` +

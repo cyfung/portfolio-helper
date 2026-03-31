@@ -25,16 +25,13 @@ function buildGroupMap() {
         if (!row.dataset.groups) return;
         const groupEntries = parseGroupsAttr(row.dataset.groups, symbol);
         const targetWeight = parseFloat(row.dataset.weight) || 0;
-        const markPrice = rawMarkPrices[symbol] ?? parsePrice(document.getElementById('mark-' + symbol)?.textContent);
-        const closePrice = rawClosePrices[symbol] ?? parsePrice(document.getElementById('close-' + symbol)?.textContent);
-        const qty = parseFloat(document.getElementById('amount-' + symbol)?.textContent) || 0;
-
-        const mktVal = markPrice !== null ? markPrice * qty : null;
-        const prevMktVal = closePrice !== null ? closePrice * qty : null;
+        const srv = lastServerStocks[symbol] || {};
+        const qty = parseFloat(row.dataset.qty) || 0;
         const stockCcy = stockCurrencies[symbol] ?? 'USD';
         const fxRate = getStockFxRate(stockCcy);
-        const mktValUsd = (mktVal !== null && fxRate !== null) ? mktVal * fxRate : mktVal;
-        const prevMktValUsd = (prevMktVal !== null && fxRate !== null) ? prevMktVal * fxRate : prevMktVal;
+        const mktValUsd = srv.positionValueUsd ?? null;
+        const prevMktValUsd = srv.closePrice != null && fxRate !== null
+            ? srv.closePrice * qty * fxRate : null;
 
         for (const { multiplier, name } of groupEntries) {
             if (!groups.has(name)) {
@@ -50,7 +47,7 @@ function buildGroupMap() {
             g.targetWeight += targetWeight * multiplier;
             g.stockCount++;
             if (!g.members.includes(symbol)) g.members.push(symbol);
-            if (g.stockCount === 1) { g.singleSymbol = symbol; g.singleMarkPrice = markPrice; }
+            if (g.stockCount === 1) { g.singleSymbol = symbol; g.singleMarkPrice = srv.markPrice ?? null; }
             else                    { g.singleSymbol = null;    g.singleMarkPrice = null; }
         }
     });

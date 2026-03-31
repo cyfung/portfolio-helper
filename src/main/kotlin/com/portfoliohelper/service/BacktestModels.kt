@@ -55,6 +55,8 @@ data class BacktestStats(
     val sharpe: Double,
     val ulcerIndex: Double,
     val upi: Double,
+    val annualVolatility: Double,
+    val longestDrawdownDays: Int,
     val endingValue: Double,
     val marginUpperTriggers: Int? = null,   // deviation breach above target (market fell, leverage too high)
     val marginLowerTriggers: Int? = null    // deviation breach below target (market rose, leverage too low)

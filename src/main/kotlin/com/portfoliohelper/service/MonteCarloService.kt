@@ -156,7 +156,7 @@ object MonteCarloService {
         logger.info("MC Pass 1: $numSims simulations × ${portfolioCurveConfigs.sumOf { it.second.size }} curves")
 
         // allMetrics[pi][ci][simIdx]
-        val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0)
+        val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
         val allMetrics = Array(portfolioCurveConfigs.size) { pi ->
             Array(portfolioCurveConfigs[pi].second.size) { Array(numSims) { zero } }
         }
@@ -170,7 +170,7 @@ object MonteCarloService {
                 curves.forEachIndexed { ci, curveConfig ->
                     val values = simulate(pConfig, curveConfig.mc, path)
                     val stats = computeStats(values, years, rfAnnualized)
-                    allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi)
+                    allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                 }
             }
             progressCompleted.incrementAndGet()
@@ -189,10 +189,12 @@ object MonteCarloService {
         }
 
         // ── Per-metric independent percentile values ───────────────────────────
-        val maxDdPctValues  = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.maxDD }
-        val sharpePctValues = metricPercentiles(allMetrics, numSims, pctIdxList) { it.sharpe }
-        val ulcerPctValues  = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.ulcerIndex }
-        val upiPctValues    = metricPercentiles(allMetrics, numSims, pctIdxList) { it.upi }
+        val maxDdPctValues   = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.maxDD }
+        val sharpePctValues  = metricPercentiles(allMetrics, numSims, pctIdxList) { it.sharpe }
+        val ulcerPctValues   = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.ulcerIndex }
+        val upiPctValues     = metricPercentiles(allMetrics, numSims, pctIdxList) { it.upi }
+        val volPctValues     = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.volatility }
+        val longestDdPctValues = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true) { it.longestDrawdownDays.toDouble() }
 
         // ── Pass 2: re-run needed sims with full paths ────────────────────────
         val neededSimIndices = pctSimIndices.flatten().flatten().toSet()
@@ -213,7 +215,7 @@ object MonteCarloService {
                     val values = simulate(pConfig, curveConfig.mc, path)
                     val endValue = values.last()
                     val stats = computeStats(values, years, rfAnnualized)
-                    MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi)
+                    MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                 }
                 MonteCarloCurveResult(
                     curveConfig.label,
@@ -221,7 +223,9 @@ object MonteCarloService {
                     maxDdPctValues[pi][ci],
                     sharpePctValues[pi][ci],
                     ulcerPctValues[pi][ci],
-                    upiPctValues[pi][ci]
+                    upiPctValues[pi][ci],
+                    volPctValues[pi][ci],
+                    longestDdPctValues[pi][ci]
                 )
             }
             MonteCarloPortfolioResult(pConfig.label, curveResults)
