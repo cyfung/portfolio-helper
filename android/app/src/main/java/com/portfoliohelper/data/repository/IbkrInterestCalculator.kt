@@ -153,7 +153,7 @@ object IbkrInterestCalculator {
 
         // Buy USD only when actively borrowing USD AND the other currency is cheapest (switch to borrowing other).
         // In all other cases (positive USD, or USD is cheapest), sell USD to pay off non-USD borrowing.
-        val usdLoan = usdEntry.nativeBalance.coerceAtMost(0.0).let { -it }  // abs value of USD debt, 0 if positive
+        val usdLoan = (-usdEntry.nativeBalance).coerceAtLeast(0.0)
         val action = if (usdLoan > 0 && cheapestCcy != "USD") "Buy" else "Sell"
 
         val fxRate = otherEntry.fxRateUsd  // 1 unit of other = fxRate USD

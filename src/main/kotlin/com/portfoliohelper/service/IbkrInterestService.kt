@@ -122,9 +122,10 @@ class IbkrInterestService(
         // When net borrowing is zero but individual-currency interest exists, converting
         // positive-balance currencies to loan currencies eliminates all interest — savings = full cost
         if (totalMarginUsd == 0.0 && currentDailyUsd > 0) {
+            val fxByKey = perCurrency.associateBy({ it.currency }, { it.fxRateUsd })
             cheapestDailyUsd = 0.0
             cheapestCcy = nativeMargin.filter { it.value > 0 }
-                .maxByOrNull { (k, v) -> v * (if (k == "USD") 1.0 else com.portfoliohelper.service.yahoo.YahooMarketDataService.getQuote("${k}USD=X")?.regularMarketPrice ?: 1.0) }
+                .maxByOrNull { (k, v) -> v * (fxByKey[k] ?: 1.0) }
                 ?.key
         }
 
