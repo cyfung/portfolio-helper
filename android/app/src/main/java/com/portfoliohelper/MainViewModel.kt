@@ -320,6 +320,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 host = host,
                 port = port
             ))
+            performSync()
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
         } catch (e: Exception) {
@@ -332,11 +333,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _syncStatus.value = SyncStatus.Idle
     }
 
+    private suspend fun performSync() {
+        syncRepo.sync()
+        // Portfolios are fully replaced on sync — revalidate selection.
+        // The `portfolios` StateFlow updates automatically via observeAll(),
+        // so single↔multi selector display in the UI toggles without extra code.
+        val currentPortfolios = db.portfolioDao().getAll()
+        if (currentPortfolios.none { it.serialId == selectedPortfolioId.value }) {
+            val lowest = currentPortfolios.minByOrNull { it.serialId }
+            settings.saveSelectedPortfolioId(lowest?.serialId ?: 0)
+        }
+    }
+
     fun sync() = viewModelScope.launch {
         val server = syncServerInfo.value ?: return@launch
         _syncStatus.value = SyncStatus.Syncing
         try {
-            syncRepo.sync()
+            performSync()
             _syncStatus.value = SyncStatus.Success
             refreshMarketData()
         } catch (e: Exception) {

@@ -108,7 +108,6 @@ fun GroupsScreen(vm: MainViewModel) {
             fmtValue = "123,456.78",
             fmtPnl = "-1,234.56",
             pnlColor = Color.Red,
-            isPnlDisplayCurrency = false,
         )
 
         val sampleName = widthMeasureData.maxBy { it.name.length }.name
