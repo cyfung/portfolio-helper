@@ -1,6 +1,7 @@
 package com.portfoliohelper
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -78,10 +80,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("navigate_to_cash", false)) {
+            vm.requestCashNavigation()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "onCreate started")
         enableEdgeToEdge()
+
+        if (intent?.getBooleanExtra("navigate_to_cash", false) == true) {
+            vm.requestCashNavigation()
+        }
 
         // Request permission only if alerts are enabled AND notifications are turned on
         lifecycleScope.launch {
@@ -187,6 +200,18 @@ fun PortfolioSelectorTitle(
 fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
     val navController = rememberNavController()
     val ext = MaterialTheme.ext
+
+    val pendingCashNav by vm.pendingCashNav.collectAsState()
+    LaunchedEffect(pendingCashNav) {
+        if (pendingCashNav) {
+            navController.navigate(CashRoute) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            vm.onCashNavConsumed()
+        }
+    }
 
     val selectedCurrency by vm.displayCurrency.collectAsState()
     val allCashEntries by vm.allCashEntries.collectAsState()

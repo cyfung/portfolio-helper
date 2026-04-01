@@ -3,12 +3,15 @@ package com.portfoliohelper.data.repository
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.portfoliohelper.MainActivity
 import com.portfoliohelper.PortfolioHelperApp
 import kotlinx.coroutines.flow.first
 
@@ -78,6 +81,19 @@ object MarginCheckRunner {
         val triggeredPortfolioNames = mutableListOf<String>()
         var oldestDataTime = Long.MAX_VALUE
 
+        val fxRates = prices
+            .filter { (sym, _) -> sym.endsWith("USD=X") }
+            .mapKeys { (sym, _) -> sym.removeSuffix("USD=X") }
+            .mapNotNull { (ccy, q) -> q.regularMarketPrice?.let { ccy to it } }
+            .toMap()
+        val ratesSnap = try { IbkrRateFetcher.fetch() } catch (e: Exception) {
+            Log.w(TAG, "IBKR rates fetch skipped: ${e.message}")
+            null
+        }
+        val currencySuggestionThreshold = app.settingsRepo.currencySuggestionThresholdUsd.first()
+
+        var currencySuggestionText: String? = null
+
         allAlerts.forEach { alert ->
             val pid = alert.portfolioId
             val name = portfolios[pid]?.displayName ?: "Portfolio $pid"
@@ -129,6 +145,8 @@ object MarginCheckRunner {
             val isLower = alert.lowerPct > 0 && marginPct < alert.lowerPct
             val isUpper = alert.upperPct > 0 && marginPct > alert.upperPct
 
+            val cashPendingIntent = buildCashPendingIntent(context, alertNotifId)
+
             if (isLower || isUpper) {
                 triggeredPortfolioNames.add(name)
                 if (notificationsEnabled) {
@@ -144,44 +162,40 @@ object MarginCheckRunner {
                             alert.upperPct
                         )
                     }
-                    notify(context, alertNotifId, title, body)
+                    notify(context, alertNotifId, title, body, cashPendingIntent)
                 } else {
                     nm.cancel(alertNotifId)
                 }
             } else {
-                nm.cancel(alertNotifId)
-            }
-        }
+                // ── Per-portfolio currency conversion suggestion ───────────────
+                val suggestion = if (ratesSnap != null) {
+                    try { IbkrInterestCalculator.compute(cashEntries, fxRates, ratesSnap) } catch (e: Exception) {
+                        Log.w(TAG, "Currency suggestion skipped for $name: ${e.message}")
+                        null
+                    }
+                } else null
 
-        // ── Currency conversion suggestion ────────────────────────────────────
-        var currencySuggestionText: String? = null
-        try {
-            val fxRates = prices
-                .filter { (sym, _) -> sym.endsWith("USD=X") }
-                .mapKeys { (sym, _) -> sym.removeSuffix("USD=X") }
-                .mapNotNull { (ccy, q) -> q.regularMarketPrice?.let { ccy to it } }
-                .toMap()
-            val ratesSnap = IbkrRateFetcher.fetch()
-            if (ratesSnap != null) {
-                val threshold = app.settingsRepo.currencySuggestionThresholdUsd.first()
-                val result = IbkrInterestCalculator.compute(allCashEntries, fxRates, ratesSnap)
-                if (result != null && result.savingsUsd >= threshold) {
-                    currencySuggestionText = "Convert all loan balance to ${result.cheapestCcy}"
+                if (suggestion != null && suggestion.savingsUsd >= currencySuggestionThreshold) {
+                    if (currencySuggestionText == null) {
+                        currencySuggestionText = "Convert to ${suggestion.cheapestCcy}"
+                    }
                     if (notificationsEnabled) {
                         notify(
                             context,
-                            NOTIF_ID_CURRENCY_SUGGESTION,
-                            "💡 Currency Conversion",
-                            "${result.cheapestCcy?.let { "Convert all loan balance to $it" } ?: ""} · saves \$${"%.2f".format(result.savingsUsd)}/day"
+                            alertNotifId,
+                            "💡 Currency Conversion — $name",
+                            "Convert to save \$${"%.2f".format(suggestion.savingsUsd)}/day",
+                            cashPendingIntent
                         )
                     }
                 } else {
-                    nm.cancel(NOTIF_ID_CURRENCY_SUGGESTION)
+                    nm.cancel(alertNotifId)
                 }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Currency suggestion check skipped: ${e.message}")
         }
+
+        // Cancel the now-obsolete global currency suggestion notification
+        nm.cancel(NOTIF_ID_CURRENCY_SUGGESTION)
 
         app.settingsRepo.updateMarginCheckStats(
             MarginCheckStats(
@@ -216,7 +230,18 @@ object MarginCheckRunner {
         }
     }
 
-    private fun notify(context: Context, id: Int, title: String, body: String) {
+    private fun buildCashPendingIntent(context: Context, requestCode: Int): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("navigate_to_cash", true)
+        }
+        return PendingIntent.getActivity(
+            context, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun notify(context: Context, id: Int, title: String, body: String, contentIntent: PendingIntent? = null) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     context,
@@ -233,6 +258,7 @@ object MarginCheckRunner {
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .apply { if (contentIntent != null) setContentIntent(contentIntent) }
             .build()
         nm.notify(id, notif)
     }

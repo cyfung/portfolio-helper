@@ -30,6 +30,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -116,6 +117,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val currencySuggestionThresholdUsd: StateFlow<Double> = settings.currencySuggestionThresholdUsd
         .stateIn(viewModelScope, SharingStarted.Eagerly, 2.0)
+
+    // ── Cash screen navigation (triggered by notification tap) ───────────────
+
+    private val _pendingCashNav = MutableStateFlow(false)
+    val pendingCashNav: StateFlow<Boolean> = _pendingCashNav.asStateFlow()
+
+    fun requestCashNavigation() { _pendingCashNav.value = true }
+    fun onCashNavConsumed() { _pendingCashNav.value = false }
 
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 
