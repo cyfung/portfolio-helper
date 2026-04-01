@@ -10,6 +10,8 @@ import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import com.portfoliohelper.data.repository.IbkrInterestCalculator
 import com.portfoliohelper.data.repository.IbkrInterestResult
 import com.portfoliohelper.data.repository.IbkrRateFetcher
@@ -19,6 +21,8 @@ import com.portfoliohelper.data.repository.MarginCheckStats
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.SyncServerInfo
 import com.portfoliohelper.data.repository.YahooQuote
+import com.portfoliohelper.debug.WidgetPreviewMocks
+import com.portfoliohelper.debug.WidgetPreviewState
 import com.portfoliohelper.worker.MarginCheckWidgetReceiver
 import com.portfoliohelper.worker.MarginCheckWorker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -399,6 +404,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val pos = allPositions.value
         if (symbols.isNotEmpty()) {
             PortfolioCalculator.fetchAndCacheMarketData(db, pos, cash)
+        }
+    }
+
+    // ── Dev: widget state preview (debug only) ───────────────────────────────
+    // BuildConfig.DEBUG is false in release; R8 folds the guard and removes dead branches.
+
+    fun pushWidgetPreview(state: WidgetPreviewState) {
+        if (!BuildConfig.DEBUG) return
+        viewModelScope.launch {
+            val context = getApplication<PortfolioHelperApp>()
+            val statsToApply: MarginCheckStats? = when (state) {
+                WidgetPreviewState.NONE -> settings.marginCheckStats.firstOrNull()
+                else -> WidgetPreviewMocks.buildStats(state)
+            }
+            val wm = AppWidgetManager.getInstance(context)
+            val ids = wm.getAppWidgetIds(ComponentName(context, MarginCheckWidgetReceiver::class.java))
+            ids.forEach { id ->
+                wm.updateAppWidget(id, MarginCheckWidgetReceiver.buildViews(context, statsToApply))
+            }
         }
     }
 

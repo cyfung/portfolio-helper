@@ -22,10 +22,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Color
+import com.portfoliohelper.BuildConfig
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.SyncStatus
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
+import com.portfoliohelper.debug.WidgetPreviewState
 import com.portfoliohelper.ui.components.*
 import com.portfoliohelper.worker.MarginCheckWidgetReceiver
 import com.portfoliohelper.ui.theme.ext
@@ -296,6 +301,19 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                     }
                 }
             }
+        }
+
+        // ── Dev: widget state preview (debug builds only) ─────────────────────
+        if (BuildConfig.DEBUG) {
+            var devPreview by remember { mutableStateOf(WidgetPreviewState.NONE) }
+            DevWidgetPreviewSection(
+                current = devPreview,
+                onSelect = { state ->
+                    devPreview = state
+                    vm.pushWidgetPreview(state)
+                },
+                ext = ext
+            )
         }
 
         // ── About ─────────────────────────────────────────────────────────────
@@ -595,4 +613,46 @@ private fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfir
             }
         }
     )
+}
+
+@Composable
+private fun DevWidgetPreviewSection(
+    current: WidgetPreviewState,
+    onSelect: (WidgetPreviewState) -> Unit,
+    ext: com.portfoliohelper.ui.theme.ExtendedColors
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = ext.bgElevated,
+        border = BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.5f)),
+        tonalElevation = 1.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "DEV: Widget State Preview",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = Color(0xFFFF9800)
+            )
+            Text(
+                "Forces the home screen widget into a specific visual state.",
+                fontSize = 11.sp,
+                color = ext.textTertiary
+            )
+            Spacer(Modifier.height(4.dp))
+            WidgetPreviewState.entries.forEach { state ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(state) }
+                        .padding(vertical = 2.dp)
+                ) {
+                    RadioButton(selected = current == state, onClick = { onSelect(state) })
+                    Spacer(Modifier.width(4.dp))
+                    Text(state.label, fontSize = 13.sp, color = ext.textSecondary)
+                }
+            }
+        }
+    }
 }
