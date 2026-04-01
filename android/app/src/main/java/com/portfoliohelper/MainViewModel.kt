@@ -4,7 +4,10 @@ import android.app.Application
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.asFlow
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.Portfolio
@@ -108,6 +111,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val marginCheckStats: StateFlow<MarginCheckStats?> = settings.marginCheckStats
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val workerStatus: StateFlow<String> = WorkManager.getInstance(app)
+        .getWorkInfosForUniqueWorkLiveData(MarginCheckWorker.WORK_NAME)
+        .asFlow()
+        .map { infos ->
+            val info = infos.firstOrNull() ?: return@map "Not scheduled"
+            val state = info.state.name.lowercase().replaceFirstChar { it.uppercase() }
+            if (info.runAttemptCount > 0) "$state (attempt ${info.runAttemptCount})"
+            else state
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Loading…")
 
     val scalingPercent: StateFlow<Int?> = settings.scalingPercent
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)

@@ -45,6 +45,9 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <!-- Trigger a check when the user unlocks the screen (system-only broadcast,
+                     exempt from Android 8+ implicit broadcast restrictions) -->
+                <action android:name="android.intent.action.USER_PRESENT" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

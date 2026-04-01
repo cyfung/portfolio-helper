@@ -12,6 +12,8 @@ import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.portfoliohelper.MainActivity
 import com.portfoliohelper.PortfolioHelperApp
 import com.portfoliohelper.R
@@ -26,6 +28,8 @@ import java.util.Date
 import java.util.Locale
 
 private const val TAG = "MarginCheckWidget"
+private const val STALE_RUN_MS  = 30 * 60_000L   // 30 min since last run
+private const val STALE_DATA_MS = 60 * 60_000L   // 1 hour since oldest data timestamp
 
 class MarginCheckWidgetReceiver : AppWidgetProvider() {
 
@@ -42,6 +46,13 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
                         pendingResult.finish()
                     }
                 }
+            }
+            Intent.ACTION_USER_PRESENT -> {
+                // Screen unlocked — enqueue a one-time worker so the widget refreshes promptly.
+                // MarginCheckRunner has a 3-min cooldown, so this won't spam the API.
+                WorkManager.getInstance(context).enqueue(
+                    OneTimeWorkRequestBuilder<MarginCheckWorker>().build()
+                )
             }
             else -> super.onReceive(context, intent)
         }
@@ -69,12 +80,14 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             )
             rv.setOnClickPendingIntent(R.id.widget_root, pi)
 
+            val now = System.currentTimeMillis()
             when {
                 stats == null        -> applyNoData(context, rv)
                 stats.isRunning      -> applyRunning(context, rv, stats)
                 stats.errorMessage != null -> applyFailed(context, rv, stats)
                 stats.triggeredPortfolios.isNotEmpty() -> applyAlert(context, rv, stats)
                 stats.currencySuggestionText != null -> applyFxSuggestion(context, rv, stats)
+                isStale(stats, now)  -> applyStaleOk(context, rv, stats)
                 else                 -> applyOk(context, rv, stats)
             }
 
@@ -190,6 +203,34 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
 
             setTextColors(context, rv, R.color.widget_text_on_ok, R.color.widget_text_on_ok_muted)
 
+        }
+
+        // ── Stale helpers ─────────────────────────────────────────────────────────
+
+        private fun isStale(stats: MarginCheckStats, now: Long): Boolean {
+            val staleRun  = stats.runTime > 0 && (now - stats.runTime) > STALE_RUN_MS
+            val staleData = stats.oldestDataTime > 0 && (now - stats.oldestDataTime) > STALE_DATA_MS
+            return staleRun || staleData
+        }
+
+        private fun applyStaleOk(context: Context, rv: RemoteViews, stats: MarginCheckStats) {
+            rv.setInt(R.id.widget_root, "setBackgroundColor",
+                ContextCompat.getColor(context, R.color.widget_state_stale))
+            rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_stale)
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
+
+            val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+            rv.setTextViewText(R.id.text_title, "Last: ${timeFmt.format(Date(stats.runTime))}")
+
+            val dataAgeMinutes = if (stats.oldestDataTime > 0L)
+                (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
+            else null
+            rv.setTextViewText(R.id.text_subtitle, if (dataAgeMinutes != null) "Data: ${dataAgeMinutes}m ago" else "–")
+            rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
+
+            setTextColors(context, rv, R.color.widget_text_on_stale, R.color.widget_text_on_stale_muted)
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────

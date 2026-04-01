@@ -50,6 +50,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val scalingPercent by vm.scalingPercent.collectAsState()
     val afterHoursGray by vm.afterHoursGray.collectAsState()
     val currencySuggestionThreshold by vm.currencySuggestionThresholdUsd.collectAsState()
+    val workerStatus by vm.workerStatus.collectAsState()
 
     Column(
         modifier = Modifier
@@ -298,6 +299,15 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                         }
                     }) {
                         Text("Add")
+                    }
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Background worker", color = ext.textSecondary, fontSize = 13.sp)
+                        Text(workerStatus, color = ext.textTertiary, fontSize = 11.sp)
                     }
                 }
             }

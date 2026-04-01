@@ -21,8 +21,8 @@ android {
         applicationId = "com.portfoliohelper"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = 4
+        versionName = "1.0.2"
     }
 
     signingConfigs {

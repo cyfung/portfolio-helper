@@ -34,6 +34,12 @@
     <color name="widget_text_on_alert">#5C3D00</color>
     <color name="widget_text_on_alert_muted">#7A5200</color>
 
+    <!-- muted warm amber-beige — for ok state that hasn't refreshed recently -->
+    <color name="widget_state_stale">#D4B896</color>
+    <!-- Text on stale card -->
+    <color name="widget_text_on_stale">#4A3200</color>
+    <color name="widget_text_on_stale_muted">#6B4800</color>
+
     <!-- muted powder blue -->
     <color name="widget_state_suggestion">#B8CDE8</color>
     <!-- Text on suggestion card -->

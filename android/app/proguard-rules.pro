@@ -9,6 +9,10 @@
     public static int i(...);
 }
 
+# WorkManager — preserve worker class names across builds so WorkManager can re-instantiate
+# stored work after app updates (class names are persisted as strings in WorkManager's DB)
+-keep class * extends androidx.work.ListenableWorker { <init>(...); }
+
 # Room
 -keepclassmembers class * extends androidx.room.RoomDatabase {
     <init>(...);
