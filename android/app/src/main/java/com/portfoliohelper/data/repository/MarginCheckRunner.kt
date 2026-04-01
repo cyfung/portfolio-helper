@@ -18,6 +18,7 @@ object MarginCheckRunner {
     const val CHANNEL_SYSTEM_ID = "system_tasks"
     const val NOTIF_ID_ALERT_BASE = 10000
     const val NOTIF_ID_ERROR_BASE = 20000
+    const val NOTIF_ID_CURRENCY_SUGGESTION = 30000
 
     private const val TAG = "MarginCheckRunner"
 
@@ -152,12 +153,43 @@ object MarginCheckRunner {
             }
         }
 
+        // ── Currency conversion suggestion ────────────────────────────────────
+        var currencySuggestionText: String? = null
+        try {
+            val fxRates = prices
+                .filter { (sym, _) -> sym.endsWith("USD=X") }
+                .mapKeys { (sym, _) -> sym.removeSuffix("USD=X") }
+                .mapNotNull { (ccy, q) -> q.regularMarketPrice?.let { ccy to it } }
+                .toMap()
+            val ratesSnap = IbkrRateFetcher.fetch()
+            if (ratesSnap != null) {
+                val threshold = app.settingsRepo.currencySuggestionThresholdUsd.first()
+                val result = IbkrInterestCalculator.compute(allCashEntries, fxRates, ratesSnap)
+                if (result != null && result.savingsUsd >= threshold) {
+                    currencySuggestionText = "Convert all loan balance to ${result.cheapestCcy}"
+                    if (notificationsEnabled) {
+                        notify(
+                            context,
+                            NOTIF_ID_CURRENCY_SUGGESTION,
+                            "💡 Currency Conversion",
+                            "${result.cheapestCcy?.let { "Convert all loan balance to $it" } ?: ""} · saves \$${"%.2f".format(result.savingsUsd)}/day"
+                        )
+                    }
+                } else {
+                    nm.cancel(NOTIF_ID_CURRENCY_SUGGESTION)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Currency suggestion check skipped: ${e.message}")
+        }
+
         app.settingsRepo.updateMarginCheckStats(
             MarginCheckStats(
                 runTime = System.currentTimeMillis(),
                 oldestDataTime = if (oldestDataTime == Long.MAX_VALUE) System.currentTimeMillis() else oldestDataTime,
                 triggeredPortfolios = triggeredPortfolioNames,
-                errorMessage = null
+                errorMessage = null,
+                currencySuggestionText = currencySuggestionText
             )
         )
     }

@@ -109,6 +109,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val afterHoursGray: StateFlow<Boolean> = settings.afterHoursGray
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val currencySuggestionThresholdUsd: StateFlow<Double> = settings.currencySuggestionThresholdUsd
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 2.0)
+
     // ── Market Data (Database Cache is the source of truth) ───────────────────
 
     val marketData: StateFlow<Map<String, YahooQuote>> = db.marketPriceDao().observeAll()
@@ -284,6 +287,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveAfterHoursGray(gray: Boolean) = viewModelScope.launch {
         settings.saveAfterHoursGray(gray)
+    }
+
+    fun saveCurrencySuggestionThresholdUsd(usd: Double) = viewModelScope.launch {
+        settings.saveCurrencySuggestionThresholdUsd(usd)
     }
 
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────

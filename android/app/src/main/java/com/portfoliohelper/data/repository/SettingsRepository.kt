@@ -36,6 +36,8 @@ object PrefsKeys {
     val LAST_MARGIN_CHECK_ERROR     = stringPreferencesKey("last_margin_check_error")
     val MARGIN_CHECK_IS_RUNNING     = booleanPreferencesKey("margin_check_is_running")
     val MARGIN_CHECK_RUN_START      = longPreferencesKey("margin_check_run_start")
+    val CURRENCY_SUGGESTION_THRESHOLD_USD = doublePreferencesKey("currency_suggestion_threshold_usd")
+    val CURRENCY_SUGGESTION_TEXT    = stringPreferencesKey("currency_suggestion_text")
 }
 
 data class MarginCheckStats(
@@ -44,7 +46,8 @@ data class MarginCheckStats(
     val triggeredPortfolios: List<String>,
     val errorMessage: String? = null,
     val isRunning: Boolean = false,
-    val runStartTime: Long = 0L
+    val runStartTime: Long = 0L,
+    val currencySuggestionText: String? = null
 )
 
 class SettingsRepository(private val context: Context) {
@@ -181,7 +184,8 @@ class SettingsRepository(private val context: Context) {
             triggeredPortfolios = prefs[PrefsKeys.LAST_MARGIN_CHECK_TRIGGERED]?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
             errorMessage = prefs[PrefsKeys.LAST_MARGIN_CHECK_ERROR],
             isRunning = isRunning && !staleRunning,
-            runStartTime = runStartTime
+            runStartTime = runStartTime,
+            currencySuggestionText = prefs[PrefsKeys.CURRENCY_SUGGESTION_TEXT]
         )
     }
 
@@ -195,10 +199,23 @@ class SettingsRepository(private val context: Context) {
             } else {
                 prefs.remove(PrefsKeys.LAST_MARGIN_CHECK_ERROR)
             }
+            if (stats.currencySuggestionText != null) {
+                prefs[PrefsKeys.CURRENCY_SUGGESTION_TEXT] = stats.currencySuggestionText
+            } else {
+                prefs.remove(PrefsKeys.CURRENCY_SUGGESTION_TEXT)
+            }
             // Completing a run always clears running state
             prefs[PrefsKeys.MARGIN_CHECK_IS_RUNNING] = false
             prefs[PrefsKeys.MARGIN_CHECK_RUN_START] = 0L
         }
+    }
+
+    val currencySuggestionThresholdUsd: Flow<Double> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.CURRENCY_SUGGESTION_THRESHOLD_USD] ?: 2.0
+    }
+
+    suspend fun saveCurrencySuggestionThresholdUsd(usd: Double) {
+        context.dataStore.edit { it[PrefsKeys.CURRENCY_SUGGESTION_THRESHOLD_USD] = usd }
     }
 
     suspend fun setMarginCheckRunning(isRunning: Boolean, startTime: Long = 0L) {

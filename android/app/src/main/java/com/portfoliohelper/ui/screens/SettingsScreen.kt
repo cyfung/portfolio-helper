@@ -44,6 +44,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val notificationsEnabled by vm.marginCheckNotificationsEnabled.collectAsState()
     val scalingPercent by vm.scalingPercent.collectAsState()
     val afterHoursGray by vm.afterHoursGray.collectAsState()
+    val currencySuggestionThreshold by vm.currencySuggestionThresholdUsd.collectAsState()
 
     Column(
         modifier = Modifier
@@ -238,6 +239,33 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = ext.actionPositive,
                             checkedTrackColor = ext.actionPositive.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = ext.textTertiary.copy(alpha = 0.1f))
+
+                // Currency Suggestion Threshold
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Currency Suggestion Threshold", color = ext.textSecondary, fontSize = 13.sp)
+                        Text("Notify when daily interest savings exceed this amount (USD)", color = ext.textTertiary, fontSize = 11.sp)
+                    }
+                    var thresholdText by remember(currencySuggestionThreshold) { mutableStateOf("%.2f".format(currencySuggestionThreshold)) }
+                    OutlinedTextField(
+                        value = thresholdText,
+                        onValueChange = {
+                            thresholdText = it
+                            it.toDoubleOrNull()?.let { v -> vm.saveCurrencySuggestionThresholdUsd(v) }
+                        },
+                        prefix = { Text("$", fontSize = 13.sp) },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.width(96.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, textAlign = TextAlign.End),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = ext.actionPositive.copy(alpha = 0.5f),
+                            unfocusedBorderColor = ext.textTertiary.copy(alpha = 0.2f)
                         )
                     )
                 }

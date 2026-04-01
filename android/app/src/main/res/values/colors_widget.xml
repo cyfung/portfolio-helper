@@ -33,4 +33,10 @@
     <!-- Text on alert card -->
     <color name="widget_text_on_alert">#5C3D00</color>
     <color name="widget_text_on_alert_muted">#7A5200</color>
+
+    <!-- muted powder blue -->
+    <color name="widget_state_suggestion">#B8CDE8</color>
+    <!-- Text on suggestion card -->
+    <color name="widget_text_on_suggestion">#1E3555</color>
+    <color name="widget_text_on_suggestion_muted">#2E4A6B</color>
 </resources>

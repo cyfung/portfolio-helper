@@ -74,6 +74,7 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
                 stats.isRunning      -> applyRunning(context, rv, stats)
                 stats.errorMessage != null -> applyFailed(context, rv, stats)
                 stats.triggeredPortfolios.isNotEmpty() -> applyAlert(context, rv, stats)
+                stats.currencySuggestionText != null -> applyFxSuggestion(context, rv, stats)
                 else                 -> applyOk(context, rv, stats)
             }
 
@@ -136,6 +137,19 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setTextViewText(R.id.text_subtitle, stats.triggeredPortfolios.joinToString("\n"))
             rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
             setTextColors(context, rv, R.color.widget_text_on_alert, R.color.widget_text_on_alert_muted)
+            showRight(rv, RightSlot.NONE)
+        }
+
+        // ── Currency Suggestion ───────────────────────────────────────────────────
+
+        private fun applyFxSuggestion(context: Context, rv: RemoteViews, stats: MarginCheckStats) {
+            rv.setInt(R.id.widget_root, "setBackgroundColor",
+                ContextCompat.getColor(context, R.color.widget_state_suggestion))
+            rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_lightbulb)
+            rv.setTextViewText(R.id.text_title, "Currency Suggestion")
+            rv.setTextViewText(R.id.text_subtitle, "${stats.currencySuggestionText}\nSavings exceed threshold")
+            rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            setTextColors(context, rv, R.color.widget_text_on_suggestion, R.color.widget_text_on_suggestion_muted)
             showRight(rv, RightSlot.NONE)
         }
 
