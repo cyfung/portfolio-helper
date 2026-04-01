@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.asFlow
 import androidx.lifecycle.viewModelScope
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.GroupRow
@@ -121,7 +120,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (info.runAttemptCount > 0) "$state (attempt ${info.runAttemptCount})"
             else state
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Loading…")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "Loading…")
 
     val scalingPercent: StateFlow<Int?> = settings.scalingPercent
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)

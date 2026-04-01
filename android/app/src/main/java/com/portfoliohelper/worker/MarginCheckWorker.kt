@@ -129,8 +129,11 @@ class MarginCheckWorker(
         } finally {
             // Always clear running state — even if worker is interrupted
             app.settingsRepo.setMarginCheckRunning(false)
-            // Repaint widget to last known state (DataStore preserves previous run stats)
-            MarginCheckWidgetReceiver.updateAll(context)
+            try {
+                MarginCheckWidgetReceiver.updateAll(context)
+            } catch (e: Exception) {
+                Log.w(TAG, "Widget update in finally failed", e)
+            }
         }
     }
 

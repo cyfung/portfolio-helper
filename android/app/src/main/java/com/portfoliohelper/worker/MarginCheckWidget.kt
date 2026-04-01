@@ -28,8 +28,8 @@ import java.util.Date
 import java.util.Locale
 
 private const val TAG = "MarginCheckWidget"
-private const val STALE_RUN_MS  = 30 * 60_000L   // 30 min since last run
-private const val STALE_DATA_MS = 60 * 60_000L   // 1 hour since oldest data timestamp
+private const val STALE_RUN_MS  = 30 * 60_000L
+private const val STALE_DATA_MS = 60 * 60_000L
 
 class MarginCheckWidgetReceiver : AppWidgetProvider() {
 
@@ -48,8 +48,6 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
                 }
             }
             Intent.ACTION_USER_PRESENT -> {
-                // Screen unlocked — enqueue a one-time worker so the widget refreshes promptly.
-                // MarginCheckRunner has a 3-min cooldown, so this won't spam the API.
                 WorkManager.getInstance(context).enqueue(
                     OneTimeWorkRequestBuilder<MarginCheckWorker>().build()
                 )
@@ -87,8 +85,8 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
                 stats.errorMessage != null -> applyFailed(context, rv, stats)
                 stats.triggeredPortfolios.isNotEmpty() -> applyAlert(context, rv, stats)
                 stats.currencySuggestionText != null -> applyFxSuggestion(context, rv, stats)
-                isStale(stats, now)  -> applyStaleOk(context, rv, stats)
-                else                 -> applyOk(context, rv, stats)
+                isStale(stats, now)  -> applyOk(context, rv, stats, stale = true, now)
+                else                 -> applyOk(context, rv, stats, stale = false, now)
             }
 
             return rv
@@ -182,30 +180,7 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
 
         }
 
-        // ── OK / Healthy ──────────────────────────────────────────────────────────
-
-        private fun applyOk(context: Context, rv: RemoteViews, stats: MarginCheckStats) {
-            rv.setInt(R.id.widget_root, "setBackgroundColor",
-                ContextCompat.getColor(context, R.color.widget_state_ok))
-            rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_check)
-            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
-            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
-
-            val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-            rv.setTextViewText(R.id.text_title, "Last: ${timeFmt.format(Date(stats.runTime))}")
-
-            val dataAgeMinutes = if (stats.oldestDataTime > 0L)
-                (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
-            else null
-            rv.setTextViewText(R.id.text_subtitle, if (dataAgeMinutes != null) "Data: ${dataAgeMinutes}m ago" else "–")
-            rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
-            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
-
-            setTextColors(context, rv, R.color.widget_text_on_ok, R.color.widget_text_on_ok_muted)
-
-        }
-
-        // ── Stale helpers ─────────────────────────────────────────────────────────
+        // ── OK / Healthy (fresh or stale) ────────────────────────────────────────
 
         private fun isStale(stats: MarginCheckStats, now: Long): Boolean {
             val staleRun  = stats.runTime > 0 && (now - stats.runTime) > STALE_RUN_MS
@@ -213,24 +188,26 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             return staleRun || staleData
         }
 
-        private fun applyStaleOk(context: Context, rv: RemoteViews, stats: MarginCheckStats) {
+        private fun applyOk(context: Context, rv: RemoteViews, stats: MarginCheckStats, stale: Boolean, now: Long) {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
-                ContextCompat.getColor(context, R.color.widget_state_stale))
-            rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_stale)
+                ContextCompat.getColor(context, if (stale) R.color.widget_state_stale else R.color.widget_state_ok))
+            rv.setImageViewResource(R.id.icon_state, if (stale) R.drawable.ic_widget_stale else R.drawable.ic_widget_check)
             rv.setViewVisibility(R.id.container_text, View.VISIBLE)
             rv.setViewVisibility(R.id.text_title, View.VISIBLE)
 
             val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
             rv.setTextViewText(R.id.text_title, "Last: ${timeFmt.format(Date(stats.runTime))}")
 
-            val dataAgeMinutes = if (stats.oldestDataTime > 0L)
-                (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
-            else null
+            val dataAgeMinutes = if (stats.oldestDataTime > 0L) (now - stats.oldestDataTime) / 60_000 else null
             rv.setTextViewText(R.id.text_subtitle, if (dataAgeMinutes != null) "Data: ${dataAgeMinutes}m ago" else "–")
             rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
             rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
 
-            setTextColors(context, rv, R.color.widget_text_on_stale, R.color.widget_text_on_stale_muted)
+            if (stale) {
+                setTextColors(context, rv, R.color.widget_text_on_stale, R.color.widget_text_on_stale_muted)
+            } else {
+                setTextColors(context, rv, R.color.widget_text_on_ok, R.color.widget_text_on_ok_muted)
+            }
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────
