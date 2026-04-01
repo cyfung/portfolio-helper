@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import com.portfoliohelper.MainActivity
 import com.portfoliohelper.PortfolioHelperApp
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
 
 object MarginCheckRunner {
 
@@ -22,10 +23,25 @@ object MarginCheckRunner {
     const val NOTIF_ID_ALERT_BASE = 10000
     const val NOTIF_ID_ERROR_BASE = 20000
     const val NOTIF_ID_CURRENCY_SUGGESTION = 30000
+    const val MIN_RUN_INTERVAL_MS = 3 * 60_000L
 
     private const val TAG = "MarginCheckRunner"
+    private val mutex = Mutex()
+    internal var lastRunTime = 0L
 
     suspend fun run(context: Context, app: PortfolioHelperApp) {
+        if (!mutex.tryLock()) {
+            Log.d(TAG, "Already running — skipping concurrent call")
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastRunTime < MIN_RUN_INTERVAL_MS) {
+            Log.d(TAG, "Ran ${(now - lastRunTime) / 1000}s ago — skipping (min interval ${MIN_RUN_INTERVAL_MS / 1000}s)")
+            mutex.unlock()
+            return
+        }
+        lastRunTime = now
+        try {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notificationsEnabled = app.settingsRepo.marginCheckNotificationsEnabled.                           first()
 
@@ -176,15 +192,15 @@ object MarginCheckRunner {
                 } else null
 
                 if (suggestion != null && suggestion.savingsUsd >= currencySuggestionThreshold) {
-                    if (currencySuggestionText == null) {
-                        currencySuggestionText = "Convert to ${suggestion.cheapestCcy}"
-                    }
+                    val line = "$name: $${"%.2f".format(suggestion.savingsUsd)}/day"
+                    currencySuggestionText = if (currencySuggestionText == null) line
+                                             else "$currencySuggestionText\n$line"
                     if (notificationsEnabled) {
                         notify(
                             context,
                             alertNotifId,
                             "💡 Currency Conversion — $name",
-                            "Convert to save \$${"%.2f".format(suggestion.savingsUsd)}/day",
+                            "Convert to save $${"%.2f".format(suggestion.savingsUsd)}/day",
                             cashPendingIntent
                         )
                     }
@@ -206,6 +222,9 @@ object MarginCheckRunner {
                 currencySuggestionText = currencySuggestionText
             )
         )
+        } finally {
+            mutex.unlock()
+        }
     }
 
     fun ensureChannels(context: Context) {

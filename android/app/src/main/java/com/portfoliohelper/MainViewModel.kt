@@ -419,6 +419,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Dev: widget state preview (debug only) ───────────────────────────────
     // BuildConfig.DEBUG is false in release; R8 folds the guard and removes dead branches.
 
+    fun runMarginCheckNow() = viewModelScope.launch {
+        val app = getApplication<PortfolioHelperApp>()
+        val startTime = System.currentTimeMillis()
+        app.settingsRepo.setMarginCheckRunning(true, startTime)
+        MarginCheckWidgetReceiver.updateAll(app)
+        try {
+            MarginCheckRunner.run(app, app)
+            MarginCheckWidgetReceiver.updateAll(app)
+        } finally {
+            app.settingsRepo.setMarginCheckRunning(false)
+        }
+    }
+
     fun pushWidgetPreview(state: WidgetPreviewState) {
         if (!BuildConfig.DEBUG) return
         viewModelScope.launch {

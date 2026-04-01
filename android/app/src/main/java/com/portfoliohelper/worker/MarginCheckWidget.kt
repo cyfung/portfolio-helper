@@ -87,11 +87,14 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
                 ContextCompat.getColor(context, R.color.widget_state_checking))
             rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_sync)
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
             rv.setTextViewText(R.id.text_title, "No data yet")
             rv.setTextViewText(R.id.text_subtitle, "Waiting for first run")
             rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
             setTextColors(context, rv, R.color.widget_text_on_colored, R.color.widget_text_on_colored_muted)
-            showRight(rv, RightSlot.NONE)
+
         }
 
         // ── Running (Checking...) ─────────────────────────────────────────────────
@@ -100,10 +103,14 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
                 ContextCompat.getColor(context, R.color.widget_state_checking))
             rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_sync)
-            rv.setTextViewText(R.id.text_title, "Checking...")
-            rv.setTextViewText(R.id.text_subtitle, "Background sync active")
-            rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
+            rv.setTextViewText(R.id.text_title, "Checking…")
+            rv.setViewVisibility(R.id.text_subtitle, View.GONE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.VISIBLE)
             setTextColors(context, rv, R.color.widget_text_on_colored, R.color.widget_text_on_colored_muted)
+            rv.setTextColor(R.id.chronometer_elapsed,
+                ContextCompat.getColor(context, R.color.widget_text_on_colored_muted))
 
             val elapsed = System.currentTimeMillis() - stats.runStartTime
             rv.setChronometer(
@@ -112,7 +119,7 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
                 null,
                 true
             )
-            showRight(rv, RightSlot.TIMER)
+
         }
 
         // ── Failed ────────────────────────────────────────────────────────────────
@@ -121,10 +128,13 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
                 ContextCompat.getColor(context, R.color.widget_state_failed))
             rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_error)
-            rv.setTextViewText(R.id.text_title, stats.errorMessage ?: "Unknown error")
-            rv.setViewVisibility(R.id.text_subtitle, View.GONE)
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.GONE)
+            rv.setTextViewText(R.id.text_subtitle, stats.errorMessage ?: "Unknown error")
+            rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
             setTextColors(context, rv, R.color.widget_text_on_failed, R.color.widget_text_on_failed_muted)
-            showRight(rv, RightSlot.NONE)
+
         }
 
         // ── Alert (portfolios triggered) ──────────────────────────────────────────
@@ -133,11 +143,14 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
                 ContextCompat.getColor(context, R.color.widget_state_alert))
             rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_warning)
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
             rv.setTextViewText(R.id.text_title, "Margin Alert")
             rv.setTextViewText(R.id.text_subtitle, stats.triggeredPortfolios.joinToString("\n"))
             rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
             setTextColors(context, rv, R.color.widget_text_on_alert, R.color.widget_text_on_alert_muted)
-            showRight(rv, RightSlot.NONE)
+
         }
 
         // ── Currency Suggestion ───────────────────────────────────────────────────
@@ -146,11 +159,14 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
                 ContextCompat.getColor(context, R.color.widget_state_suggestion))
             rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_lightbulb)
-            rv.setTextViewText(R.id.text_title, "Currency Suggestion")
-            rv.setTextViewText(R.id.text_subtitle, "${stats.currencySuggestionText}\nSavings exceed threshold")
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
+            rv.setTextViewText(R.id.text_title, "FX Save")
+            rv.setTextViewText(R.id.text_subtitle, stats.currencySuggestionText ?: "")
             rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
             setTextColors(context, rv, R.color.widget_text_on_suggestion, R.color.widget_text_on_suggestion_muted)
-            showRight(rv, RightSlot.NONE)
+
         }
 
         // ── OK / Healthy ──────────────────────────────────────────────────────────
@@ -159,6 +175,8 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             rv.setInt(R.id.widget_root, "setBackgroundColor",
                 ContextCompat.getColor(context, R.color.widget_state_ok))
             rv.setImageViewResource(R.id.icon_state, R.drawable.ic_widget_check)
+            rv.setViewVisibility(R.id.container_text, View.VISIBLE)
+            rv.setViewVisibility(R.id.text_title, View.VISIBLE)
 
             val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
             rv.setTextViewText(R.id.text_title, "Last: ${timeFmt.format(Date(stats.runTime))}")
@@ -166,22 +184,15 @@ class MarginCheckWidgetReceiver : AppWidgetProvider() {
             val dataAgeMinutes = if (stats.oldestDataTime > 0L)
                 (System.currentTimeMillis() - stats.oldestDataTime) / 60_000
             else null
-            rv.setTextViewText(R.id.text_subtitle, if (dataAgeMinutes != null) "${dataAgeMinutes}m ago" else "–")
+            rv.setTextViewText(R.id.text_subtitle, if (dataAgeMinutes != null) "Data: ${dataAgeMinutes}m ago" else "–")
             rv.setViewVisibility(R.id.text_subtitle, View.VISIBLE)
+            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
 
             setTextColors(context, rv, R.color.widget_text_on_ok, R.color.widget_text_on_ok_muted)
-            showRight(rv, RightSlot.NONE)
+
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────
-
-        private enum class RightSlot { NONE, TIMER, OK_DOT }
-
-        private fun showRight(rv: RemoteViews, slot: RightSlot) {
-            rv.setViewVisibility(R.id.text_timer_pill,     if (slot == RightSlot.TIMER)  View.VISIBLE else View.GONE)
-            rv.setViewVisibility(R.id.container_right_ok,  if (slot == RightSlot.OK_DOT) View.VISIBLE else View.GONE)
-            rv.setViewVisibility(R.id.chronometer_elapsed, View.GONE)
-        }
 
         private fun setTextColors(
             context: Context,

@@ -305,13 +305,9 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
 
         // ── Dev: widget state preview (debug builds only) ─────────────────────
         if (BuildConfig.DEBUG) {
-            var devPreview by remember { mutableStateOf(WidgetPreviewState.NONE) }
             DevWidgetPreviewSection(
-                current = devPreview,
-                onSelect = { state ->
-                    devPreview = state
-                    vm.pushWidgetPreview(state)
-                },
+                onApplyState = { state -> vm.pushWidgetPreview(state) },
+                onRunNow = { vm.runMarginCheckNow() },
                 ext = ext
             )
         }
@@ -617,42 +613,76 @@ private fun PairingPinDialog(serverName: String, onDismiss: () -> Unit, onConfir
 
 @Composable
 private fun DevWidgetPreviewSection(
-    current: WidgetPreviewState,
-    onSelect: (WidgetPreviewState) -> Unit,
+    onApplyState: (WidgetPreviewState) -> Unit,
+    onRunNow: () -> Unit,
     ext: com.portfoliohelper.ui.theme.ExtendedColors
 ) {
+    var showDialog by remember { mutableStateOf(false) }
+    val minIntervalMin = com.portfoliohelper.data.repository.MarginCheckRunner.MIN_RUN_INTERVAL_MS / 60_000
+
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = ext.bgElevated,
         border = BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.5f)),
         tonalElevation = 1.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                "DEV: Widget State Preview",
+                "DEV: Developer Settings",
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
                 color = Color(0xFFFF9800)
             )
-            Text(
-                "Forces the home screen widget into a specific visual state.",
-                fontSize = 11.sp,
-                color = ext.textTertiary
-            )
-            Spacer(Modifier.height(4.dp))
-            WidgetPreviewState.entries.forEach { state ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(state) }
-                        .padding(vertical = 2.dp)
-                ) {
-                    RadioButton(selected = current == state, onClick = { onSelect(state) })
-                    Spacer(Modifier.width(4.dp))
-                    Text(state.label, fontSize = 13.sp, color = ext.textSecondary)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Min run interval", fontSize = 13.sp, color = ext.textSecondary)
+                    Text("${minIntervalMin} min", fontSize = 11.sp, color = ext.textTertiary)
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Widget layout", fontSize = 13.sp, color = ext.textSecondary)
+                    Text("Apply a preview state to the home screen widget", fontSize = 11.sp, color = ext.textTertiary)
+                }
+                TextButton(onClick = { showDialog = true }) {
+                    Text("Apply", color = Color(0xFFFF9800))
                 }
             }
         }
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Apply Widget State", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column {
+                    WidgetPreviewState.entries.forEach { state ->
+                        Text(
+                            text = state.label,
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showDialog = false
+                                    if (state == WidgetPreviewState.NONE) {
+                                        onRunNow()
+                                    } else {
+                                        onApplyState(state)
+                                    }
+                                }
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {}
+        )
     }
 }
