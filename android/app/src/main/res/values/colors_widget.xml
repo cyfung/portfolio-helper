@@ -1,10 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Widget card background -->
     <color name="widget_bg">#1C1B1F</color>
+
+    <!-- Generic text colors (used by layout defaults and drawables) -->
     <color name="widget_text_primary">#E6E1E5</color>
     <color name="widget_text_muted">#938F99</color>
     <color name="widget_positive">#4CAF50</color>
-    <color name="widget_warning">#FFC107</color>
-    <color name="widget_negative">#F44336</color>
-    <color name="widget_divider">#1AFFFFFF</color>
+
+    <!-- Card background colors -->
+    <!-- muted slate blue -->
+    <color name="widget_state_checking">#7A94B0</color>
+    <!-- muted sage green -->
+    <color name="widget_state_ok">#B5CCB8</color>
+    <!-- muted dusty rose -->
+    <color name="widget_state_failed">#D9A8A8</color>
+    <!-- muted warm amber -->
+    <color name="widget_state_alert">#E8D4A0</color>
+
+    <!-- Text on checking card (white on slate blue) -->
+    <color name="widget_text_on_colored">#FFFFFF</color>
+    <color name="widget_text_on_colored_muted">#CCFFFFFF</color>
+
+    <!-- Text on OK/healthy card -->
+    <color name="widget_text_on_ok">#2D4A31</color>
+    <color name="widget_text_on_ok_muted">#3D5E41</color>
+
+    <!-- Text on failed card -->
+    <color name="widget_text_on_failed">#5C1F1F</color>
+    <color name="widget_text_on_failed_muted">#7A3030</color>
+
+    <!-- Text on alert card -->
+    <color name="widget_text_on_alert">#5C3D00</color>
+    <color name="widget_text_on_alert_muted">#7A5200</color>
 </resources>
