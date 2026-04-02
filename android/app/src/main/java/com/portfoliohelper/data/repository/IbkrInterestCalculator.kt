@@ -116,13 +116,14 @@ object IbkrInterestCalculator {
         val savingsUsd = if (currentDailyUsd > 0) currentDailyUsd - cheapestDailyUsd else 0.0
 
         val (label, labelAction) = buildLabel(cheapestCcy, perCurrency)
+        val effectiveLabelAction = if (savingsUsd < 0.01) null else labelAction
         return IbkrInterestResult(
             currentDailyUsd = currentDailyUsd,
             cheapestCcy = cheapestCcy,
             cheapestDailyUsd = cheapestDailyUsd,
             savingsUsd = savingsUsd,
             label = label,
-            labelAction = labelAction,
+            labelAction = effectiveLabelAction,
             perCurrency = perCurrency
         )
     }
@@ -151,25 +152,36 @@ object IbkrInterestCalculator {
         val otherEntry = perCurrency.firstOrNull { it.currency != "USD" } ?: return Pair("Saving", null)
         val other = otherEntry.currency
 
-        // Buy USD only when actively borrowing USD AND the other currency is cheapest (switch to borrowing other).
-        // In all other cases (positive USD, or USD is cheapest), sell USD to pay off non-USD borrowing.
         val usdLoan = (-usdEntry.nativeBalance).coerceAtLeast(0.0)
-        val action = if (usdLoan > 0 && cheapestCcy != "USD") "Buy" else "Sell"
+        val hkdLoan = (-otherEntry.nativeBalance).coerceAtLeast(0.0)
 
-        val fxRate = otherEntry.fxRateUsd  // 1 unit of other = fxRate USD
-        val amountStr = if (action == "Sell") {
-            val otherLoanInUsd = (-otherEntry.nativeBalance).coerceAtLeast(0.0) * fxRate
-            val sellUsd = minOf(usdEntry.nativeBalance.coerceAtLeast(0.0), otherLoanInUsd)
-            val buyOther = if (fxRate > 0) sellUsd / fxRate else 0.0
-            if (sellUsd > 0) "\$%.2f → %s%.0f".format(sellUsd, other, buyOther) else null
-        } else {
-            val otherBalInUsd = otherEntry.nativeBalance.coerceAtLeast(0.0) * fxRate
-            val buyUsd = minOf(usdLoan, otherBalInUsd)
-            val sellOther = if (fxRate > 0) buyUsd / fxRate else 0.0
-            if (buyUsd > 0) "%s%.0f → \$%.2f".format(other, sellOther, buyUsd) else null
+        // Symmetric action logic:
+        // "Buy USD.HKD"  when reducing USD loan — use existing HKD cash (USD cheapest) or borrow HKD (HKD cheapest)
+        // "Sell USD.HKD" when reducing HKD loan — use existing USD cash (HKD cheapest) or borrow USD (USD cheapest)
+        val action = when {
+            usdLoan > 0 && (otherEntry.nativeBalance > 0 || cheapestCcy != "USD") -> "Buy"
+            hkdLoan > 0 && (usdEntry.nativeBalance > 0 || cheapestCcy == "USD") -> "Sell"
+            else -> return Pair("Saving", null)
         }
 
-        val actionStr = if (amountStr != null) "$action USD.$other: $amountStr" else "$action USD.$other"
+        val fxRate = otherEntry.fxRateUsd  // 1 unit of other = fxRate USD
+        val hkdLoanUsd = hkdLoan * fxRate
+
+        val amountStr = if (action == "Buy") {
+            // Full conversion when HKD is cheapest (borrow HKD); cash-only netting when USD is cheapest
+            val buyUsd = if (cheapestCcy != "USD") usdLoan
+                         else minOf(usdLoan, otherEntry.nativeBalance.coerceAtLeast(0.0) * fxRate)
+            val sellOther = if (fxRate > 0) buyUsd / fxRate else 0.0
+            if (buyUsd > 0) "%s%.0f → \$%.2f".format(other, sellOther, buyUsd) else null
+        } else {
+            // Full conversion when USD is cheapest (borrow USD); cash-only netting when HKD is cheapest
+            val sellUsd = if (cheapestCcy == "USD") hkdLoanUsd
+                          else minOf(usdEntry.nativeBalance.coerceAtLeast(0.0), hkdLoanUsd)
+            val buyOther = if (fxRate > 0) sellUsd / fxRate else 0.0
+            if (sellUsd > 0) "\$%.2f → %s%.0f".format(sellUsd, other, buyOther) else null
+        }
+
+        val actionStr = amountStr?.let { "$action USD.$other: $it" }
         return Pair("Saving", actionStr)
     }
 }
