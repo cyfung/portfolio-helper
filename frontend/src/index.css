@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * The existing styles.css (loaded via /static/styles.css in index.html) provides
+ * all CSS variables and component-level styles. This file only adds Tailwind
+ * and any overrides needed for the React app.
+ */
+
+@layer base {
+  * {
+    border-color: var(--color-border-subtle);
+  }
+
+  body {
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-base);
+  }
+}

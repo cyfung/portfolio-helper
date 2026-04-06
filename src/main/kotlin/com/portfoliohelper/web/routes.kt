@@ -153,6 +153,64 @@ private data class TwsSnapshotResponse(
     val accruedCash: Map<String, Double>
 )
 
+// ── SPA API DTOs ─────────────────────────────────────────────────────────────
+
+@Serializable
+private data class PortfolioOptionDto(val slug: String, val name: String, val seqOrder: Double)
+
+@Serializable
+private data class StockDto(
+    val label: String,
+    val amount: Double,
+    val targetWeight: Double,
+    val letf: String,
+    val groups: String
+)
+
+@Serializable
+private data class CashDto(
+    val label: String,
+    val currency: String,
+    val amount: Double,
+    val marginFlag: Boolean,
+    val portfolioRef: String? = null
+)
+
+@Serializable
+private data class PortfolioConfigDto(
+    val rebalTargetUsd: Double,
+    val marginTargetPct: Double,
+    val allocAddMode: String,
+    val allocReduceMode: String,
+    val virtualBalanceEnabled: Boolean,
+    val dividendCalcUpToDate: String,
+    val dividendStartDate: String
+)
+
+@Serializable
+private data class AppConfigDto(
+    val version: String,
+    val showStockDisplayCurrency: Boolean,
+    val afterHoursGray: Boolean,
+    val displayCurrencies: List<String>,
+    val hasUpdate: Boolean,
+    val latestVersion: String?,
+    val downloadPhase: String,
+    val isJpackageInstall: Boolean,
+    val autoUpdate: Boolean
+)
+
+@Serializable
+private data class PortfolioDataResponse(
+    val portfolioId: String,
+    val portfolioName: String,
+    val allPortfolios: List<PortfolioOptionDto>,
+    val stocks: List<StockDto>,
+    val cash: List<CashDto>,
+    val config: PortfolioConfigDto,
+    val appConfig: AppConfigDto
+)
+
 private val LOAN_COMPARE_FIELDS = listOf(
     "loanAmount", "numPeriods", "periodLength", "payment", "rateApy", "rateFlat", "extraCashflows"
 )
@@ -226,33 +284,73 @@ fun Application.configureRouting() {
         // Admin Endpoints
         configureAdminRoutes()
 
-        get("/") {
+        // ── Portfolio data API (replaces server-injected JS globals) ────────────
+        get("/api/portfolio/data") {
             val all = ManagedPortfolio.getAll()
-            val default = all.first()
-            call.renderPortfolioPage(default, all, default.slug)
-        }
+            val slug = call.request.queryParameters["portfolio"]
+            val entry = (if (slug != null) ManagedPortfolio.getBySlug(slug) else all.firstOrNull())
+                ?: return@get call.respond(HttpStatusCode.NotFound)
 
-        get("/portfolio/{name}") {
-            val slug = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.NotFound)
-            val entry =
-                ManagedPortfolio.getBySlug(slug) ?: return@get call.respond(HttpStatusCode.NotFound)
-            call.renderPortfolioPage(entry, ManagedPortfolio.getAll(), slug)
-        }
+            val stocks = entry.getStocks()
+            val cashEntries = entry.getCash()
+            val portfolioConf = entry.getAllConfig()
+            val privacyScalePct = AppConfig.privacyScalePct
 
-        get("/loan") {
-            call.renderLoanCalculatorPage()
-        }
+            fun scaleQty(q: Double) =
+                if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0).toDouble() else q
 
-        get("/backtest") {
-            call.renderBacktestPage()
-        }
+            val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
+            val displayRebalTarget =
+                if (privacyScalePct != null) savedRebalTargetUsd * privacyScalePct / 100.0
+                else savedRebalTargetUsd
 
-        get("/montecarlo") {
-            call.renderMonteCarloPage()
-        }
+            val displayCurrencies: List<String> = buildList {
+                add("USD")
+                all.flatMap { it.getCash() }
+                    .map { it.currency.uppercase() }
+                    .distinct().filter { it != "P" && it != "USD" }
+                    .sorted().forEach { add(it) }
+            }
 
-        get("/config") {
-            call.renderConfigPage()
+            val updateInfo = UpdateService.getInfo()
+
+            val response = PortfolioDataResponse(
+                portfolioId = entry.slug,
+                portfolioName = entry.name,
+                allPortfolios = all.map { PortfolioOptionDto(it.slug, it.name, it.seqOrder) },
+                stocks = stocks.map { stock ->
+                    StockDto(
+                        label = stock.label,
+                        amount = scaleQty(stock.amount),
+                        targetWeight = stock.targetWeight ?: 0.0,
+                        letf = stock.letfComponents?.joinToString(",") { "${it.first},${it.second}" } ?: "",
+                        groups = stock.groups.joinToString(";") { "${it.first} ${it.second}" }
+                    )
+                },
+                cash = cashEntries.map { CashDto(it.label, it.currency, it.amount, it.marginFlag, it.portfolioRef) },
+                config = PortfolioConfigDto(
+                    rebalTargetUsd = displayRebalTarget,
+                    marginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0,
+                    allocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL",
+                    allocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL",
+                    virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true",
+                    dividendCalcUpToDate = portfolioConf["dividendCalcUpToDate"] ?: "",
+                    dividendStartDate = portfolioConf["dividendStartDate"] ?: ""
+                ),
+                appConfig = AppConfigDto(
+                    version = appVersion,
+                    showStockDisplayCurrency = AppConfig.showStockDisplayCurrency,
+                    afterHoursGray = AppConfig.afterHoursGray,
+                    displayCurrencies = displayCurrencies,
+                    hasUpdate = updateInfo.hasUpdate,
+                    latestVersion = updateInfo.latestVersion,
+                    downloadPhase = updateInfo.download.phase.name,
+                    isJpackageInstall = updateInfo.isJpackageInstall,
+                    autoUpdate = AppConfig.autoUpdate
+                )
+            )
+
+            call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
         }
 
         get("/api/backtest/settings") {
@@ -861,7 +959,19 @@ fun Application.configureRouting() {
             }
         }
 
-        // Serve static files (CSS, JS)
+        // Serve static files (CSS, JS, SPA assets)
         staticResources("/static", "static")
+
+        // SPA catch-all — serve index.html for all non-API, non-static routes
+        // React Router handles client-side navigation
+        get("{...}") {
+            val stream = application.environment.classLoader
+                .getResourceAsStream("static/index.html")
+            if (stream != null) {
+                call.respondText(stream.bufferedReader().readText(), ContentType.Text.Html)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "index.html not found — build the frontend first")
+            }
+        }
     }
 }

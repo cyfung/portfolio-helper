@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="icon" type="image/png" href="/static/favicon-96x96.png" sizes="96x96" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portfolio Helper</title>
+    <!-- Existing styles (CSS variables + all component styles) -->
+    <link rel="stylesheet" href="/static/styles.css" />
+    <!-- Chart.js for Backtest and Monte Carlo pages -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" async></script>
+    <!-- Theme init: must run before first render to avoid FOUC -->
+    <script>
+      (function () {
+        var stored = localStorage.getItem('portfolio-helper-theme') || localStorage.getItem('ib-viewer-theme');
+        var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

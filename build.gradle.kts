@@ -127,7 +127,10 @@ val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
     argumentProviders.add(CommandLineArgumentProvider { listOf(outFile.get().asFile.absolutePath) })
     doFirst { outFile.get().asFile.parentFile.mkdirs() }
 }
-sourceSets.main { resources.srcDir(layout.buildDirectory.dir("generated/db")) }
+sourceSets.main {
+    resources.srcDir(layout.buildDirectory.dir("generated/db"))
+    resources.srcDir(layout.buildDirectory.dir("generated/frontend"))
+}
 tasks.named("processResources") { dependsOn(generateAppDb) }
 
 // Shadow JAR Configuration
@@ -436,7 +439,41 @@ tasks.register("githubRelease") {
     }
 }
 
-// Convenience task for complete jpackage distribution
+// ── Frontend (React SPA) build integration ────────────────────────────────────
+
+val isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows
+val npmCmd = if (isWindows) listOf("cmd", "/c", "npm") else listOf("npm")
+
+/** Install node_modules if package.json or package-lock.json changed */
+val frontendInstall = tasks.register<Exec>("frontendInstall") {
+    group = "build"
+    description = "Installs frontend npm dependencies"
+    workingDir = file("frontend")
+    commandLine(npmCmd + "install")
+    inputs.file("frontend/package.json")
+    inputs.file("frontend/package-lock.json")
+    outputs.dir("frontend/node_modules")
+}
+
+/** Run `npm run build` → outputs to frontend/dist/ */
+val frontendBuild = tasks.register<Exec>("frontendBuild") {
+    dependsOn(frontendInstall)
+    group = "build"
+    description = "Builds the React SPA with Vite"
+    workingDir = file("frontend")
+    commandLine(npmCmd + "run" + "build")
+    inputs.dir("frontend/src")
+    inputs.file("frontend/index.html")
+    inputs.file("frontend/vite.config.ts")
+    inputs.file("frontend/tailwind.config.ts")
+    outputs.dir(layout.buildDirectory.dir("generated/frontend/static"))
+}
+
+tasks.named("processResources") {
+    dependsOn(frontendBuild)
+}
+
+// ── Convenience task for complete jpackage distribution ───────────────────────
 tasks.register("jpackageDistribution") {
     group = "distribution"
     description = "Creates a self-contained application bundle with data files using jpackage"

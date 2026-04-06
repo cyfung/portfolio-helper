@@ -1,0 +1,138 @@
+// ── Layout.tsx — Shared header utilities (nav tabs, config button, theme toggle)
+// Each page renders its own .portfolio-header div to match the Kotlin renderers exactly.
+// This file exports helpers used by all pages.
+
+import { Link, useLocation } from 'react-router-dom'
+import { usePortfolioStore } from '@/stores/portfolioStore'
+
+// ── Page nav tabs (same as renderPageNavTabs in common.kt) ───────────────────
+
+const NAV_PAGES = [
+  { line1: 'Portfolio', line2: 'Viewer',     href: '/portfolio/' },
+  { line1: 'Loan',      line2: 'Calculator', href: '/loan' },
+  { line1: 'Portfolio', line2: 'Backtest',   href: '/backtest' },
+  { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
+]
+
+export function PageNavTabs({ active }: { active: string }) {
+  const location = useLocation()
+  return (
+    <div className="page-nav-tabs">
+      {NAV_PAGES.map(page => {
+        const isActive = active === page.href ||
+          (active === '/portfolio/' && location.pathname.startsWith('/portfolio'))
+        return (
+          <Link
+            key={page.href}
+            to={page.href}
+            className={`page-nav-tab${isActive ? ' active' : ''}`}
+          >
+            <span className="page-nav-tab-line1">{page.line1}</span>
+            <span className="page-nav-tab-line2">{page.line2}</span>
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Config gear button ────────────────────────────────────────────────────────
+
+export function ConfigButton() {
+  return (
+    <Link to="/config" className="config-button" aria-label="App settings" title="App settings">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </Link>
+  )
+}
+
+// ── Theme toggle button ───────────────────────────────────────────────────────
+
+export function ThemeToggle() {
+  function toggle() {
+    const current = document.documentElement.getAttribute('data-theme')
+    const next = current === 'dark' ? 'light' : 'dark'
+    document.documentElement.setAttribute('data-theme', next)
+    localStorage.setItem('portfolio-helper-theme', next)
+  }
+
+  return (
+    <button className="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme" onClick={toggle}>
+      <span className="icon-sun">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      </span>
+      <span className="icon-moon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </span>
+    </button>
+  )
+}
+
+// ── Header right (version badge + update indicators + buttons) ───────────────
+
+interface HeaderRightProps {
+  children: React.ReactNode
+}
+
+export function HeaderRight({ children }: HeaderRightProps) {
+  const appConfig = usePortfolioStore(s => s.appConfig)
+
+  if (!appConfig) {
+    return (
+      <div className="header-right">
+        <div className="header-buttons">{children}</div>
+      </div>
+    )
+  }
+
+  const { version, hasUpdate, latestVersion, downloadPhase, isJpackageInstall, autoUpdate } = appConfig
+  const autoDownloads = isJpackageInstall && autoUpdate
+  const isReady = downloadPhase === 'READY' || downloadPhase === 'APPLYING'
+
+  const showUpdateTag = hasUpdate && !autoDownloads && !isReady
+  const showUpdateDot = hasUpdate && autoDownloads && !isReady
+  const showReadyTag = isReady
+
+  return (
+    <div className="header-right">
+      <div className="version-badge-wrapper">
+        <span className="version-badge">v{version}</span>
+        <Link
+          to="/config"
+          className="update-available-tag"
+          id="header-update-available"
+          title={latestVersion ? `Update available: v${latestVersion} — go to Settings` : 'Update available — go to Settings'}
+          hidden={!showUpdateTag}
+        >
+          Update Available
+        </Link>
+        <span
+          className="update-dot"
+          id="header-update-dot"
+          title={latestVersion ? `Update available: v${latestVersion}` : 'Update available'}
+          hidden={!showUpdateDot}
+        />
+        <span
+          className="update-ready-tag"
+          id="header-update-ready"
+          title={`Update v${latestVersion} ready — click to apply`}
+          hidden={!showReadyTag}
+        >
+          Update Is Ready
+        </span>
+      </div>
+      <div className="header-buttons">{children}</div>
+    </div>
+  )
+}

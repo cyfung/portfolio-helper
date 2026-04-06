@@ -1,9 +1,11 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.AdminService
 import com.portfoliohelper.service.CodeResult
 import com.portfoliohelper.service.ManagedPortfolio
 import com.portfoliohelper.service.PairingService
+import com.portfoliohelper.service.UpdateService
 import com.portfoliohelper.util.appJson
 import io.ktor.http.*
 import io.ktor.server.plugins.*
@@ -156,6 +158,38 @@ fun Route.configureAdminRoutes() {
     post("/api/unpair-all") {
         PairingService.unpairAll()
         call.respond(HttpStatusCode.OK, "All devices unpaired")
+    }
+
+    /** All AppConfig key-value pairs for the config page (read-only) */
+    get("/api/admin/config-values") {
+        val keys = listOf(
+            AppConfig.KEY_SHOW_STOCK_DISPLAY_CURRENCY,
+            AppConfig.KEY_PRIVACY_SCALE_PCT,
+            AppConfig.KEY_AFTER_HOURS_GRAY,
+            AppConfig.KEY_OPEN_BROWSER,
+            AppConfig.KEY_TWS_HOST,
+            AppConfig.KEY_TWS_PORT,
+            AppConfig.KEY_EXCHANGE_SUFFIXES,
+            AppConfig.KEY_GITHUB_REPO,
+            AppConfig.KEY_NAV_UPDATE_INTERVAL,
+            AppConfig.KEY_IBKR_RATE_INTERVAL,
+            AppConfig.KEY_DIVIDEND_SAFE_LAG_DAYS,
+            AppConfig.KEY_UPDATE_CHECK_INTERVAL,
+            AppConfig.KEY_AUTO_UPDATE,
+        )
+        val values = keys.associateWith { AppConfig.get(it) }
+        val updateInfo = UpdateService.getInfo()
+        val result = buildMap {
+            putAll(values)
+            put("_version", com.portfoliohelper.APP_VERSION)
+            put("_latestVersion", updateInfo.latestVersion ?: "")
+            put("_hasUpdate", updateInfo.hasUpdate.toString())
+            put("_downloadPhase", updateInfo.download.phase.name)
+            put("_isJpackageInstall", updateInfo.isJpackageInstall.toString())
+            put("_releaseUrl", updateInfo.releaseUrl ?: "")
+            put("_lastCheckError", updateInfo.lastCheckError ?: "")
+        }
+        call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
     }
 
     /** Unpair a specific device */
