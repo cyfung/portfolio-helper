@@ -1376,6 +1376,8 @@ h1 {
     color: var(--color-text-secondary) !important;
     opacity: 1;
 }
+.summary-subvalue.positive { color: var(--color-positive); }
+.summary-subvalue.negative { color: var(--color-negative); }
 .summary-subvalue.after-hours {
     opacity: 0.75;
 }

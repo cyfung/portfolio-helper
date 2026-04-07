@@ -102,6 +102,17 @@ export default function StockTable() {
             const dayChStr = dayCh !== null ? fmtSigned(dayCh) : ''
             const dayChCls = `${dayCh === null ? 'neutral' : dayCh > 0 ? 'positive' : dayCh < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
 
+            // Position P&L = per-share change × scaled qty (from SSE) × fx → USD → display
+            const liveQty = live?.qty ?? null
+            const pnlUsd = (dayCh !== null && liveQty !== null && fxRate !== null)
+              ? dayCh * liveQty * fxRate : null
+            const pnlStr = pnlUsd !== null
+              ? (hasFxRate(fxRates, currentDisplayCurrency)
+                  ? formatSignedCurrency(toDisplayCurrency(pnlUsd, fxRates, currentDisplayCurrency))
+                  : '—')
+              : ''
+            const pnlCls = `${pnlUsd === null ? 'neutral' : pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
+
             // Weight columns (only when stock gross known)
             let weightCells = null
             if (stockGrossKnown && stockGrossUsd > 0) {
@@ -165,6 +176,7 @@ export default function StockTable() {
             return (
               <tr
                 key={sym}
+                className="leading-[1.4]"
                 data-symbol={sym}
                 data-qty={formatQty(qty)}
                 data-raw-qty={qty.toString()}
@@ -196,7 +208,7 @@ export default function StockTable() {
                 </td>
 
                 {/* Mark + day % */}
-                <td className="col-market-data price" id={`mark-${sym}`}>
+                <td className={`col-market-data price${markPrice !== null ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`} id={`mark-${sym}`}>
                   <span className="mark-price-value">{markStr}</span>
                   {dayPctStr && (
                     <span className={`mark-day-pct ${dayPctCls}`} id={`day-percent-${sym}`}>
@@ -211,8 +223,8 @@ export default function StockTable() {
                 </td>
 
                 {/* P&L (position day change) */}
-                <td className={`col-market-data price-change ${dayChCls}`} id={`position-change-${sym}`}>
-                  {dayChStr}
+                <td className={`col-market-data price-change ${pnlCls}`} id={`position-change-${sym}`}>
+                  {pnlStr}
                 </td>
 
                 {/* Mkt Val */}

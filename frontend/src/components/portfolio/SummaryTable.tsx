@@ -30,7 +30,7 @@ export default function SummaryTable() {
   }
 
   function formatUsdForInput(usd: number | null): string {
-    if (usd === null || usd <= 0) return ''
+    if (usd === null || usd < 0) return ''
     if (!hasFxRate(fxRates, currentDisplayCurrency)) return ''
     return usdToDisplay(usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
@@ -41,15 +41,15 @@ export default function SummaryTable() {
 
   // Sync inputs when store values or display currency change (e.g. on portfolio switch)
   useEffect(() => {
-    if (rebalTargetUsd !== null && rebalTargetUsd > 0) {
+    if (rebalTargetUsd !== null) {
       if (focusedField.current !== 'rebal') setRebalInput(formatUsdForInput(rebalTargetUsd))
       setMarginPctInput('')
       setMarginUsdInput('')
-    } else if (marginTargetPct !== null && marginTargetPct > 0) {
+    } else if (marginTargetPct !== null) {
       setRebalInput('')
       if (focusedField.current !== 'marginPct') setMarginPctInput(String(marginTargetPct))
       setMarginUsdInput('')
-    } else if (marginTargetUsd !== null && marginTargetUsd > 0) {
+    } else if (marginTargetUsd !== null) {
       setRebalInput('')
       setMarginPctInput('')
       if (focusedField.current !== 'marginUsd') setMarginUsdInput(formatUsdForInput(marginTargetUsd))
@@ -77,7 +77,7 @@ export default function SummaryTable() {
   const isAfterHours = (lastStockDisplay?.stocks ?? []).length > 0
     && (lastStockDisplay?.stocks ?? []).every(s => s.isMarketClosed)
   const dayChangeColor = dayChangeUsd !== null && dayChangeUsd > 0
-    ? 'text-green-500' : dayChangeUsd !== null && dayChangeUsd < 0 ? 'text-red-500' : ''
+    ? 'positive' : dayChangeUsd !== null && dayChangeUsd < 0 ? 'negative' : ''
 
   const cashTotal = lastCashDisplay?.totalKnown
     ? fmt(lastCashDisplay.totalUsd) : '—'
@@ -92,7 +92,7 @@ export default function SummaryTable() {
     ? (stockDayChangeUsd / prevDayUsd * 100) : null
   const stockDayChangeStr = stockDayChangeUsd !== null ? formatSignedCurrency(stockDayChangeUsd) : ''
   const stockDayChangeColor = stockDayChangeUsd !== null && stockDayChangeUsd > 0
-    ? 'text-green-500' : stockDayChangeUsd !== null && stockDayChangeUsd < 0 ? 'text-red-500' : ''
+    ? 'positive' : stockDayChangeUsd !== null && stockDayChangeUsd < 0 ? 'negative' : ''
 
   // Correct formula: margin / (stockGross - margin); margin may be negative (debt)
   const absMargin = Math.abs(marginUsdVal)
@@ -100,9 +100,9 @@ export default function SummaryTable() {
     ? ((absMargin / (stockGrossUsd - absMargin)) * 100).toFixed(2) + '%' : ''
 
   // ── Active target detection ───────────────────────────────────────────────
-  const activeIsRebal     = rebalTargetUsd !== null && rebalTargetUsd > 0
-  const activeIsMarginPct = !activeIsRebal && marginTargetPct !== null && marginTargetPct > 0
-  const activeIsMarginUsd = !activeIsRebal && !activeIsMarginPct && marginTargetUsd !== null && marginTargetUsd > 0
+  const activeIsRebal     = rebalTargetUsd !== null
+  const activeIsMarginPct = !activeIsRebal && marginTargetPct !== null
+  const activeIsMarginUsd = !activeIsRebal && !activeIsMarginPct && marginTargetUsd !== null
 
   // ── Single underlying rebal target; all placeholders derive from it ───────
   // equity = stocks − current margin debt (the unlevered base)
@@ -147,7 +147,7 @@ export default function SummaryTable() {
 
   function commitRebalTarget(val: string, flush = false) {
     const num = parseFloat(val.replace(/,/g, ''))
-    const valid = !isNaN(num) && num > 0
+    const valid = !isNaN(num) && num >= 0
     if (valid) setRebalTargetUsd(displayToUsd(num))
     else if (activeIsRebal) setRebalTargetUsd(null)
     clearTimeout(rebalTimer.current!)
@@ -161,7 +161,7 @@ export default function SummaryTable() {
 
   function commitMarginPct(val: string, flush = false) {
     const num = parseFloat(val.replace(/%/g, ''))
-    const valid = !isNaN(num) && num > 0
+    const valid = !isNaN(num) && num >= 0
     if (valid) setMarginTargetPct(num)
     else if (activeIsMarginPct) setMarginTargetPct(null)
     clearTimeout(marginPctTimer.current!)
@@ -175,7 +175,7 @@ export default function SummaryTable() {
 
   function commitMarginUsd(val: string, flush = false) {
     const num = parseFloat(val.replace(/,/g, ''))
-    const valid = !isNaN(num) && num > 0
+    const valid = !isNaN(num) && num >= 0
     const usd = valid ? displayToUsd(num) : 0
     if (valid) setMarginTargetUsd(usd)
     else if (activeIsMarginUsd) setMarginTargetUsd(null)
@@ -190,7 +190,7 @@ export default function SummaryTable() {
 
   function formatDisplayNum(val: string): string {
     const num = parseFloat(val.replace(/,/g, ''))
-    return isNaN(num) || num <= 0 ? val
+    return isNaN(num) || num < 0 ? ''
       : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
