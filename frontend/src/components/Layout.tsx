@@ -19,8 +19,8 @@ export function PageNavTabs({ active }: { active: string }) {
   return (
     <div className="page-nav-tabs">
       {NAV_PAGES.map(page => {
-        const isActive = active === page.href ||
-          (active === '/portfolio/' && location.pathname.startsWith('/portfolio'))
+        const isActive = page.href === active ||
+          (page.href === '/portfolio/' && location.pathname.startsWith('/portfolio'))
         return (
           <Link
             key={page.href}

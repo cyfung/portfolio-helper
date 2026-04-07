@@ -3,31 +3,9 @@ import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   formatCurrency, formatQty, toDisplayCurrency,
   parseLetfAttr, formatSignedCurrency,
+  weightDiffCls, actionCls,
 } from '@/lib/portfolio-utils'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getRebalTotal(
-  rebalTargetUsd: number | null,
-  marginTargetPct: number | null,
-  stockGrossUsd: number
-): number {
-  if (marginTargetPct && marginTargetPct > 0) return stockGrossUsd / (1 - marginTargetPct / 100)
-  if (rebalTargetUsd && rebalTargetUsd > 0) return rebalTargetUsd
-  return stockGrossUsd
-}
-
-function weightDiffCls(diff: number): string {
-  const abs = Math.abs(diff)
-  if (abs > 1.0) return diff > 0 ? 'alert-over' : 'alert-under'
-  if (abs > 0.2) return 'warning'
-  return 'good'
-}
-
-function actionCls(dollars: number | null): string {
-  if (dollars === null || Math.abs(dollars) <= 0.50) return 'action-neutral'
-  return dollars > 0 ? 'action-positive' : 'action-negative'
-}
+import { getRebalTotal } from '@/lib/rebalance'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +18,8 @@ export default function StockTable() {
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
-  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd)
+  const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
+  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd)
 
   // Index SSE data by symbol
   const liveBySymbol = new Map(
@@ -137,9 +116,10 @@ export default function StockTable() {
               const rebalQty = (rebalDollars !== null && markPrice && markPrice > 0 && fxRate)
                 ? rebalDollars / (markPrice * fxRate) : null
 
-              // Alloc
+              // Alloc (server only sends allocDollars; compute qty client-side)
               const allocDollars = alloc?.allocDollars ?? null
-              const allocQty = alloc?.allocQty ?? null
+              const allocQty = (allocDollars !== null && markPrice && markPrice > 0 && fxRate)
+                ? allocDollars / (markPrice * fxRate) : null
 
               weightCells = (
                 <>

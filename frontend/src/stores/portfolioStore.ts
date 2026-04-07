@@ -37,6 +37,7 @@ interface PortfolioState {
   // ── Rebal/alloc targets ────────────────────────────────────────────────────
   rebalTargetUsd: number | null
   marginTargetPct: number | null
+  marginTargetUsd: number | null
   allocAddMode: AllocMode
   allocReduceMode: AllocMode
 
@@ -56,6 +57,7 @@ interface PortfolioState {
   setEditModeActive: (v: boolean) => void
   setRebalTargetUsd: (v: number | null) => void
   setMarginTargetPct: (v: number | null) => void
+  setMarginTargetUsd: (v: number | null) => void
   setAllocAddMode: (mode: AllocMode) => void
   setAllocReduceMode: (mode: AllocMode) => void
 }
@@ -111,6 +113,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   rebalTargetUsd: null,
   marginTargetPct: null,
+  marginTargetUsd: null,
   allocAddMode: (lsGet(LS_KEYS.allocAdd) as AllocMode | null) ?? 'PROPORTIONAL',
   allocReduceMode: (lsGet(LS_KEYS.allocReduce) as AllocMode | null) ?? 'PROPORTIONAL',
 
@@ -121,8 +124,9 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     const displayCurrency = (savedCurrency && appConfig.displayCurrencies.includes(savedCurrency))
       ? savedCurrency : appConfig.displayCurrencies[0] ?? 'USD'
 
-    const rebalTarget = config.marginTargetPct > 0 ? null : (config.rebalTargetUsd > 0 ? config.rebalTargetUsd : null)
+    const rebalTarget = config.rebalTargetUsd > 0 ? config.rebalTargetUsd : null
     const marginTarget = config.marginTargetPct > 0 ? config.marginTargetPct : null
+    const marginUsdTarget = config.marginTargetUsd > 0 ? config.marginTargetUsd : null
 
     // Alloc modes: prefer server-saved config over localStorage
     const allocAdd = config.allocAddMode as AllocMode
@@ -141,14 +145,11 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
       showStockDisplayCurrency: appConfig.showStockDisplayCurrency,
       rebalTargetUsd: rebalTarget,
       marginTargetPct: marginTarget,
+      marginTargetUsd: marginUsdTarget,
       allocAddMode: allocAdd,
       allocReduceMode: allocReduce,
-      // Reset SSE data on portfolio switch
-      lastStockDisplay: null,
-      lastCashDisplay: null,
-      lastPortfolioTotals: null,
-      lastIbkrData: null,
-      lastAllocData: null,
+      // SSE data is NOT reset here — useSSE reconnects on portfolioId change,
+      // which triggers fresh StateFlow emissions from the server immediately.
     })
   },
 
@@ -199,8 +200,9 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   setGroupViewActive: (v) => set({ groupViewActive: v }),
   setEditModeActive: (v) => set({ editModeActive: v }),
 
-  setRebalTargetUsd: (v) => set({ rebalTargetUsd: v, marginTargetPct: null }),
-  setMarginTargetPct: (v) => set({ marginTargetPct: v, rebalTargetUsd: null }),
+  setRebalTargetUsd: (v) => set({ rebalTargetUsd: v, marginTargetPct: null, marginTargetUsd: null }),
+  setMarginTargetPct: (v) => set({ marginTargetPct: v, rebalTargetUsd: null, marginTargetUsd: null }),
+  setMarginTargetUsd: (v) => set({ marginTargetUsd: v, rebalTargetUsd: null, marginTargetPct: null }),
 
   setAllocAddMode: (mode) => {
     localStorage.setItem(LS_KEYS.allocAdd, mode)

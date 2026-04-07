@@ -3,7 +3,7 @@ import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/component
 import { useScripts } from '@/hooks/useScripts'
 
 export default function LoanPage() {
-  useScripts(['/static/loan-calculator.js'])
+  useScripts(['/loan-calculator.js'])
 
   return (
     <div className="container">

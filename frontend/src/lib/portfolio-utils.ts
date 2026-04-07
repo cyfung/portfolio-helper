@@ -124,3 +124,17 @@ export function actionClass(dollars: number | null): string {
   if (dollars === null || dollars === 0) return 'action-neutral'
   return dollars > 0 ? 'action-buy' : 'action-sell'
 }
+
+// ── Stock/group table helpers ─────────────────────────────────────────────────
+
+export function weightDiffCls(diff: number): string {
+  const abs = Math.abs(diff)
+  if (abs > 1.0) return diff > 0 ? 'alert-over' : 'alert-under'
+  if (abs > 0.2) return 'warning'
+  return 'good'
+}
+
+export function actionCls(dollars: number | null): string {
+  if (dollars === null || Math.abs(dollars) <= 0.50) return 'action-neutral'
+  return dollars > 0 ? 'action-positive' : 'action-negative'
+}

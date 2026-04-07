@@ -32,7 +32,7 @@ export default function PortfolioViewer() {
   const displayCurrencies = appConfig?.displayCurrencies ?? ['USD']
 
   // ── TWS sync ──────────────────────────────────────────────────────────────
-  async function handleTwsSync() {
+  const handleTwsSync = useCallback(async () => {
     try {
       const r = await fetch(`/api/tws/snapshot?portfolio=${portfolioId}`)
       if (!r.ok) throw new Error(await r.text())
@@ -43,10 +43,10 @@ export default function PortfolioViewer() {
     } catch (e) {
       alert(`TWS sync failed: ${e}`)
     }
-  }
+  }, [portfolioId])
 
   // ── Save to backtest ───────────────────────────────────────────────────────
-  async function handleSaveToBacktest() {
+  const handleSaveToBacktest = useCallback(async () => {
     const { stocks } = store
     const tickers = stocks
       .filter(s => s.targetWeight > 0)
@@ -59,7 +59,7 @@ export default function PortfolioViewer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, config: { portfolios: [{ label: name, tickers, rebalanceStrategy: 'YEARLY' }] } }),
     })
-  }
+  }, [store, portfolioId])
 
   // ── After save callback ────────────────────────────────────────────────────
   const handleSaved = useCallback(() => {
@@ -238,9 +238,7 @@ export default function PortfolioViewer() {
           ) : (
             <>
               <StockTable />
-              <div id="group-table-container" style={{ display: groupViewActive ? 'block' : 'none' }}>
-                {groupViewActive && <GroupsView />}
-              </div>
+              {groupViewActive && <GroupsView />}
             </>
           )}
         </div>

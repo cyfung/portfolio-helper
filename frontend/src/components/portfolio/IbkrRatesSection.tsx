@@ -1,25 +1,14 @@
 // ── IbkrRatesSection.tsx — Port of IbkrRatesRenderer.kt + renderIbkrDisplay ──
 import { useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import { formatDisplayCurrency, formatTime } from '@/lib/portfolio-utils'
-
-// The actual server payload shape (from backup.js renderIbkrDisplay)
-interface IbkrData {
-  perCurrency: { currency: string; displayRateText: string }[]
-  currentDailyUsd: number
-  cheapestCcy: string | null
-  cheapestDailyUsd: number
-  savingsUsd: number
-  label: string
-  lastFetch?: number
-}
+import { formatDisplayCurrency, formatIbkrRate, formatTime } from '@/lib/portfolio-utils'
+import type { IbkrDisplayEvent } from '@/types/portfolio'
 
 export default function IbkrRatesSection() {
   const { lastIbkrData, portfolioId, fxRates, currentDisplayCurrency } = usePortfolioStore()
   const [reloading, setReloading] = useState(false)
 
-  // Cast to actual server shape
-  const data = lastIbkrData as unknown as IbkrData | null
+  const data = lastIbkrData as IbkrDisplayEvent | null
 
   const fmt = (usd: number) => formatDisplayCurrency(usd, fxRates, currentDisplayCurrency)
 
@@ -32,7 +21,12 @@ export default function IbkrRatesSection() {
     }
   }
 
-  const lastFetchMs = (lastIbkrData as { lastFetch?: number } | null)?.lastFetch ?? 0
+  const lastFetchMs = data?.lastFetch ?? 0
+  const showSavings = (data?.savingsUsd ?? 0) >= 0.005
+  const labelText = data?.label ?? ''
+  const labelMatch = labelText.match(/^([^(]+?)(?:\s*\((.+)\))?$/)
+  const labelBase = labelMatch?.[1]?.trim() ?? labelText
+  const labelAction = labelMatch?.[2] ?? null
 
   return (
     <div className="ibkr-rates-wrapper">
@@ -47,52 +41,43 @@ export default function IbkrRatesSection() {
                 {data.perCurrency.map(ci => (
                   <tr key={ci.currency}>
                     <td className="ibkr-rate-currency">{ci.currency}</td>
-                    <td className="ibkr-rate-value">{ci.displayRateText}</td>
+                    <td className="ibkr-rate-value">{formatIbkrRate(ci.rate)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            {(() => {
-              const showSavings = data.savingsUsd >= 0.005
-              const labelMatch = data.label?.match(/^([^(]+?)(?:\s*\((.+)\))?$/)
-              const labelBase = labelMatch?.[1]?.trim() ?? data.label
-              const labelAction = labelMatch?.[2] ?? null
-
-              return (
-                <table className="ibkr-interest-summary">
-                  <tbody>
-                    <tr>
-                      <td>Current Daily Interest</td>
-                      <td className="ibkr-value-muted">
-                        {data.currentDailyUsd > 0 ? fmt(data.currentDailyUsd) : '—'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        {data.cheapestCcy != null
-                          ? <>Cheapest <span>({data.cheapestCcy})</span></>
-                          : 'Cheapest'}
-                      </td>
-                      <td className="ibkr-value-muted">
-                        {data.cheapestCcy != null ? fmt(data.cheapestDailyUsd) : '—'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>{labelBase}</td>
-                      <td className={showSavings ? 'ibkr-rate-diff' : ''}>
-                        {showSavings ? fmt(data.savingsUsd) : '—'}
-                      </td>
-                    </tr>
-                    {labelAction && (
-                      <tr>
-                        <td colSpan={2} className="ibkr-action-hint">{labelAction}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )
-            })()}
+            <table className="ibkr-interest-summary">
+              <tbody>
+                <tr>
+                  <td>Current Daily Interest</td>
+                  <td className="ibkr-value-muted">
+                    {data.currentDailyUsd > 0 ? fmt(data.currentDailyUsd) : '—'}
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    {data.cheapestCcy != null
+                      ? <>Cheapest <span>({data.cheapestCcy})</span></>
+                      : 'Cheapest'}
+                  </td>
+                  <td className="ibkr-value-muted">
+                    {data.cheapestCcy != null ? fmt(data.cheapestDailyUsd) : '—'}
+                  </td>
+                </tr>
+                <tr>
+                  <td>{labelBase}</td>
+                  <td className={showSavings ? 'ibkr-rate-diff' : ''}>
+                    {showSavings ? fmt(data.savingsUsd) : '—'}
+                  </td>
+                </tr>
+                {labelAction && (
+                  <tr>
+                    <td colSpan={2} className="ibkr-action-hint">{labelAction}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </>
         )}
       </div>

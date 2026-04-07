@@ -2,29 +2,9 @@
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   parseGroupsAttr, formatCurrency, formatSignedCurrency, toDisplayCurrency,
+  weightDiffCls, actionCls,
 } from '@/lib/portfolio-utils'
-
-function getRebalTotal(
-  rebalTargetUsd: number | null,
-  marginTargetPct: number | null,
-  stockGrossUsd: number
-): number {
-  if (marginTargetPct && marginTargetPct > 0) return stockGrossUsd / (1 - marginTargetPct / 100)
-  if (rebalTargetUsd && rebalTargetUsd > 0) return rebalTargetUsd
-  return stockGrossUsd
-}
-
-function weightDiffCls(diff: number): string {
-  const abs = Math.abs(diff)
-  if (abs > 1.0) return diff > 0 ? 'alert-over' : 'alert-under'
-  if (abs > 0.2) return 'warning'
-  return 'good'
-}
-
-function actionCls(dollars: number | null): string {
-  if (dollars === null || Math.abs(dollars) <= 0.50) return 'action-neutral'
-  return dollars > 0 ? 'action-positive' : 'action-negative'
-}
+import { getRebalTotal } from '@/lib/rebalance'
 
 interface GroupEntry {
   mktVal: number
@@ -42,7 +22,8 @@ export default function GroupsView() {
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
-  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd)
+  const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
+  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd)
 
   const liveBySymbol = new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])

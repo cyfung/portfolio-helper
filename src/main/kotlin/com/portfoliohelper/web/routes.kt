@@ -180,6 +180,7 @@ private data class CashDto(
 private data class PortfolioConfigDto(
     val rebalTargetUsd: Double,
     val marginTargetPct: Double,
+    val marginTargetUsd: Double,
     val allocAddMode: String,
     val allocReduceMode: String,
     val virtualBalanceEnabled: Boolean,
@@ -331,6 +332,7 @@ fun Application.configureRouting() {
                 config = PortfolioConfigDto(
                     rebalTargetUsd = displayRebalTarget,
                     marginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0,
+                    marginTargetUsd = portfolioConf["marginTargetUsd"]?.toDoubleOrNull() ?: 0.0,
                     allocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL",
                     allocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL",
                     virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true",
@@ -617,8 +619,11 @@ fun Application.configureRouting() {
                         portfolioEntry.saveConfig(key, "")
                     } else {
                         portfolioEntry.saveConfig(key, body)
-                        if (key == "rebalTarget") portfolioEntry.saveConfig("marginTarget", "")
-                        else if (key == "marginTarget") portfolioEntry.saveConfig("rebalTarget", "")
+                        when (key) {
+                            "rebalTarget"     -> { portfolioEntry.saveConfig("marginTarget", ""); portfolioEntry.saveConfig("marginTargetUsd", "") }
+                            "marginTarget"    -> { portfolioEntry.saveConfig("rebalTarget", ""); portfolioEntry.saveConfig("marginTargetUsd", "") }
+                            "marginTargetUsd" -> { portfolioEntry.saveConfig("rebalTarget", ""); portfolioEntry.saveConfig("marginTarget", "") }
+                        }
                     }
                 } else {
                     // Batch JSON mode (from config page)

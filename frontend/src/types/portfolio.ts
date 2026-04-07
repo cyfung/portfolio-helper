@@ -25,6 +25,7 @@ export interface CashData {
 export interface PortfolioConfig {
   rebalTargetUsd: number
   marginTargetPct: number
+  marginTargetUsd: number
   allocAddMode: AllocMode
   allocReduceMode: AllocMode
   virtualBalanceEnabled: boolean
@@ -136,12 +137,16 @@ export interface IbkrDisplayEvent {
   portfolioId: string
   perCurrency: IbkrRateCurrency[]
   lastFetch: number
+  currentDailyUsd: number
+  cheapestCcy: string | null
+  cheapestDailyUsd: number
+  savingsUsd: number
+  label: string
 }
 
 export interface AllocStockItem {
   symbol: string
   allocDollars: number
-  allocQty: number
 }
 
 export interface AllocEvent {
