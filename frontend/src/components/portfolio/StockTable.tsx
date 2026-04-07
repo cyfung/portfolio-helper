@@ -88,9 +88,10 @@ export default function StockTable() {
             const fxRate = fxRates[stockCcy] ?? 1.0
 
             // Mark value (native currency)
+            const isAfterHours = live?.isMarketClosed ?? false
             const markStr = markPrice !== null ? formatCurrency(markPrice) : '—'
             const dayPct = live?.dayChangePct ?? null
-            const dayPctCls = dayPct === null ? '' : dayPct > 0 ? 'positive' : dayPct < 0 ? 'negative' : 'neutral'
+            const dayPctCls = `${dayPct === null ? '' : dayPct > 0 ? 'positive' : dayPct < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
             const dayPctStr = dayPct !== null
               ? `${dayPct >= 0 ? '+' : ''}${dayPct.toFixed(2)}%` : ''
 
@@ -99,7 +100,7 @@ export default function StockTable() {
 
             // Day change (CHG) in display currency
             const dayChStr = dayCh !== null ? fmtSigned(dayCh) : ''
-            const dayChCls = dayCh === null ? 'neutral' : dayCh > 0 ? 'positive' : dayCh < 0 ? 'negative' : 'neutral'
+            const dayChCls = `${dayCh === null ? 'neutral' : dayCh > 0 ? 'positive' : dayCh < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
 
             // Weight columns (only when stock gross known)
             let weightCells = null
@@ -132,13 +133,13 @@ export default function StockTable() {
                     </span>
                   </td>
                   <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>
-                    {rebalDollars !== null ? fmtSigned(rebalDollars) : ''}
+                    {rebalDollars !== null ? formatSignedCurrency(rebalDollars / fxRate) : ''}
                   </td>
                   <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>
                     {rebalQty !== null ? rebalQty.toFixed(2) : ''}
                   </td>
                   <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>
-                    {allocDollars !== null ? fmtSigned(allocDollars) : '—'}
+                    {allocDollars !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
                   </td>
                   <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>
                     {allocQty !== null ? allocQty.toFixed(2) : ''}

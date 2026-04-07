@@ -123,13 +123,8 @@ export interface PortfolioTotalsEvent {
 
 export interface IbkrRateCurrency {
   currency: string
-  marginBalance: number
-  rate: number
+  displayRateText: string
   dailyInterestUsd: number
-  cheapestDailyUsd?: number
-  cheapestCcy?: string | null
-  savingsUsd?: number
-  label?: string
 }
 
 export interface IbkrDisplayEvent {

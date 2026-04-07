@@ -7,7 +7,7 @@ export default function SummaryTable() {
   const store = usePortfolioStore()
   const {
     cash, fxRates, currentDisplayCurrency,
-    lastPortfolioTotals, lastCashDisplay,
+    lastPortfolioTotals, lastCashDisplay, lastStockDisplay,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     setRebalTargetUsd, setMarginTargetPct, setMarginTargetUsd,
     portfolioId,
@@ -70,6 +70,8 @@ export default function SummaryTable() {
   const dayChangePct = dayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
     ? (dayChangeUsd / prevDayUsd * 100) : null
   const dayChangeStr = dayChangeUsd !== null ? formatSignedCurrency(dayChangeUsd) : ''
+  const isAfterHours = (lastStockDisplay?.stocks ?? []).length > 0
+    && (lastStockDisplay?.stocks ?? []).every(s => s.isMarketClosed)
   const dayChangeColor = dayChangeUsd !== null && dayChangeUsd > 0
     ? 'text-green-500' : dayChangeUsd !== null && dayChangeUsd < 0 ? 'text-red-500' : ''
 
@@ -122,8 +124,9 @@ export default function SummaryTable() {
   const rebalPlaceholder     = underlyingUsd !== null
     ? formatUsdForInput(underlyingUsd)
     : stockGrossKnown ? formatUsdForInput(stockGrossUsd) : ''
-  const marginPctPlaceholder = impliedMarginPct > 0 ? impliedMarginPct.toFixed(2) : ''
-  const marginUsdPlaceholder = impliedMargin > 0 ? formatUsdForInput(impliedMargin) : ''
+  const targetImpliesNoMargin = underlyingUsd !== null && underlyingUsd <= equity
+  const marginPctPlaceholder = impliedMarginPct > 0 ? impliedMarginPct.toFixed(2) : (targetImpliesNoMargin ? '-' : '')
+  const marginUsdPlaceholder = impliedMargin > 0 ? formatUsdForInput(impliedMargin) : (targetImpliesNoMargin ? '-' : '')
 
   // ── Debounce timers (one per field) ──────────────────────────────────────
   const rebalTimer     = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -146,7 +149,7 @@ export default function SummaryTable() {
     clearTimeout(rebalTimer.current!)
     const post = () => {
       const v = valid ? String(displayToUsd(num)) : ''
-      fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=rebalTarget&value=${v}`, { method: 'POST' })
+      fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=rebalTarget`, { method: 'POST', body: v })
     }
     if (flush) post()
     else rebalTimer.current = setTimeout(post, 500)
@@ -160,7 +163,7 @@ export default function SummaryTable() {
     clearTimeout(marginPctTimer.current!)
     const post = () => {
       const v = valid ? String(num) : ''
-      fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=marginTarget&value=${v}`, { method: 'POST' })
+      fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=marginTarget`, { method: 'POST', body: v })
     }
     if (flush) post()
     else marginPctTimer.current = setTimeout(post, 500)
@@ -175,7 +178,7 @@ export default function SummaryTable() {
     clearTimeout(marginUsdTimer.current!)
     const post = () => {
       const v = valid ? String(usd) : ''
-      fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=marginTargetUsd&value=${v}`, { method: 'POST' })
+      fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=marginTargetUsd`, { method: 'POST', body: v })
     }
     if (flush) post()
     else marginUsdTimer.current = setTimeout(post, 500)
@@ -198,7 +201,7 @@ export default function SummaryTable() {
           <td>
             <span id="portfolio-total">{grandTotal}</span>
             {dayChangeStr && (
-              <div className={`summary-subvalue ${dayChangeColor}`} id="total-day-change">
+              <div className={`summary-subvalue ${dayChangeColor}${isAfterHours ? ' after-hours' : ''}`} id="total-day-change">
                 {dayChangeStr}
                 {dayChangePct !== null && ` (${dayChangePct >= 0 ? '+' : ''}${dayChangePct.toFixed(2)}%)`}
               </div>
@@ -293,7 +296,7 @@ export default function SummaryTable() {
               <td>
                 <div id="stock-gross-total">{stockGross}</div>
                 {stockDayChangeStr && (
-                  <div className={`summary-subvalue ${stockDayChangeColor}`} id="portfolio-day-change">
+                  <div className={`summary-subvalue ${stockDayChangeColor}${isAfterHours ? ' after-hours' : ''}`} id="portfolio-day-change">
                     {stockDayChangeStr}
                     {stockDayChangePct !== null && ` (${stockDayChangePct >= 0 ? '+' : ''}${stockDayChangePct.toFixed(2)}%)`}
                   </div>

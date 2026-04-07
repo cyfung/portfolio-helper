@@ -375,13 +375,15 @@ class RebalGaService(
         val marginUsd = cashSnap.marginUsd
         val rebalTargetUsd = cfg["rebalTarget"]?.toDoubleOrNull()
         val marginTargetPct = cfg["marginTarget"]?.toDoubleOrNull()
+        val marginTargetUsd = cfg["marginTargetUsd"]?.toDoubleOrNull()
         val allocAddMode = cfg["allocAddMode"] ?: "WATERFALL"
         val allocReduceMode = cfg["allocReduceMode"] ?: "PROPORTIONAL"
 
-        val ec = stockGrossUsd + marginUsd
+        val ec = stockGrossUsd + marginUsd  // equity (unleveraged base)
         val rebalTotal = when {
-            marginTargetPct != null -> (marginTargetPct / 100.0) * ec + stockGrossUsd + marginUsd
             rebalTargetUsd != null && rebalTargetUsd > 0 -> rebalTargetUsd
+            marginTargetPct != null && marginTargetPct > 0 -> ec * (1.0 + marginTargetPct / 100.0)
+            marginTargetUsd != null && marginTargetUsd > 0 -> ec + marginTargetUsd
             else -> stockGrossUsd + max(marginUsd, 0.0)
         }
 

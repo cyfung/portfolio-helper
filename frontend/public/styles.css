@@ -1368,11 +1368,18 @@ h1 {
 .display-currency-est { font-style: italic; }
 
 /* After-hours styling - gray mode (solid gray, default setting) */
-body.after-hours-gray .price.after-hours {
+.after-hours-gray .price.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 1;
 }
-body.after-hours-gray .price-change.after-hours {
+.after-hours-gray .price-change.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
+}
+.summary-subvalue.after-hours {
+    opacity: 0.75;
+}
+.after-hours-gray .summary-subvalue.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 1;
 }
@@ -3884,7 +3891,7 @@ td[id^="est-val-"].loaded {
 .mark-day-pct.after-hours {
     opacity: 0.75;
 }
-body.after-hours-gray .mark-day-pct.after-hours {
+.after-hours-gray .mark-day-pct.after-hours {
     color: var(--color-text-secondary) !important;
     background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent) !important;
     border-color: color-mix(in srgb, var(--color-text-secondary) 25%, transparent) !important;

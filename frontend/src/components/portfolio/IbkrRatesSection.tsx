@@ -1,7 +1,7 @@
 // ── IbkrRatesSection.tsx — Port of IbkrRatesRenderer.kt + renderIbkrDisplay ──
 import { useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import { formatDisplayCurrency, formatIbkrRate, formatTime } from '@/lib/portfolio-utils'
+import { formatDisplayCurrency, formatTime } from '@/lib/portfolio-utils'
 import type { IbkrDisplayEvent } from '@/types/portfolio'
 
 export default function IbkrRatesSection() {
@@ -41,7 +41,7 @@ export default function IbkrRatesSection() {
                 {data.perCurrency.map(ci => (
                   <tr key={ci.currency}>
                     <td className="ibkr-rate-currency">{ci.currency}</td>
-                    <td className="ibkr-rate-value">{formatIbkrRate(ci.rate)}</td>
+                    <td className="ibkr-rate-value">{ci.displayRateText}</td>
                   </tr>
                 ))}
               </tbody>

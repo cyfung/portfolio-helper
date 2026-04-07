@@ -16,7 +16,7 @@ export default function RebalanceControls() {
   } = usePortfolioStore()
 
   async function saveMode(key: string, value: string) {
-    await fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=${key}&value=${value}`, { method: 'POST' })
+    await fetch(`/api/portfolio-config/save?portfolio=${portfolioId}&key=${key}`, { method: 'POST', body: value })
   }
 
   return (
