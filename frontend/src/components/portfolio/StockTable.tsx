@@ -3,7 +3,7 @@ import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   formatCurrency, formatQty, toDisplayCurrency,
   parseLetfAttr, formatSignedCurrency,
-  weightDiffCls, actionCls,
+  weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
 import { getRebalTotal } from '@/lib/rebalance'
 
@@ -13,13 +13,13 @@ export default function StockTable() {
   const {
     stocks, fxRates, currentDisplayCurrency,
     lastStockDisplay, lastAllocData, lastPortfolioTotals,
-    rebalTargetUsd, marginTargetPct,
+    rebalTargetUsd, marginTargetPct, marginTargetUsd,
   } = usePortfolioStore()
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
   const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
-  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd)
+  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd, marginTargetUsd)
 
   // Index SSE data by symbol
   const liveBySymbol = new Map(
@@ -29,15 +29,15 @@ export default function StockTable() {
     (lastAllocData?.stocks ?? []).map(s => [s.symbol, s])
   )
 
-  const fmt = (usd: number) => {
-    const val = toDisplayCurrency(usd, fxRates, currentDisplayCurrency)
-    return formatCurrency(val)
-  }
+  const fmt = (usd: number) =>
+    hasFxRate(fxRates, currentDisplayCurrency)
+      ? formatCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      : '—'
 
-  const fmtSigned = (usd: number) => {
-    const val = toDisplayCurrency(usd, fxRates, currentDisplayCurrency)
-    return formatSignedCurrency(val)
-  }
+  const fmtSigned = (usd: number) =>
+    hasFxRate(fxRates, currentDisplayCurrency)
+      ? formatSignedCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      : '—'
 
   // Check if any stock has target weight > 0 (for rebal warning)
   const totalTargetWeight = stocks.reduce((sum, s) => sum + (s.targetWeight ?? 0), 0)
@@ -85,7 +85,7 @@ export default function StockTable() {
             const posVal = live?.positionValueUsd ?? null
             const dayCh = live?.dayChangeDollars ?? null
             const stockCcy = live?.currency ?? 'USD'
-            const fxRate = fxRates[stockCcy] ?? 1.0
+            const fxRate = fxRates[stockCcy] ?? null
 
             // Mark value (native currency)
             const isAfterHours = live?.isMarketClosed ?? false
@@ -133,13 +133,13 @@ export default function StockTable() {
                     </span>
                   </td>
                   <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>
-                    {rebalDollars !== null ? formatSignedCurrency(rebalDollars / fxRate) : ''}
+                    {rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '—'}
                   </td>
                   <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>
                     {rebalQty !== null ? rebalQty.toFixed(2) : ''}
                   </td>
                   <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>
-                    {allocDollars !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
+                    {allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
                   </td>
                   <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>
                     {allocQty !== null ? allocQty.toFixed(2) : ''}

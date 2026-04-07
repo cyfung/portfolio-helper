@@ -11,6 +11,10 @@ export function formatSignedCurrency(val: number): string {
   return (val >= 0 ? '+' : '') + formatCurrency(val)
 }
 
+export function hasFxRate(fxRates: Record<string, number>, currency: string): boolean {
+  return currency === 'USD' || (currency in fxRates && fxRates[currency] !== 0)
+}
+
 export function formatPct(val: number, decimals = 2): string {
   return val.toFixed(decimals) + '%'
 }

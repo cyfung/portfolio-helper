@@ -2,7 +2,7 @@
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   parseGroupsAttr, formatCurrency, formatSignedCurrency, toDisplayCurrency,
-  weightDiffCls, actionCls,
+  weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
 import { getRebalTotal } from '@/lib/rebalance'
 
@@ -17,13 +17,13 @@ export default function GroupsView() {
   const {
     stocks, fxRates, currentDisplayCurrency,
     lastStockDisplay, lastAllocData, lastPortfolioTotals,
-    rebalTargetUsd, marginTargetPct,
+    rebalTargetUsd, marginTargetPct, marginTargetUsd,
   } = usePortfolioStore()
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
   const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
-  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd)
+  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd, marginTargetUsd)
 
   const liveBySymbol = new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
@@ -32,8 +32,14 @@ export default function GroupsView() {
     (lastAllocData?.stocks ?? []).map(s => [s.symbol, s])
   )
 
-  const fmt = (usd: number) => formatCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
-  const fmtSigned = (usd: number) => formatSignedCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+  const fmt = (usd: number) =>
+    hasFxRate(fxRates, currentDisplayCurrency)
+      ? formatCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      : '—'
+  const fmtSigned = (usd: number) =>
+    hasFxRate(fxRates, currentDisplayCurrency)
+      ? formatSignedCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      : '—'
 
   // ── Build group map ──────────────────────────────────────────────────────
   const groupMap = new Map<string, GroupEntry>()
@@ -46,9 +52,9 @@ export default function GroupsView() {
     const targetWeight = stock.targetWeight ?? 0
     const qty = stock.amount
     const stockCcy = live?.currency ?? 'USD'
-    const fxRate = fxRates[stockCcy] ?? 1.0
+    const fxRate = fxRates[stockCcy] ?? null
     const mktValUsd = live?.positionValueUsd ?? null
-    const prevMktValUsd = live?.closePrice != null
+    const prevMktValUsd = live?.closePrice != null && fxRate !== null
       ? live.closePrice * qty * fxRate : null
 
     for (const { multiplier, name } of groupEntries) {

@@ -1,7 +1,7 @@
 // ── SummaryTable.tsx — Port of buildSummaryRows from PortfolioRenderer.kt ────
 import { useRef, useState, useEffect } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import { formatCurrency, formatDisplayCurrency, formatSignedCurrency } from '@/lib/portfolio-utils'
+import { formatCurrency, formatDisplayCurrency, formatSignedCurrency, hasFxRate } from '@/lib/portfolio-utils'
 
 export default function SummaryTable() {
   const store = usePortfolioStore()
@@ -31,6 +31,7 @@ export default function SummaryTable() {
 
   function formatUsdForInput(usd: number | null): string {
     if (usd === null || usd <= 0) return ''
+    if (!hasFxRate(fxRates, currentDisplayCurrency)) return ''
     return usdToDisplay(usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
@@ -57,10 +58,13 @@ export default function SummaryTable() {
       setMarginPctInput('')
       setMarginUsdInput('')
     }
-  }, [rebalTargetUsd, marginTargetPct, marginTargetUsd, currentDisplayCurrency])
+  }, [rebalTargetUsd, marginTargetPct, marginTargetUsd, currentDisplayCurrency, fxRates[currentDisplayCurrency]])
 
   // ── Formatted display values ──────────────────────────────────────────────
-  const fmt = (usd: number) => formatDisplayCurrency(usd, fxRates, currentDisplayCurrency)
+  const fmt = (usd: number) =>
+    hasFxRate(fxRates, currentDisplayCurrency)
+      ? formatDisplayCurrency(usd, fxRates, currentDisplayCurrency)
+      : '—'
 
   const grandTotal = lastPortfolioTotals?.grandTotalKnown
     ? fmt(lastPortfolioTotals.grandTotalUsd) : '—'
