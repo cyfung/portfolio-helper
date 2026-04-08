@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type {
   PortfolioData, PortfolioOption, StockData, CashData, PortfolioConfig, AppConfig,
   StockDisplayEvent, CashDisplayEvent, PortfolioTotalsEvent,
-  IbkrDisplayEvent, AllocEvent, AllocMode, SseStatus,
+  IbkrDisplayEvent, GroupAllocEvent, AllocMode, SseStatus,
 } from '@/types/portfolio'
 
 interface PortfolioState {
@@ -22,7 +22,7 @@ interface PortfolioState {
   lastCashDisplay: CashDisplayEvent | null
   lastPortfolioTotals: PortfolioTotalsEvent | null
   lastIbkrData: IbkrDisplayEvent | null
-  lastAllocData: AllocEvent | null
+  lastGroupAllocData: GroupAllocEvent | null
 
   // ── UI state (some persisted to localStorage) ──────────────────────────────
   sseStatus: SseStatus
@@ -48,7 +48,7 @@ interface PortfolioState {
   setCashDisplay: (event: CashDisplayEvent) => void
   setPortfolioTotals: (event: PortfolioTotalsEvent) => void
   setIbkrData: (event: IbkrDisplayEvent) => void
-  setAllocData: (event: AllocEvent) => void
+  setGroupAllocData: (event: GroupAllocEvent) => void
   setSseStatus: (status: SseStatus) => void
   setDisplayCurrency: (currency: string) => void
   setMoreInfoVisible: (v: boolean) => void
@@ -100,7 +100,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   lastCashDisplay: null,
   lastPortfolioTotals: null,
   lastIbkrData: null,
-  lastAllocData: null,
+  lastGroupAllocData: null,
 
   sseStatus: 'connecting',
   currentDisplayCurrency: lsGet(LS_KEYS.currency) ?? 'USD',
@@ -175,9 +175,9 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     set({ lastIbkrData: event })
   },
 
-  setAllocData: (event) => {
+  setGroupAllocData: (event) => {
     if (event.portfolioId !== get().portfolioId) return
-    set({ lastAllocData: event })
+    set({ lastGroupAllocData: event })
   },
 
   setSseStatus: (status) => set({ sseStatus: status }),

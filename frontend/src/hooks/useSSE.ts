@@ -1,7 +1,7 @@
 // ── useSSE.ts — Port of sse.js ────────────────────────────────────────────────
 import { useEffect, useRef } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import type { AllocEvent } from '@/types/portfolio'
+import type { GroupAllocEvent } from '@/types/portfolio'
 
 const SSE_URL = '/api/prices/stream'
 const DISCONNECT_RELOAD_MS = 5 * 60 * 1000  // 5 minutes
@@ -10,7 +10,7 @@ export function useSSE() {
   const {
     portfolioId,
     setFxRates, setStockDisplay, setCashDisplay,
-    setPortfolioTotals, setIbkrData, setAllocData, setSseStatus,
+    setPortfolioTotals, setIbkrData, setGroupAllocData, setSseStatus,
   } = usePortfolioStore()
 
   const esRef = useRef<EventSource | null>(null)
@@ -74,9 +74,9 @@ export function useSSE() {
             break
           case 'rebal-alloc': {
             // Server sends { perSymbolAllocUsd: { "AAPL": 1234.56, ... } }
-            // Transform to AllocEvent with stocks array
+            // This is the GA-computed group alloc — transform to GroupAllocEvent
             const raw = data as { type: 'rebal-alloc'; portfolioId: string; perSymbolAllocUsd: Record<string, number> }
-            const transformed: AllocEvent = {
+            const transformed: GroupAllocEvent = {
               type: 'rebal-alloc',
               portfolioId: raw.portfolioId,
               stocks: Object.entries(raw.perSymbolAllocUsd ?? {}).map(([symbol, allocDollars]) => ({
@@ -84,7 +84,7 @@ export function useSSE() {
                 allocDollars,
               })),
             }
-            setAllocData(transformed)
+            setGroupAllocData(transformed)
             break
           }
         }
@@ -116,5 +116,5 @@ export function useSSE() {
       window.removeEventListener('pagehide', close)
       window.removeEventListener('beforeunload', close)
     }
-  }, [portfolioId, setFxRates, setStockDisplay, setCashDisplay, setPortfolioTotals, setIbkrData, setAllocData, setSseStatus])
+  }, [portfolioId, setFxRates, setStockDisplay, setCashDisplay, setPortfolioTotals, setIbkrData, setGroupAllocData, setSseStatus])
 }

@@ -235,11 +235,10 @@ export default function PortfolioViewer() {
           <RebalanceControls />
           {editModeActive ? (
             <EditMode saveKey={saveKey} onSaved={handleSaved} />
+          ) : groupViewActive ? (
+            <GroupsView />
           ) : (
-            <>
-              <StockTable />
-              {groupViewActive && <GroupsView />}
-            </>
+            <StockTable />
           )}
         </div>
 

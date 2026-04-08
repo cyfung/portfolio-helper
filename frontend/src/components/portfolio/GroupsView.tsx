@@ -16,7 +16,7 @@ interface GroupEntry {
 export default function GroupsView() {
   const {
     stocks, fxRates, currentDisplayCurrency,
-    lastStockDisplay, lastAllocData, lastPortfolioTotals,
+    lastStockDisplay, lastGroupAllocData, lastPortfolioTotals,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
   } = usePortfolioStore()
 
@@ -29,7 +29,7 @@ export default function GroupsView() {
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
   )
   const allocBySymbol = new Map(
-    (lastAllocData?.stocks ?? []).map(s => [s.symbol, s])
+    (lastGroupAllocData?.stocks ?? []).map(s => [s.symbol, s])
   )
 
   const fmt = (usd: number) =>

@@ -5,15 +5,16 @@ import {
   parseLetfAttr, formatSignedCurrency,
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
-import { getRebalTotal } from '@/lib/rebalance'
+import { getRebalTotal, computeDisplay } from '@/lib/rebalance'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function StockTable() {
   const {
     stocks, fxRates, currentDisplayCurrency,
-    lastStockDisplay, lastAllocData, lastPortfolioTotals,
+    lastStockDisplay, lastGroupAllocData, lastPortfolioTotals,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
+    allocAddMode, allocReduceMode,
   } = usePortfolioStore()
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
@@ -21,13 +22,35 @@ export default function StockTable() {
   const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
   const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd, marginTargetUsd)
 
-  // Index SSE data by symbol
+  // Index SSE market data by symbol
   const liveBySymbol = new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
   )
-  const allocBySymbol = new Map(
-    (lastAllocData?.stocks ?? []).map(s => [s.symbol, s])
-  )
+
+  // For group portfolios: pass GA server alloc as serverAllocDollars so waterfall uses it
+  const hasGroups = stocks.some(s => s.groups)
+  const serverAllocDollars = hasGroups
+    ? Object.fromEntries((lastGroupAllocData?.stocks ?? []).map(s => [s.symbol, s.allocDollars]))
+    : undefined
+
+  // Client-side alloc computation for all modes (matches original display-worker.js behaviour)
+  const computedAlloc = (stockGrossKnown && stockGrossUsd > 0)
+    ? computeDisplay(
+        stocks.map(s => ({
+          symbol: s.label,
+          qty: s.amount,
+          targetWeight: s.targetWeight ?? 0,
+          positionValueUsd: liveBySymbol.get(s.label)?.positionValueUsd ?? 0,
+        })),
+        rebalTargetUsd,
+        marginTargetPct,
+        allocAddMode,
+        allocReduceMode,
+        stockGrossUsd,
+        marginUsd,
+        serverAllocDollars,
+      )
+    : null
 
   const fmt = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
@@ -73,7 +96,6 @@ export default function StockTable() {
           {stocks.map(stock => {
             const sym = stock.label
             const live = liveBySymbol.get(sym) ?? null
-            const alloc = allocBySymbol.get(sym) ?? null
             const targetWeight = stock.targetWeight ?? 0
 
             // ── Computed values ──────────────────────────────────────────
@@ -128,8 +150,8 @@ export default function StockTable() {
               const rebalQty = (rebalDollars !== null && markPrice && markPrice > 0 && fxRate)
                 ? rebalDollars / (markPrice * fxRate) : null
 
-              // Alloc (server only sends allocDollars; compute qty client-side)
-              const allocDollars = alloc?.allocDollars ?? null
+                  // Alloc: client-side computed for all modes
+              const allocDollars = computedAlloc?.allocDollars[sym] ?? null
               const allocQty = (allocDollars !== null && markPrice && markPrice > 0 && fxRate)
                 ? allocDollars / (markPrice * fxRate) : null
 

@@ -139,15 +139,16 @@ export interface IbkrDisplayEvent {
   label: string
 }
 
-export interface AllocStockItem {
+export interface GroupAllocItem {
   symbol: string
   allocDollars: number
 }
 
-export interface AllocEvent {
+/** SSE event sent by RebalGaService — contains server-computed (GA) alloc for GROUP portfolios only */
+export interface GroupAllocEvent {
   type: 'rebal-alloc'
   portfolioId: string
-  stocks: AllocStockItem[]
+  stocks: GroupAllocItem[]
 }
 
 export type SseEvent =
@@ -156,7 +157,7 @@ export type SseEvent =
   | CashDisplayEvent
   | PortfolioTotalsEvent
   | IbkrDisplayEvent
-  | AllocEvent
+  | GroupAllocEvent
   | { type: 'reload' }
 
 export type AllocMode =

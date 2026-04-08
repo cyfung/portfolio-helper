@@ -55,6 +55,45 @@ export function getRebalTotal(
 
 // ── Allocation strategies ─────────────────────────────────────────────────────
 
+function computeWaterfall(
+  eligible: StockForCompute[],
+  totalStockValue: number,
+  delta: number
+): Record<string, number> {
+  const alloc: Record<string, number> = {}
+  for (const s of eligible) alloc[s.symbol] = 0
+
+  const finalTotal = totalStockValue + delta
+  const sign = delta >= 0 ? 1 : -1
+
+  const currentDev: Record<string, number> = {}
+  for (const s of eligible)
+    currentDev[s.symbol] = (s.positionValueUsd / finalTotal) - (s.targetWeight / 100)
+
+  const sorted = [...eligible].sort((a, b) => sign * (currentDev[a.symbol] - currentDev[b.symbol]))
+  let remaining = Math.abs(delta)
+
+  for (let i = 0; i < sorted.length && remaining > 0; i++) {
+    const groupDev = currentDev[sorted[0].symbol]
+    const nextDev = i + 1 < sorted.length ? currentDev[sorted[i + 1].symbol] : sign * Infinity
+    const groupSize = i + 1
+    const costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize
+
+    if (remaining >= costToLevel) {
+      for (let j = 0; j <= i; j++) {
+        alloc[sorted[j].symbol] += (nextDev - groupDev) * finalTotal
+        currentDev[sorted[j].symbol] = nextDev
+      }
+      remaining -= costToLevel
+    } else {
+      const perStock = remaining / groupSize
+      for (let j = 0; j <= i; j++) alloc[sorted[j].symbol] += perStock * sign
+      remaining = 0
+    }
+  }
+  return alloc
+}
+
 function applyProportionalSpillover(
   alloc: Record<string, number>,
   eligible: StockForCompute[],
@@ -178,8 +217,10 @@ export function computeDisplay(
 
     let rawAlloc: Record<string, number> = {}
 
-    if (mode === 'WATERFALL' && serverAllocDollars) {
-      rawAlloc = { ...serverAllocDollars }
+    if (mode === 'WATERFALL') {
+      // Group portfolios: use GA result from server SSE; normal portfolios: compute client-side
+      if (serverAllocDollars) rawAlloc = { ...serverAllocDollars }
+      else rawAlloc = computeWaterfall(eligible, stockGross, delta)
     } else if (mode === 'UNDERVALUED_PRIORITY') {
       rawAlloc = computeUndervalueFirst(eligible, stockGross, delta)
     } else if (mode === 'CURRENT_WEIGHT') {
