@@ -11,6 +11,8 @@ import io.ktor.server.html.*
 import kotlinx.html.*
 import kotlinx.serialization.Serializable
 
+private const val MONEY_SYMBOL = "\uD83D\uDCB0"
+
 @Serializable
 private data class PortfolioOption(val slug: String, val name: String, val seqOrder: Double)
 
@@ -455,9 +457,9 @@ private fun FlowContent.buildStockTable(
                     +"Weight "
                     span(classes = "th-sub") { +"Cur / Tgt / Dev" }
                 }
-                th(classes = "rebal-column") { +"Rebal" }
+                th(classes = "rebal-column") { +"Rebal$MONEY_SYMBOL" }
                 th(classes = "rebal-column col-moreinfo") { +"Rebal Qty" }
-                th(classes = "alloc-column") { +"Alloc" }
+                th(classes = "alloc-column") { +"Alloc$MONEY_SYMBOL" }
                 th(classes = "alloc-column col-moreinfo") { +"Alloc Qty" }
             }
         }
