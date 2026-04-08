@@ -126,7 +126,7 @@ class StockDisplayService(
         }
 
         val stockGrossUsd = work.sumOf { it.positionValueUsd ?: 0.0 }
-        val stockGrossKnown = baseStocks.isEmpty() || work.any { it.positionValueUsd != null }
+        val stockGrossKnown = baseStocks.isEmpty() || work.all { it.positionValueUsd != null }
 
         // Day change: only include stocks whose session has started today
         var dayMarkTotal = 0.0

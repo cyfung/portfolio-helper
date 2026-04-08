@@ -66,12 +66,13 @@ export default function SummaryTable() {
       ? formatDisplayCurrency(usd, fxRates, currentDisplayCurrency)
       : '—'
 
-  const grandTotal = lastPortfolioTotals?.grandTotalKnown
-    ? fmt(lastPortfolioTotals.grandTotalUsd) : '—'
+  const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
+  const grandTotalKnown = !!(lastPortfolioTotals?.grandTotalKnown && stockGrossKnown)
+  const grandTotal = grandTotalKnown ? fmt(lastPortfolioTotals!.grandTotalUsd) : '—'
 
-  const dayChangeUsd = lastPortfolioTotals?.dayChangeUsd ?? null
+  const dayChangeUsd = grandTotalKnown ? (lastPortfolioTotals?.dayChangeUsd ?? null) : null
   const prevDayUsd = lastPortfolioTotals?.prevDayUsd ?? null
-  const dayChangePct = dayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
+  const dayChangePct = grandTotalKnown && dayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
     ? (dayChangeUsd / prevDayUsd * 100) : null
   const dayChangeStr = dayChangeUsd !== null ? formatSignedCurrency(dayChangeUsd) : ''
   const isAfterHours = (lastStockDisplay?.stocks ?? []).length > 0
@@ -87,8 +88,8 @@ export default function SummaryTable() {
   const stockGross = lastPortfolioTotals?.stockGrossKnown
     ? fmt(stockGrossUsd) : '—'
 
-  const stockDayChangeUsd = lastPortfolioTotals?.dayChangeUsd ?? null
-  const stockDayChangePct = stockDayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
+  const stockDayChangeUsd = stockGrossKnown ? (lastPortfolioTotals?.dayChangeUsd ?? null) : null
+  const stockDayChangePct = stockGrossKnown && stockDayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
     ? (stockDayChangeUsd / prevDayUsd * 100) : null
   const stockDayChangeStr = stockDayChangeUsd !== null ? formatSignedCurrency(stockDayChangeUsd) : ''
   const stockDayChangeColor = stockDayChangeUsd !== null && stockDayChangeUsd > 0
@@ -107,7 +108,6 @@ export default function SummaryTable() {
   // ── Single underlying rebal target; all placeholders derive from it ───────
   // equity = stocks − current margin debt (the unlevered base)
   const equity = stockGrossUsd - absMargin
-  const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
 
   const underlyingUsd: number | null = (() => {
     if (!stockGrossKnown) return null
@@ -204,12 +204,11 @@ export default function SummaryTable() {
           <td /><td /><td />
           <td>
             <span id="portfolio-total">{grandTotal}</span>
-            {dayChangeStr && (
-              <div className={`summary-subvalue ${dayChangeColor}${isAfterHours ? ' after-hours' : ''}`} id="total-day-change">
-                {dayChangeStr}
-                {dayChangePct !== null && ` (${dayChangePct >= 0 ? '+' : ''}${dayChangePct.toFixed(2)}%)`}
-              </div>
-            )}
+            <div className={`summary-subvalue ${grandTotalKnown && dayChangeStr ? dayChangeColor : ''}${isAfterHours ? ' after-hours' : ''}`} id="total-day-change">
+              {grandTotalKnown && dayChangeStr
+                ? <>{dayChangeStr}{dayChangePct !== null && ` (${dayChangePct >= 0 ? '+' : ''}${dayChangePct.toFixed(2)}%)`}</>
+                : '— (—)'}
+            </div>
           </td>
         </tr>
 
@@ -299,12 +298,11 @@ export default function SummaryTable() {
               <td /><td /><td />
               <td>
                 <div id="stock-gross-total">{stockGross}</div>
-                {stockDayChangeStr && (
-                  <div className={`summary-subvalue ${stockDayChangeColor}${isAfterHours ? ' after-hours' : ''}`} id="portfolio-day-change">
-                    {stockDayChangeStr}
-                    {stockDayChangePct !== null && ` (${stockDayChangePct >= 0 ? '+' : ''}${stockDayChangePct.toFixed(2)}%)`}
-                  </div>
-                )}
+                <div className={`summary-subvalue ${stockGrossKnown && stockDayChangeStr ? stockDayChangeColor : ''}${isAfterHours ? ' after-hours' : ''}`} id="portfolio-day-change">
+                  {stockGrossKnown && stockDayChangeStr
+                    ? <>{stockDayChangeStr}{stockDayChangePct !== null && ` (${stockDayChangePct >= 0 ? '+' : ''}${stockDayChangePct.toFixed(2)}%)`}</>
+                    : '— (—)'}
+                </div>
               </td>
             </tr>
           </>

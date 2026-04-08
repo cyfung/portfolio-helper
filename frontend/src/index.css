@@ -1196,7 +1196,7 @@ h1 {
     text-align: right;
     font-family: var(--font-family-mono);
     font-variant-numeric: tabular-nums;
-    color: var(--color-text-primary);
+    color: var(--color-text-secondary);
 }
 
 .portfolio-cash-table .cash-raw-col {

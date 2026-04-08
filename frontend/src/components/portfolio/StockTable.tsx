@@ -137,7 +137,7 @@ export default function StockTable() {
 
             // Weight columns (only when stock gross known)
             let weightCells = null
-            if (stockGrossKnown && stockGrossUsd > 0) {
+            if (stockGrossKnown) {
               const curWeight = posVal !== null ? (posVal / stockGrossUsd) * 100 : 0
               const weightDiff = curWeight - targetWeight
               const diffCls = weightDiffCls(weightDiff)
