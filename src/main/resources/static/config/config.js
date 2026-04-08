@@ -12,7 +12,7 @@ const GLOBAL_DEFAULTS = {
     updateCheckInterval: '86400'
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+(() => {
     initThemeToggle();
     initUpdates();
     initPairing();
@@ -216,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showStatus('Error: ' + err.message, 'error');
         }
     });
-});
+})();
 
 async function refreshPairingUI() {
     await loadPairedDevices();

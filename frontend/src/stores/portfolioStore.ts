@@ -78,6 +78,7 @@ function lsGet(key: string): string | null {
 const DEFAULT_CONFIG: PortfolioConfig = {
   rebalTargetUsd: 0,
   marginTargetPct: 0,
+  marginTargetUsd: 0,
   allocAddMode: 'PROPORTIONAL',
   allocReduceMode: 'PROPORTIONAL',
   virtualBalanceEnabled: false,

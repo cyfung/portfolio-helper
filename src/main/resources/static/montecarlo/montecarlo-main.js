@@ -3,7 +3,7 @@
 //   theme.js → backtest-blocks.js → backtest-saved.js →
 //   montecarlo-chart.js → montecarlo-run.js → montecarlo-main.js
 
-document.addEventListener('DOMContentLoaded', async () => {
+(async () => {
     initThemeToggle();
 
     // Initialise all 3 portfolio blocks (reuse backtest-blocks.js)
@@ -36,4 +36,4 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (i < 3) loadPortfolioIntoBlock(i, p, p.label || '');
         });
     } catch (e) { console.error('[mc-main] settings restore failed:', e); }
-});
+})();

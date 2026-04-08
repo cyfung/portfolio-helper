@@ -3,37 +3,35 @@
 //   theme.js → backtest-blocks.js → backtest-saved.js →
 //   backtest-chart.js → backtest-run.js → backtest-main.js
 
-document.addEventListener('DOMContentLoaded', () => {
-    initThemeToggle();
+initThemeToggle();
 
-    // Initialise all 3 portfolio blocks
-    [0, 1, 2].forEach(i => initBlock(i));
+// Initialise all 3 portfolio blocks
+[0, 1, 2].forEach(i => initBlock(i));
 
-    // Load saved portfolios into the bar
-    refreshSavedPortfolios();
+// Load saved portfolios into the bar
+refreshSavedPortfolios();
 
-    // Restore last used settings from server
-    (async function restoreSettings() {
-        try {
-            const res = await fetch('/api/backtest/settings');
-            if (!res.ok) return;
-            const req = await res.json();
-            if (!req.portfolios) return;
+// Restore last used settings from server
+(async function restoreSettings() {
+    try {
+        const res = await fetch('/api/backtest/settings');
+        if (!res.ok) return;
+        const req = await res.json();
+        if (!req.portfolios) return;
 
-            if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
-            if (req.toDate)   document.getElementById('to-date').value   = req.toDate;
-            updateDateClearBtns();
+        if (req.fromDate) document.getElementById('from-date').value = req.fromDate;
+        if (req.toDate)   document.getElementById('to-date').value   = req.toDate;
+        updateDateClearBtns();
 
-            req.portfolios.forEach((p, i) => {
-                if (i >= 3) return;
-                loadPortfolioIntoBlock(i, p, p.label || '');
-            });
-        } catch (e) { console.error('[backtest-main] settings restore failed:', e); }
-    })();
+        req.portfolios.forEach((p, i) => {
+            if (i >= 3) return;
+            loadPortfolioIntoBlock(i, p, p.label || '');
+        });
+    } catch (e) { console.error('[backtest-main] settings restore failed:', e); }
+})();
 
-    // Wire up run button, date selectors, import/export
-    initRunButton();
-    initDateQuickSelectors();
-    initDateClearBtns();
-    initImportExport();
-});
+// Wire up run button, date selectors, import/export
+initRunButton();
+initDateQuickSelectors();
+initDateClearBtns();
+initImportExport();

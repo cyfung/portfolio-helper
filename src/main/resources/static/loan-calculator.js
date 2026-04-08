@@ -279,7 +279,7 @@ function addCashflowRow() {
     container.appendChild(row);
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+(function() {
     initThemeToggle();
 
     renderHistory().then(function() {
@@ -331,4 +331,4 @@ document.addEventListener('DOMContentLoaded', function() {
             calculate();
         }
     });
-});
+})();
