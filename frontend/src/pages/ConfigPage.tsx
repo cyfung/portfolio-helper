@@ -254,6 +254,7 @@ function DevicesList() {
 
 export default function ConfigPage() {
   const [cfg, setCfg]               = useState<ConfigValues>({})
+  const [loaded, setLoaded]         = useState(false)
   const [portfolios, setPortfolios] = useState<PortfolioRow[]>([])
   const [status, setStatus]         = useState({ msg: '', type: '' })
   const [updateStatus, setUpdateStatus] = useState({ msg: '', type: '' })
@@ -277,6 +278,7 @@ export default function ConfigPage() {
       .then(r => r.json())
       .then((data: ConfigValues) => {
         setCfg(data)
+        setLoaded(true)
         setHasUpdate(data._hasUpdate === 'true')
         setLatestVersion(data._latestVersion ?? '')
         if (data._downloadPhase === 'DOWNLOADING') startDownloadPoll()
@@ -519,6 +521,11 @@ export default function ConfigPage() {
           </div>
         </ConfigSection>
 
+        {/* ── cfg-dependent sections (deferred until loaded) ───────────── */}
+        {!loaded ? (
+          <p className="config-env-override-note">Loading…</p>
+        ) : (<>
+
         {/* ── Display ─────────────────────────────────────────────────── */}
         <ConfigSection title="Display">
           <ConfigField label="P&L and Market Value in display currency" description="Convert per-stock P&L and Mkt Val columns to the selected display currency. Default: off (show in stock's native currency)." inputId="show-stock-display-currency">
@@ -746,6 +753,7 @@ export default function ConfigPage() {
             <div className={`config-status config-status-${status.type} visible`}>{status.msg}</div>
           )}
         </div>
+        </>)}
       </main>
     </div>
   )
