@@ -4,6 +4,8 @@ import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.util.appJson
 import kotlinx.coroutines.*
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.Serializable
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -95,7 +97,7 @@ object UpdateService {
 
     fun initialize(scope: CoroutineScope) {
         scope.launch {
-            delay(5_000)
+            delay(5.seconds)
             while (true) {
                 runCatching { checkForUpdate() }
                     .onFailure { logger.warn("Update check failed: ${it.message}") }
@@ -108,7 +110,7 @@ object UpdateService {
                             .onFailure { logger.warn("Auto-download failed: ${it.message}") }
                     }
                 }
-                delay(AppConfig.updateCheckIntervalMs)
+                delay(AppConfig.updateCheckIntervalMs.milliseconds)
             }
         }
     }
@@ -223,7 +225,7 @@ object UpdateService {
             val command = info.command().orElse(null)
             val args = info.arguments().map { it.toList() }.orElse(emptyList())
             if (command != null) {
-                ProcessBuilder(listOf(command) + args)
+                ProcessBuilder(listOf(command) + (args ?: emptyList()))
                     .also { it.inheritIO() }
                     .start()
             }

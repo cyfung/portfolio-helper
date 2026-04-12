@@ -149,7 +149,7 @@ object MonteCarloService {
                 pConfig to curves
             }
 
-        val PERCENTILES = listOf(5, 10, 25, 50, 75, 90, 95)
+        val percentiles = listOf(5, 10, 25, 50, 75, 90, 95)
         val numSims = request.numSimulations
 
         // ── Pass 1: run all simulations, record metrics ───────────────────────
@@ -178,7 +178,7 @@ object MonteCarloService {
 
         // ── Identify percentile sim indices (CAGR-sorted, for pass 2) ─────────
         // pctSimIndices[pi][ci][pctIdx] = simIdx
-        val pctIdxList = PERCENTILES.map { pct ->
+        val pctIdxList = percentiles.map { pct ->
             (pct.toDouble() / 100.0 * (numSims - 1)).toInt().coerceIn(0, numSims - 1)
         }
         val pctSimIndices = allMetrics.map { portfolioMetrics ->
@@ -209,7 +209,7 @@ object MonteCarloService {
         // ── Build final result ────────────────────────────────────────────────
         val portfolioResults = portfolioCurveConfigs.mapIndexed { pi, (pConfig, curves) ->
             val curveResults = curves.mapIndexed { ci, curveConfig ->
-                val percentilePaths = PERCENTILES.mapIndexed { pctIdx, pct ->
+                val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
                     val simIdx = pctSimIndices[pi][ci][pctIdx]
                     val path = fullPaths[simIdx]!!
                     val values = simulate(pConfig, curveConfig.mc, path)

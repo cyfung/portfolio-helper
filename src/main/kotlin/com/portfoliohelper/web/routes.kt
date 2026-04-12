@@ -120,11 +120,14 @@ private suspend fun ApplicationCall.respondApiError(
 )
 
 private fun String.toSlug() = lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-private fun JsonObject.parseSlug() =
-    this["name"]?.jsonPrimitive?.contentOrNull?.trim()
-        ?.takeIf { it.isNotBlank() }?.toSlug()?.takeIf { it.isNotBlank() }
 private fun JsonObject.parseDisplayName() =
     this["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() }
+private suspend fun ApplicationCall.receiveDisplayNameAndSlug(): Pair<String, String>? {
+    val json = Json.parseToJsonElement(receiveText()).jsonObject
+    val displayName = json.parseDisplayName() ?: return null
+    val slug = displayName.toSlug().takeIf { it.isNotBlank() } ?: return null
+    return displayName to slug
+}
 private fun JsonArray.parseCashEntries() = mapNotNull { el ->
     val obj = el.jsonObject
     val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -299,7 +302,7 @@ fun Application.configureRouting() {
             val privacyScalePct = AppConfig.privacyScalePct
 
             fun scaleQty(q: Double) =
-                if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0).toDouble() else q
+                if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0) else q
 
             val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
             val displayRebalTarget =
@@ -308,10 +311,10 @@ fun Application.configureRouting() {
 
             val displayCurrencies: List<String> = buildList {
                 add("USD")
-                all.flatMap { it.getCash() }
+                all.asSequence().flatMap { it.getCash() }
                     .map { it.currency.uppercase() }
                     .distinct().filter { it != "P" && it != "USD" }
-                    .sorted().forEach { add(it) }
+                    .sorted().toList().forEach { add(it) }
             }
 
             val updateInfo = UpdateService.getInfo()
@@ -643,10 +646,8 @@ fun Application.configureRouting() {
         // Create a new portfolio
         post("/api/portfolio/create") {
             try {
-                val body = call.receiveText()
-                val json = Json.parseToJsonElement(body).jsonObject
-                val displayName = json.parseDisplayName() ?: return@post call.respond(HttpStatusCode.BadRequest)
-                val slug = displayName.toSlug().takeIf { it.isNotBlank() } ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val (displayName, slug) = call.receiveDisplayNameAndSlug()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
                 val portfolio = try {
                     PortfolioMasterService.create(slug, displayName)
                 } catch (e: IllegalArgumentException) {
@@ -669,10 +670,8 @@ fun Application.configureRouting() {
             try {
                 val portfolio = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                     ?: return@post call.respond(HttpStatusCode.NotFound)
-                val body = call.receiveText()
-                val json = Json.parseToJsonElement(body).jsonObject
-                val newName = json.parseDisplayName() ?: return@post call.respond(HttpStatusCode.BadRequest)
-                val newSlug = newName.toSlug().takeIf { it.isNotBlank() } ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val (newName, newSlug) = call.receiveDisplayNameAndSlug()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
                 try {
                     PortfolioMasterService.rename(portfolio, newSlug, newName)
                 } catch (e: IllegalArgumentException) {
@@ -952,7 +951,7 @@ fun Application.configureRouting() {
             }
             call.respondText("""{"status":"applying"}""", ContentType.Application.Json)
             GlobalScope.launch(Dispatchers.IO) {
-                delay(500)
+                delay(500.milliseconds)
                 UpdateService.applyUpdate()
             }
         }
@@ -960,7 +959,7 @@ fun Application.configureRouting() {
         post("/api/admin/restart") {
             call.respondText("""{"status":"restarting"}""", ContentType.Application.Json)
             GlobalScope.launch(Dispatchers.IO) {
-                delay(500)
+                delay(500.milliseconds)
                 UpdateService.relaunchSelf()
             }
         }
