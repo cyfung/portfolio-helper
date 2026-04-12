@@ -1,5 +1,6 @@
 package com.portfoliohelper.web
 
+import com.portfoliohelper.APP_VERSION
 import com.portfoliohelper.AppConfig
 import com.portfoliohelper.service.*
 import com.portfoliohelper.service.UpdateService.toResponseJson
@@ -340,7 +341,7 @@ fun Application.configureRouting() {
                     dividendStartDate = portfolioConf["dividendStartDate"] ?: ""
                 ),
                 appConfig = AppConfigDto(
-                    version = appVersion,
+                    version = APP_VERSION,
                     showStockDisplayCurrency = AppConfig.showStockDisplayCurrency,
                     afterHoursGray = AppConfig.afterHoursGray,
                     displayCurrencies = displayCurrencies,
