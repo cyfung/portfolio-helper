@@ -6,64 +6,34 @@ import java.awt.*
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import javax.swing.ImageIcon
 import kotlin.system.exitProcess
 
 
 object NewTrayService {
     private val logger = LoggerFactory.getLogger(NewTrayService::class.java)
 
-    private fun extractTrayIcon(): String {
+    private fun loadTrayIcon(): java.awt.Image {
         return try {
-            val iconStream = javaClass.getResourceAsStream("/static/favicon-96x96.png")
-
-            if (iconStream != null) {
-                // Create temp file for icon (deleted on JVM exit)
-                val tempIcon = java.io.File.createTempFile("portfolio-helper-tray", ".png")
-                tempIcon.deleteOnExit()
-
-                // Copy resource to temp file
-                iconStream.use { input ->
-                    tempIcon.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+            javaClass.getResourceAsStream("/static/favicon-96x96.png")
+                ?.let { javax.imageio.ImageIO.read(it) }
+                ?: run {
+                    logger.warn("Custom tray icon not found, using default icon")
+                    createDefaultImage()
                 }
-
-                logger.debug("Extracted tray icon to: ${tempIcon.absolutePath}")
-                tempIcon.absolutePath
-
-            } else {
-                logger.warn("Custom tray icon not found, creating default icon")
-                createDefaultIconFile()
-            }
-
         } catch (e: Exception) {
-            logger.warn("Failed to extract tray icon: ${e.message}")
-            createDefaultIconFile()
+            logger.warn("Failed to load tray icon: ${e.message}")
+            createDefaultImage()
         }
     }
 
-    /**
-     * Create a simple default icon file.
-     */
-    private fun createDefaultIconFile(): String {
-        val tempIcon = java.io.File.createTempFile("portfolio-helper-default", ".png")
-        tempIcon.deleteOnExit()
-
+    private fun createDefaultImage(): java.awt.image.BufferedImage {
         val size = 32
-        val img =
-            java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val img = java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val g2d = img.createGraphics()
-
-        // Draw a simple filled circle
         g2d.color = Color(100, 100, 100)
         g2d.fillOval(4, 4, 24, 24)
         g2d.dispose()
-
-        javax.imageio.ImageIO.write(img, "png", tempIcon)
-
-        logger.debug("Created default tray icon at: ${tempIcon.absolutePath}")
-        return tempIcon.absolutePath
+        return img
     }
 
     fun createTray(url: String): Boolean {
@@ -72,7 +42,7 @@ object NewTrayService {
         }
 
         val tray = SystemTray.getSystemTray()
-        val image = ImageIcon(extractTrayIcon()).image
+        val image = loadTrayIcon()
         val popup = PopupMenu()
         val openItem = MenuItem("Open")
         val openDirItem = MenuItem("Open Data Directory")
