@@ -2,6 +2,7 @@
 // Cash editing is handled by the always-visible CashEditTable in summary-and-rates.
 // On save, cash is read from the DOM (matching the original JS approach).
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Copy } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 
 interface Props {
@@ -18,13 +19,6 @@ interface StockRow {
   deleted?: boolean
 }
 
-const COPY_ICON_SVG = (
-  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-  </svg>
-)
 
 const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
 
@@ -79,10 +73,6 @@ export default function EditMode({ saveKey, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   const [dividendDate, setDividendDate] = useState(config.dividendStartDate ?? '')
 
-  // Keep a ref to latest stockRows so paste handler can read current state
-  const stockRowsRef = useRef(stockRows)
-  useEffect(() => { stockRowsRef.current = stockRows }, [stockRows])
-
   const totalWeight = stockRows
     .filter(r => !r.deleted)
     .reduce((sum, r) => sum + (r.weight || 0), 0)
@@ -94,7 +84,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
       prevSaveKey.current = saveKey
       doSave()
     }
-  })
+  }, [saveKey])
 
   async function doSave() {
     const updates = stockRows
@@ -133,10 +123,6 @@ export default function EditMode({ saveKey, onSaved }: Props) {
   function addStockRow() {
     setStockRows(rows => [...rows, { symbol: '', qty: 0, weight: 0, letf: '', groups: '' }])
   }
-
-  // Ref version of addStockRow for use inside paste handler
-  const addStockRowRef = useRef(addStockRow)
-  useEffect(() => { addStockRowRef.current = addStockRow })
 
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
     setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
@@ -255,12 +241,12 @@ export default function EditMode({ saveKey, onSaved }: Props) {
           <tr>
             <th className="drag-handle-cell">
               <button type="button" className="copy-table-btn copy-col-btn" title="Copy table to clipboard (Google Sheets)">
-                {COPY_ICON_SVG}
+                <Copy size={12} />
               </button>
             </th>
-            <th>Symbol <button type="button" className="copy-col-btn" data-column="symbol" title="Copy Symbol column">{COPY_ICON_SVG}</button></th>
-            <th className="amount">Qty <button type="button" className="copy-col-btn col-num" data-column="qty" title="Copy Qty column">{COPY_ICON_SVG}</button></th>
-            <th>Weight % <button type="button" className="copy-col-btn" data-column="weight" title="Copy Weight % column">{COPY_ICON_SVG}</button></th>
+            <th>Symbol <button type="button" className="copy-col-btn" data-column="symbol" title="Copy Symbol column"><Copy size={12} /></button></th>
+            <th className="amount">Qty <button type="button" className="copy-col-btn col-num" data-column="qty" title="Copy Qty column"><Copy size={12} /></button></th>
+            <th>Weight % <button type="button" className="copy-col-btn" data-column="weight" title="Copy Weight % column"><Copy size={12} /></button></th>
             <th>LETF</th>
             <th>Groups</th>
             <th />
