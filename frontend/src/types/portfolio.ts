@@ -90,8 +90,8 @@ export interface StockDisplayEvent {
 export interface CashDisplayEntry {
   label: string
   currency: string
-  rawAmount: number
-  valueUsd: number | null
+  rawCcyAmount: number       // face value in the entry's own currency
+  baseUsd: number | null     // USD base for display-currency conversion; null = not ready
   isMarginEntry: boolean
   entryId: string
   portfolioRef?: string
@@ -102,9 +102,9 @@ export interface CashDisplayEvent {
   type: 'cash-display'
   portfolioId: string
   entries: CashDisplayEntry[]
-  totalUsd: number
+  totalBaseUsd: number
   totalKnown: boolean
-  marginUsd: number
+  marginBaseUsd: number
 }
 
 export interface PortfolioTotalsEvent {

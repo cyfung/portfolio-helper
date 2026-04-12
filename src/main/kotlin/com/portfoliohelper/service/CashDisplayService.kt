@@ -16,8 +16,8 @@ data class CashEntryDisplay(
     val entryId: String,
     val label: String,
     val currency: String,              // original currency code; "P" for portfolio-ref entries
-    val rawAmount: Double,             // privacy-scaled; for "P": resolved USD value (0 if unknown)
-    val valueUsd: Double?,             // null = not ready (FX unknown or P-ref not ready)
+    val rawCcyAmount: Double,          // privacy-scaled face value in the entry's own currency; for "P": resolved USD value (0 if unknown)
+    val baseUsd: Double?,              // null = not ready (FX unknown or P-ref not ready); USD base for display-currency conversion
     val isMarginEntry: Boolean,
     val portfolioRef: String? = null,
     val portfolioMultiplier: Double? = null  // non-null for all "P" entries (incl. broken refs)
@@ -27,9 +27,9 @@ data class CashEntryDisplay(
 data class CashDisplaySnapshot(
     val portfolioId: String,
     val entries: List<CashEntryDisplay>,
-    val totalUsd: Double,
+    val totalBaseUsd: Double,
     val totalKnown: Boolean,
-    val marginUsd: Double,
+    val marginBaseUsd: Double,
     val marginKnown: Boolean
 )
 
@@ -68,17 +68,17 @@ class CashDisplayService(
     fun compute(): CashDisplaySnapshot {
         val scale = privacyScalePct.value
         val entries = cashEntries.value.map { entry ->
-            val valueUsd = resolveEntryUsd(entry)
-            val rawAmount = when (entry.currency) {
-                "P"  -> valueUsd ?: 0.0
+            val baseUsd = resolveEntryUsd(entry)
+            val rawCcyAmount = when (entry.currency) {
+                "P"  -> baseUsd ?: 0.0
                 else -> if (scale != null) entry.amount * scale / 100.0 else entry.amount
             }
             CashEntryDisplay(
                 entryId = "${entry.label}-${entry.currency}",
                 label = entry.label,
                 currency = entry.currency,
-                rawAmount = rawAmount,
-                valueUsd = valueUsd,
+                rawCcyAmount = rawCcyAmount,
+                baseUsd = baseUsd,
                 isMarginEntry = entry.marginFlag,
                 portfolioRef = entry.portfolioRef,
                 portfolioMultiplier = if (entry.currency == "P") entry.amount else null
@@ -91,27 +91,27 @@ class CashDisplayService(
                 entryId = "Dividend-USD",
                 label = "Dividend",
                 currency = "USD",
-                rawAmount = scaledTotal,
-                valueUsd = scaledTotal,
+                rawCcyAmount = scaledTotal,
+                baseUsd = scaledTotal,
                 isMarginEntry = false
             )
         }
-        var totalUsd = 0.0
-        var marginUsd = 0.0
+        var totalBaseUsd = 0.0
+        var marginBaseUsd = 0.0
         var totalKnown = true
         for (e in entries) {
-            if (e.valueUsd == null) totalKnown = false
+            if (e.baseUsd == null) totalKnown = false
             else {
-                totalUsd += e.valueUsd
-                if (e.isMarginEntry) marginUsd += e.valueUsd
+                totalBaseUsd += e.baseUsd
+                if (e.isMarginEntry) marginBaseUsd += e.baseUsd
             }
         }
         return CashDisplaySnapshot(
             portfolioId = portfolioId,
             entries = entries,
-            totalUsd = totalUsd,
+            totalBaseUsd = totalBaseUsd,
             totalKnown = totalKnown,
-            marginUsd = marginUsd,
+            marginBaseUsd = marginBaseUsd,
             marginKnown = totalKnown
         )
     }

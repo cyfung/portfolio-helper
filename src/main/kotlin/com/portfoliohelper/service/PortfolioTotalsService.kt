@@ -32,11 +32,11 @@ class PortfolioTotalsService(
             portfolioId     = portfolioId,
             stockGrossUsd   = s.stockGrossUsd,
             stockGrossKnown = s.stockGrossKnown,
-            cashTotalUsd    = c.totalUsd,
+            cashTotalUsd    = c.totalBaseUsd,
             cashKnown       = c.totalKnown,
-            grandTotalUsd   = s.stockGrossUsd + c.totalUsd,
+            grandTotalUsd   = s.stockGrossUsd + c.totalBaseUsd,
             grandTotalKnown = s.stockGrossKnown && c.totalKnown,
-            marginUsd       = c.marginUsd,
+            marginUsd       = c.marginBaseUsd,
             dayChangeUsd    = s.dayChangeUsd,
             prevDayUsd      = s.prevDayUsd
         )

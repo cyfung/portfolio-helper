@@ -40,9 +40,9 @@ private data class StockDisplayEvent(
 private data class CashDisplayEvent(
     val portfolioId: String,
     val entries: List<CashEntryDisplay>,
-    val totalUsd: Double,
+    val totalBaseUsd: Double,
     val totalKnown: Boolean,
-    val marginUsd: Double
+    val marginBaseUsd: Double
 ) : SseEvent()
 
 @Serializable
@@ -114,9 +114,9 @@ internal suspend fun ServerSSESession.handleSseStream() {
             channel.trySend(appJson.encodeToString<SseEvent>(CashDisplayEvent(
                 portfolioId = snap.portfolioId,
                 entries = snap.entries,
-                totalUsd = snap.totalUsd,
+                totalBaseUsd = snap.totalBaseUsd,
                 totalKnown = snap.totalKnown,
-                marginUsd = snap.marginUsd
+                marginBaseUsd = snap.marginBaseUsd
             )))
         }
     }

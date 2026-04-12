@@ -1,7 +1,29 @@
 // ── PortfolioViewer.tsx — Port of PortfolioRenderer.kt body structure ─────────
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import type { StockData, CashData } from '@/types/portfolio'
+
+/** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
+function parseCashKey(key: string, value: string): CashData | null {
+  const parts = key.split('.')
+  const mut = [...parts]
+  let marginFlag = false
+  while (mut.length > 0 && mut[mut.length - 1].toUpperCase() === 'M') {
+    marginFlag = true
+    mut.pop()
+  }
+  if (mut.length < 2) return null
+  const currency = mut[mut.length - 1].toUpperCase()
+  const label = mut.slice(0, -1).join('.')
+  if (currency === 'P') {
+    const trimmed = String(value).trim()
+    const signNeg = trimmed.startsWith('-')
+    const portfolioRef = trimmed.replace(/^[+-]/, '').toLowerCase()
+    return { label, currency: 'P', amount: signNeg ? -1 : 1, marginFlag, portfolioRef }
+  }
+  return { label, currency, amount: parseFloat(value) || 0, marginFlag }
+}
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
 import PortfolioTabs from './PortfolioTabs'
 import SummaryTable from './SummaryTable'
@@ -26,6 +48,19 @@ export default function PortfolioViewer() {
 
   const [backupOpen, setBackupOpen] = useState(false)
   const [saveKey, setSaveKey] = useState(0)
+  const [editResetKey, setEditResetKey] = useState(0)
+  const [twsSyncing, setTwsSyncing] = useState(false)
+  const [syncToast, setSyncToast] = useState({ msg: '', type: '' })
+  const syncToastTimer = useRef<number | null>(null)
+
+  function showSyncToast(msg: string, type: string) {
+    setSyncToast({ msg, type })
+    if (syncToastTimer.current) clearTimeout(syncToastTimer.current)
+    syncToastTimer.current = window.setTimeout(
+      () => setSyncToast({ msg: '', type: '' }),
+      type === 'ok' ? 2500 : 5000
+    )
+  }
 
   const hasMargin = cash.some(c => c.marginFlag)
   const virtualBalance = store.config.virtualBalanceEnabled
@@ -33,17 +68,73 @@ export default function PortfolioViewer() {
 
   // ── TWS sync ──────────────────────────────────────────────────────────────
   const handleTwsSync = useCallback(async () => {
+    setTwsSyncing(true)
     try {
       const r = await fetch(`/api/tws/snapshot?portfolio=${portfolioId}`)
       if (!r.ok) throw new Error(await r.text())
       const snap = await r.json()
-      // Merge TWS quantities into current stocks via the edit mode save flow
-      // For now: alert with account info then reload
-      alert(`TWS sync: account ${snap.account}, ${snap.positions.length} positions`)
+      if (snap.error) throw new Error(snap.error)
+
+      // Merge TWS positions into current stocks (update qty, add new)
+      const updatedStocks: StockData[] = store.stocks.map(s => {
+        const pos = (snap.positions as Array<{ symbol: string; qty: number }>)
+          .find(p => p.symbol === s.label)
+        return pos ? { ...s, amount: pos.qty } : s
+      })
+      for (const pos of snap.positions as Array<{ symbol: string; qty: number }>) {
+        if (!updatedStocks.find(s => s.label === pos.symbol)) {
+          updatedStocks.push({ label: pos.symbol, amount: pos.qty, targetWeight: 0, letf: '', groups: '' })
+        }
+      }
+
+      // Merge TWS cash balances and accrued cash
+      let updatedCash: CashData[] = [...store.cash]
+      const upsertCash = (label: string, currency: string, amount: number, marginFlag: boolean) => {
+        const idx = updatedCash.findIndex(c =>
+          c.label.toLowerCase() === label.toLowerCase() &&
+          c.currency.toUpperCase() === currency.toUpperCase()
+        )
+        if (idx >= 0) updatedCash[idx] = { ...updatedCash[idx], amount }
+        else updatedCash.push({ label, currency, amount, marginFlag })
+      }
+      for (const [ccy, amt] of Object.entries(snap.cashBalances as Record<string, number>)) {
+        upsertCash('Cash', ccy, amt, true)
+      }
+      for (const [ccy, amt] of Object.entries(snap.accruedCash as Record<string, number>)) {
+        upsertCash('MTD Interest', ccy, amt, false)
+      }
+
+      store.setStocks(updatedStocks)
+      store.setCash(updatedCash)
+      setEditResetKey(k => k + 1)
+      setEditModeActive(true)
     } catch (e) {
-      alert(`TWS sync failed: ${e}`)
+      showSyncToast(`TWS sync failed: ${e}`, 'error')
+    } finally {
+      setTwsSyncing(false)
     }
-  }, [portfolioId])
+  }, [portfolioId, store, setEditModeActive])
+
+  // ── Import success callback (from BackupPanel) ─────────────────────────────
+  const handleImportSuccess = useCallback((json: any) => {
+    if (json.stocks) {
+      store.setStocks((json.stocks as Array<any>).map(s => ({
+        label: s.symbol ?? s.label ?? '',
+        amount: s.amount ?? 0,
+        targetWeight: s.targetWeight ?? 0,
+        letf: s.letf ?? '',
+        groups: s.groups ?? '',
+      })))
+    }
+    if (json.cash) {
+      const parsed = (json.cash as Array<{ key: string; value: string }>)
+        .map(c => parseCashKey(c.key, c.value))
+        .filter((c): c is CashData => c !== null)
+      store.setCash(parsed)
+    }
+    setEditResetKey(k => k + 1)
+    setEditModeActive(true)
+  }, [store, setEditModeActive])
 
   // ── Save to backtest ───────────────────────────────────────────────────────
   const handleSaveToBacktest = useCallback(async () => {
@@ -114,17 +205,6 @@ export default function PortfolioViewer() {
       <div className="portfolio-header">
         <div className="header-title-group">
           <PageNavTabs active="/portfolio/" />
-          <span className="header-timestamp" id="last-update-time">{lastUpdateTime}</span>
-          <span className={sseDotClass} id="sse-status-dot" title={sseDotTitle} />
-          <button
-            className="tws-sync-btn"
-            id="tws-sync-btn"
-            type="button"
-            title="Sync Qty and Cash from Interactive Brokers TWS"
-            onClick={handleTwsSync}
-          >
-            Sync TWS
-          </button>
         </div>
 
         <HeaderRight>
@@ -209,13 +289,23 @@ export default function PortfolioViewer() {
       </div>
 
       {/* ── Portfolio tabs ────────────────────────────────────────────── */}
-      <PortfolioTabs onSaveToBacktest={handleSaveToBacktest} />
+      <PortfolioTabs
+        onSaveToBacktest={handleSaveToBacktest}
+        onTwsSync={handleTwsSync}
+        twsSyncing={twsSyncing}
+        lastUpdateTime={lastUpdateTime}
+        sseDotClass={sseDotClass}
+        sseDotTitle={sseDotTitle}
+      />
+      {syncToast.msg && (
+        <div className={`config-status config-status-${syncToast.type} visible`}>{syncToast.msg}</div>
+      )}
 
       {/* ── Main content ──────────────────────────────────────────────── */}
       <div className="portfolio-tables-wrapper">
         <div className="summary-and-rates">
           <SummaryTable />
-          <CashEditTable allPortfolios={allPortfolios} />
+          <CashEditTable key={editResetKey} allPortfolios={allPortfolios} />
           {virtualBalance && (
             <div className="dividend-from-section">
               <label htmlFor="dividend-from-input">Dividend From</label>
@@ -234,7 +324,7 @@ export default function PortfolioViewer() {
         <div className="stock-section">
           <RebalanceControls />
           {editModeActive ? (
-            <EditMode saveKey={saveKey} onSaved={handleSaved} />
+            <EditMode key={editResetKey} saveKey={saveKey} onSaved={handleSaved} />
           ) : groupViewActive ? (
             <GroupsView />
           ) : (
@@ -258,7 +348,10 @@ export default function PortfolioViewer() {
 
       {/* ── Backup panel modal ────────────────────────────────────────── */}
       {backupOpen && (
-        <BackupPanel onClose={() => setBackupOpen(false)} />
+        <BackupPanel
+          onClose={() => setBackupOpen(false)}
+          onImportSuccess={json => { setBackupOpen(false); handleImportSuccess(json) }}
+        />
       )}
     </div>
   )

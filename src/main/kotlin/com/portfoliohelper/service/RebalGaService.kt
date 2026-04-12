@@ -372,7 +372,7 @@ class RebalGaService(
         if (!stockSnap.stockGrossKnown) return RebalAllocSnapshot(portfolioId, emptyMap())
 
         val stockGrossUsd = stockSnap.stockGrossUsd
-        val marginUsd = cashSnap.marginUsd
+        val marginUsd = cashSnap.marginBaseUsd
         val rebalTargetUsd = cfg["rebalTarget"]?.toDoubleOrNull()
         val marginTargetPct = cfg["marginTarget"]?.toDoubleOrNull()
         val marginTargetUsd = cfg["marginTargetUsd"]?.toDoubleOrNull()

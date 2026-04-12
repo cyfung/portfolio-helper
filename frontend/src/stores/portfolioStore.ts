@@ -60,6 +60,8 @@ interface PortfolioState {
   setMarginTargetUsd: (v: number | null) => void
   setAllocAddMode: (mode: AllocMode) => void
   setAllocReduceMode: (mode: AllocMode) => void
+  setStocks: (stocks: StockData[]) => void
+  setCash: (cash: CashData[]) => void
 }
 
 const LS_KEYS = {
@@ -214,4 +216,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     localStorage.setItem(LS_KEYS.allocReduce, mode)
     set({ allocReduceMode: mode })
   },
+
+  setStocks: (stocks) => set({ stocks }),
+  setCash: (cash) => set({ cash }),
 }))

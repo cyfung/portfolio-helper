@@ -162,6 +162,14 @@ fun Route.configureAdminRoutes() {
 
     /** All AppConfig key-value pairs for the config page (read-only) */
     get("/api/admin/config-values") {
+        val portfolioSlug = call.request.queryParameters["portfolio"]
+        if (portfolioSlug != null) {
+            val entry = ManagedPortfolio.resolve(portfolioSlug)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val cfg = entry.getAllConfig()
+            call.respondText(appJson.encodeToString(cfg), ContentType.Application.Json)
+            return@get
+        }
         val keys = listOf(
             AppConfig.KEY_SHOW_STOCK_DISPLAY_CURRENCY,
             AppConfig.KEY_PRIVACY_SCALE_PCT,

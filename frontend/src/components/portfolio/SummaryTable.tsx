@@ -81,7 +81,7 @@ export default function SummaryTable() {
     ? 'positive' : dayChangeUsd !== null && dayChangeUsd < 0 ? 'negative' : ''
 
   const cashTotal = lastCashDisplay?.totalKnown
-    ? fmt(lastCashDisplay.totalUsd) : '—'
+    ? fmt(lastCashDisplay.totalBaseUsd) : '—'
 
   const marginUsdVal = lastPortfolioTotals?.marginUsd ?? 0
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
@@ -245,16 +245,16 @@ export default function SummaryTable() {
                 {isRef ? 'USD' : entry.currency}
               </td>
 
-              {/* Col 4: Raw amount (right-aligned) */}
+              {/* Col 4: Raw amount in own currency (right-aligned) */}
               <td className="text-sm text-muted-foreground text-right">
                 {isRef
-                  ? (entry.valueUsd !== null ? formatCurrency(entry.valueUsd) : '')
-                  : (entry.rawAmount !== 0 ? formatCurrency(entry.rawAmount) : '')}
+                  ? (entry.baseUsd !== null ? formatCurrency(entry.baseUsd) : '')
+                  : (entry.rawCcyAmount !== 0 ? formatCurrency(entry.rawCcyAmount) : '')}
               </td>
 
               {/* Col 5: Display-currency value */}
               <td>
-                {entry.valueUsd !== null ? fmt(entry.valueUsd) : '—'}
+                {entry.baseUsd !== null ? fmt(entry.baseUsd) : '—'}
               </td>
             </tr>
           )
@@ -285,7 +285,7 @@ export default function SummaryTable() {
                 {/* Col 5: USD value */}
                 <td>
                   <span id="margin-total-usd">
-                    {marginUsdVal ? fmt(marginUsdVal) : '—'}
+                    {marginUsdVal ? fmt(Math.abs(marginUsdVal)) : '—'}
                   </span>
                 </td>
               </tr>

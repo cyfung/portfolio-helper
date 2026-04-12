@@ -6,11 +6,12 @@ import type { BackupEntry } from '@/types/portfolio'
 
 interface Props {
   onClose: () => void
+  onImportSuccess?: (json: any) => void
 }
 
 type GroupedBackups = Array<{ tabName: string; entries: BackupEntry[] }>
 
-export default function BackupPanel({ onClose }: Props) {
+export default function BackupPanel({ onClose, onImportSuccess }: Props) {
   const { portfolioId } = usePortfolioStore()
   const [groups, setGroups] = useState<GroupedBackups>([])
   const [activeTab, setActiveTab] = useState<string>('')
@@ -92,9 +93,15 @@ export default function BackupPanel({ onClose }: Props) {
     const fd = new FormData()
     fd.append('file', file)
     try {
-      await fetch(`/api/backup/import-file?portfolio=${portfolioId}`, { method: 'POST', body: fd })
-      await load()
-    } catch { alert('Import failed.') }
+      const resp = await fetch(`/api/backup/import-file?portfolio=${portfolioId}`, { method: 'POST', body: fd })
+      const json = await resp.json()
+      if (json.error) { alert('Import error: ' + json.error); return }
+      if (onImportSuccess) {
+        onImportSuccess(json)
+      } else {
+        await load()
+      }
+    } catch (e) { alert('Import failed: ' + e) }
   }
 
   const allEntries = groups.flatMap(g => g.entries)

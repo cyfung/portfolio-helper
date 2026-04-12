@@ -61,8 +61,8 @@ class IbkrInterestService(
             }
         }
 
-        // cashSnap.marginUsd is already the NET of all margin entries; negative = net borrowing
-        val totalMarginUsd = if (cashSnap.marginUsd < 0) -cashSnap.marginUsd else 0.0
+        // cashSnap.marginBaseUsd is already the NET of all margin entries; negative = net borrowing
+        val totalMarginUsd = if (cashSnap.marginBaseUsd < 0) -cashSnap.marginBaseUsd else 0.0
         val perCurrency = mutableListOf<IbkrCurrencyInterest>()
         var currentDailyUsd = 0.0
         var cheapestCcy: String? = null
