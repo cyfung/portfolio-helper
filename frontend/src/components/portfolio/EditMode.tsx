@@ -1,7 +1,7 @@
 // ── EditMode.tsx — Port of edit-mode.js (stock edit table only) ───────────────
 // Cash editing is handled by the always-visible CashEditTable in summary-and-rates.
 // On save, cash is read from the DOM (matching the original JS approach).
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 
 interface Props {
@@ -17,6 +17,16 @@ interface StockRow {
   groups: string
   deleted?: boolean
 }
+
+const COPY_ICON_SVG = (
+  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+)
+
+const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
 
 function letfAttrToStr(attr: string): string {
   if (!attr) return ''
@@ -49,6 +59,11 @@ function readCashFromDom(): object[] {
   return cashUpdates
 }
 
+function flashCopyButton(btn: HTMLElement) {
+  btn.classList.add('copy-btn-flash')
+  setTimeout(() => btn.classList.remove('copy-btn-flash'), 900)
+}
+
 export default function EditMode({ saveKey, onSaved }: Props) {
   const { stocks, portfolioId, config } = usePortfolioStore()
 
@@ -63,6 +78,10 @@ export default function EditMode({ saveKey, onSaved }: Props) {
   )
   const [saving, setSaving] = useState(false)
   const [dividendDate, setDividendDate] = useState(config.dividendStartDate ?? '')
+
+  // Keep a ref to latest stockRows so paste handler can read current state
+  const stockRowsRef = useRef(stockRows)
+  useEffect(() => { stockRowsRef.current = stockRows }, [stockRows])
 
   const totalWeight = stockRows
     .filter(r => !r.deleted)
@@ -115,20 +134,133 @@ export default function EditMode({ saveKey, onSaved }: Props) {
     setStockRows(rows => [...rows, { symbol: '', qty: 0, weight: 0, letf: '', groups: '' }])
   }
 
+  // Ref version of addStockRow for use inside paste handler
+  const addStockRowRef = useRef(addStockRow)
+  useEffect(() => { addStockRowRef.current = addStockRow })
+
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
     setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  // ── Paste-from-spreadsheet handler ───────────────────────────────────────
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    const activeEl = document.activeElement as HTMLElement | null
+    if (!activeEl || !activeEl.classList.contains('edit-input')) return
+
+    const clipText = (e.clipboardData || (window as any).clipboardData)?.getData('text') ?? ''
+    const lines = clipText.split(/[\r\n]+/).filter((l: string) => l.trim() !== '')
+
+    // Single-line paste: strip % from weight field
+    if (lines.length <= 1) {
+      const isWeight = activeEl.classList.contains('edit-weight') ||
+        activeEl.getAttribute('data-column') === 'weight'
+      if (isWeight) {
+        const stripped = clipText.replace(/%/g, '').trim()
+        if (stripped !== clipText.trim()) {
+          e.preventDefault()
+          const inp = activeEl as HTMLInputElement
+          inp.value = stripped
+          inp.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+      }
+      return
+    }
+
+    e.preventDefault()
+
+    const rows = lines.map((l: string) => l.split('\t'))
+
+    // Find which column index the focused input is in
+    const focusedCol = activeEl.getAttribute('data-column') as keyof StockRow | null
+    if (!focusedCol) return
+    const startColIdx = STOCK_COLUMNS.indexOf(focusedCol)
+    if (startColIdx < 0) return
+
+    // Find which row the focused input is in (among visible rows)
+    const tbody = document.querySelector('#stock-edit-table tbody')
+    if (!tbody) return
+    const allTrs = Array.from(tbody.querySelectorAll('tr'))
+    const focusedTr = activeEl.closest('tr')
+    let startRowIdx = focusedTr ? allTrs.indexOf(focusedTr as HTMLTableRowElement) : allTrs.length
+    if (startRowIdx < 0) startRowIdx = allTrs.length
+
+    setStockRows(prev => {
+      const next = prev.map(r => ({ ...r }))
+      // Get visible (non-deleted) row indices into `next`
+      const visibleIndices = next
+        .map((r, i) => (!r.deleted ? i : -1))
+        .filter(i => i >= 0)
+
+      rows.forEach((cols: string[], i: number) => {
+        const visiblePos = startRowIdx + i
+        let targetIdx: number
+        if (visiblePos < visibleIndices.length) {
+          targetIdx = visibleIndices[visiblePos]
+        } else {
+          // Need to append a new row
+          next.push({ symbol: '', qty: 0, weight: 0, letf: '', groups: '' })
+          targetIdx = next.length - 1
+          visibleIndices.push(targetIdx)
+        }
+        cols.forEach((val: string, j: number) => {
+          const colIdx = startColIdx + j
+          if (colIdx >= STOCK_COLUMNS.length) return
+          const col = STOCK_COLUMNS[colIdx]
+          const isWeight = col === 'weight'
+          const cleaned = isWeight ? val.replace(/%/g, '').trim() : val.trim()
+          if (col === 'qty' || col === 'weight') {
+            ;(next[targetIdx] as any)[col] = parseFloat(cleaned) || 0
+          } else {
+            ;(next[targetIdx] as any)[col] = cleaned
+          }
+        })
+      })
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste)
+    return () => document.removeEventListener('paste', handlePaste)
+  }, [handlePaste])
+
+  // ── Copy table / column handler ───────────────────────────────────────────
+  function handleCopyClick(e: React.MouseEvent<HTMLTableElement>) {
+    const target = e.target as HTMLElement
+
+    const copyTableBtn = target.closest('.copy-table-btn') as HTMLElement | null
+    if (copyTableBtn) {
+      const lines = stockRows
+        .filter(r => !r.deleted)
+        .map(r => [r.symbol, r.qty, r.weight, r.letf, r.groups].join('\t'))
+      navigator.clipboard.writeText(lines.join('\n')).then(() => flashCopyButton(copyTableBtn))
+      return
+    }
+
+    const copyColBtn = target.closest('.copy-col-btn[data-column]') as HTMLElement | null
+    if (copyColBtn) {
+      const col = copyColBtn.getAttribute('data-column') as keyof StockRow
+      const values = stockRows
+        .filter(r => !r.deleted)
+        .map(r => String(r[col] ?? ''))
+      navigator.clipboard.writeText(values.join('\n')).then(() => flashCopyButton(copyColBtn))
+    }
   }
 
   return (
     <>
       {/* ── Stock edit table ─────────────────────────────────────────── */}
-      <table className="portfolio-table" id="stock-edit-table">
+      <table className="portfolio-table" id="stock-edit-table" onClick={handleCopyClick}>
         <thead>
           <tr>
-            <th className="drag-handle-cell" />
-            <th>Symbol</th>
-            <th className="amount">Qty</th>
-            <th>Weight %</th>
+            <th className="drag-handle-cell">
+              <button type="button" className="copy-table-btn copy-col-btn" title="Copy table to clipboard (Google Sheets)">
+                {COPY_ICON_SVG}
+              </button>
+            </th>
+            <th>Symbol <button type="button" className="copy-col-btn" data-column="symbol" title="Copy Symbol column">{COPY_ICON_SVG}</button></th>
+            <th className="amount">Qty <button type="button" className="copy-col-btn col-num" data-column="qty" title="Copy Qty column">{COPY_ICON_SVG}</button></th>
+            <th>Weight % <button type="button" className="copy-col-btn" data-column="weight" title="Copy Weight % column">{COPY_ICON_SVG}</button></th>
             <th>LETF</th>
             <th>Groups</th>
             <th />
@@ -227,9 +359,11 @@ export default function EditMode({ saveKey, onSaved }: Props) {
         Paste from spreadsheet (Ctrl+V) fills from focused cell
       </p>
 
-      <button type="button" id="add-stock-btn" className="add-stock-btn" onClick={addStockRow}>
-        + Add Stock
-      </button>
+      <div className="edit-add-buttons">
+        <button type="button" id="add-stock-btn" className="add-stock-btn" onClick={addStockRow}>
+          + Add Stock
+        </button>
+      </div>
 
       {config.virtualBalanceEnabled && (
         <div className="dividend-from-section" style={{ marginTop: '0.5rem' }}>
