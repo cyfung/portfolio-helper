@@ -297,9 +297,9 @@ export default function PortfolioViewer() {
         sseDotClass={sseDotClass}
         sseDotTitle={sseDotTitle}
       />
-      {syncToast.msg && (
-        <div className={`config-status config-status-${syncToast.type} visible`}>{syncToast.msg}</div>
-      )}
+      <div className={`config-status config-status-${syncToast.type}${syncToast.msg ? ' visible' : ''}`}>
+        {syncToast.msg}
+      </div>
 
       {/* ── Main content ──────────────────────────────────────────────── */}
       <div className="portfolio-tables-wrapper">
