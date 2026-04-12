@@ -138,9 +138,9 @@ export default function StockTable() {
             <th className="col-num">
               Weight <span className="th-sub">Cur / Tgt / Dev</span>
             </th>
-            <th className="rebal-column">Rebal</th>
+            <th className="rebal-column">Rebal💰</th>
             <th className="rebal-column col-moreinfo">Rebal Qty</th>
-            <th className="alloc-column">Alloc</th>
+            <th className="alloc-column">Alloc💰</th>
             <th className="alloc-column col-moreinfo">Alloc Qty</th>
           </tr>
         </thead>

@@ -247,8 +247,8 @@ export default function GroupsView() {
             <th className="col-num">
               Weight <span className="th-sub">Cur / Tgt / Dev</span>
             </th>
-            <th className="rebal-column">Rebal</th>
-            <th className="alloc-column">Alloc</th>
+            <th className="rebal-column">Rebal💰</th>
+            <th className="alloc-column">Alloc💰</th>
           </tr>
         </thead>
         <tbody>
