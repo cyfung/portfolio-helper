@@ -1228,6 +1228,11 @@ h1 {
     font-weight: var(--font-weight-semibold);
 }
 
+.portfolio-cash-table .total-cash-row td:last-child,
+.portfolio-cash-table .stock-gross-row td:last-child {
+    color: var(--color-text-primary);
+}
+
 .portfolio-cash-table .grand-total-row td:last-child {
     color: var(--color-accent-primary);
 }

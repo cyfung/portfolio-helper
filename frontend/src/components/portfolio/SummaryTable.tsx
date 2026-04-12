@@ -293,7 +293,7 @@ export default function SummaryTable() {
 
             <tr className="summary-section-break"><td colSpan={5} /></tr>
 
-            <tr>
+            <tr className="stock-gross-row">
               <td>Stock Gross Value</td>
               <td /><td /><td />
               <td>
