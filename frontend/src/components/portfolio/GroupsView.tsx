@@ -1,4 +1,5 @@
 // ── GroupsView.tsx — Port of groups.js group aggregation ─────────────────────
+import { useEffect } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   parseGroupsAttr, formatCurrency, formatSignedCurrency, toDisplayCurrency,
@@ -41,6 +42,8 @@ export default function GroupsView() {
       ? formatSignedCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
       : '—'
 
+  const stockBySym = new Map(stocks.map(s => [s.label, s]))
+
   // ── Build group map ──────────────────────────────────────────────────────
   const groupMap = new Map<string, GroupEntry>()
 
@@ -69,7 +72,165 @@ export default function GroupsView() {
     }
   }
 
+  // ── Group row per-member hover tooltip ────────────────────────────────────
+  useEffect(() => {
+    let groupTooltip: HTMLElement | null = null
+    function ensureTooltip() {
+      if (!groupTooltip) {
+        groupTooltip = document.createElement('div')
+        groupTooltip.id = 'group-hover-tooltip'
+        document.body.appendChild(groupTooltip)
+      }
+      return groupTooltip
+    }
+    function getCol(td: Element | null) {
+      if (!td) return 'name'
+      if (td.classList.contains('alloc-column'))    return 'alloc'
+      if (td.classList.contains('rebal-column'))    return 'rebal'
+      if (td.classList.contains('col-moreinfo'))    return 'mktval'
+      if (td.classList.contains('col-market-data')) return 'daypct'
+      if (td.classList.contains('price-change'))    return 'mktvalchg'
+      if (td.classList.contains('value'))           return 'weight'
+      return 'name'
+    }
+    function buildTooltipHtml(row: HTMLElement, col: string) {
+      const members = (row.dataset.groupMembers ?? '').split(',').filter(Boolean)
+      if (!members.length) return null
+      // memberCols is pre-computed during render and stored as a data attribute
+      const memberCols: Record<string, Record<string, string>> = JSON.parse(row.dataset.memberCols ?? '{}')
+      const na = `<span class="group-tooltip-na">—</span>`
+      const rows = members.map(sym => {
+        const valHtml = col !== 'name' ? (memberCols[sym]?.[col] ?? na) : ''
+        const valCell = valHtml ? `<td class="group-tooltip-alloc">${valHtml}</td>` : ''
+        return `<tr><td class="group-tooltip-symbol">${sym}</td>${valCell}</tr>`
+      }).join('')
+      return `<table>${rows}</table>`
+    }
+    function positionTooltip(e: MouseEvent) {
+      if (!groupTooltip) return
+      const offset = 14
+      const tw = groupTooltip.offsetWidth
+      const th = groupTooltip.offsetHeight
+      let x = e.clientX + offset
+      let y = e.clientY + offset
+      if (x + tw > window.innerWidth  - 8) x = e.clientX - tw - offset
+      if (y + th > window.innerHeight - 8) y = e.clientY - th - offset
+      groupTooltip.style.left = x + 'px'
+      groupTooltip.style.top  = y + 'px'
+    }
+    function showTooltip(row: HTMLElement, e: MouseEvent) {
+      const col = getCol((e.target as Element).closest('td'))
+      const html = buildTooltipHtml(row, col)
+      if (!html) return
+      const tip = ensureTooltip()
+      tip.innerHTML = html
+      tip.dataset.hoverCol = col
+      tip.style.display = 'block'
+      positionTooltip(e)
+    }
+    function hideTooltip() {
+      if (groupTooltip) {
+        groupTooltip.style.display = 'none'
+        groupTooltip.dataset.hoverCol = ''
+      }
+    }
+    function onEnter(e: Event) {
+      const row = (e.target as Element).closest('tr[data-group-name]') as HTMLElement | null
+      if (row) showTooltip(row, e as MouseEvent)
+    }
+    function onMove(e: Event) {
+      const me = e as MouseEvent
+      const row = (e.target as Element).closest('tr[data-group-name]') as HTMLElement | null
+      if (!row) return
+      const cur = getCol((e.target as Element).closest('td'))
+      const prev = groupTooltip?.dataset.hoverCol ?? ''
+      if (cur !== prev) {
+        showTooltip(row, me)
+      } else {
+        positionTooltip(me)
+      }
+    }
+    const table = document.getElementById('group-view-table')
+    if (!table) return
+    table.addEventListener('mouseenter', onEnter, true)
+    table.addEventListener('mousemove', onMove)
+    table.addEventListener('mouseleave', hideTooltip)
+    return () => {
+      table.removeEventListener('mouseenter', onEnter, true)
+      table.removeEventListener('mousemove', onMove)
+      table.removeEventListener('mouseleave', hideTooltip)
+      groupTooltip?.remove()
+      groupTooltip = null
+    }
+  }, [groupMap.size])
+
   if (groupMap.size === 0) return null
+
+  // ── Pre-compute per-member tooltip HTML for each group row ────────────────
+  const na = `<span class="group-tooltip-na">—</span>`
+  function buildMemberCols(members: string[]): Record<string, Record<string, string>> {
+    const result: Record<string, Record<string, string>> = {}
+    for (const sym of members) {
+      const live = liveBySymbol.get(sym) ?? null
+      const stock = stockBySym.get(sym)
+      const targetWeight = stock?.targetWeight ?? 0
+      const stockCcy = live?.currency ?? 'USD'
+      const fxRate = fxRates[stockCcy] ?? null
+      const posVal = live?.positionValueUsd ?? null
+
+      // daypct: mark price + day % (mirrors mark-${sym} cell)
+      const markPrice = live?.markPrice ?? null
+      const dayPct = live?.dayChangePct ?? null
+      const isAfterHours = live?.isMarketClosed ?? false
+      const dayPctCls = `${dayPct === null ? '' : dayPct > 0 ? 'positive' : dayPct < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
+      const dayPctStr = dayPct !== null ? `${dayPct >= 0 ? '+' : ''}${dayPct.toFixed(2)}%` : ''
+      const markStr = markPrice !== null ? formatCurrency(markPrice) : '—'
+      const daypctHtml = `<span class="mark-price-value">${markStr}</span>${dayPctStr ? `<span class="mark-day-pct ${dayPctCls}">${dayPctStr}</span>` : ''}`
+
+      // mktvalchg: position P&L (mirrors position-change-${sym} cell)
+      const dayCh = live?.dayChangeDollars ?? null
+      const liveQty = live?.qty ?? null
+      const pnlUsd = dayCh !== null && liveQty !== null && fxRate !== null ? dayCh * liveQty * fxRate : null
+      const pnlStr = pnlUsd !== null && hasFxRate(fxRates, currentDisplayCurrency)
+        ? formatSignedCurrency(toDisplayCurrency(pnlUsd, fxRates, currentDisplayCurrency)) : null
+      const pnlCls = pnlUsd === null ? 'neutral' : pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral'
+      const mktvalchgHtml = pnlStr ? `<span class="price-change ${pnlCls}">${pnlStr}</span>` : na
+
+      // mktval: position value in display currency
+      const mktvalHtml = posVal !== null ? fmt(posVal) : '—'
+
+      // weight: cur/tgt/diff pill (mirrors current-weight-${sym} cell)
+      let weightHtml = na
+      if (stockGrossKnown && stockGrossUsd > 0 && posVal !== null) {
+        const curWeight = (posVal / stockGrossUsd) * 100
+        const wDiff = curWeight - targetWeight
+        const diffCls = weightDiffCls(wDiff)
+        const pillSign = wDiff >= 0 ? '+' : ''
+        weightHtml = `<span class="weight-cur">${curWeight.toFixed(1)}%</span><span class="weight-sep">/</span><span class="weight-tgt">${targetWeight.toFixed(1)}%</span><span class="weight-diff ${diffCls}">${pillSign}${wDiff.toFixed(1)}%</span>`
+      }
+
+      // rebal: rebal dollars in native currency (mirrors rebal-dollars-${sym} cell)
+      let rebalHtml = na
+      if (stockGrossKnown && targetWeight > 0 && fxRate !== null && posVal !== null) {
+        const rebalDollars = (targetWeight / 100) * rebalTotal - posVal
+        const rebalStr = formatSignedCurrency(rebalDollars / fxRate)
+        const cls = Math.abs(rebalDollars) <= 0.5 ? 'action-neutral' : rebalDollars > 0 ? 'action-positive' : 'action-negative'
+        rebalHtml = `<span class="${cls}">${rebalStr}</span>`
+      }
+
+      // alloc: alloc dollars in display currency
+      const allocDollars = allocBySymbol.get(sym)?.allocDollars ?? null
+      let allocHtml = na
+      if (allocDollars !== null && hasFxRate(fxRates, currentDisplayCurrency)) {
+        const allocStr = fmtSigned(allocDollars)
+        const cls = allocDollars > 0.5 ? 'action-positive' : allocDollars < -0.5 ? 'action-negative' : 'action-neutral'
+        allocHtml = `<span class="${cls}">${allocStr}</span>`
+      }
+
+      result[sym] = { daypct: daypctHtml, mktvalchg: mktvalchgHtml, mktval: mktvalHtml, weight: weightHtml, rebal: rebalHtml, alloc: allocHtml }
+    }
+    return result
+  }
 
   return (
     <>
@@ -107,7 +268,7 @@ export default function GroupsView() {
 
             if (!stockGrossKnown || stockGrossUsd <= 0) {
               return (
-                <tr key={name} data-group-name={name} data-group-members={g.members.join(',')}>
+                <tr key={name} data-group-name={name} data-group-members={g.members.join(',')} data-member-cols={JSON.stringify(buildMemberCols(g.members))}>
                   <td>{name}</td>
                   <td className={`col-num col-market-data price-change ${dayPctCls}`}>
                     <span className={`mark-day-pct ${dayPctCls}`}>
@@ -124,6 +285,7 @@ export default function GroupsView() {
                 </tr>
               )
             }
+            const memberColsJson = JSON.stringify(buildMemberCols(g.members))
 
             const weightPct = (g.mktVal / stockGrossUsd) * 100
             const targetWeightPct = g.targetWeight
@@ -133,7 +295,7 @@ export default function GroupsView() {
             const pillSign = weightDiff >= 0 ? '+' : ''
 
             return (
-              <tr key={name} data-group-name={name} data-group-members={g.members.join(',')}>
+              <tr key={name} data-group-name={name} data-group-members={g.members.join(',')} data-member-cols={memberColsJson}>
                 <td>{name}</td>
                 <td className={`col-num col-market-data price-change ${dayPctCls}`}>
                   <span className={`mark-day-pct ${dayPctCls}`}>

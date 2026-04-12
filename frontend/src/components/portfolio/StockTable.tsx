@@ -1,4 +1,5 @@
 // ── StockTable.tsx — Port of buildStockTable from PortfolioRenderer.kt ────────
+import { useEffect } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   formatCurrency, formatQty, toDisplayCurrency,
@@ -65,6 +66,57 @@ export default function StockTable() {
   // Check if any stock has target weight > 0 (for rebal warning)
   const totalTargetWeight = stocks.reduce((sum, s) => sum + (s.targetWeight ?? 0), 0)
   const showWeightWarning = totalTargetWeight > 0 && Math.abs(totalTargetWeight - 100) > 1
+
+  // ── EST price ladder tooltip ───────────────────────────────────────────────
+  useEffect(() => {
+    let tooltip: HTMLElement | null = null
+    function getTooltip() {
+      if (!tooltip) {
+        tooltip = document.createElement('div')
+        tooltip.id = 'est-val-tooltip'
+        document.body.appendChild(tooltip)
+      }
+      return tooltip
+    }
+    function onEnter(e: Event) {
+      const cell = (e.target as Element).closest('td[id^="est-val-"].loaded') as HTMLElement | null
+      if (!cell) return
+      const estVal = parseFloat(cell.dataset.estVal ?? '')
+      if (isNaN(estVal)) return
+      const deltas = [0.002, 0.001, 0, -0.001, -0.002]
+      let html = ''
+      for (const d of deltas) {
+        const price = estVal * (1 + d)
+        if (d === 0) {
+          html += '<hr class="ladder-separator">'
+        } else {
+          const sign = d > 0 ? '+' : '−'
+          const label = sign + Math.abs(d * 100).toFixed(1) + '%'
+          const cls = d > 0 ? 'ladder-up' : 'ladder-down'
+          html += `<span class="${cls}">${label}  ${price.toFixed(2)}</span>\n`
+        }
+      }
+      const tip = getTooltip()
+      tip.innerHTML = html
+      tip.style.display = 'block'
+      const rect = cell.getBoundingClientRect()
+      tip.style.left = (rect.right + 8) + 'px'
+      tip.style.top = rect.top + 'px'
+    }
+    function onLeave(e: Event) {
+      const cell = (e.target as Element).closest('td[id^="est-val-"].loaded')
+      if (!cell) return
+      if (tooltip) tooltip.style.display = 'none'
+    }
+    document.addEventListener('mouseenter', onEnter, true)
+    document.addEventListener('mouseleave', onLeave, true)
+    return () => {
+      document.removeEventListener('mouseenter', onEnter, true)
+      document.removeEventListener('mouseleave', onLeave, true)
+      tooltip?.remove()
+      tooltip = null
+    }
+  }, [])
 
   return (
     <>
@@ -220,7 +272,11 @@ export default function StockTable() {
                 </td>
 
                 {/* EST */}
-                <td className="col-market-data price" id={`est-val-${sym}`}>
+                <td
+                  className={`col-market-data price${estPrice !== null ? ' loaded' : ''}`}
+                  id={`est-val-${sym}`}
+                  data-est-val={estPrice ?? undefined}
+                >
                   {estPrice !== null ? formatCurrency(estPrice) : '—'}
                 </td>
 
