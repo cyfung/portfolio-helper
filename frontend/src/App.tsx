@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSSE } from '@/hooks/useSSE'
+import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import PortfolioPage from '@/pages/PortfolioPage'
 import LoanPage from '@/pages/LoanPage'
@@ -12,6 +13,8 @@ import type { PortfolioData } from '@/types/portfolio'
 export default function App() {
   // Single global SSE connection for the whole app lifetime
   useSSE()
+  // Poll server update state to keep version badge fresh on all pages
+  useUpdateChecker()
 
   // Bootstrap: load appConfig + portfolioId so version badge and SSE work on all pages
   const loadPortfolioData = usePortfolioStore(s => s.loadPortfolioData)

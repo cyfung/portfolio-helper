@@ -466,6 +466,21 @@ h1 {
     background: rgba(59, 130, 246, .3);
 }
 
+.update-downloading-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #92400e;
+    background: #fef3c7;
+    border-radius: 10px;
+    padding: 1px 7px;
+    white-space: nowrap;
+    user-select: none;
+}
+[data-theme="dark"] .update-downloading-tag {
+    background: rgba(245, 158, 11, .18);
+    color: #fcd34d;
+}
+
 .update-ready-tag {
     font-size: 0.65rem;
     font-weight: 600;

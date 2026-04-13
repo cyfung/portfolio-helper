@@ -62,6 +62,7 @@ interface PortfolioState {
   setAllocReduceMode: (mode: AllocMode) => void
   setStocks: (stocks: StockData[]) => void
   setCash: (cash: CashData[]) => void
+  updateAppConfig: (patch: Pick<AppConfig, 'hasUpdate' | 'latestVersion' | 'downloadPhase' | 'autoUpdate'>) => void
 }
 
 const LS_KEYS = {
@@ -219,4 +220,10 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   setStocks: (stocks) => set({ stocks }),
   setCash: (cash) => set({ cash }),
+
+  updateAppConfig: (patch) => {
+    const current = get().appConfig
+    if (!current) return
+    set({ appConfig: { ...current, ...patch } })
+  },
 }))

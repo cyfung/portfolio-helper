@@ -118,11 +118,13 @@ export function HeaderRight({ children }: HeaderRightProps) {
 
   const { version, hasUpdate, latestVersion, downloadPhase, isJpackageInstall, autoUpdate } = appConfig
   const autoDownloads = isJpackageInstall && autoUpdate
+  const isDownloading = downloadPhase === 'DOWNLOADING'
   const isReady = downloadPhase === 'READY' || downloadPhase === 'APPLYING'
 
-  const showUpdateTag = hasUpdate && !autoDownloads && !isReady
-  const showUpdateDot = hasUpdate && autoDownloads && !isReady
-  const showReadyTag = isReady
+  const showUpdateTag      = hasUpdate && !autoDownloads && !isDownloading && !isReady
+  const showUpdateDot      = hasUpdate && autoDownloads && !isDownloading && !isReady
+  const showDownloadingTag = isDownloading
+  const showReadyTag       = isReady
 
   return (
     <div className="header-right">
@@ -143,6 +145,14 @@ export function HeaderRight({ children }: HeaderRightProps) {
           title={latestVersion ? `Update available: v${latestVersion}` : 'Update available'}
           hidden={!showUpdateDot}
         />
+        <span
+          className="update-downloading-tag"
+          id="header-update-downloading"
+          title={latestVersion ? `Downloading v${latestVersion}…` : 'Downloading update…'}
+          hidden={!showDownloadingTag}
+        >
+          Downloading…
+        </span>
         <span
           className="update-ready-tag"
           id="header-update-ready"
