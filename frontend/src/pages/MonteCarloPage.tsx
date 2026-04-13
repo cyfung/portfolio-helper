@@ -1,7 +1,10 @@
 // ── MonteCarloPage.tsx — Full React port of Monte Carlo simulation ────────────
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import Chart from 'chart.js/auto'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer, Brush,
+} from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
@@ -50,10 +53,8 @@ export default function MonteCarloPage() {
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [logScale, setLogScale]       = useState(false)
 
-  const savedBarRef   = useRef<SavedPortfoliosBarRef>(null)
-  const canvasRef     = useRef<HTMLCanvasElement>(null)
-  const chartRef      = useRef<Chart | null>(null)
-  const pollRef       = useRef<number | null>(null)
+  const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
+  const pollRef     = useRef<number | null>(null)
 
   // Restore settings on mount
   useEffect(() => {
@@ -80,85 +81,52 @@ export default function MonteCarloPage() {
       .catch(() => {})
   }, [])
 
-  // Re-render chart when deps change
-  useEffect(() => {
-    if (!results) return
-    const { gridColor, textColor } = getChartTheme()
-    chartRef.current?.destroy()
+  // ── Computed chart data ───────────────────────────────────────────────────
 
-    if (!canvasRef.current) return
-
-    const simulatedYears = results.simulatedYears
-    const targetDays = simulatedYears * 252
-    const xLabels = Array.from({ length: targetDays + 1 }, (_, i) => i)
+  const chartData = useMemo(() => {
+    if (!results) return null
+    const targetDays = results.simulatedYears * 252
     const effectiveCurves = getEffectiveCurves(results, selected)
     const singleCurve = effectiveCurves.length === 1
 
-    const datasets: any[] = []
+    // Build rows: one object per day index
+    const rows: Record<string, any>[] = Array.from({ length: targetDays + 1 }, (_, i) => ({ x: i }))
+
+    interface McDataset { label: string; color: string; strokeDasharray?: string; strokeWidth: number }
+    const datasets: McDataset[] = []
+
     if (singleCurve) {
       const { curve } = effectiveCurves[0]
-      PERCENTILE_LIST.forEach((pct, idx) => {
-        const pp = curve.percentilePaths.find(p => p.percentile === pct)
+      PERCENTILE_LIST.forEach((p, idx) => {
+        const pp = curve.percentilePaths.find(x => x.percentile === p)
         if (!pp) return
+        const key = `P${p}`
+        pp.points.forEach((val, i) => { rows[i][key] = val })
         datasets.push({
-          label: `P${pct}`,
-          data: pp.points,
-          borderColor: PERCENTILE_COLORS[idx],
-          backgroundColor: 'transparent',
-          borderWidth: pct === 50 ? 2.5 : 1.5,
-          borderDash: pct === 50 ? [] : (idx < 3 ? [4, 2] : []),
-          pointRadius: 0, pointHoverRadius: 4,
+          label: key,
+          color: PERCENTILE_COLORS[idx],
+          strokeDasharray: p !== 50 && idx < 3 ? '4 2' : undefined,
+          strokeWidth: p === 50 ? 2.5 : 1.5,
         })
       })
     } else {
-      effectiveCurves.forEach(({ portfolio, pi, curve, ci }) => {
+      effectiveCurves.forEach(({ portfolio, pi, curve, ci }, arrIdx) => {
         const palette = PALETTE[pi % PALETTE.length]
-        const pp = curve.percentilePaths.find(p => p.percentile === percentile)
+        const pp = curve.percentilePaths.find(x => x.percentile === percentile)
         if (!pp) return
+        const key = `${portfolio.label} \u2013 ${curve.label}`
+        pp.points.forEach((val, i) => { rows[i][key] = val })
         datasets.push({
-          label: `${portfolio.label} \u2013 ${curve.label}`,
-          data: pp.points,
-          borderColor: palette[ci % palette.length],
-          backgroundColor: 'transparent',
-          borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4,
+          label: key,
+          color: palette[ci % palette.length],
+          strokeWidth: 1.5,
         })
       })
     }
 
-    chartRef.current = new Chart(canvasRef.current.getContext('2d')!, {
-      type: 'line', data: { labels: xLabels, datasets },
-      options: {
-        animation: false, responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { labels: { color: textColor } },
-          tooltip: {
-            mode: 'index',
-            callbacks: {
-              title: items => { const idx = items[0]?.dataIndex ?? 0; return `Year ${(idx / 252).toFixed(1)}` },
-              label: item => ` ${item.dataset.label}: $${(item.raw as number).toFixed(0)}`,
-            },
-          },
-        },
-        scales: {
-          x: {
-            ticks: {
-              color: textColor, maxRotation: 0,
-              callback: (_, index) => index % 252 === 0 ? index / 252 : '',
-            },
-            grid: { color: gridColor },
-          },
-          y: {
-            type: logScale ? 'logarithmic' : 'linear',
-            ticks: { color: textColor, callback: v => '$' + Number(v).toFixed(0) },
-            grid: { color: gridColor },
-          },
-        },
-      },
-    })
-
-    return () => { chartRef.current?.destroy(); chartRef.current = null }
-  }, [results, percentile, selected, logScale])
+    const yearTicks = Array.from({ length: results.simulatedYears + 1 }, (_, i) => i * 252)
+    return { rows, datasets, yearTicks, targetDays }
+  }, [results, percentile, selected])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -303,6 +271,39 @@ export default function MonteCarloPage() {
     { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
   ]
 
+  // ── Theme ─────────────────────────────────────────────────────────────────
+
+  const { gridColor, textColor } = getChartTheme()
+  const isDark = textColor === '#c0c0c0'
+  const tooltipContentStyle = {
+    background: isDark ? '#1e1e1e' : '#ffffff',
+    border: `1px solid ${gridColor}`,
+    borderRadius: 4,
+    padding: '6px 10px',
+    fontSize: '0.78em',
+  }
+
+  const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
+    ({ active, payload, label }: any) => {
+      if (!active || !payload?.length) return null
+      return (
+        <div style={tooltipContentStyle}>
+          <div style={{ color: textColor, marginBottom: 4, fontWeight: 600 }}>
+            {labelFmt ? labelFmt(label) : label}
+          </div>
+          {payload.map((item: any) => (
+            <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ color: textColor, opacity: 0.75 }}>{item.name}</span>
+              </div>
+              <span style={{ color: textColor, fontWeight: 600, textAlign: 'right' }}>{valueFmt(Number(item.value))}</span>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
   return (
     <div className="container">
       <div className="portfolio-header">
@@ -372,7 +373,7 @@ export default function MonteCarloPage() {
 
       {error && <div className="backtest-error">{error}</div>}
 
-      {results && (
+      {results && chartData && (
         <>
           <div style={{ opacity: 0.7, margin: '0.5rem 0 1rem', lineHeight: 1.5 }}>
             <p style={{ fontSize: 'var(--font-size-md)', margin: 0 }}>
@@ -388,13 +389,13 @@ export default function MonteCarloPage() {
 
           {/* Percentile tabs */}
           <div className="mc-percentile-tabs">
-            {PERCENTILE_LIST.map(pct => (
+            {PERCENTILE_LIST.map(p => (
               <button
-                key={pct} type="button"
-                className={`mc-pct-tab${pct === percentile ? ' active' : ''}`}
-                onClick={() => setPercentile(pct)}
+                key={p} type="button"
+                className={`mc-pct-tab${p === percentile ? ' active' : ''}`}
+                onClick={() => setPercentile(p)}
               >
-                {pct}th
+                {p}th
               </button>
             ))}
           </div>
@@ -462,7 +463,7 @@ export default function MonteCarloPage() {
             </table>
           </div>
 
-          {/* Chart */}
+          {/* MC Chart */}
           <div className="backtest-chart-container">
             <button
               className={`chart-scale-toggle${logScale ? ' active' : ''}`}
@@ -471,7 +472,50 @@ export default function MonteCarloPage() {
             >
               Log
             </button>
-            <canvas ref={canvasRef} />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData.rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis
+                  dataKey="x"
+                  type="number"
+                  domain={[0, chartData.targetDays]}
+                  ticks={chartData.yearTicks}
+                  tickFormatter={v => `Y${v / 252}`}
+                  tick={{ fill: textColor, fontSize: 11 }}
+                />
+                <YAxis
+                  scale={logScale ? 'log' : 'linear'}
+                  domain={['auto', 'auto']}
+                  allowDataOverflow={logScale}
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  tickFormatter={v => '$' + Number(v).toFixed(0)}
+                  width={72}
+                />
+                <Tooltip content={makeTooltip(v => '$' + v.toFixed(0), v => `Year ${(Number(v) / 252).toFixed(1)}`)} />
+                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
+                {chartData.datasets.map(ds => (
+                  <Line
+                    key={ds.label}
+                    dataKey={ds.label}
+                    stroke={ds.color}
+                    strokeWidth={ds.strokeWidth}
+                    strokeDasharray={ds.strokeDasharray}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                  />
+                ))}
+                <Brush
+                  dataKey="x"
+                  height={26}
+                  stroke={gridColor}
+                  fill={isDark ? '#1a1a1a' : '#f8f8f8'}
+                  travellerWidth={6}
+                  tickFormatter={v => `Y${Math.round(v / 252)}`}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </>
       )}

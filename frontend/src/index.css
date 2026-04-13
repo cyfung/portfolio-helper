@@ -3281,6 +3281,15 @@ body.rebalancing-visible .virtual-rebal-btn {
     cursor: default;
 }
 
+/* Chart title above chart containers */
+.backtest-chart-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.35rem;
+    padding-left: 0.25rem;
+}
+
 /* Chart container */
 .backtest-chart-container {
     height: 400px;

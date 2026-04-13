@@ -1,7 +1,10 @@
 // ── BacktestPage.tsx — Full React port of backtest runner ─────────────────────
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import Chart from 'chart.js/auto'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Legend, ResponsiveContainer, Brush,
+} from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
@@ -13,51 +16,9 @@ import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE,
 } from '@/types/backtest'
-
-// ── Chart helpers ─────────────────────────────────────────────────────────────
-
-function buildCommonLabels(data: BacktestResults): string[] {
-  let common = new Set(data.portfolios[0].curves[0].points.map(p => p.date))
-  for (let i = 1; i < data.portfolios.length; i++) {
-    const dates = new Set(data.portfolios[i].curves[0].points.map(p => p.date))
-    for (const d of [...common]) { if (!dates.has(d)) common.delete(d) }
-  }
-  return [...common].sort()
-}
-
-function buildCurveDatasets(
-  data: BacktestResults, labels: string[], selected: Set<string>,
-  valueFn: (pts: { date: string; value: number }[]) => (number | null)[],
-) {
-  const datasets: any[] = []
-  data.portfolios.forEach((portfolio, pi) => {
-    const palette = PALETTE[pi % PALETTE.length]
-    portfolio.curves.forEach((curve, ci) => {
-      if (selected.size > 0 && !selected.has(`${pi}-${ci}`)) return
-      const vals = valueFn(curve.points)
-      const byDate = new Map(curve.points.map((p, i) => [p.date, vals[i]]))
-      datasets.push({
-        label: `${portfolio.label} \u2013 ${curve.label}`,
-        data: labels.map(d => byDate.get(d) ?? null),
-        spanGaps: false,
-        borderColor: palette[ci % palette.length],
-        backgroundColor: 'transparent',
-        borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4,
-      })
-    })
-  })
-  return datasets
-}
-
-function computeDrawdown(pts: { date: string; value: number }[]): number[] {
-  let peak = -Infinity
-  return pts.map(p => { if (p.value > peak) peak = p.value; return (p.value / peak) - 1 })
-}
-
-function computeRTR(pts: { date: string; value: number }[]): (number | null)[] {
-  let peak = -Infinity
-  return pts.map(p => { if (p.value > peak) peak = p.value; return p.value > 0 ? peak / p.value : null })
-}
+import {
+  buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
+} from '@/lib/chartData'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -74,12 +35,6 @@ export default function BacktestPage() {
   const [logScale, setLogScale]     = useState(false)
 
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
-  const mainCanvasRef     = useRef<HTMLCanvasElement>(null)
-  const ddCanvasRef       = useRef<HTMLCanvasElement>(null)
-  const rtrCanvasRef      = useRef<HTMLCanvasElement>(null)
-  const mainChartRef      = useRef<Chart | null>(null)
-  const ddChartRef        = useRef<Chart | null>(null)
-  const rtrChartRef       = useRef<Chart | null>(null)
 
   // Restore settings on mount
   useEffect(() => {
@@ -100,83 +55,18 @@ export default function BacktestPage() {
       .catch(() => {})
   }, [])
 
-  // Re-render charts when results/logScale/selected changes
-  useEffect(() => {
-    if (!results) return
-    const { gridColor, textColor } = getChartTheme()
+  // ── Computed chart data ───────────────────────────────────────────────────
+
+  const chartData = useMemo(() => {
+    if (!results) return null
     const labels = buildCommonLabels(results)
-
-    // Destroy old
-    mainChartRef.current?.destroy()
-    ddChartRef.current?.destroy()
-    rtrChartRef.current?.destroy()
-
-    if (mainCanvasRef.current) {
-      const datasets = buildCurveDatasets(results, labels, selected, pts => pts.map(p => p.value))
-      mainChartRef.current = new Chart(mainCanvasRef.current.getContext('2d')!, {
-        type: 'line', data: { labels, datasets },
-        options: {
-          animation: false, responsive: true, maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            title: { display: true, text: 'Portfolio Value', color: textColor, font: { size: 13 } },
-            legend: { labels: { color: textColor } },
-            tooltip: { mode: 'index', callbacks: { title: i => i[0]?.label || '', label: i => ` ${i.dataset.label}: $${(i.raw as number).toFixed(2)}` } },
-          },
-          scales: {
-            x: { ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 }, grid: { color: gridColor } },
-            y: { type: logScale ? 'logarithmic' : 'linear', ticks: { color: textColor, callback: v => '$' + Number(v).toFixed(0) }, grid: { color: gridColor } },
-          },
-        },
-      })
+    return {
+      labels,
+      mainData: buildRechartsData(results, labels, selected, pts => pts.map(p => p.value)),
+      ddData:   buildRechartsData(results, labels, selected, computeDrawdown),
+      rtrData:  buildRechartsData(results, labels, selected, computeRTR),
     }
-
-    if (ddCanvasRef.current) {
-      const datasets = buildCurveDatasets(results, labels, selected, computeDrawdown)
-      ddChartRef.current = new Chart(ddCanvasRef.current.getContext('2d')!, {
-        type: 'line', data: { labels, datasets },
-        options: {
-          animation: false, responsive: true, maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            title: { display: true, text: 'Drawdown', color: textColor, font: { size: 13 } },
-            legend: { labels: { color: textColor } },
-            tooltip: { mode: 'index', callbacks: { title: i => i[0]?.label || '', label: i => ` ${i.dataset.label}: ${((i.raw as number) * 100).toFixed(2)}%` } },
-          },
-          scales: {
-            x: { ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 }, grid: { color: gridColor } },
-            y: { ticks: { color: textColor, callback: v => (Number(v) * 100).toFixed(1) + '%' }, grid: { color: gridColor } },
-          },
-        },
-      })
-    }
-
-    if (rtrCanvasRef.current) {
-      const datasets = buildCurveDatasets(results, labels, selected, computeRTR)
-      rtrChartRef.current = new Chart(rtrCanvasRef.current.getContext('2d')!, {
-        type: 'line', data: { labels, datasets },
-        options: {
-          animation: false, responsive: true, maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            title: { display: true, text: 'Return Required to Recover', color: textColor, font: { size: 13 } },
-            legend: { labels: { color: textColor } },
-            tooltip: { mode: 'index', callbacks: { title: i => i[0]?.label || '', label: i => ` ${i.dataset.label}: ${(i.raw as number).toFixed(2)}x` } },
-          },
-          scales: {
-            x: { ticks: { color: textColor, maxTicksLimit: 10, maxRotation: 0 }, grid: { color: gridColor } },
-            y: { ticks: { color: textColor, callback: v => Number(v).toFixed(2) + 'x' }, grid: { color: gridColor } },
-          },
-        },
-      })
-    }
-
-    return () => {
-      mainChartRef.current?.destroy(); mainChartRef.current = null
-      ddChartRef.current?.destroy();   ddChartRef.current = null
-      rtrChartRef.current?.destroy();  rtrChartRef.current = null
-    }
-  }, [results, logScale, selected])
+  }, [results, selected])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -266,6 +156,47 @@ export default function BacktestPage() {
   )
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
 
+  // ── Chart helpers ─────────────────────────────────────────────────────────
+
+  const { gridColor, textColor } = getChartTheme()
+  const isDark = textColor === '#c0c0c0'
+  const tooltipContentStyle = {
+    background: isDark ? '#1e1e1e' : '#ffffff',
+    border: `1px solid ${gridColor}`,
+    borderRadius: 4,
+    padding: '6px 10px',
+    fontSize: '0.78em',
+  }
+
+  const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
+    ({ active, payload, label }: any) => {
+      if (!active || !payload?.length) return null
+      return (
+        <div style={tooltipContentStyle}>
+          <div style={{ color: textColor, marginBottom: 4, fontWeight: 600 }}>
+            {labelFmt ? labelFmt(label) : label}
+          </div>
+          {payload.map((item: any) => (
+            <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ color: textColor, opacity: 0.75 }}>{item.name}</span>
+              </div>
+              <span style={{ color: textColor, fontWeight: 600, textAlign: 'right' }}>{valueFmt(Number(item.value))}</span>
+            </div>
+          ))}
+        </div>
+      )
+    }
+  const commonLineProps = {
+    type: 'monotone' as const,
+    dot: false as const,
+    activeDot: { r: 4 },
+    strokeWidth: 1.5,
+    connectNulls: false,
+    isAnimationActive: false,
+  }
+
   return (
     <div className="container">
       <div className="portfolio-header">
@@ -311,7 +242,7 @@ export default function BacktestPage() {
 
       {error && <div className="backtest-error">{error}</div>}
 
-      {results && (
+      {results && chartData && (
         <>
           {/* Stats table */}
           <div className="stats-container">
@@ -364,7 +295,8 @@ export default function BacktestPage() {
             </table>
           </div>
 
-          {/* Main chart */}
+          {/* Portfolio Value chart */}
+          <div className="backtest-chart-title">Portfolio Value</div>
           <div className="backtest-chart-container">
             <button
               className={`chart-scale-toggle${logScale ? ' active' : ''}`}
@@ -373,17 +305,88 @@ export default function BacktestPage() {
             >
               Log
             </button>
-            <canvas ref={mainCanvasRef} />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData.mainData.rows} syncId="backtest" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis
+                  dataKey="x"
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  interval={Math.max(1, Math.floor(chartData.labels.length / 8))}
+                />
+                <YAxis
+                  scale={logScale ? 'log' : 'linear'}
+                  domain={['auto', 'auto']}
+                  allowDataOverflow={logScale}
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  tickFormatter={v => '$' + Number(v).toFixed(0)}
+                  width={72}
+                />
+                <Tooltip content={makeTooltip(v => '$' + v.toFixed(2))} />
+                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
+                {chartData.mainData.datasets.map(ds => (
+                  <Line key={ds.label} dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
+                ))}
+                <Brush
+                  dataKey="x"
+                  height={26}
+                  stroke={gridColor}
+                  fill={isDark ? '#1a1a1a' : '#f8f8f8'}
+                  travellerWidth={6}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
 
           {/* Drawdown chart */}
+          <div className="backtest-chart-title">Drawdown</div>
           <div className="backtest-chart-container">
-            <canvas ref={ddCanvasRef} />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData.ddData.rows} syncId="backtest" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis
+                  dataKey="x"
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  interval={Math.max(1, Math.floor(chartData.labels.length / 8))}
+                />
+                <YAxis
+                  domain={['auto', 'auto']}
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  tickFormatter={v => (Number(v) * 100).toFixed(1) + '%'}
+                  width={60}
+                />
+                <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
+                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
+                {chartData.ddData.datasets.map(ds => (
+                  <Line key={ds.label} dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
           </div>
 
           {/* RTR chart */}
+          <div className="backtest-chart-title">Return Required to Recover</div>
           <div className="backtest-chart-container">
-            <canvas ref={rtrCanvasRef} />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData.rtrData.rows} syncId="backtest" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis
+                  dataKey="x"
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  interval={Math.max(1, Math.floor(chartData.labels.length / 8))}
+                />
+                <YAxis
+                  domain={['auto', 'auto']}
+                  tick={{ fill: textColor, fontSize: 11 }}
+                  tickFormatter={v => Number(v).toFixed(2) + 'x'}
+                  width={60}
+                />
+                <Tooltip content={makeTooltip(v => v.toFixed(2) + 'x')} />
+                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
+                {chartData.rtrData.datasets.map(ds => (
+                  <Line key={ds.label} dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </>
       )}
