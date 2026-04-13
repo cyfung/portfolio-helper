@@ -106,8 +106,8 @@ export default function SummaryTable() {
   const activeIsMarginUsd = !activeIsRebal && !activeIsMarginPct && marginTargetUsd !== null
 
   // ── Single underlying rebal target; all placeholders derive from it ───────
-  // equity = stocks − current margin debt (the unlevered base)
-  const equity = stockGrossUsd - absMargin
+  // equity = stocks + marginUsdVal: subtracts debt (negative) or adds credit (positive)
+  const equity = stockGrossUsd + marginUsdVal
 
   const underlyingUsd: number | null = (() => {
     if (!stockGrossKnown) return null
@@ -129,8 +129,9 @@ export default function SummaryTable() {
     ? formatUsdForInput(underlyingUsd)
     : stockGrossKnown ? formatUsdForInput(stockGrossUsd) : ''
   const targetImpliesNoMargin = underlyingUsd !== null && underlyingUsd <= equity
-  const marginPctPlaceholder = impliedMarginPct > 0 ? impliedMarginPct.toFixed(2) : (targetImpliesNoMargin ? '-' : '')
-  const marginUsdPlaceholder = impliedMargin > 0 ? formatUsdForInput(impliedMargin) : (targetImpliesNoMargin ? '-' : '')
+  const noCurrentMargin = underlyingUsd === null && marginUsdVal >= 0
+  const marginPctPlaceholder = noCurrentMargin ? '-' : impliedMarginPct > 0 ? impliedMarginPct.toFixed(2) : (targetImpliesNoMargin ? '-' : '')
+  const marginUsdPlaceholder = noCurrentMargin ? '-' : impliedMargin > 0 ? formatUsdForInput(impliedMargin) : (targetImpliesNoMargin ? '-' : '')
 
   // ── Debounce timers (one per field) ──────────────────────────────────────
   const rebalTimer     = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -274,18 +275,17 @@ export default function SummaryTable() {
               <tr
                 className="margin-row"
                 data-margin-row="true"
-                style={{ display: marginUsdVal ? undefined : 'none' }}
               >
                 <td>Margin</td>
                 <td /><td />
                 {/* Col 4: current margin % */}
                 <td className="text-right text-sm text-muted-foreground">
-                  <span id="margin-percent">{marginPct}</span>
+                  <span id="margin-percent">{marginUsdVal < 0 ? marginPct : '-'}</span>
                 </td>
                 {/* Col 5: USD value */}
                 <td>
                   <span id="margin-total-usd">
-                    {marginUsdVal ? fmt(Math.abs(marginUsdVal)) : '—'}
+                    {marginUsdVal < 0 ? fmt(Math.abs(marginUsdVal)) : '-'}
                   </span>
                 </td>
               </tr>
