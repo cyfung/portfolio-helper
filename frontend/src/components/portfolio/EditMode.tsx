@@ -128,6 +128,21 @@ export default function EditMode({ saveKey, onSaved }: Props) {
     setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
   }
 
+  // ── Enter key: move to same column in next visible row ───────────────────
+  function handleEnterKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const col = (e.currentTarget as HTMLElement).getAttribute('data-column')
+    if (!col) return
+    const tbody = document.querySelector('#stock-edit-table tbody')
+    if (!tbody) return
+    const allInputs = Array.from(tbody.querySelectorAll<HTMLInputElement>(`input[data-column="${col}"]`))
+    const currentIdx = allInputs.indexOf(e.currentTarget)
+    if (currentIdx >= 0 && currentIdx + 1 < allInputs.length) {
+      allInputs[currentIdx + 1].focus()
+    }
+  }
+
   // ── Paste-from-spreadsheet handler ───────────────────────────────────────
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const activeEl = document.activeElement as HTMLElement | null
@@ -268,6 +283,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
                   placeholder="TICKER"
                   style={{ textAlign: 'left', width: 80, display: 'block' }}
                   onChange={e => updateStock(idx, 'symbol', e.target.value.toUpperCase())}
+                  onKeyDown={handleEnterKey}
                 />
               </td>
               <td className="amount">
@@ -281,6 +297,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
                   step="any"
                   style={{ display: 'block' }}
                   onChange={e => updateStock(idx, 'qty', parseFloat(e.target.value) || 0)}
+                  onKeyDown={handleEnterKey}
                 />
               </td>
               <td>
@@ -292,6 +309,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
                   value={row.weight}
                   min={0} max={100} step={0.1}
                   onChange={e => updateStock(idx, 'weight', parseFloat(e.target.value) || 0)}
+                  onKeyDown={handleEnterKey}
                 />
               </td>
               <td>
@@ -304,6 +322,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
                   placeholder="e.g. 2 IVV"
                   style={{ textAlign: 'left', width: 180 }}
                   onChange={e => updateStock(idx, 'letf', e.target.value)}
+                  onKeyDown={handleEnterKey}
                 />
               </td>
               <td>
@@ -316,6 +335,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
                   placeholder="e.g. 1 Equity"
                   style={{ textAlign: 'left', width: 180 }}
                   onChange={e => updateStock(idx, 'groups', e.target.value)}
+                  onKeyDown={handleEnterKey}
                 />
               </td>
               <td>
@@ -333,8 +353,8 @@ export default function EditMode({ saveKey, onSaved }: Props) {
         <tfoot>
           <tr>
             <td /><td>Total</td><td />
-            <td id="target-weight-total">
-              {totalWeight > 0 ? `${totalWeight.toFixed(1)}%` : ''}
+            <td id="target-weight-total" style={totalWeight > 0 && Math.abs(totalWeight - 100) > 0.001 ? { color: 'red' } : undefined}>
+              {totalWeight > 0 ? `${totalWeight.toFixed(2)}%` : ''}
             </td>
             <td /><td /><td />
           </tr>

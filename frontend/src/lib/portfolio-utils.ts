@@ -34,7 +34,7 @@ export function parsePrice(text: string | null | undefined): number | null {
 
 // ── FX / display currency ─────────────────────────────────────────────────────
 
-export function toDisplayCurrency(
+export function convertFromUsd(
   usd: number,
   fxRates: Record<string, number>,
   currency: string
@@ -49,7 +49,15 @@ export function formatDisplayCurrency(
   fxRates: Record<string, number>,
   currency: string
 ): string {
-  return formatCurrency(toDisplayCurrency(usd, fxRates, currency))
+  return formatCurrency(convertFromUsd(usd, fxRates, currency))
+}
+
+export function formatSignedDisplayCurrency(
+  usd: number,
+  fxRates: Record<string, number>,
+  currency: string
+): string {
+  return (usd >= 0 ? '+' : '') + formatDisplayCurrency(usd, fxRates, currency)
 }
 
 // ── Quantity formatting ───────────────────────────────────────────────────────

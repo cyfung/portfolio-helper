@@ -66,7 +66,7 @@ export interface StockDisplayItem {
   symbol: string
   markPrice: number | null
   closePrice: number | null
-  dayChangeDollars: number | null
+  dayChangeNative: number | null
   dayChangePct: number | null
   qty: number | null
   currency: string
@@ -178,7 +178,7 @@ export interface StockDisplayState {
   closePrice: number | null
   lastNav: number | null
   estPriceNative: number | null
-  dayChangeDollars: number | null
+  dayChangeNative: number | null
   dayChangePct: number | null
   positionValueUsd: number | null
   currency: string

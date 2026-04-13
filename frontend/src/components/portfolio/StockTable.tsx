@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
-  formatCurrency, formatQty, toDisplayCurrency,
+  formatCurrency, formatQty, convertFromUsd,
   parseLetfAttr, formatSignedCurrency,
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
@@ -16,6 +16,7 @@ export default function StockTable() {
     lastStockDisplay, lastGroupAllocData, lastPortfolioTotals,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     allocAddMode, allocReduceMode,
+    showStockDisplayCurrency,
   } = usePortfolioStore()
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
@@ -55,12 +56,7 @@ export default function StockTable() {
 
   const fmt = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
-      ? formatCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
-      : '—'
-
-  const fmtSigned = (usd: number) =>
-    hasFxRate(fxRates, currentDisplayCurrency)
-      ? formatSignedCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      ? formatCurrency(convertFromUsd(usd, fxRates, currentDisplayCurrency))
       : '—'
 
   // Check if any stock has target weight > 0 (for rebal warning)
@@ -157,7 +153,7 @@ export default function StockTable() {
             const navPrice = live?.lastNav ?? null
             const estPrice = live?.estPriceNative ?? null
             const posVal = live?.positionValueUsd ?? null
-            const dayCh = live?.dayChangeDollars ?? null
+            const dayCh = live?.dayChangeNative ?? null
             const stockCcy = live?.currency ?? 'USD'
             const fxRate = fxRates[stockCcy] ?? null
 
@@ -169,22 +165,32 @@ export default function StockTable() {
             const dayPctStr = dayPct !== null
               ? `${dayPct >= 0 ? '+' : ''}${dayPct.toFixed(2)}%` : ''
 
-            // Mkt Val in display currency
-            const mktValStr = posVal !== null ? fmt(posVal) : '—'
+            // Mkt Val: display currency or native
+            const hasNativeRate = stockCcy === 'USD' || fxRate !== null
+            const mktValStr = posVal !== null
+              ? (showStockDisplayCurrency
+                  ? fmt(posVal)
+                  : hasNativeRate ? formatCurrency(convertFromUsd(posVal, fxRates, stockCcy)) : '—')
+              : '—'
 
-            // Day change (CHG) in display currency
-            const dayChStr = dayCh !== null ? fmtSigned(dayCh) : ''
+            // Day change (CHG) always in native currency (dayChangeNative is per-share, native)
+            const dayChStr = dayCh !== null ? formatSignedCurrency(dayCh) : ''
             const dayChCls = `${dayCh === null ? 'neutral' : dayCh > 0 ? 'positive' : dayCh < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
 
             // Position P&L = per-share change × scaled qty (from SSE) × fx → USD → display
             const liveQty = live?.qty ?? null
             const pnlUsd = (dayCh !== null && liveQty !== null && fxRate !== null)
               ? dayCh * liveQty * fxRate : null
-            const pnlStr = pnlUsd !== null
-              ? (hasFxRate(fxRates, currentDisplayCurrency)
-                  ? formatSignedCurrency(toDisplayCurrency(pnlUsd, fxRates, currentDisplayCurrency))
-                  : '—')
-              : ''
+            const pnlNative = (dayCh !== null && liveQty !== null) ? dayCh * liveQty : null
+            const pnlStr = showStockDisplayCurrency
+              ? (pnlUsd !== null
+                  ? (hasFxRate(fxRates, currentDisplayCurrency)
+                      ? formatSignedCurrency(convertFromUsd(pnlUsd, fxRates, currentDisplayCurrency))
+                      : '—')
+                  : '')
+              : (pnlNative !== null
+                  ? (hasNativeRate ? formatSignedCurrency(pnlNative) : '—')
+                  : '')
             const pnlCls = `${pnlUsd === null ? 'neutral' : pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
 
             // Weight columns (only when stock gross known)

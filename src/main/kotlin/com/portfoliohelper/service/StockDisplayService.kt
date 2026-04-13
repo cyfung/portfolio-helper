@@ -19,7 +19,7 @@ data class StockDisplay(
     val qty: Double,
     val markPrice: Double?,
     val closePrice: Double?,
-    val dayChangeDollars: Double?,   // per share, native currency
+    val dayChangeNative: Double?,    // per share, in stock's native currency
     val dayChangePct: Double?,
     val positionValueUsd: Double?,   // (mark or close) × qty × fxRate
     val positionChangeUsd: Double?,  // (mark - close) × qty × fxRate
@@ -75,7 +75,7 @@ class StockDisplayService(
             val targetWeightPct: Double?,
             val positionValueUsd: Double?,
             val positionChangeUsd: Double?,
-            val dayChangeDollars: Double?,
+            val dayChangeNative: Double?,
             val dayChangePct: Double?,
             val estPriceNative: Double?,
             val isMarketClosed: Boolean,
@@ -98,9 +98,9 @@ class StockDisplayService(
                 effectivePrice * qty * fxRate else null
             val positionChangeUsd = if (markPrice != null && closePrice != null && fxRate != null)
                 (markPrice - closePrice) * qty * fxRate else null
-            val dayChangeDollars = if (markPrice != null && closePrice != null) markPrice - closePrice else null
-            val dayChangePct = if (dayChangeDollars != null && closePrice != null && closePrice != 0.0)
-                dayChangeDollars / closePrice * 100.0 else null
+            val dayChangeNative = if (markPrice != null && closePrice != null) markPrice - closePrice else null
+            val dayChangePct = if (dayChangeNative != null && closePrice != null && closePrice != 0.0)
+                dayChangeNative / closePrice * 100.0 else null
 
             val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)
             val sessionStarted = quote?.tradingPeriodStart?.let { nowMs / 1000 >= it } ?: false
@@ -116,7 +116,7 @@ class StockDisplayService(
                 targetWeightPct = stock.targetWeight,
                 positionValueUsd = positionValueUsd,
                 positionChangeUsd = positionChangeUsd,
-                dayChangeDollars = dayChangeDollars, dayChangePct = dayChangePct,
+                dayChangeNative = dayChangeNative, dayChangePct = dayChangePct,
                 estPriceNative = estPriceNative,
                 isMarketClosed = quote?.isMarketClosed ?: false,
                 tradingPeriodEnd = quote?.tradingPeriodEnd,
@@ -144,7 +144,7 @@ class StockDisplayService(
             StockDisplay(
                 symbol = w.symbol, qty = w.qty,
                 markPrice = w.markPrice, closePrice = w.closePrice,
-                dayChangeDollars = w.dayChangeDollars, dayChangePct = w.dayChangePct,
+                dayChangeNative = w.dayChangeNative, dayChangePct = w.dayChangePct,
                 positionValueUsd = w.positionValueUsd,
                 positionChangeUsd = w.positionChangeUsd,
                 currency = w.currency,

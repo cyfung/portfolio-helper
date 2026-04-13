@@ -1,7 +1,7 @@
 // ── SummaryTable.tsx — Port of buildSummaryRows from PortfolioRenderer.kt ────
 import { useRef, useState, useEffect } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import { formatCurrency, formatDisplayCurrency, formatSignedCurrency, hasFxRate } from '@/lib/portfolio-utils'
+import { formatCurrency, formatDisplayCurrency, formatSignedCurrency, formatSignedDisplayCurrency, hasFxRate } from '@/lib/portfolio-utils'
 
 export default function SummaryTable() {
   const store = usePortfolioStore()
@@ -61,6 +61,11 @@ export default function SummaryTable() {
   }, [rebalTargetUsd, marginTargetPct, marginTargetUsd, currentDisplayCurrency, fxRates[currentDisplayCurrency]])
 
   // ── Formatted display values ──────────────────────────────────────────────
+  const fmtSignedDisplay = (usd: number) =>
+    hasFxRate(fxRates, currentDisplayCurrency)
+      ? formatSignedDisplayCurrency(usd, fxRates, currentDisplayCurrency)
+      : '—'
+
   const fmt = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
       ? formatDisplayCurrency(usd, fxRates, currentDisplayCurrency)
@@ -71,10 +76,10 @@ export default function SummaryTable() {
   const grandTotal = grandTotalKnown ? fmt(lastPortfolioTotals!.grandTotalUsd) : '—'
 
   const dayChangeUsd = grandTotalKnown ? (lastPortfolioTotals?.dayChangeUsd ?? null) : null
-  const prevDayUsd = lastPortfolioTotals?.prevDayUsd ?? null
-  const dayChangePct = grandTotalKnown && dayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
-    ? (dayChangeUsd / prevDayUsd * 100) : null
-  const dayChangeStr = dayChangeUsd !== null ? formatSignedCurrency(dayChangeUsd) : ''
+  const grandTotalUsdRaw = lastPortfolioTotals?.grandTotalUsd ?? null
+  const dayChangePct = grandTotalKnown && dayChangeUsd !== null && grandTotalUsdRaw !== null
+    ? (dayChangeUsd / (grandTotalUsdRaw - dayChangeUsd) * 100) : null
+  const dayChangeStr = dayChangeUsd !== null ? fmtSignedDisplay(dayChangeUsd) : ''
   const isAfterHours = (lastStockDisplay?.stocks ?? []).length > 0
     && (lastStockDisplay?.stocks ?? []).every(s => s.isMarketClosed)
   const dayChangeColor = dayChangeUsd !== null && dayChangeUsd > 0
@@ -89,9 +94,9 @@ export default function SummaryTable() {
     ? fmt(stockGrossUsd) : '—'
 
   const stockDayChangeUsd = stockGrossKnown ? (lastPortfolioTotals?.dayChangeUsd ?? null) : null
-  const stockDayChangePct = stockGrossKnown && stockDayChangeUsd !== null && prevDayUsd && prevDayUsd !== 0
-    ? (stockDayChangeUsd / prevDayUsd * 100) : null
-  const stockDayChangeStr = stockDayChangeUsd !== null ? formatSignedCurrency(stockDayChangeUsd) : ''
+  const stockDayChangePct = stockGrossKnown && stockDayChangeUsd !== null && stockGrossUsd !== 0
+    ? (stockDayChangeUsd / (stockGrossUsd - stockDayChangeUsd) * 100) : null
+  const stockDayChangeStr = stockDayChangeUsd !== null ? fmtSignedDisplay(stockDayChangeUsd) : ''
   const stockDayChangeColor = stockDayChangeUsd !== null && stockDayChangeUsd > 0
     ? 'positive' : stockDayChangeUsd !== null && stockDayChangeUsd < 0 ? 'negative' : ''
 

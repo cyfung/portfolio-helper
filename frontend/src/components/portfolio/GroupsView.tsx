@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
-  parseGroupsAttr, formatCurrency, formatSignedCurrency, toDisplayCurrency,
+  parseGroupsAttr, formatCurrency, formatSignedCurrency, convertFromUsd,
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
 import { getRebalTotal } from '@/lib/rebalance'
@@ -35,11 +35,11 @@ export default function GroupsView() {
 
   const fmt = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
-      ? formatCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      ? formatCurrency(convertFromUsd(usd, fxRates, currentDisplayCurrency))
       : '—'
-  const fmtSigned = (usd: number) =>
+  const fmtSignedDisplay = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
-      ? formatSignedCurrency(toDisplayCurrency(usd, fxRates, currentDisplayCurrency))
+      ? formatSignedCurrency(convertFromUsd(usd, fxRates, currentDisplayCurrency))
       : '—'
 
   const stockBySym = new Map(stocks.map(s => [s.label, s]))
@@ -188,11 +188,11 @@ export default function GroupsView() {
       const daypctHtml = `<span class="mark-price-value">${markStr}</span>${dayPctStr ? `<span class="mark-day-pct ${dayPctCls}">${dayPctStr}</span>` : ''}`
 
       // mktvalchg: position P&L (mirrors position-change-${sym} cell)
-      const dayCh = live?.dayChangeDollars ?? null
+      const dayCh = live?.dayChangeNative ?? null
       const liveQty = live?.qty ?? null
       const pnlUsd = dayCh !== null && liveQty !== null && fxRate !== null ? dayCh * liveQty * fxRate : null
       const pnlStr = pnlUsd !== null && hasFxRate(fxRates, currentDisplayCurrency)
-        ? formatSignedCurrency(toDisplayCurrency(pnlUsd, fxRates, currentDisplayCurrency)) : null
+        ? formatSignedCurrency(convertFromUsd(pnlUsd, fxRates, currentDisplayCurrency)) : null
       const pnlCls = pnlUsd === null ? 'neutral' : pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral'
       const mktvalchgHtml = pnlStr ? `<span class="price-change ${pnlCls}">${pnlStr}</span>` : na
 
@@ -222,7 +222,7 @@ export default function GroupsView() {
       const allocDollars = allocBySymbol.get(sym)?.allocDollars ?? null
       let allocHtml = na
       if (allocDollars !== null && hasFxRate(fxRates, currentDisplayCurrency)) {
-        const allocStr = fmtSigned(allocDollars)
+        const allocStr = fmtSignedDisplay(allocDollars)
         const cls = allocDollars > 0.5 ? 'action-positive' : allocDollars < -0.5 ? 'action-negative' : 'action-neutral'
         allocHtml = `<span class="${cls}">${allocStr}</span>`
       }
@@ -276,7 +276,7 @@ export default function GroupsView() {
                     </span>
                   </td>
                   <td className={`price-change ${chgCls}`}>
-                    {isZeroChg ? '—' : fmtSigned(mktValChg)}
+                    {isZeroChg ? '—' : fmtSignedDisplay(mktValChg)}
                   </td>
                   <td className="col-num col-market-data value col-moreinfo">{fmt(g.mktVal)}</td>
                   <td className="col-num value">N/A</td>
@@ -303,7 +303,7 @@ export default function GroupsView() {
                   </span>
                 </td>
                 <td className={`price-change ${chgCls}`}>
-                  {isZeroChg ? '—' : fmtSigned(mktValChg)}
+                  {isZeroChg ? '—' : fmtSignedDisplay(mktValChg)}
                 </td>
                 <td className="col-num col-market-data value col-moreinfo">{fmt(g.mktVal)}</td>
                 <td className="col-num value">
@@ -313,10 +313,10 @@ export default function GroupsView() {
                   <span className={`weight-diff ${diffCls}`}>{pillSign}{weightDiff.toFixed(1)}%</span>
                 </td>
                 <td className={`action-neutral ${actionCls(rebalDollars)} rebal-column`}>
-                  {fmtSigned(rebalDollars)}
+                  {fmtSignedDisplay(rebalDollars)}
                 </td>
                 <td className={`action-neutral ${actionCls(groupAllocUsd)} alloc-column`}>
-                  {fmtSigned(groupAllocUsd)}
+                  {fmtSignedDisplay(groupAllocUsd)}
                 </td>
               </tr>
             )
