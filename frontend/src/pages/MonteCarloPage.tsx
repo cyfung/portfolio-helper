@@ -10,6 +10,7 @@ import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { getChartTheme } from '@/lib/chartTheme'
+import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
@@ -31,6 +32,13 @@ function getEffectiveCurves(data: MonteCarloResults, selected: Set<string>) {
   })
   return result
 }
+
+const MC_COLS = [
+  { metric: 'END_VALUE', label: 'End Value' }, { metric: 'CAGR', label: 'CAGR' },
+  { metric: 'MAX_DD', label: 'Max DD' }, { metric: 'LONGEST_DD', label: 'Longest DD' },
+  { metric: 'ANN_VOL', label: 'Volatility' }, { metric: 'SHARPE', label: 'Sharpe' },
+  { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
+]
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -125,7 +133,7 @@ export default function MonteCarloPage() {
     }
 
     const yearTicks = Array.from({ length: results.simulatedYears + 1 }, (_, i) => i * 252)
-    return { rows, datasets, yearTicks, targetDays }
+    return { rows, datasets, yearTicks, targetDays, effectiveCurves }
   }, [results, percentile, selected])
 
   // ── Run ───────────────────────────────────────────────────────────────────
@@ -264,45 +272,12 @@ export default function MonteCarloPage() {
     }
   }
 
-  const MC_COLS = [
-    { metric: 'END_VALUE', label: 'End Value' }, { metric: 'CAGR', label: 'CAGR' },
-    { metric: 'MAX_DD', label: 'Max DD' }, { metric: 'LONGEST_DD', label: 'Longest DD' },
-    { metric: 'ANN_VOL', label: 'Volatility' }, { metric: 'SHARPE', label: 'Sharpe' },
-    { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
-  ]
-
   // ── Theme ─────────────────────────────────────────────────────────────────
 
-  const { gridColor, textColor } = getChartTheme()
-  const isDark = textColor === '#c0c0c0'
-  const tooltipContentStyle = {
-    background: isDark ? '#1e1e1e' : '#ffffff',
-    border: `1px solid ${gridColor}`,
-    borderRadius: 4,
-    padding: '6px 10px',
-    fontSize: '0.78em',
-  }
-
+  const theme = getChartTheme()
+  const { isDark, gridColor, textColor } = theme
   const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
-    ({ active, payload, label }: any) => {
-      if (!active || !payload?.length) return null
-      return (
-        <div style={tooltipContentStyle}>
-          <div style={{ color: textColor, marginBottom: 4, fontWeight: 600 }}>
-            {labelFmt ? labelFmt(label) : label}
-          </div>
-          {payload.map((item: any) => (
-            <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
-                <span style={{ color: textColor, opacity: 0.75 }}>{item.name}</span>
-              </div>
-              <span style={{ color: textColor, fontWeight: 600, textAlign: 'right' }}>{valueFmt(Number(item.value))}</span>
-            </div>
-          ))}
-        </div>
-      )
-    }
+    makeRechartsTooltip(theme, valueFmt, labelFmt)
 
   return (
     <div className="container">
@@ -437,8 +412,8 @@ export default function MonteCarloPage() {
                   })
                 )}
                 {/* All-percentiles section for single curve */}
-                {getEffectiveCurves(results, selected).length === 1 && (() => {
-                  const { portfolio, curve } = getEffectiveCurves(results, selected)[0]
+                {chartData.effectiveCurves.length === 1 && (() => {
+                  const { portfolio, curve } = chartData.effectiveCurves[0]
                   const totalCols = 2 + MC_COLS.length
                   return (
                     <>

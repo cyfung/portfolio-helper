@@ -56,5 +56,5 @@ export function computeDrawdown(pts: { date: string; value: number }[]): number[
 
 export function computeRTR(pts: { date: string; value: number }[]): (number | null)[] {
   let peak = -Infinity
-  return pts.map(p => { if (p.value > peak) peak = p.value; return p.value > 0 ? peak / p.value : undefined as any })
+  return pts.map(p => { if (p.value > peak) peak = p.value; return p.value > 0 ? peak / p.value : null })
 }
