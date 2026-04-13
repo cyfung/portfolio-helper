@@ -1,7 +1,7 @@
 // ── ConfigPage.tsx — App Settings (full React port, no vanilla JS) ────────────
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { PageNavTabs, ThemeToggle, HeaderRight } from '@/components/Layout'
+import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -493,7 +493,7 @@ export default function ConfigPage() {
     <div className="container">
       <div className="portfolio-header">
         <div className="header-title-group"><PageNavTabs active="/config" /></div>
-        <HeaderRight><ThemeToggle /></HeaderRight>
+        <HeaderRight><ConfigButton /><ThemeToggle /></HeaderRight>
       </div>
 
       <main className="config-page">

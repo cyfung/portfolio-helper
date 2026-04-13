@@ -574,6 +574,12 @@ h1 {
     border-color: var(--color-accent-primary);
 }
 
+.config-button.active {
+    background-color: var(--color-bg-hover);
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+}
+
 .config-button:focus {
     outline: none;
     box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
