@@ -16,7 +16,7 @@ export default function StockTable() {
     lastStockDisplay, lastGroupAllocData, lastPortfolioTotals,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     allocAddMode, allocReduceMode,
-    showStockDisplayCurrency,
+    showStockDisplayCurrency, groupViewActive,
   } = usePortfolioStore()
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
@@ -31,7 +31,7 @@ export default function StockTable() {
 
   // For group portfolios: pass GA server alloc as serverAllocDollars so waterfall uses it
   const hasGroups = stocks.some(s => s.groups)
-  const serverAllocDollars = hasGroups
+  const serverAllocDollars = (hasGroups && groupViewActive)
     ? Object.fromEntries((lastGroupAllocData?.stocks ?? []).map(s => [s.symbol, s.allocDollars]))
     : undefined
 
