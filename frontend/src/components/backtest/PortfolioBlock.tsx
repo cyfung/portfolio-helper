@@ -1,6 +1,6 @@
 // ── PortfolioBlock.tsx — Controlled portfolio block for Backtest & MonteCarlo ─
 
-import { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   BlockState, MarginRow, newId,
   blockStateToSavedConfig, configToBlockState,
@@ -14,17 +14,50 @@ interface Props {
   onSavedRefresh: () => void
 }
 
-export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
+const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
   const [dragOver, setDragOver] = useState<'chip' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
 
+  // Local state — text inputs update this only; parent is notified on blur or structural change
+  const [local, setLocal] = useState<BlockState>(value)
+  const localRef = useRef<BlockState>(local)
+  const prevValueRef = useRef<BlockState>(value)
+
+  // Sync from parent when value changes externally (import, drag-drop, clear, load)
+  useEffect(() => {
+    if (prevValueRef.current !== value) {
+      prevValueRef.current = value
+      localRef.current = value
+      setLocal(value)
+    }
+  }, [value])
+
+  function updateLocal(next: BlockState) {
+    localRef.current = next
+    setLocal(next)
+  }
+
+  // Structural changes → update local AND notify parent immediately
+  function commit(next: BlockState) {
+    prevValueRef.current = next  // prevent useEffect from re-syncing back
+    localRef.current = next
+    setLocal(next)
+    onChange(next)
+  }
+
+  // Text input blur → push latest local value to parent
+  function commitBlur() {
+    prevValueRef.current = localRef.current
+    onChange(localRef.current)
+  }
+
   // ── Weight hint ───────────────────────────────────────────────────────────
 
-  const totalWeight = value.tickers.reduce((sum, t) => sum + (parseFloat(t.weight) || 0), 0)
+  const totalWeight = local.tickers.reduce((sum, t) => sum + (parseFloat(t.weight) || 0), 0)
   const diff = Math.round((totalWeight - 100) * 100) / 100
   let weightHintText = ''
   let weightHintCls = 'backtest-weight-hint'
-  if (value.tickers.length > 0) {
+  if (local.tickers.length > 0) {
     if (Math.abs(diff) < 0.001) {
       weightHintText = 'Total: 100% ✓'
       weightHintCls = 'backtest-weight-hint hint-ok'
@@ -37,23 +70,19 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
   // ── Ticker helpers ────────────────────────────────────────────────────────
 
   function addTicker(ticker = '', weight = '') {
-    onChange({ ...value, tickers: [...value.tickers, { id: newId(), ticker, weight }] })
-  }
-
-  function updateTicker(id: string, field: 'ticker' | 'weight', val: string) {
-    onChange({ ...value, tickers: value.tickers.map(t => t.id === id ? { ...t, [field]: val } : t) })
+    commit({ ...localRef.current, tickers: [...localRef.current.tickers, { id: newId(), ticker, weight }] })
   }
 
   function removeTicker(id: string) {
-    onChange({ ...value, tickers: value.tickers.filter(t => t.id !== id) })
+    commit({ ...localRef.current, tickers: localRef.current.tickers.filter(t => t.id !== id) })
   }
 
   // ── Margin helpers ────────────────────────────────────────────────────────
 
   function addMargin(init?: Partial<Omit<MarginRow, 'id'>>) {
-    onChange({
-      ...value,
-      margins: [...value.margins, {
+    commit({
+      ...localRef.current,
+      margins: [...localRef.current.margins, {
         id: newId(),
         ratio: '50', spread: '1.5', devUpper: '5', devLower: '5',
         modeUpper: 'PROPORTIONAL', modeLower: 'PROPORTIONAL',
@@ -62,18 +91,14 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
     })
   }
 
-  function updateMargin(id: string, field: keyof Omit<MarginRow, 'id'>, val: string) {
-    onChange({ ...value, margins: value.margins.map(m => m.id === id ? { ...m, [field]: val } : m) })
-  }
-
   function removeMargin(id: string) {
-    onChange({ ...value, margins: value.margins.filter(m => m.id !== id) })
+    commit({ ...localRef.current, margins: localRef.current.margins.filter(m => m.id !== id) })
   }
 
   // ── Save / Clear ──────────────────────────────────────────────────────────
 
   async function handleSave(overwrite: boolean) {
-    const name = value.label.trim()
+    const name = localRef.current.label.trim()
     if (!name) return
     if (overwrite) {
       await fetch(`/api/backtest/savedPortfolios?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
@@ -81,7 +106,7 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
     const res = await fetch('/api/backtest/savedPortfolios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, config: blockStateToSavedConfig(value) }),
+      body: JSON.stringify({ name, config: blockStateToSavedConfig(localRef.current) }),
     })
     if (res.ok) {
       onSavedRefresh()
@@ -91,7 +116,7 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
   }
 
   function handleClear() {
-    onChange({ label: '', tickers: [], rebalance: 'YEARLY', margins: [], includeNoMargin: true })
+    commit({ label: '', tickers: [], rebalance: 'YEARLY', margins: [], includeNoMargin: true })
   }
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
@@ -115,12 +140,12 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
       const raw = e.dataTransfer.getData('application/x-portfolio-chip')
       if (raw) {
         const { name, config } = JSON.parse(raw)
-        onChange(configToBlockState(config, name))
+        commit(configToBlockState(config, name))
       }
     }
   }
 
-  const hasLabel = value.label.trim().length > 0
+  const hasLabel = local.label.trim().length > 0
 
   return (
     <div
@@ -137,8 +162,9 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
             type="text"
             className="portfolio-label"
             placeholder="Label"
-            value={value.label}
-            onChange={e => onChange({ ...value, label: e.target.value })}
+            value={local.label}
+            onChange={e => updateLocal({ ...localRef.current, label: e.target.value })}
+            onBlur={commitBlur}
           />
           <button
             className="overwrite-portfolio-btn save-portfolio-btn"
@@ -164,21 +190,23 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">
-          {value.tickers.map(t => (
+          {local.tickers.map(t => (
             <div key={t.id} className="backtest-ticker-row">
               <input
                 type="text"
                 className="ticker-input"
                 placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5"
                 value={t.ticker}
-                onChange={e => updateTicker(t.id, 'ticker', e.target.value)}
+                onChange={e => updateLocal({ ...localRef.current, tickers: localRef.current.tickers.map(x => x.id === t.id ? { ...x, ticker: e.target.value } : x) })}
+                onBlur={commitBlur}
               />
               <input
                 type="text"
                 className="weight-input"
                 placeholder="Weight %"
                 value={t.weight}
-                onChange={e => updateTicker(t.id, 'weight', e.target.value)}
+                onChange={e => updateLocal({ ...localRef.current, tickers: localRef.current.tickers.map(x => x.id === t.id ? { ...x, weight: e.target.value } : x) })}
+                onBlur={commitBlur}
               />
               <span className="weight-unit">%</span>
               <button className="remove-ticker-btn" type="button" title="Remove" onClick={() => removeTicker(t.id)}>
@@ -194,8 +222,8 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
         <label>Rebalance Strategy</label>
         <select
           className="rebalance-select"
-          value={value.rebalance}
-          onChange={e => onChange({ ...value, rebalance: e.target.value })}
+          value={local.rebalance}
+          onChange={e => commit({ ...localRef.current, rebalance: e.target.value })}
         >
           {REBALANCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -209,10 +237,10 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
             <button
               className="include-no-margin-btn"
               type="button"
-              data-include={String(value.includeNoMargin)}
-              onClick={() => onChange({ ...value, includeNoMargin: !value.includeNoMargin })}
+              data-include={String(local.includeNoMargin)}
+              onClick={() => commit({ ...localRef.current, includeNoMargin: !localRef.current.includeNoMargin })}
             >
-              {value.includeNoMargin ? 'Unlevered: On' : 'Unlevered: Off'}
+              {local.includeNoMargin ? 'Unlevered: On' : 'Unlevered: Off'}
             </button>
             <button className="add-margin-btn" type="button" onClick={() => addMargin()}>
               + Add Margin
@@ -228,7 +256,7 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
           <span />
         </div>
         <div className="margin-config-rows">
-          {value.margins.map(m => (
+          {local.margins.map(m => (
             <div key={m.id} className="margin-config-row">
               <span
                 className="margin-drag-handle"
@@ -241,14 +269,14 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
                   e.dataTransfer.effectAllowed = 'copy'
                 }}
               >⠿</span>
-              <input type="text" className="mc-ratio"     value={m.ratio}    onChange={e => updateMargin(m.id, 'ratio',    e.target.value)} title="Margin % of Equity" placeholder="%" />
-              <input type="text" className="mc-spread"    value={m.spread}   onChange={e => updateMargin(m.id, 'spread',   e.target.value)} title="Spread % (annualised)" placeholder="%" />
-              <input type="text" className="mc-dev-upper" value={m.devUpper} onChange={e => updateMargin(m.id, 'devUpper', e.target.value)} title="Upper deviation %" placeholder="%" />
-              <input type="text" className="mc-dev-lower" value={m.devLower} onChange={e => updateMargin(m.id, 'devLower', e.target.value)} title="Lower deviation %" placeholder="%" />
+              <input type="text" className="mc-ratio"     value={m.ratio}    onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, ratio:    e.target.value } : x) })} onBlur={commitBlur} title="Margin % of Equity" placeholder="%" />
+              <input type="text" className="mc-spread"    value={m.spread}   onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, spread:   e.target.value } : x) })} onBlur={commitBlur} title="Spread % (annualised)" placeholder="%" />
+              <input type="text" className="mc-dev-upper" value={m.devUpper} onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, devUpper: e.target.value } : x) })} onBlur={commitBlur} title="Upper deviation %" placeholder="%" />
+              <input type="text" className="mc-dev-lower" value={m.devLower} onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, devLower: e.target.value } : x) })} onBlur={commitBlur} title="Lower deviation %" placeholder="%" />
               <select
                 className="mc-mode mc-mode-upper"
                 value={m.modeUpper}
-                onChange={e => updateMargin(m.id, 'modeUpper', e.target.value)}
+                onChange={e => commit({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, modeUpper: e.target.value } : x) })}
                 title="Rebalance action when upper band is breached"
               >
                 {MARGIN_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -256,7 +284,7 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
               <select
                 className="mc-mode mc-mode-lower"
                 value={m.modeLower}
-                onChange={e => updateMargin(m.id, 'modeLower', e.target.value)}
+                onChange={e => commit({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, modeLower: e.target.value } : x) })}
                 title="Rebalance action when lower band is breached"
               >
                 {MARGIN_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -268,4 +296,6 @@ export default function PortfolioBlock({ idx, value, onChange, onSavedRefresh }:
       </div>
     </div>
   )
-}
+})
+
+export default PortfolioBlock
