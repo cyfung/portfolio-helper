@@ -126,6 +126,10 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const showDownloadingTag = isDownloading
   const showReadyTag       = isReady
 
+  async function handleApplyUpdate() {
+    await fetch('/api/admin/apply-update', { method: 'POST' })
+  }
+
   return (
     <div className="header-right">
       <div className="version-badge-wrapper">
@@ -158,6 +162,8 @@ export function HeaderRight({ children }: HeaderRightProps) {
           id="header-update-ready"
           title={`Update v${latestVersion} ready — click to apply`}
           hidden={!showReadyTag}
+          onClick={handleApplyUpdate}
+          style={{ cursor: 'pointer' }}
         >
           Update Is Ready
         </span>
