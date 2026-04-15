@@ -30,8 +30,8 @@
     --color-header-bg: #dee2e6;
     --color-header-text: #1a1a1a;
 
-    --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-    --font-family-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    --font-family-base: system-ui, -apple-system, sans-serif;
+    --font-family-mono: ui-monospace, 'Cascadia Code', monospace;
 
     --font-size-xs: 0.75rem;
     --font-size-sm: 0.875rem;
