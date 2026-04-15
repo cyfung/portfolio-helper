@@ -32,7 +32,7 @@ export function makeRechartsTooltip(
           <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
-              <span style={{ color: textColor, opacity: 0.75 }}>{item.name}</span>
+              <span style={{ color: textColor, opacity: 0.9 }}>{item.name}</span>
             </div>
             <span style={{ color: textColor, fontWeight: 600, textAlign: 'right' }}>{valueFmt(Number(item.value))}</span>
           </div>
