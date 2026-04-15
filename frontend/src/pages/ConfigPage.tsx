@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
+import { showConfirm } from '@/components/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ function fmtDate(ms: number) {
 
 // ── Pairing section ───────────────────────────────────────────────────────────
 
-function PairingSection() {
+function PairingSection({ onPaired }: { onPaired?: () => void }) {
   const [state, setState] = useState<'idle' | 'loading' | 'showing'>('idle')
   const [pin, setPin] = useState('')
   const pollRef = useRef<number | null>(null)
@@ -125,6 +126,7 @@ function PairingSection() {
           const { status } = await sr.json()
           if (status === 'active') return
           stopPoll()
+          if (status === 'used') onPaired?.()
           setState('idle')
         } catch (_) {}
       }, 3000)
@@ -225,7 +227,25 @@ function DevicesList() {
 
   return (
     <table className="management-table">
-      <thead><tr><th>Paired Device</th><th>Last IP</th><th>Paired</th><th /></tr></thead>
+      <thead>
+        <tr>
+          <th>Paired Device</th>
+          <th>Last IP</th>
+          <th>Paired</th>
+          <th className="management-table-action-col">
+            <button
+              className="management-table-remove-btn"
+              onClick={async () => {
+                if (!await showConfirm('Remove all paired devices?', 'Remove All')) return
+                await fetch('/api/unpair-all', { method: 'POST' })
+                load()
+              }}
+            >
+              Remove All
+            </button>
+          </th>
+        </tr>
+      </thead>
       <tbody>
         {devices.map(d => (
           <tr key={d.serverAssignedId}>
@@ -261,6 +281,7 @@ export default function ConfigPage() {
   const [updateProgress, setUpdateProgress] = useState<{ phase: string; received: number; total: number } | null>(null)
   const [latestVersion, setLatestVersion] = useState('')
   const [hasUpdate, setHasUpdate]   = useState(false)
+  const [pairingRefreshKey, setPairingRefreshKey] = useState(0)
   const [newPortfolioName, setNewPortfolioName] = useState('')
   const [addStatus, setAddStatus]   = useState('')
   const [renameErrors, setRenameErrors] = useState<Record<string, string>>({})
@@ -375,7 +396,7 @@ export default function ConfigPage() {
   }
 
   async function handleRemovePortfolio(slug: string, name: string) {
-    if (!window.confirm(`Remove portfolio "${name}"? All positions, cash, and config will be deleted.`)) return
+    if (!await showConfirm(`Remove portfolio "${name}"? All positions, cash, and config will be deleted.`, 'Remove')) return
     try {
       const r = await fetch(`/api/portfolio/remove?portfolio=${encodeURIComponent(slug)}`, { method: 'DELETE' })
       const data = await r.json()
@@ -393,7 +414,7 @@ export default function ConfigPage() {
   }
 
   async function handleRestoreDefaults() {
-    if (!window.confirm('Restore all settings to defaults?')) return
+    if (!await showConfirm('Restore all settings to defaults?', 'Restore')) return
     try {
       await fetch('/api/config/save', {
         method: 'POST',
@@ -509,11 +530,11 @@ export default function ConfigPage() {
             <span className="config-field-description">
               Show this PIN on your screen and enter it in the Android app.<br />Expires in 5 minutes.
             </span>
-            <PairingSection />
+            <PairingSection onPaired={() => setPairingRefreshKey(k => k + 1)} />
           </div>
 
           <div className="config-field">
-            <DevicesList />
+            <DevicesList key={pairingRefreshKey} />
           </div>
 
           <div className="config-field">

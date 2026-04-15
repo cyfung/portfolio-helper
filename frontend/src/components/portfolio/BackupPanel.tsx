@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { formatSavedAt } from '@/lib/portfolio-utils'
 import type { BackupEntry } from '@/types/portfolio'
+import { showConfirm } from '@/components/ConfirmDialog'
 
 interface Props {
   onClose: () => void
@@ -66,7 +67,7 @@ export default function BackupPanel({ onClose, onImportSuccess }: Props) {
   }
 
   async function handleDeleteAll() {
-    if (!window.confirm('Delete all backups for this portfolio? This cannot be undone.')) return
+    if (!await showConfirm('Delete all backups for this portfolio? This cannot be undone.', 'Delete All')) return
     try {
       await fetch(`/api/backup/delete-all?portfolio=${portfolioId}`, { method: 'DELETE' })
       setGroups([])
