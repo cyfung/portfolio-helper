@@ -202,7 +202,9 @@ private data class AppConfigDto(
     val latestVersion: String?,
     val downloadPhase: String,
     val isJpackageInstall: Boolean,
-    val autoUpdate: Boolean
+    val autoUpdate: Boolean,
+    val privacyScalePct: String,
+    val privacyScaleEnabled: Boolean
 )
 
 @Serializable
@@ -299,7 +301,7 @@ fun Application.configureRouting() {
             val stocks = entry.getStocks()
             val cashEntries = entry.getCash()
             val portfolioConf = entry.getAllConfig()
-            val privacyScalePct = AppConfig.privacyScalePct
+            val privacyScalePct = if (AppConfig.privacyScaleEnabled) AppConfig.privacyScalePct else null
 
             fun scaleQty(q: Double) =
                 if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0) else q
@@ -352,7 +354,9 @@ fun Application.configureRouting() {
                     latestVersion = updateInfo.latestVersion,
                     downloadPhase = updateInfo.download.phase.name,
                     isJpackageInstall = updateInfo.isJpackageInstall,
-                    autoUpdate = AppConfig.autoUpdate
+                    autoUpdate = AppConfig.autoUpdate,
+                    privacyScalePct = AppConfig.get(AppConfig.KEY_PRIVACY_SCALE_PCT),
+                    privacyScaleEnabled = AppConfig.privacyScaleEnabled
                 )
             )
 

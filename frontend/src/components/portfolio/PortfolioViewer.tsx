@@ -24,7 +24,7 @@ function parseCashKey(key: string, value: string): CashData | null {
   }
   return { label, currency, amount: parseFloat(value) || 0, marginFlag }
 }
-import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
+import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioTabs from './PortfolioTabs'
 import SummaryTable from './SummaryTable'
 import CashEditTable from './CashEditTable'
@@ -283,6 +283,7 @@ export default function PortfolioViewer() {
           </button>
 
           {renderCurrencyControl()}
+          <PrivacyToggleButton />
           <ConfigButton />
           <ThemeToggle />
         </HeaderRight>

@@ -1,7 +1,7 @@
 // ── LoanPage.tsx — Loan calculator (full React port) ─────────────────────────
 
 import { useEffect, useState } from 'react'
-import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
+import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 
 // ── Math ──────────────────────────────────────────────────────────────────────
 
@@ -222,6 +222,7 @@ export default function LoanPage() {
           <PageNavTabs active="/loan" />
         </div>
         <HeaderRight>
+          <PrivacyToggleButton />
           <ConfigButton />
           <ThemeToggle />
         </HeaderRight>

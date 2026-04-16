@@ -43,6 +43,8 @@ export interface AppConfig {
   downloadPhase: string
   isJpackageInstall: boolean
   autoUpdate: boolean
+  privacyScalePct: string
+  privacyScaleEnabled: boolean
 }
 
 export interface PortfolioData {

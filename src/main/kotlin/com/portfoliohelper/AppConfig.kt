@@ -20,8 +20,9 @@ object AppConfig {
     const val KEY_UPDATE_CHECK_INTERVAL = "updateCheckInterval"
     const val KEY_SHOW_STOCK_DISPLAY_CURRENCY = "showStockDisplayCurrency"
     const val KEY_DIVIDEND_SAFE_LAG_DAYS = "dividendSafeLagDays"
-    const val KEY_PRIVACY_SCALE_PCT = "privacyScalePct"
-    const val KEY_AFTER_HOURS_GRAY  = "afterHoursGray"
+    const val KEY_PRIVACY_SCALE_PCT     = "privacyScalePct"
+    const val KEY_PRIVACY_SCALE_ENABLED = "privacyScaleEnabled"
+    const val KEY_AFTER_HOURS_GRAY      = "afterHoursGray"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -36,6 +37,7 @@ object AppConfig {
         KEY_SHOW_STOCK_DISPLAY_CURRENCY to "false",
         KEY_DIVIDEND_SAFE_LAG_DAYS to "5",
         KEY_PRIVACY_SCALE_PCT   to "",
+        KEY_PRIVACY_SCALE_ENABLED to "true",
         KEY_AFTER_HOURS_GRAY    to "true"
     )
 
@@ -57,7 +59,8 @@ object AppConfig {
                 }
             }
         }
-        if (KEY_PRIVACY_SCALE_PCT in updates) _privacyScalePct.value = privacyScalePct
+        if (KEY_PRIVACY_SCALE_PCT in updates || KEY_PRIVACY_SCALE_ENABLED in updates)
+            _privacyScalePct.value = effectiveScale()
     }
 
     // Typed accessors
@@ -74,8 +77,10 @@ object AppConfig {
     val showStockDisplayCurrency: Boolean get() = get(KEY_SHOW_STOCK_DISPLAY_CURRENCY).lowercase() == "true"
     val dividendSafeLagDays: Long get() = get(KEY_DIVIDEND_SAFE_LAG_DAYS).toLongOrNull()?.takeIf { it >= 0 } ?: 5L
     val privacyScalePct: Double? get() = get(KEY_PRIVACY_SCALE_PCT).toDoubleOrNull()?.takeIf { it > 0 }
+    val privacyScaleEnabled: Boolean get() = get(KEY_PRIVACY_SCALE_ENABLED).lowercase() != "false"
+    private fun effectiveScale(): Double? = if (privacyScaleEnabled) privacyScalePct else null
     private val _privacyScalePct: MutableStateFlow<Double?> by lazy {
-        MutableStateFlow(privacyScalePct)
+        MutableStateFlow(effectiveScale())
     }
     val privacyScalePctFlow: StateFlow<Double?> by lazy { _privacyScalePct.asStateFlow() }
     val afterHoursGray: Boolean get() = get(KEY_AFTER_HOURS_GRAY).lowercase() != "false"

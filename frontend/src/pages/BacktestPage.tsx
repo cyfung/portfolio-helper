@@ -5,7 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush,
 } from 'recharts'
-import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight } from '@/components/Layout'
+import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
@@ -177,7 +177,7 @@ export default function BacktestPage() {
     <div className="container">
       <div className="portfolio-header">
         <div className="header-title-group"><PageNavTabs active="/backtest" /></div>
-        <HeaderRight><ConfigButton /><ThemeToggle /></HeaderRight>
+        <HeaderRight><PrivacyToggleButton /><ConfigButton /><ThemeToggle /></HeaderRight>
       </div>
 
       <div className="backtest-form-card">

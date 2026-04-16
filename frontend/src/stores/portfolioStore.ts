@@ -62,7 +62,7 @@ interface PortfolioState {
   setAllocReduceMode: (mode: AllocMode) => void
   setStocks: (stocks: StockData[]) => void
   setCash: (cash: CashData[]) => void
-  updateAppConfig: (patch: Pick<AppConfig, 'hasUpdate' | 'latestVersion' | 'downloadPhase' | 'autoUpdate'>) => void
+  updateAppConfig: (patch: Partial<AppConfig>) => void
 }
 
 const LS_KEYS = {
