@@ -547,7 +547,7 @@ export default function BacktestPage() {
         <td style={{ color }}>{label}</td>
         <td>{money(stats.endingValue)}</td>
         <td>{pct(stats.cagr)}</td>
-        <td>{pct(stats.maxDrawdown)}</td>
+        <td>{pct(-stats.maxDrawdown)}</td>
         <td>{dur(stats.longestDrawdownDays)}</td>
         <td>{pct(stats.annualVolatility)}</td>
         <td>{fmt2(stats.sharpe)}</td>
@@ -690,10 +690,11 @@ export default function BacktestPage() {
 
           {/* Portfolio Value chart */}
           <div className="backtest-chart-title">Portfolio Value</div>
-          <div className="backtest-chart-container">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem' }}>
             <button
               className={`chart-scale-toggle${logScale ? ' active' : ''}`}
               type="button"
+              style={{ position: 'static' }}
               onClick={() => setLogScale(l => !l)}
             >
               Log
@@ -702,12 +703,14 @@ export default function BacktestPage() {
               <button
                 className={`chart-scale-toggle${scaleToNav ? ' active' : ''}`}
                 type="button"
-                style={{ right: 75 }}
+                style={{ position: 'static' }}
                 onClick={() => setScaleToNav(s => !s)}
               >
                 NAV Scale
               </button>
             )}
+          </div>
+          <div className="backtest-chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={chartData.mainData.rows}
