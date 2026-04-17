@@ -13,6 +13,8 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.pow
 
+private fun CashFlowEntry.isExternalTransfer() = type == "Deposits/Withdrawals"
+
 object PerformanceService {
 
     @Serializable
@@ -51,7 +53,7 @@ object PerformanceService {
             var cumulative = 1.0
             var prevNav = t0.header.netLiqValue
             for (snap in series) {
-                val externalFlow = snap.cashFlows.sumOf { it.amount * it.fxRateToBase }
+                val externalFlow = snap.cashFlows.filter { it.isExternalTransfer() }.sumOf { it.amount * it.fxRateToBase }
                 val adjustedStart = prevNav
                 if (adjustedStart == 0.0) { add(cumulative - 1.0); prevNav = snap.header.netLiqValue; continue }
                 val r = (snap.header.netLiqValue - externalFlow) / adjustedStart - 1.0
@@ -62,7 +64,7 @@ object PerformanceService {
         }
 
         // ── MWR (IRR via bisection) ─────────────────────────────────────────
-        val allFlows = snapshots.flatMap { s -> s.cashFlows.map { s.header.date to it } }
+        val allFlows = snapshots.flatMap { s -> s.cashFlows.filter { it.isExternalTransfer() }.map { s.header.date to it } }
         val mwrSeries = if (allFlows.isNotEmpty()) {
             buildMwrSeries(snapshots, series.map { it.header })
         } else null
@@ -93,7 +95,7 @@ object PerformanceService {
 
         // Collect all external cash flows with their offset in years
         val flowsByDate: Map<String, Double> = all.drop(1).associate { snap ->
-            snap.header.date to snap.cashFlows.sumOf { it.amount * it.fxRateToBase }
+            snap.header.date to snap.cashFlows.filter { it.isExternalTransfer() }.sumOf { it.amount * it.fxRateToBase }
         }
 
         return series.map { row ->
@@ -108,13 +110,14 @@ object PerformanceService {
                     val flowAmt = flowsByDate[snap.header.date] ?: 0.0
                     if (flowAmt != 0.0) {
                         val t = ChronoUnit.DAYS.between(t0Date, snapDate) / 365.25
-                        cashFlows.add(Pair(t, flowAmt))
+                        cashFlows.add(Pair(t, -flowAmt))
                     }
                 }
             }
             cashFlows.add(Pair(T, row.netLiqValue))
 
-            bisectIRR(cashFlows) ?: 0.0
+            val annualized = bisectIRR(cashFlows) ?: 0.0
+            (1.0 + annualized).pow(T) - 1.0
         }
     }
 
