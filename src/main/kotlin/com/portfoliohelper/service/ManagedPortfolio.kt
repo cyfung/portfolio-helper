@@ -7,6 +7,10 @@ import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -130,8 +134,14 @@ class ManagedPortfolio(
         }
     }
 
-    // TWS Account shortcut
-    fun getTwsAccount(): String? = getConfig("twsAccount")
+    // TWS Account — now stored inside ibkrConfig JSON (migrated from standalone key by V5)
+    fun getTwsAccount(): String? {
+        val raw = getConfig("ibkrConfig") ?: return null
+        return try {
+            Json.parseToJsonElement(raw).jsonObject["twsAccount"]
+                ?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) { null }
+    }
 
     companion object {
         /** All portfolios ordered by seq_order (user-defined), then id as tiebreaker. */

@@ -94,6 +94,61 @@ object PortfolioBackupsTable : Table("portfolio_backups") {
 }
 
 // ---------------------------------------------------------------------------
+// IBKR Flex Query snapshot tables
+// ---------------------------------------------------------------------------
+
+/** One end-of-day portfolio snapshot per (portfolio_id, snapshot_date). */
+object PortfolioSnapshotsTable : Table("portfolio_snapshots") {
+    val id                   = integer("id").autoIncrement()
+    val portfolioId          = integer("portfolio_id")
+    val snapshotDate         = varchar("snapshot_date", 10)     // YYYY-MM-DD
+    val netLiqValue          = double("net_liq_value")
+    val cashBase             = double("cash_base")
+    val stockBase            = double("stock_base")
+    val interestAccrualsBase = double("interest_accruals_base")
+    val contentHash          = varchar("content_hash", 64)
+    val createdAt            = long("created_at")
+    override val primaryKey  = PrimaryKey(id)
+}
+
+object SnapshotPositionsTable : Table("snapshot_positions") {
+    val id            = integer("id").autoIncrement()
+    val snapshotId    = integer("snapshot_id")
+    val symbol        = text("symbol")
+    val currency      = varchar("currency", 16)
+    val position      = double("position")
+    val markPrice     = double("mark_price")
+    val positionValue = double("position_value")
+    override val primaryKey = PrimaryKey(id)
+}
+
+object SnapshotCashBalancesTable : Table("snapshot_cash_balances") {
+    val id         = integer("id").autoIncrement()
+    val snapshotId = integer("snapshot_id")
+    val currency   = varchar("currency", 16)
+    val amount     = double("amount")
+    override val primaryKey = PrimaryKey(id)
+}
+
+object SnapshotInterestAccrualsTable : Table("snapshot_interest_accruals") {
+    val id                   = integer("id").autoIncrement()
+    val snapshotId           = integer("snapshot_id")
+    val currency             = varchar("currency", 16)
+    val endingAccrualBalance = double("ending_accrual_balance")
+    override val primaryKey  = PrimaryKey(id)
+}
+
+object SnapshotCashFlowsTable : Table("snapshot_cash_flows") {
+    val id            = integer("id").autoIncrement()
+    val snapshotId    = integer("snapshot_id")
+    val currency      = varchar("currency", 16)
+    val fxRateToBase  = double("fx_rate_to_base")
+    val amount        = double("amount")
+    val type          = varchar("type", 64)
+    override val primaryKey = PrimaryKey(id)
+}
+
+// ---------------------------------------------------------------------------
 // Initialization
 // ---------------------------------------------------------------------------
 
@@ -107,6 +162,11 @@ object AppDatabase {
         AdminSessionsTable,
         GlobalSettingsTable,
         SavedBacktestPortfoliosTable,
-        PortfolioBackupsTable
+        PortfolioBackupsTable,
+        PortfolioSnapshotsTable,
+        SnapshotPositionsTable,
+        SnapshotCashBalancesTable,
+        SnapshotInterestAccrualsTable,
+        SnapshotCashFlowsTable
     )
 }

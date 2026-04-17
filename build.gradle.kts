@@ -45,6 +45,9 @@ dependencies {
     // Kotlinx Serialization for JSON parsing
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 
+    // XML serialization for IBKR Flex Query parsing
+    implementation("io.github.pdvrieze.xmlutil:serialization-jvm:0.86.3")
+
     // Jsoup for HTML parsing (NAV scraping from fund provider websites)
     implementation("org.jsoup:jsoup:1.17.2")
 

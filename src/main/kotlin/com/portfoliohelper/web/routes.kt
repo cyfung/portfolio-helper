@@ -968,6 +968,80 @@ fun Application.configureRouting() {
             }
         }
 
+        // ── Portfolio IB Config ───────────────────────────────────────────────
+        get("/api/portfolio/{slug}/ibkr-config") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val cfg = portfolio.getConfig("ibkrConfig")
+            call.respondText(cfg ?: """{"token":"","queryId":"","twsAccount":""}""", ContentType.Application.Json)
+        }
+
+        post("/api/portfolio/{slug}/ibkr-config") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val body = Json.parseToJsonElement(call.receiveText()).jsonObject
+            val token      = body["token"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val queryId    = body["queryId"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val twsAccount = body["twsAccount"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            if (token.isBlank() || queryId.isBlank()) {
+                call.respondText("""{"error":"token and queryId are required"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+                return@post
+            }
+            val value = buildJsonObject { put("token", token); put("queryId", queryId); put("twsAccount", twsAccount) }.toString()
+            portfolio.saveConfig("ibkrConfig", value)
+            call.respondOk()
+        }
+
+        // ── Performance ───────────────────────────────────────────────────────
+        post("/api/performance/ingest/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val cfgStr = portfolio.getConfig("ibkrConfig")
+                ?: return@post call.respondText("""{"error":"IB config not set"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            val cfg     = Json.parseToJsonElement(cfgStr).jsonObject
+            val token   = cfg["token"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val queryId = cfg["queryId"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            if (token.isBlank() || queryId.isBlank()) {
+                call.respondText("""{"error":"token or queryId missing in IB config"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+                return@post
+            }
+            try {
+                val xml       = withContext(Dispatchers.IO) { FlexQueryService.fetch(token, queryId) }
+                val snapshots = FlexXmlParser.parse(xml)
+                val written   = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.ingest(portfolio.serialId, snapshots) }
+                call.respondText("""{"written":$written}""", ContentType.Application.Json)
+            } catch (e: FlexParseException) {
+                call.respondText(
+                    """{"error":"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}"}""",
+                    ContentType.Application.Json, HttpStatusCode.UnprocessableEntity
+                )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        get("/api/performance/chart/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val allDates = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.getDates(portfolio.serialId) }
+            if (allDates.isEmpty()) {
+                call.respondText("""{"dates":[],"twrSeries":[],"navSeries":[],"marginUtilSeries":[]}""", ContentType.Application.Json)
+                return@get
+            }
+            val from = call.request.queryParameters["from"] ?: allDates.first()
+            val to   = call.request.queryParameters["to"]   ?: allDates.last()
+            val snapshots = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.getSnapshots(portfolio.serialId, from, to) }
+            val chart = PerformanceService.buildChartData(snapshots)
+            call.respondText(appJson.encodeToString(chart), ContentType.Application.Json)
+        }
+
+        get("/api/performance/snapshots/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val dates = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.getDates(portfolio.serialId) }
+            call.respondText(buildJsonObject { put("dates", buildJsonArray { dates.forEach { add(it) } }) }.toString(), ContentType.Application.Json)
+        }
+
         // Serve static files (CSS, JS, SPA assets)
         staticResources("/static", "static")
 

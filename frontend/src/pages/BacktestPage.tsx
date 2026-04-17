@@ -35,7 +35,39 @@ export default function BacktestPage() {
   const [selected, setSelected]     = useState<Set<string>>(new Set())
   const [logScale, setLogScale]     = useState(false)
 
+  // Real portfolio overlay
+  const [realPortfolios, setRealPortfolios]   = useState<{ slug: string; name: string }[]>([])
+  const [realSlug, setRealSlug]               = useState('')
+  const [realData, setRealData]               = useState<{ dates: string[]; twrSeries: number[] } | null>(null)
+  const [showReal, setShowReal]               = useState(true)
+
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
+
+  // Load portfolios with IB config for real-portfolio overlay
+  useEffect(() => {
+    fetch('/api/portfolio/data')
+      .then(r => r.json())
+      .then((d: any) => {
+        const portfolios: { slug: string; name: string }[] = (d.allPortfolios ?? []).map((p: any) => ({
+          slug: p.slug,
+          name: p.name || p.slug,
+        }))
+        setRealPortfolios(portfolios)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Fetch real portfolio TWR when slug or date range changes
+  useEffect(() => {
+    if (!realSlug) { setRealData(null); return }
+    const from = fromDate || null
+    const to   = toDate   || null
+    const params = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join('&')
+    fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`)
+      .then(r => r.json())
+      .then((d: any) => setRealData({ dates: d.dates ?? [], twrSeries: d.twrSeries ?? [] }))
+      .catch(() => setRealData(null))
+  }, [realSlug, fromDate, toDate])
 
   // Restore settings on mount
   useEffect(() => {
@@ -61,13 +93,35 @@ export default function BacktestPage() {
   const chartData = useMemo(() => {
     if (!results) return null
     const labels = buildCommonLabels(results)
+
+    // Build real portfolio lookup: date → (1 + twr) normalised to start at 1.0
+    const realLookup: Map<string, number> = new Map()
+    if (realData?.dates.length && showReal) {
+      for (let i = 0; i < realData.dates.length; i++) {
+        realLookup.set(realData.dates[i], 1.0 + (realData.twrSeries[i] ?? 0))
+      }
+    }
+
+    const mainData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value))
+
+    // Inject real portfolio column into each row
+    if (realLookup.size > 0) {
+      const firstReal = realData!.dates[0]
+      const base = realLookup.get(firstReal) ?? 1.0
+      for (const row of mainData.rows) {
+        const date = row.x as string
+        const v = realLookup.get(date)
+        row['Real Portfolio'] = v != null ? +(v / base).toFixed(6) : undefined
+      }
+    }
+
     return {
       labels,
-      mainData: buildRechartsData(results, labels, selected, pts => pts.map(p => p.value)),
-      ddData:   buildRechartsData(results, labels, selected, computeDrawdown),
-      rtrData:  buildRechartsData(results, labels, selected, computeRTR),
+      mainData,
+      ddData:  buildRechartsData(results, labels, selected, computeDrawdown),
+      rtrData: buildRechartsData(results, labels, selected, computeRTR),
     }
-  }, [results, selected])
+  }, [results, selected, realData, showReal])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -184,6 +238,31 @@ export default function BacktestPage() {
         <div className="backtest-section backtest-grid-2">
           <DateFieldWithQuickSelect label="From Date" inputId="from-date" value={fromDate} onChange={setFromDate} />
           <DateFieldWithQuickSelect label="To Date"   inputId="to-date"   value={toDate}   onChange={setToDate} />
+
+          {realPortfolios.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              <label htmlFor="real-portfolio-select" style={{ fontSize: '0.8rem', opacity: 0.7 }}>Real Portfolio Overlay</label>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <select
+                  id="real-portfolio-select"
+                  value={realSlug}
+                  onChange={e => setRealSlug(e.target.value)}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  <option value="">— none —</option>
+                  {realPortfolios.map(p => (
+                    <option key={p.slug} value={p.slug}>{p.name}</option>
+                  ))}
+                </select>
+                {realSlug && (
+                  <label style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', fontSize: '0.82rem' }}>
+                    <input type="checkbox" checked={showReal} onChange={e => setShowReal(e.target.checked)} />
+                    Show
+                  </label>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="backtest-config-controls">
             <label htmlFor="backtest-import-code">Config Code</label>
@@ -302,6 +381,19 @@ export default function BacktestPage() {
                 {chartData.mainData.datasets.map(ds => (
                   <Line key={ds.label} dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
                 ))}
+                {realSlug && showReal && realData?.dates.length ? (
+                  <Line
+                    dataKey="Real Portfolio"
+                    stroke="#e8c84a"
+                    strokeWidth={2}
+                    strokeDasharray="6 3"
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                    type="monotone"
+                  />
+                ) : null}
                 <Brush
                   dataKey="x"
                   height={26}

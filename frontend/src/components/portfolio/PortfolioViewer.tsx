@@ -34,6 +34,7 @@ import StockTable from './StockTable'
 import GroupsView from './GroupsView'
 import EditMode from './EditMode'
 import BackupPanel from './BackupPanel'
+import PerformanceChart from './PerformanceChart'
 
 export default function PortfolioViewer() {
   const navigate = useNavigate()
@@ -46,7 +47,8 @@ export default function PortfolioViewer() {
     setMoreInfoVisible, setRebalVisible, setGroupViewActive, setEditModeActive,
   } = store
 
-  const [backupOpen, setBackupOpen] = useState(false)
+  const [backupOpen, setBackupOpen]           = useState(false)
+  const [performanceActive, setPerformanceActive] = useState(false)
   const [saveKey, setSaveKey] = useState(0)
   const [editResetKey, setEditResetKey] = useState(0)
   const [twsSyncing, setTwsSyncing] = useState(false)
@@ -283,6 +285,15 @@ export default function PortfolioViewer() {
           </button>
 
           {renderCurrencyControl()}
+          <button
+            className={`groups-toggle${performanceActive ? ' active' : ''}`}
+            type="button"
+            title="Portfolio performance chart"
+            onClick={() => setPerformanceActive(p => !p)}
+          >
+            <span className="toggle-label">Performance</span>
+          </button>
+
           <PrivacyToggleButton />
           <ConfigButton />
           <ThemeToggle />
@@ -302,8 +313,15 @@ export default function PortfolioViewer() {
         {syncToast.msg}
       </div>
 
+      {/* ── Performance chart ────────────────────────────────────────── */}
+      {performanceActive && (
+        <div className="portfolio-tables-wrapper" style={{ display: 'block' }}>
+          <PerformanceChart portfolioSlug={portfolioId} />
+        </div>
+      )}
+
       {/* ── Main content ──────────────────────────────────────────────── */}
-      <div className="portfolio-tables-wrapper">
+      <div className="portfolio-tables-wrapper" style={{ display: performanceActive ? 'none' : undefined }}>
         <div className="summary-and-rates">
           <SummaryTable />
           <CashEditTable key={editResetKey} allPortfolios={allPortfolios} />

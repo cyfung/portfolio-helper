@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import { showConfirm } from '@/components/ConfirmDialog'
+import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,7 +33,6 @@ interface ConfigValues {
 interface PortfolioRow {
   slug: string
   name: string
-  twsAccount: string
   virtualBalance: boolean
 }
 
@@ -286,6 +286,7 @@ export default function ConfigPage() {
   const [addStatus, setAddStatus]   = useState('')
   const [renameErrors, setRenameErrors] = useState<Record<string, string>>({})
   const [pendingRenames, setPendingRenames] = useState<Record<string, string>>({})
+  const [ibkrConfigSlug, setIbkrConfigSlug] = useState<string | null>(null)
   const saveTimers = useRef<Map<string, number>>(new Map())
   const statusTimer = useRef<number>(0)
   const downloadPollRef = useRef<number | null>(null)
@@ -317,7 +318,6 @@ export default function ConfigPage() {
           setPortfolios(allPortfolios.map((p: any, i: number) => ({
             slug: p.slug,
             name: p.name,
-            twsAccount: configs[i]?.twsAccount ?? '',
             virtualBalance: configs[i]?.virtualBalance === 'true',
           })))
         })
@@ -578,7 +578,7 @@ export default function ConfigPage() {
         <ConfigSection title="Portfolio and IB TWS Settings">
           <table className="portfolio-config-table">
             <thead>
-              <tr><th>Portfolio</th><th>TWS Account</th><th>Virtual Balance</th><th /></tr>
+              <tr><th>Portfolio</th><th>IB Config</th><th>Virtual Balance</th><th /></tr>
             </thead>
             <tbody>
               {portfolios.map((p, i) => (
@@ -608,11 +608,12 @@ export default function ConfigPage() {
                     </div>
                   </td>
                   <td>
-                    <input
-                      type="text" placeholder="e.g. U1234567"
-                      defaultValue={p.twsAccount} autoComplete="off"
-                      onChange={e => saveField('twsAccount', e.target.value, p.slug)}
-                    />
+                    <button
+                      type="button" className="config-restore-btn"
+                      onClick={() => setIbkrConfigSlug(p.slug)}
+                    >
+                      IB Config
+                    </button>
                   </td>
                   <td className="portfolio-config-table-checkbox-col">
                     <input
@@ -776,6 +777,9 @@ export default function ConfigPage() {
         </div>
         </>)}
       </main>
+      {ibkrConfigSlug && (
+        <IbkrConfigDialog portfolioSlug={ibkrConfigSlug} onClose={() => setIbkrConfigSlug(null)} />
+      )}
     </div>
   )
 }
