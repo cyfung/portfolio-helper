@@ -54,7 +54,9 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [ingesting, setIngesting]         = useState(false)
   const [error, setError]                 = useState('')
   const [toast, setToast]                 = useState('')
+  const [gaps, setGaps]                   = useState<{ from: string; to: string; days: number }[]>([])
   const toastTimerRef                     = useRef<number | null>(null)
+  const xmlInputRef                       = useRef<HTMLInputElement>(null)
 
   const [period, setPeriod]               = useState<Period>('1Y')
   const [customFrom, setCustomFrom]       = useState('')
@@ -87,6 +89,10 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     fetch('/api/backtest/savedPortfolios')
       .then(r => r.json())
       .then((d: SavedPortfolio[]) => setSavedPortfolios(d ?? []))
+      .catch(() => {})
+    fetch(`/api/performance/gaps/${portfolioSlug}`)
+      .then(r => r.json())
+      .then(setGaps)
       .catch(() => {})
   }, [portfolioSlug])
 
@@ -138,6 +144,43 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     setBenchmarkData({})
     for (const name of selectedBenchmarks) fetchBenchmark(name)
   }, [selectedBenchmarks, resolvedFrom, resolvedTo])
+
+  // ── Import XML files ──────────────────────────────────────────────────────
+  async function handleXmlImport(files: FileList) {
+    setIngesting(true)
+    clearTimeout(toastTimerRef.current ?? undefined)
+    try {
+      let totalWritten = 0
+      for (let i = 0; i < files.length; i++) {
+        showToast(`Importing ${i + 1}/${files.length}…`)
+        const xml = await files[i].text()
+        const r = await fetch(`/api/performance/ingest-xml/${portfolioSlug}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: xml,
+        })
+        const d = await r.json()
+        if (!r.ok) throw new Error(`${files[i].name}: ${d.error ?? `HTTP ${r.status}`}`)
+        totalWritten += d.written
+      }
+      showToast(`Imported — ${totalWritten} new snapshot(s) written.`)
+      fetch(`/api/performance/gaps/${portfolioSlug}`)
+        .then(r => r.json())
+        .then(setGaps)
+        .catch(() => {})
+      setSnapshotDates([])
+      setData(null)
+      fetch(`/api/performance/snapshots/${portfolioSlug}`)
+        .then(r2 => r2.json())
+        .then((sd: { dates: string[] }) => setSnapshotDates(sd.dates ?? []))
+        .catch(() => {})
+    } catch (e: any) {
+      showToast(`Error: ${e.message}`, true)
+    } finally {
+      setIngesting(false)
+      if (xmlInputRef.current) xmlInputRef.current.value = ''
+    }
+  }
 
   // ── Ingest from IBKR ──────────────────────────────────────────────────────
   async function handleIngest() {
@@ -276,8 +319,32 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           >
             {ingesting ? 'Fetching…' : 'Fetch from IBKR'}
           </button>
+
+          {/* Import XML */}
+          <input
+            ref={xmlInputRef}
+            type="file"
+            accept=".xml"
+            multiple
+            style={{ display: 'none' }}
+            onChange={e => { if (e.target.files?.length) handleXmlImport(e.target.files) }}
+          />
+          <button
+            className="run-backtest-btn"
+            style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem', whiteSpace: 'nowrap' }}
+            onClick={() => xmlInputRef.current?.click()}
+            disabled={ingesting}
+          >
+            Import XML
+          </button>
         </div>
       </div>
+
+      {gaps.length > 0 && (
+        <div style={{ fontSize: '0.78rem', color: 'var(--color-warn, #e8a94a)', padding: '0.2rem 0.4rem', marginBottom: '0.4rem' }}>
+          Data gaps: {gaps.map(g => `${g.from} → ${g.to}`).join(', ')}
+        </div>
+      )}
 
       {/* Overlay toggles + benchmark */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem', fontSize: '0.82rem' }}>

@@ -26,6 +26,8 @@ import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.milliseconds
 
 private fun loadBacktestSettings(settingsKey: String): String = transaction {
@@ -1018,6 +1020,45 @@ fun Application.configureRouting() {
             } catch (e: Exception) {
                 call.respondApiError(e)
             }
+        }
+
+        post("/api/performance/ingest-xml/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            try {
+                val xml       = call.receiveText()
+                val snapshots = FlexXmlParser.parse(xml)
+                val written   = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.ingest(portfolio.serialId, snapshots) }
+                call.respondText("""{"written":$written}""", ContentType.Application.Json)
+            } catch (e: FlexParseException) {
+                call.respondText(
+                    """{"error":"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}"}""",
+                    ContentType.Application.Json, HttpStatusCode.UnprocessableEntity
+                )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        get("/api/performance/gaps/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val dates = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.getDates(portfolio.serialId) }
+            val gaps = buildJsonArray {
+                for (i in 1 until dates.size) {
+                    val prev = LocalDate.parse(dates[i - 1])
+                    val curr = LocalDate.parse(dates[i])
+                    val daysBetween = ChronoUnit.DAYS.between(prev, curr)
+                    if (daysBetween > 3) {
+                        add(buildJsonObject {
+                            put("from", dates[i - 1])
+                            put("to", dates[i])
+                            put("days", daysBetween)
+                        })
+                    }
+                }
+            }
+            call.respondText(gaps.toString(), ContentType.Application.Json)
         }
 
         get("/api/performance/chart/{slug}") {
