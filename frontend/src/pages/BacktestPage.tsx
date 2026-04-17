@@ -9,13 +9,14 @@ import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButto
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
-import { getChartTheme } from '@/lib/chartTheme'
+import { useChartTheme } from '@/lib/chartTheme'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
-  configToBlockState,
+  configToBlockState, PALETTE,
 } from '@/types/backtest'
+import { ACCENT_LIGHT, ACCENT_DARK } from '@/lib/colorScheme'
 import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
@@ -97,6 +98,27 @@ interface RealPortfolioData {
   navSeries: number[]
 }
 
+// ── Legend canvas line preview ─────────────────────────────────────────────────
+
+function LegendLine({ color, strokeWidth, strokeDasharray }: { color: string; strokeWidth: number; strokeDasharray?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, 28, 10)
+    ctx.strokeStyle = color
+    ctx.lineWidth = strokeWidth
+    ctx.setLineDash(strokeDasharray ? strokeDasharray.split(' ').map(Number) : [])
+    ctx.beginPath()
+    ctx.moveTo(2, 5)
+    ctx.lineTo(26, 5)
+    ctx.stroke()
+  }, [color, strokeWidth, strokeDasharray])
+  return <canvas ref={ref} width={28} height={10} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function BacktestPage() {
@@ -114,7 +136,7 @@ export default function BacktestPage() {
 
   // Real portfolio overlay
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
-  const [realSlug, setRealSlug]             = useState('')
+  const [realSlug, setRealSlug]             = useState(() => localStorage.getItem('backtest-real-slug') ?? '')
   const [realData, setRealData]             = useState<RealPortfolioData | null>(null)
 
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
@@ -147,6 +169,11 @@ export default function BacktestPage() {
       }))
       .catch(() => setRealData(null))
   }, [realSlug, fromDate, toDate])
+
+  // Persist real portfolio selection
+  useEffect(() => {
+    localStorage.setItem('backtest-real-slug', realSlug)
+  }, [realSlug])
 
   // Restore settings on mount
   useEffect(() => {
@@ -184,6 +211,9 @@ export default function BacktestPage() {
 
   // Empty selected = show all
   const showLine = (key: string) => selected.size === 0 || selected.has(key)
+
+  const theme  = useChartTheme()
+  const { isDark, gridColor, textColor } = theme
 
   // ── Computed chart data ───────────────────────────────────────────────────
 
@@ -285,17 +315,65 @@ export default function BacktestPage() {
       pos: pv ? computeSeriesStats(od, pv) : null,
     } : null
 
+    const ddData  = buildRechartsData(results, labels, selected, computeDrawdown)
+    const rtrData = buildRechartsData(results, labels, selected, computeRTR)
+
+    // Inject real portfolio DD/RTR series
+    if (realData?.dates.length) {
+      const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
+
+      const injectDDRTR = (vals: number[], dateOffset: number, key: string, color: string, strokeDasharray?: string) => {
+        let ddPeak = -Infinity
+        const ddVals = vals.map(v => { if (v > ddPeak) ddPeak = v; return ddPeak > 0 ? (v / ddPeak) - 1 : null })
+        let rtrPeak = -Infinity
+        const rtrVals = vals.map(v => { if (v > rtrPeak) rtrPeak = v; return v > 0 ? rtrPeak / v : null })
+        for (const row of ddData.rows) {
+          const ri = realDateIndex.get(row.x as string)
+          if (ri == null || ri < dateOffset) continue
+          const dd = ddVals[ri - dateOffset]
+          if (dd != null) row[key] = +dd.toFixed(6)
+        }
+        for (const row of rtrData.rows) {
+          const ri = realDateIndex.get(row.x as string)
+          if (ri == null || ri < dateOffset) continue
+          const rtr = rtrVals[ri - dateOffset]
+          if (rtr != null) row[key] = +rtr.toFixed(6)
+        }
+        const dataset = { label: key, color, strokeWidth: 2, ...(strokeDasharray ? { strokeDasharray } : {}) }
+        ddData.datasets.push(dataset)
+        rtrData.datasets.push({ ...dataset })
+      }
+
+      if (realData.navSeries.length)
+        injectDDRTR(realData.navSeries, 0, 'Real \u2013 NAV', ac[0])
+      if (firstOverlapRealIdx >= 0 && realData.twrSeries.length)
+        injectDDRTR(
+          realData.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)),
+          firstOverlapRealIdx, 'Real \u2013 TWR', ac[1], '6 3',
+        )
+      if (firstOverlapRealIdx >= 0 && realData.mwrSeries != null)
+        injectDDRTR(
+          realData.mwrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + mwrBase)),
+          firstOverlapRealIdx, 'Real \u2013 MWR', ac[2], '4 3',
+        )
+      if (firstOverlapRealIdx >= 0 && realData.positionSeries != null)
+        injectDDRTR(
+          realData.positionSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + posBase)),
+          firstOverlapRealIdx, 'Real \u2013 Position', ac[3], '2 3',
+        )
+    }
+
     return {
       labels,
       mainData,
-      ddData:  buildRechartsData(results, labels, selected, computeDrawdown),
-      rtrData: buildRechartsData(results, labels, selected, computeRTR),
+      ddData,
+      rtrData,
       realStats,
       curveScaleFactors,
       navStart,
       shouldScaleToNav,
     }
-  }, [results, selected, realData, scaleToNav, realSlug])
+  }, [results, selected, realData, scaleToNav, realSlug, isDark])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -402,8 +480,6 @@ export default function BacktestPage() {
 
   // ── Chart helpers ─────────────────────────────────────────────────────────
 
-  const theme = getChartTheme()
-  const { isDark, gridColor, textColor } = theme
   const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
     makeRechartsTooltip(theme, valueFmt, labelFmt)
 
@@ -411,7 +487,6 @@ export default function BacktestPage() {
     type:              'monotone' as const,
     dot:               false as const,
     activeDot:         { r: 4 },
-    strokeWidth:       1.5,
     connectNulls:      false,
     isAnimationActive: false,
   }
@@ -422,6 +497,41 @@ export default function BacktestPage() {
   // NAV uses a secondary right axis only when not scaling (values are in different dollar range)
   const navSecondAxis    = showNavLine && !shouldScaleToNav
   const chartRightMargin = navSecondAxis ? 80 : 16
+
+  // Build per-label metadata for canvas legend rendering
+  const legendMetaMap = useMemo(() => {
+    const map = new Map<string, { color: string; strokeWidth: number; strokeDasharray?: string }>()
+    ;[...(chartData?.mainData.datasets ?? []), ...(chartData?.ddData.datasets ?? []), ...(chartData?.rtrData.datasets ?? [])]
+      .forEach(ds => { if (!map.has(ds.label)) map.set(ds.label, { color: ds.color, strokeWidth: ds.strokeWidth ?? 2, strokeDasharray: ds.strokeDasharray || undefined }) })
+    // Standalone real series rendered separately — include their exact dash/width
+    const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
+    map.set('Real \u2013 NAV',      { color: ac[0], strokeWidth: 2 })
+    map.set('Real \u2013 TWR',      { color: ac[1], strokeWidth: 2, strokeDasharray: '6 3' })
+    map.set('Real \u2013 MWR',      { color: ac[2], strokeWidth: 2, strokeDasharray: '4 3' })
+    map.set('Real \u2013 Position', { color: ac[3], strokeWidth: 2, strokeDasharray: '2 3' })
+    return map
+  }, [chartData, isDark])
+
+  const renderLegend = (props: any) => {
+    const { payload } = props
+    if (!payload?.length) return null
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem 0.8rem', fontSize: '0.78em', color: textColor, padding: '4px 8px 0' }}>
+        {payload.map((entry: any, i: number) => {
+          const meta = legendMetaMap.get(entry.value as string)
+          const color = meta?.color ?? (entry.color as string)
+          const sw    = meta?.strokeWidth ?? 2
+          const dash  = meta?.strokeDasharray
+          return (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <LegendLine color={color} strokeWidth={sw} strokeDasharray={dash} />
+              <span>{entry.value}</span>
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
 
   // Stats table stat row renderer helper
   const realStatRow = (
@@ -547,7 +657,7 @@ export default function BacktestPage() {
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
-                        <td>{portfolio.label} – {curve.label}</td>
+                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>{portfolio.label} – {curve.label}</td>
                         <td>{money(s.endingValue * factor)}</td>
                         <td>{pct(s.cagr)}</td>
                         <td>{pct(s.maxDrawdown)}</td>
@@ -564,12 +674,13 @@ export default function BacktestPage() {
                 )}
                 {realSlug && chartData.realStats && (() => {
                   const rs = chartData.realStats!
+                  const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
                   return (
                     <>
-                      {realStatRow('real-nav', 'Real – NAV',      rs.nav, '#e8c84a')}
-                      {realStatRow('real-twr', 'Real – TWR',      rs.twr, '#f09030')}
-                      {rs.mwr && realStatRow('real-mwr', 'Real – MWR',      rs.mwr, '#e05050')}
-                      {rs.pos && realStatRow('real-pos', 'Real – Position', rs.pos, '#50c050')}
+                      {realStatRow('real-nav', 'Real – NAV',      rs.nav, ac[0])}
+                      {realStatRow('real-twr', 'Real – TWR',      rs.twr, ac[1])}
+                      {rs.mwr && realStatRow('real-mwr', 'Real – MWR',      rs.mwr, ac[2])}
+                      {rs.pos && realStatRow('real-pos', 'Real – Position', rs.pos, ac[3])}
                     </>
                   )
                 })()}
@@ -624,80 +735,84 @@ export default function BacktestPage() {
                   <YAxis
                     yAxisId="nav-right"
                     orientation="right"
+                    domain={['auto', 'auto']}
                     tick={{ fill: textColor, fontSize: 11 }}
                     tickFormatter={v => '$' + Number(v).toFixed(0)}
                     width={72}
-                    label={{ value: 'NAV', angle: 90, position: 'insideRight', fill: '#e8c84a', fontSize: 10, dy: -20 }}
+                    label={{ value: 'NAV', angle: 90, position: 'insideRight', fill: isDark ? ACCENT_DARK[0] : ACCENT_LIGHT[0], fontSize: 10, dy: -20 }}
                   />
                 )}
                 <Tooltip content={makeTooltip(v => '$' + v.toFixed(2))} />
-                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
+                <Legend content={renderLegend} />
 
                 {/* Backtest portfolio curves */}
                 {chartData.mainData.datasets.map(ds => (
-                  <Line key={ds.label} yAxisId="main" dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
+                  <Line key={ds.label} {...commonLineProps} yAxisId="main" dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
 
                 {/* Real portfolio lines */}
-                {realSlug && realData?.dates.length ? (
-                  <>
-                    {showLine('real-nav') && (
-                      <Line
-                        yAxisId={shouldScaleToNav ? 'main' : 'nav-right'}
-                        dataKey="Real – NAV"
-                        stroke="#e8c84a"
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                        connectNulls={false}
-                        isAnimationActive={false}
-                        type="monotone"
-                      />
-                    )}
-                    {showLine('real-twr') && (
-                      <Line
-                        yAxisId="main"
-                        dataKey="Real – TWR"
-                        stroke="#f09030"
-                        strokeWidth={1.5}
-                        strokeDasharray="6 3"
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                        connectNulls={false}
-                        isAnimationActive={false}
-                        type="monotone"
-                      />
-                    )}
-                    {realData.mwrSeries != null && showLine('real-mwr') && (
-                      <Line
-                        yAxisId="main"
-                        dataKey="Real – MWR"
-                        stroke="#e05050"
-                        strokeWidth={1.5}
-                        strokeDasharray="4 2"
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                        connectNulls={false}
-                        isAnimationActive={false}
-                        type="monotone"
-                      />
-                    )}
-                    {realData.positionSeries != null && showLine('real-pos') && (
-                      <Line
-                        yAxisId="main"
-                        dataKey="Real – Position"
-                        stroke="#50c050"
-                        strokeWidth={1.5}
-                        strokeDasharray="2 2"
-                        dot={false}
-                        activeDot={{ r: 4 }}
-                        connectNulls={false}
-                        isAnimationActive={false}
-                        type="monotone"
-                      />
-                    )}
-                  </>
-                ) : null}
+                {realSlug && realData?.dates.length ? (() => {
+                  const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
+                  return (
+                    <>
+                      {showLine('real-nav') && (
+                        <Line
+                          yAxisId={shouldScaleToNav ? 'main' : 'nav-right'}
+                          dataKey="Real – NAV"
+                          stroke={ac[0]}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          connectNulls={false}
+                          isAnimationActive={false}
+                          type="monotone"
+                        />
+                      )}
+                      {showLine('real-twr') && (
+                        <Line
+                          yAxisId="main"
+                          dataKey="Real – TWR"
+                          stroke={ac[1]}
+                          strokeWidth={2}
+                          strokeDasharray="6 3"
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          connectNulls={false}
+                          isAnimationActive={false}
+                          type="monotone"
+                        />
+                      )}
+                      {realData.mwrSeries != null && showLine('real-mwr') && (
+                        <Line
+                          yAxisId="main"
+                          dataKey="Real – MWR"
+                          stroke={ac[2]}
+                          strokeWidth={2}
+                          strokeDasharray="4 3"
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          connectNulls={false}
+                          isAnimationActive={false}
+                          type="monotone"
+                        />
+                      )}
+                      {realData.positionSeries != null && showLine('real-pos') && (
+                        <Line
+                          yAxisId="main"
+                          dataKey="Real – Position"
+                          stroke={ac[3]}
+                          strokeWidth={2}
+                          strokeDasharray="2 3"
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          connectNulls={false}
+                          isAnimationActive={false}
+                          type="monotone"
+                        />
+                      )}
+                    </>
+                  )
+                })() : null}
 
                 <Brush
                   dataKey="x"
@@ -728,10 +843,12 @@ export default function BacktestPage() {
                   width={60}
                 />
                 <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
-                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
-                {chartData.ddData.datasets.map(ds => (
-                  <Line key={ds.label} dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
-                ))}
+                <Legend content={renderLegend} />
+                {chartData.ddData.datasets
+                  .filter(ds => ds.label !== 'Real \u2013 NAV' || showLine('real-nav'))
+                  .map(ds => (
+                    <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
+                  ))}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -754,10 +871,12 @@ export default function BacktestPage() {
                   width={60}
                 />
                 <Tooltip content={makeTooltip(v => v.toFixed(2) + 'x')} />
-                <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
-                {chartData.rtrData.datasets.map(ds => (
-                  <Line key={ds.label} dataKey={ds.label} stroke={ds.color} {...commonLineProps} />
-                ))}
+                <Legend content={renderLegend} />
+                {chartData.rtrData.datasets
+                  .filter(ds => ds.label !== 'Real \u2013 NAV' || showLine('real-nav'))
+                  .map(ds => (
+                    <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
+                  ))}
               </LineChart>
             </ResponsiveContainer>
           </div>

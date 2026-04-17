@@ -16,7 +16,7 @@ import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
-  PALETTE, PERCENTILE_COLORS, PERCENTILE_LIST,
+  PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
 } from '@/types/backtest'
 
 // ── Effective curves helper ───────────────────────────────────────────────────
@@ -118,7 +118,7 @@ export default function MonteCarloPage() {
         })
       })
     } else {
-      effectiveCurves.forEach(({ portfolio, pi, curve, ci }, arrIdx) => {
+      effectiveCurves.forEach(({ portfolio, pi, curve, ci }) => {
         const palette = PALETTE[pi % PALETTE.length]
         const pp = curve.percentilePaths.find(x => x.percentile === percentile)
         if (!pp) return
@@ -405,7 +405,7 @@ export default function MonteCarloPage() {
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
-                        <td>{portfolio.label} – {curve.label}</td>
+                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>{portfolio.label} – {curve.label}</td>
                         {MC_COLS.map(c => <td key={c.metric}>{cellValue(curve, pctIdx, c.metric, pp)}</td>)}
                       </tr>
                     )
