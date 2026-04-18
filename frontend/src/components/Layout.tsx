@@ -9,9 +9,10 @@ import { showConfirm } from '@/components/ConfirmDialog'
 // ── Page nav tabs (same as renderPageNavTabs in common.kt) ───────────────────
 
 const NAV_PAGES = [
-  { line1: 'Portfolio', line2: 'Viewer',     href: '/portfolio/' },
+  { line1: 'Portfolio', line2: 'Viewer',   href: '/portfolio/' },
+  { line1: 'Portfolio', line2: 'Analyst',  href: '/analyst/' },
   { line1: 'Loan',      line2: 'Calculator', href: '/loan' },
-  { line1: 'Portfolio', line2: 'Backtest',   href: '/backtest' },
+  { line1: 'Portfolio', line2: 'Backtest', href: '/backtest' },
   { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
 ]
 
@@ -21,7 +22,8 @@ export function PageNavTabs({ active }: { active: string }) {
     <div className="page-nav-tabs">
       {NAV_PAGES.map(page => {
         const isActive = page.href === active ||
-          (page.href === '/portfolio/' && location.pathname.startsWith('/portfolio'))
+          (page.href === '/portfolio/' && location.pathname.startsWith('/portfolio')) ||
+          (page.href === '/analyst/' && location.pathname.startsWith('/analyst'))
         return (
           <Link
             key={page.href}

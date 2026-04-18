@@ -68,7 +68,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedBenchmark, setSelectedBenchmark] = useState<string>('')
   const [benchmarkData, setBenchmarkData] = useState<Record<string, number>>({})
-  const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('__default__')
+  const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('none')
 
   const theme = useChartTheme()
   const { gridColor, textColor, isDark } = theme
@@ -118,7 +118,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   }, [portfolioSlug, resolvedFrom, resolvedTo])
 
   // ── Reset margin key when benchmark changes ───────────────────────────────
-  useEffect(() => { setBenchmarkMarginKey('__default__') }, [selectedBenchmark])
+  useEffect(() => { setBenchmarkMarginKey('none') }, [selectedBenchmark])
 
   // ── Fetch benchmark data when selection changes ───────────────────────────
   useEffect(() => {
@@ -132,7 +132,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     let filteredPortfolio = portfolio
     if (benchmarkMarginKey === 'none') {
       filteredPortfolio = { ...portfolio, marginStrategies: [], includeNoMargin: true }
-    } else if (benchmarkMarginKey !== '__default__') {
+    } else if (/^\d+$/.test(benchmarkMarginKey)) {
       const idx = parseInt(benchmarkMarginKey)
       filteredPortfolio = { ...portfolio, marginStrategies: [portfolio.marginStrategies[idx]], includeNoMargin: false }
     }
@@ -239,7 +239,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       }
       if (selectedBenchmark) {
         const bval = benchmarkData[date]
-        row[`bm__${selectedBenchmark}`] = bval != null ? +(bval * 100).toFixed(4) : null
+        row['benchmark'] = bval != null ? +(bval * 100).toFixed(4) : null
       }
       return row
     })
@@ -259,7 +259,9 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     activeDot: { r: 3 },
     strokeWidth: 1.5,
     connectNulls: false,
-    isAnimationActive: false,
+    isAnimationActive: true,
+    animationDuration: 400,
+    animationEasing: 'ease-out' as const,
     type: 'monotone' as const,
   }
 
@@ -392,8 +394,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 onChange={e => setBenchmarkMarginKey(e.target.value)}
                 style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem', background: isDark ? '#1a1a2e' : '#f0f0f0', color: textColor, border: `1px solid ${gridColor}`, borderRadius: 4 }}
               >
-                <option value="__default__">Default</option>
-                {benchmarkBlock.includeNoMargin && <option value="none">No Margin</option>}
+                <option value="none">No Margin</option>
                 {benchmarkBlock.margins.map((m, i) => (
                   <option key={i} value={String(i)}>{m.ratio}% Margin</option>
                 ))}
@@ -498,7 +499,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                   border: `1px solid ${gridColor}`,
                   fontSize: '0.78rem',
                 }}
-                formatter={(value: any, name: string) => {
+                formatter={(value: any, name: any) => {
                   if (name === 'NAV') return [navFmt(value), name]
                   if (typeof value === 'number') return [pctFmt(value), name]
                   return [value, name]
@@ -543,9 +544,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
               {/* Benchmark overlay */}
               {selectedBenchmark && (
                 <Line
-                  key={selectedBenchmark}
                   yAxisId="left"
-                  dataKey={`bm__${selectedBenchmark}`}
+                  dataKey="benchmark"
                   name={selectedBenchmark}
                   stroke={BENCHMARK_COLORS[0]}
                   strokeDasharray="6 3"

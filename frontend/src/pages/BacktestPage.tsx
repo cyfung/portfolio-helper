@@ -778,6 +778,7 @@ export default function BacktestPage() {
                           dataKey="Real – NAV"
                           stroke={ac[0]}
                           strokeWidth={2}
+                          strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}
@@ -791,7 +792,7 @@ export default function BacktestPage() {
                           dataKey="Real – TWR"
                           stroke={ac[1]}
                           strokeWidth={2}
-                          strokeDasharray={scaleDash('8 4', pixelsPerPoint)}
+                          strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}
@@ -805,7 +806,7 @@ export default function BacktestPage() {
                           dataKey="Real – MWR"
                           stroke={ac[2]}
                           strokeWidth={2}
-                          strokeDasharray={scaleDash('4 3', pixelsPerPoint)}
+                          strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}
@@ -819,6 +820,7 @@ export default function BacktestPage() {
                           dataKey="Real – Position"
                           stroke={ac[3]}
                           strokeWidth={2}
+                          strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}

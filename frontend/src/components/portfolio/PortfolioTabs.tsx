@@ -10,9 +10,11 @@ interface Props {
   lastUpdateTime: string
   sseDotClass: string
   sseDotTitle: string
+  basePath?: string
+  showControls?: boolean
 }
 
-export default function PortfolioTabs({ onSaveToBacktest, onTwsSync, twsSyncing, lastUpdateTime, sseDotClass, sseDotTitle }: Props) {
+export default function PortfolioTabs({ onSaveToBacktest, onTwsSync, twsSyncing, lastUpdateTime, sseDotClass, sseDotTitle, basePath = '/portfolio/', showControls = true }: Props) {
   const { allPortfolios, portfolioId } = usePortfolioStore()
   const dragSrcRef = useRef<string | null>(null)
   const dragOverRef = useRef<string | null>(null)
@@ -48,7 +50,7 @@ export default function PortfolioTabs({ onSaveToBacktest, onTwsSync, twsSyncing,
   return (
     <div className="portfolio-tabs">
       {allPortfolios.map(p => {
-        const href = p.slug === 'main' ? '/portfolio/' : `/portfolio/${p.slug}`
+        const href = p.slug === 'main' ? basePath : `${basePath}${p.slug}`
         return (
           <Link
             key={p.slug}
@@ -66,31 +68,33 @@ export default function PortfolioTabs({ onSaveToBacktest, onTwsSync, twsSyncing,
           </Link>
         )
       })}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
-        <button
-          className="save-portfolio-btn"
-          id="tws-sync-btn"
-          type="button"
-          title="Sync Qty and Cash from Interactive Brokers TWS"
-          onClick={onTwsSync}
-          disabled={twsSyncing}
-        >
-          {twsSyncing ? 'Syncing…' : 'Sync TWS'}
-        </button>
-        <button
-          className="save-portfolio-btn"
-          id="save-to-backtest-btn"
-          type="button"
-          title="Save current portfolio as a backtest preset"
-          onClick={onSaveToBacktest}
-        >
-          Save to Backtest
-        </button>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-          <span className="header-timestamp" id="last-update-time">{lastUpdateTime}</span>
-          <span className={sseDotClass} id="sse-status-dot" title={sseDotTitle} />
-        </span>
-      </div>
+      {showControls && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
+          <button
+            className="save-portfolio-btn"
+            id="tws-sync-btn"
+            type="button"
+            title="Sync Qty and Cash from Interactive Brokers TWS"
+            onClick={onTwsSync}
+            disabled={twsSyncing}
+          >
+            {twsSyncing ? 'Syncing…' : 'Sync TWS'}
+          </button>
+          <button
+            className="save-portfolio-btn"
+            id="save-to-backtest-btn"
+            type="button"
+            title="Save current portfolio as a backtest preset"
+            onClick={onSaveToBacktest}
+          >
+            Save to Backtest
+          </button>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span className="header-timestamp" id="last-update-time">{lastUpdateTime}</span>
+            <span className={sseDotClass} id="sse-status-dot" title={sseDotTitle} />
+          </span>
+        </div>
+      )}
     </div>
   )
 }

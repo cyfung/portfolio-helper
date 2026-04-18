@@ -4,6 +4,7 @@ import { useSSE } from '@/hooks/useSSE'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import PortfolioPage from '@/pages/PortfolioPage'
+import PortfolioAnalystPage from '@/pages/PortfolioAnalystPage'
 import LoanPage from '@/pages/LoanPage'
 import BacktestPage from '@/pages/BacktestPage'
 import MonteCarloPage from '@/pages/MonteCarloPage'
@@ -34,6 +35,8 @@ export default function App() {
       <Route path="/" element={<Navigate to="/portfolio/" replace />} />
       <Route path="/portfolio/" element={<PortfolioPage />} />
       <Route path="/portfolio/:slug" element={<PortfolioPage />} />
+      <Route path="/analyst/" element={<PortfolioAnalystPage />} />
+      <Route path="/analyst/:slug" element={<PortfolioAnalystPage />} />
       <Route path="/loan" element={<LoanPage />} />
       <Route path="/backtest" element={<BacktestPage />} />
       <Route path="/montecarlo" element={<MonteCarloPage />} />
