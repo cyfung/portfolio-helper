@@ -12,6 +12,10 @@ export default function PortfolioPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!slug) {
+      const stored = usePortfolioStore.getState().portfolioId
+      if (stored) { navigate(`/portfolio/${stored}`, { replace: true }); return }
+    }
     setLoading(true)
     setError(null)
     const url = slug ? `/api/portfolio/data?portfolio=${slug}` : '/api/portfolio/data'
@@ -23,7 +27,6 @@ export default function PortfolioPage() {
       })
       .then(data => {
         loadPortfolioData(data)
-        // Normalize URL: /portfolio/ → /portfolio/main
         if (!slug) navigate(`/portfolio/${data.portfolioId}`, { replace: true })
         setLoading(false)
       })

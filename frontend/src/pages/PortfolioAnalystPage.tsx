@@ -15,6 +15,10 @@ export default function PortfolioAnalystPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!slug) {
+      const stored = usePortfolioStore.getState().portfolioId
+      if (stored) { navigate(`/analyst/${stored}`, { replace: true }); return }
+    }
     setLoading(true)
     setError(null)
     const url = slug ? `/api/portfolio/data?portfolio=${slug}` : '/api/portfolio/data'

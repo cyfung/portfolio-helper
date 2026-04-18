@@ -50,7 +50,7 @@ export default function PortfolioTabs({ onSaveToBacktest, onTwsSync, twsSyncing,
   return (
     <div className="portfolio-tabs">
       {allPortfolios.map(p => {
-        const href = p.slug === 'main' ? basePath : `${basePath}${p.slug}`
+        const href = `${basePath}${p.slug}`
         return (
           <Link
             key={p.slug}
