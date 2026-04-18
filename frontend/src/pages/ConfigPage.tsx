@@ -36,6 +36,12 @@ interface PortfolioRow {
   virtualBalance: boolean
 }
 
+interface IbkrConfig {
+  token: string
+  queryId: string
+  twsAccount: string
+}
+
 interface SessionInfo {
   token: string
   userAgent: string
@@ -287,6 +293,7 @@ export default function ConfigPage() {
   const [renameErrors, setRenameErrors] = useState<Record<string, string>>({})
   const [pendingRenames, setPendingRenames] = useState<Record<string, string>>({})
   const [ibkrConfigSlug, setIbkrConfigSlug] = useState<string | null>(null)
+  const [ibkrConfigs, setIbkrConfigs] = useState<Record<string, IbkrConfig>>({})
   const saveTimers = useRef<Map<string, number>>(new Map())
   const statusTimer = useRef<number>(0)
   const downloadPollRef = useRef<number | null>(null)
@@ -311,15 +318,22 @@ export default function ConfigPage() {
       .then(r => r.json())
       .then((data: any) => {
         const allPortfolios = data.allPortfolios || []
-        // Also fetch per-portfolio config values
-        Promise.all(allPortfolios.map((p: any) =>
-          fetch(`/api/admin/config-values?portfolio=${encodeURIComponent(p.slug)}`).then(r => r.json()).catch(() => ({}))
-        )).then(configs => {
+        Promise.all([
+          Promise.all(allPortfolios.map((p: any) =>
+            fetch(`/api/admin/config-values?portfolio=${encodeURIComponent(p.slug)}`).then(r => r.json()).catch(() => ({}))
+          )),
+          Promise.all(allPortfolios.map((p: any) =>
+            fetch(`/api/portfolio/${p.slug}/ibkr-config`).then(r => r.json()).then((d: IbkrConfig) => [p.slug, d] as const).catch(() => null)
+          )),
+        ]).then(([configs, ibkrResults]) => {
           setPortfolios(allPortfolios.map((p: any, i: number) => ({
             slug: p.slug,
             name: p.name,
             virtualBalance: configs[i]?.virtualBalance === 'true',
           })))
+          const map: Record<string, IbkrConfig> = {}
+          for (const r of ibkrResults) { if (r) map[r[0]] = r[1] }
+          setIbkrConfigs(map)
         })
       })
       .catch(() => {})
@@ -353,6 +367,13 @@ export default function ConfigPage() {
       }
     }, 600))
   }, [])
+
+  function refreshIbkrConfig(slug: string) {
+    fetch(`/api/portfolio/${slug}/ibkr-config`)
+      .then(r => r.json())
+      .then((d: IbkrConfig) => setIbkrConfigs(prev => ({ ...prev, [slug]: d })))
+      .catch(() => {})
+  }
 
   // ── Portfolio management ──────────────────────────────────────────────────
 
@@ -608,6 +629,13 @@ export default function ConfigPage() {
                     </div>
                   </td>
                   <td>
+                    {ibkrConfigs[p.slug] && (ibkrConfigs[p.slug].twsAccount || ibkrConfigs[p.slug].queryId || ibkrConfigs[p.slug].token) && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #888)', fontFamily: 'monospace', display: 'flex', flexDirection: 'column', gap: '0.1rem', marginBottom: '0.35rem' }}>
+                        <span>{ibkrConfigs[p.slug].twsAccount || '—'}</span>
+                        <span>QID: {ibkrConfigs[p.slug].queryId || '—'}</span>
+                        <span>Token: {ibkrConfigs[p.slug].token ? '••••' : '—'}</span>
+                      </div>
+                    )}
                     <button
                       type="button" className="config-restore-btn"
                       onClick={() => setIbkrConfigSlug(p.slug)}
@@ -778,7 +806,7 @@ export default function ConfigPage() {
         </>)}
       </main>
       {ibkrConfigSlug && (
-        <IbkrConfigDialog portfolioSlug={ibkrConfigSlug} onClose={() => setIbkrConfigSlug(null)} />
+        <IbkrConfigDialog portfolioSlug={ibkrConfigSlug} onClose={() => { refreshIbkrConfig(ibkrConfigSlug); setIbkrConfigSlug(null) }} />
       )}
     </div>
   )
