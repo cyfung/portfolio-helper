@@ -746,7 +746,8 @@ h1 {
 }
 
 .config-field-input-col input[type="text"],
-.config-field-input-col input[type="number"] {
+.config-field-input-col input[type="number"],
+.config-field-input-col input[type="password"] {
     min-width: 220px;
     padding: var(--spacing-md) var(--spacing-lg);
     border: 1px solid var(--color-border-medium);
@@ -760,18 +761,21 @@ h1 {
 }
 
 .config-field-input-col input[type="text"]:focus,
-.config-field-input-col input[type="number"]:focus {
+.config-field-input-col input[type="number"]:focus,
+.config-field-input-col input[type="password"]:focus {
     outline: none;
     border-color: var(--color-accent-primary);
     box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
 }
 
 .config-field-input-col input[type="text"]:disabled,
-.config-field-input-col input[type="number"]:disabled {
+.config-field-input-col input[type="number"]:disabled,
+.config-field-input-col input[type="password"]:disabled {
     background-color: var(--color-bg-secondary);
     color: var(--color-text-tertiary);
     cursor: not-allowed;
 }
+
 
 .pairing-pin-container {
     display: flex;

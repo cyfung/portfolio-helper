@@ -286,6 +286,7 @@ export default function ConfigPage() {
   const [addStatus, setAddStatus]   = useState('')
   const [renameErrors, setRenameErrors] = useState<Record<string, string>>({})
   const [pendingRenames, setPendingRenames] = useState<Record<string, string>>({})
+  const [privacyFocused, setPrivacyFocused] = useState(false)
   const [ibkrConfigSlug, setIbkrConfigSlug] = useState<string | null>(null)
   const [ibkrConfigs, setIbkrConfigs] = useState<Record<string, IbkrConfig>>({})
   const saveTimers = useRef<Map<string, number>>(new Map())
@@ -574,9 +575,15 @@ export default function ConfigPage() {
 
           <ConfigField label="Privacy Scaling %" description="Scale all managed assets (quantities and cash) by this percentage for display purposes. Leave empty to disable." inputId="privacy-scale-pct">
             <input
-              type="password" id="privacy-scale-pct" placeholder="None"
-              defaultValue={cfg.privacyScalePct ?? ''}
-              onChange={e => saveField('privacyScalePct', e.target.value)}
+              type="text" id="privacy-scale-pct"
+              placeholder={!privacyFocused && cfg.privacyScalePct ? 'Set' : 'None'}
+              value={privacyFocused ? (cfg.privacyScalePct ?? '') : ''}
+              onFocus={() => setPrivacyFocused(true)}
+              onBlur={() => setPrivacyFocused(false)}
+              onChange={e => {
+                setCfg(prev => ({ ...prev, privacyScalePct: e.target.value }))
+                saveField('privacyScalePct', e.target.value)
+              }}
             />
           </ConfigField>
 
