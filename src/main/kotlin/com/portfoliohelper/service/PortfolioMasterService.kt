@@ -21,7 +21,7 @@ class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineS
     val dividend = DividendService(portfolio, _stocks, _config, scope)
     val cashDisplay = CashDisplayService(portfolio.slug, _cashEntries, AppConfig.privacyScalePctFlow, dividend.updates)
     val totals = PortfolioTotalsService(portfolio.slug, stockDisplay, cashDisplay, scope)
-    val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay, scope)
+    val interest = IbkrInterestService(portfolio.slug, _cashEntries, cashDisplay, AppConfig.privacyScalePctFlow, scope)
     val rebalGa = RebalGaService(portfolio.slug, _stocks, stockDisplay, cashDisplay, _config, scope)
 
     fun initialize() {

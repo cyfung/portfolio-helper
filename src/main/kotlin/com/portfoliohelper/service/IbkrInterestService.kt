@@ -36,17 +36,19 @@ class IbkrInterestService(
     private val portfolioId: String,
     cashEntries: StateFlow<List<CashEntry>>,
     cashSvc: CashDisplayService,
+    private val privacyScalePct: StateFlow<Double?>,
     scope: CoroutineScope
 ) {
     val updates: StateFlow<IbkrInterestSnapshot?> = combine(
         cashEntries,
         cashSvc.updates,
-        IbkrMarginRateService.ratesFlow
-    ) { entries, cash, ratesSnap ->
-        compute(entries, cash, ratesSnap)
+        IbkrMarginRateService.ratesFlow,
+        privacyScalePct
+    ) { entries, cash, ratesSnap, scale ->
+        compute(entries, cash, ratesSnap, scale)
     }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    private fun compute(entries: List<CashEntry>, cashSnap: CashDisplaySnapshot, ratesSnap: IbkrMarginRateService.RatesSnapshot): IbkrInterestSnapshot? {
+    private fun compute(entries: List<CashEntry>, cashSnap: CashDisplaySnapshot, ratesSnap: IbkrMarginRateService.RatesSnapshot, scale: Double?): IbkrInterestSnapshot? {
         val allRates = ratesSnap.rates
         if (allRates.isEmpty()) return null
 
@@ -80,7 +82,8 @@ class IbkrInterestService(
             }
 
             // Interest charged on net loan per currency only (positive balance = no interest)
-            val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0))
+            val scaleFactor = (scale ?: 100.0) / 100.0
+            val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0)) * scaleFactor
             val blended = if (nativeLoan > 0) blendedRate(tiers, nativeLoan) else null
             val effectiveRate = blended ?: baseRate
             val days = CurrencyConventions.getDaysInYear(ccy)
@@ -112,7 +115,7 @@ class IbkrInterestService(
                 dailyInterestUsd = dailyInterestUsd,
                 hypotheticalDailyUsd = hypotheticalDaily,
                 displayRateText = displayRateText,
-                nativeBalance = nativeMargin[ccy] ?: 0.0,
+                nativeBalance = (nativeMargin[ccy] ?: 0.0) * scaleFactor,
                 fxRateUsd = fxRate
             )
         }
