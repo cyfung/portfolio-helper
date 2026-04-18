@@ -606,6 +606,7 @@ export default function BacktestPage() {
                 id="real-portfolio-select"
                 value={realSlug}
                 onChange={e => setRealSlug(e.target.value)}
+                style={{ width: 'auto' }}
               >
                 <option value="">— none —</option>
                 {realPortfolios.map(p => (

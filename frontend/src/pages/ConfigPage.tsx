@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import { showConfirm } from '@/components/ConfirmDialog'
-import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
+import IbkrConfigDialog, { IbkrConfig } from '@/components/portfolio/IbkrConfigDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,12 +34,6 @@ interface PortfolioRow {
   slug: string
   name: string
   virtualBalance: boolean
-}
-
-interface IbkrConfig {
-  token: string
-  queryId: string
-  twsAccount: string
 }
 
 interface SessionInfo {

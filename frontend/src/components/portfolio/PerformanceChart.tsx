@@ -1,10 +1,9 @@
-// ── PerformanceChart.tsx — Portfolio performance dashboard ────────────────────
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ComposedChart, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush,
 } from 'recharts'
-import { getChartTheme } from '@/lib/chartTheme'
+import { useChartTheme } from '@/lib/chartTheme'
 import type { SavedPortfolio } from '@/types/backtest'
 import { blockStateToAPIPortfolio, configToBlockState } from '@/types/backtest'
 
@@ -44,7 +43,6 @@ function periodFrom(p: Period, firstDate: string): string {
 }
 
 const PERIODS: Period[] = ['1W', '1M', '3M', '6M', 'YTD', '1Y', '3Y', 'All', 'Custom']
-const BENCHMARK_COLOR = '#e8c84a'
 const BENCHMARK_COLORS = ['#e8c84a', '#c84aaa', '#4ac8e8', '#e84a4a']
 
 export default function PerformanceChart({ portfolioSlug }: Props) {
@@ -71,7 +69,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   // benchmark name → { date → normalised value (0-based) }
   const [benchmarkData, setBenchmarkData] = useState<Record<string, Record<string, number>>>({})
 
-  const theme = getChartTheme()
+  const theme = useChartTheme()
   const { gridColor, textColor, isDark } = theme
 
   const firstDate = snapshotDates[0] ?? ''

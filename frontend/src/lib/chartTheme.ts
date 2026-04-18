@@ -1,5 +1,3 @@
-// ── chartTheme.ts — Chart color helpers based on current theme ────────────────
-
 import { useState, useEffect } from 'react'
 
 export function getChartTheme() {
@@ -11,7 +9,6 @@ export function getChartTheme() {
   }
 }
 
-// Reactive hook: re-derives theme whenever data-theme attribute changes.
 export function useChartTheme() {
   const [theme, setTheme] = useState(getChartTheme)
   useEffect(() => {

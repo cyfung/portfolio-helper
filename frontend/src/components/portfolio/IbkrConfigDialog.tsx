@@ -1,4 +1,3 @@
-// ── IbkrConfigDialog.tsx — Per-portfolio IB Flex Query config overlay ─────────
 import { useEffect, useRef, useState } from 'react'
 
 interface Props {
@@ -6,7 +5,7 @@ interface Props {
   onClose: () => void
 }
 
-interface IbkrConfig {
+export interface IbkrConfig {
   token: string
   queryId: string
   twsAccount: string
