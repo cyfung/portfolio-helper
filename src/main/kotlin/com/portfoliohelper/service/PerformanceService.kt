@@ -79,7 +79,18 @@ object PerformanceService {
             if (cash < 0 && nav > 0) abs(cash) / nav else 0.0
         }
 
-        return ChartData(dates, twrSeries, mwrSeries, positionSeries, navs, marginUtilSeries)
+        // Prepend T0 anchor so all return series start at 0%
+        val t0Margin = t0.header.cashBase.let { cash ->
+            if (cash < 0 && t0.header.netLiqValue > 0) abs(cash) / t0.header.netLiqValue else 0.0
+        }
+        return ChartData(
+            dates            = listOf(t0.header.date) + dates,
+            twrSeries        = listOf(0.0) + twrSeries,
+            mwrSeries        = mwrSeries?.let { listOf(0.0) + it },
+            positionSeries   = positionSeries?.let { listOf(0.0) + it },
+            navSeries        = listOf(t0.header.netLiqValue) + navs,
+            marginUtilSeries = listOf(t0Margin) + marginUtilSeries
+        )
     }
 
     // ──────────────────────────────────────────────────────────────────────────
