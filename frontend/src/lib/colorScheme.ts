@@ -88,12 +88,36 @@ export function getGroupColors(groupId: number, n: number, isDark: boolean): str
   return colors
 }
 
-// Dash pattern by variant role: No Margin=solid, Margin 1=[8,4], Margin 2=[4,4], Margin 3=[2,4], Margin 4+=[8,4,2,4]
-const ROLE_DASH = ['', '8 4', '4 4', '2 4', '8 4 2 4'] as const
+/**
+ * Scale a SVG strokeDasharray string so dashes remain visible at high data density.
+ * pixelsPerPoint = containerWidthPx / (numPoints - 1).
+ * At 4+ px/pt no scaling is applied. minGap is only enforced when scale > 1
+ * so base patterns render faithfully at low density.
+ */
+export function scaleDash(
+  base: string | undefined,
+  pixelsPerPoint: number,
+  maxScale = Infinity,
+  minGap = 6,
+): string | undefined {
+  if (!base) return base
+  const scale = Math.min(maxScale, Math.max(1.0, 4.0 / Math.max(pixelsPerPoint, 0.01)))
+  return base
+    .trim()
+    .split(/\s+/)
+    .map((v, i) => {
+      const n = Math.round(parseFloat(v) * scale)
+      return i % 2 === 1 ? String(scale > 1 ? Math.max(minGap, n) : n) : String(n)
+    })
+    .join(' ')
+}
 
-export function getGroupDashPatterns(n: number): string[] {
+// strokeWidth by variant index: index 0 = No Margin (thickest), higher = progressively thinner
+const ROLE_WIDTH = [2, 1.75, 1.5, 1.25, 1.0] as const
+
+export function getGroupStrokeWidths(n: number): number[] {
   if (n <= 0) return []
-  return Array.from({ length: n }, (_, i) => ROLE_DASH[Math.min(i, ROLE_DASH.length - 1)])
+  return Array.from({ length: n }, (_, i) => ROLE_WIDTH[Math.min(i, ROLE_WIDTH.length - 1)])
 }
 
 // Accent colors for 4 standalone real-portfolio series.

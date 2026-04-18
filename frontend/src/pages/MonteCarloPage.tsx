@@ -10,6 +10,7 @@ import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { getChartTheme } from '@/lib/chartTheme'
+import { scaleDash } from '@/lib/colorScheme'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
@@ -61,8 +62,18 @@ export default function MonteCarloPage() {
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [logScale, setLogScale]       = useState(false)
 
-  const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
-  const pollRef     = useRef<number | null>(null)
+  const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
+  const pollRef           = useRef<number | null>(null)
+  const [chartWidth, setChartWidth] = useState(1000)
+  const chartObsRef = useRef<ResizeObserver | null>(null)
+  const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
+    chartObsRef.current?.disconnect()
+    chartObsRef.current = null
+    if (!node) return
+    const obs = new ResizeObserver(entries => setChartWidth(entries[0].contentRect.width))
+    obs.observe(node)
+    chartObsRef.current = obs
+  }, [])
 
   // Restore settings on mount
   useEffect(() => {
@@ -439,7 +450,7 @@ export default function MonteCarloPage() {
           </div>
 
           {/* MC Chart */}
-          <div className="backtest-chart-container">
+          <div className="backtest-chart-container" ref={chartContainerRef}>
             <button
               className={`chart-scale-toggle${logScale ? ' active' : ''}`}
               type="button"
@@ -468,19 +479,23 @@ export default function MonteCarloPage() {
                 />
                 <Tooltip content={makeTooltip(v => '$' + v.toFixed(0), v => `Year ${(Number(v) / 252).toFixed(1)}`)} />
                 <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
-                {chartData.datasets.map(ds => (
+                {(() => {
+                  const numPts = (chartData.targetDays ?? 0) + 1
+                  const pxPt   = chartWidth / Math.max(numPts - 1, 1)
+                  return chartData.datasets.map(ds => (
                   <Line
                     key={ds.label}
                     dataKey={ds.label}
                     stroke={ds.color}
                     strokeWidth={ds.strokeWidth}
-                    strokeDasharray={ds.strokeDasharray}
+                    strokeDasharray={scaleDash(ds.strokeDasharray, pxPt, 6)}
                     dot={false}
                     activeDot={{ r: 4 }}
                     connectNulls={false}
                     isAnimationActive={false}
                   />
-                ))}
+                ))
+                })()}
                 <Brush
                   dataKey="x"
                   height={26}

@@ -16,7 +16,7 @@ import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE,
 } from '@/types/backtest'
-import { ACCENT_LIGHT, ACCENT_DARK } from '@/lib/colorScheme'
+import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
@@ -139,7 +139,17 @@ export default function BacktestPage() {
   const [realSlug, setRealSlug]             = useState(() => localStorage.getItem('backtest-real-slug') ?? '')
   const [realData, setRealData]             = useState<RealPortfolioData | null>(null)
 
-  const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
+  const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
+  const [chartWidth, setChartWidth] = useState(1000)
+  const chartObsRef = useRef<ResizeObserver | null>(null)
+  const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
+    chartObsRef.current?.disconnect()
+    chartObsRef.current = null
+    if (!node) return
+    const obs = new ResizeObserver(entries => setChartWidth(entries[0].contentRect.width))
+    obs.observe(node)
+    chartObsRef.current = obs
+  }, [])
 
   // Load portfolios for overlay selector
   useEffect(() => {
@@ -349,7 +359,7 @@ export default function BacktestPage() {
       if (firstOverlapRealIdx >= 0 && realData.twrSeries.length)
         injectDDRTR(
           realData.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)),
-          firstOverlapRealIdx, 'Real \u2013 TWR', ac[1], '6 3',
+          firstOverlapRealIdx, 'Real \u2013 TWR', ac[1], '8 4',
         )
       if (firstOverlapRealIdx >= 0 && realData.mwrSeries != null)
         injectDDRTR(
@@ -359,7 +369,7 @@ export default function BacktestPage() {
       if (firstOverlapRealIdx >= 0 && realData.positionSeries != null)
         injectDDRTR(
           realData.positionSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + posBase)),
-          firstOverlapRealIdx, 'Real \u2013 Position', ac[3], '2 3',
+          firstOverlapRealIdx, 'Real \u2013 Position', ac[3],
         )
     }
 
@@ -478,6 +488,9 @@ export default function BacktestPage() {
   )
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
 
+  const numPoints      = chartData?.labels.length ?? 2
+  const pixelsPerPoint = chartWidth / Math.max(numPoints - 1, 1)
+
   // ── Chart helpers ─────────────────────────────────────────────────────────
 
   const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
@@ -506,9 +519,9 @@ export default function BacktestPage() {
     // Standalone real series rendered separately — include their exact dash/width
     const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
     map.set('Real \u2013 NAV',      { color: ac[0], strokeWidth: 2 })
-    map.set('Real \u2013 TWR',      { color: ac[1], strokeWidth: 2, strokeDasharray: '6 3' })
+    map.set('Real \u2013 TWR',      { color: ac[1], strokeWidth: 2, strokeDasharray: '8 4' })
     map.set('Real \u2013 MWR',      { color: ac[2], strokeWidth: 2, strokeDasharray: '4 3' })
-    map.set('Real \u2013 Position', { color: ac[3], strokeWidth: 2, strokeDasharray: '2 3' })
+    map.set('Real \u2013 Position', { color: ac[3], strokeWidth: 2 })
     return map
   }, [chartData, isDark])
 
@@ -710,7 +723,7 @@ export default function BacktestPage() {
               </button>
             )}
           </div>
-          <div className="backtest-chart-container">
+          <div className="backtest-chart-container" ref={chartContainerRef}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={chartData.mainData.rows}
@@ -750,7 +763,7 @@ export default function BacktestPage() {
 
                 {/* Backtest portfolio curves */}
                 {chartData.mainData.datasets.map(ds => (
-                  <Line key={ds.label} {...commonLineProps} yAxisId="main" dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
+                  <Line key={ds.label} {...commonLineProps} yAxisId="main" dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                 ))}
 
                 {/* Real portfolio lines */}
@@ -777,7 +790,7 @@ export default function BacktestPage() {
                           dataKey="Real – TWR"
                           stroke={ac[1]}
                           strokeWidth={2}
-                          strokeDasharray="6 3"
+                          strokeDasharray={scaleDash('8 4', pixelsPerPoint)}
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}
@@ -791,7 +804,7 @@ export default function BacktestPage() {
                           dataKey="Real – MWR"
                           stroke={ac[2]}
                           strokeWidth={2}
-                          strokeDasharray="4 3"
+                          strokeDasharray={scaleDash('4 3', pixelsPerPoint)}
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}
@@ -805,7 +818,6 @@ export default function BacktestPage() {
                           dataKey="Real – Position"
                           stroke={ac[3]}
                           strokeWidth={2}
-                          strokeDasharray="2 3"
                           dot={false}
                           activeDot={{ r: 4 }}
                           connectNulls={false}

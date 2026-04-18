@@ -1,7 +1,7 @@
 // ── chartData.ts — Helpers to convert dataset arrays into Recharts row format ──
 
 import { BacktestResults, PALETTE } from '@/types/backtest'
-import { getGroupDashPatterns } from '@/lib/colorScheme'
+import { getGroupStrokeWidths } from '@/lib/colorScheme'
 
 export interface RechartsDataset {
   label: string
@@ -37,7 +37,7 @@ export function buildRechartsData(
 
   data.portfolios.forEach((portfolio, pi) => {
     const palette = PALETTE[pi % PALETTE.length]
-    const dashes = getGroupDashPatterns(portfolio.curves.length)
+    const widths  = getGroupStrokeWidths(portfolio.curves.length)
     portfolio.curves.forEach((curve, ci) => {
       if (selected.size > 0 && !selected.has(`${pi}-${ci}`)) return
       const key = `${portfolio.label} \u2013 ${curve.label}`
@@ -47,8 +47,7 @@ export function buildRechartsData(
       datasets.push({
         label: key,
         color: palette[ci % palette.length],
-        strokeDasharray: dashes[ci] ?? '',
-        strokeWidth: 2,
+        strokeWidth: widths[ci] ?? 1.0,
       })
     })
   })
