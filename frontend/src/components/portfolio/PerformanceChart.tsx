@@ -68,9 +68,17 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedBenchmark, setSelectedBenchmark] = useState<string>('')
   const [benchmarkData, setBenchmarkData] = useState<Record<string, number>>({})
+  const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('__default__')
 
   const theme = useChartTheme()
   const { gridColor, textColor, isDark } = theme
+
+  const benchmarkBlock = useMemo(() => {
+    if (!selectedBenchmark) return null
+    const sp = savedPortfolios.find(p => p.name === selectedBenchmark)
+    if (!sp) return null
+    return configToBlockState(sp.config?.portfolios?.[0] ?? sp.config, selectedBenchmark)
+  }, [selectedBenchmark, savedPortfolios])
 
   const firstDate = snapshotDates[0] ?? ''
   const lastDate  = snapshotDates[snapshotDates.length - 1] ?? todayStr()
@@ -109,23 +117,31 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       .finally(() => setLoading(false))
   }, [portfolioSlug, resolvedFrom, resolvedTo])
 
+  // ── Reset margin key when benchmark changes ───────────────────────────────
+  useEffect(() => { setBenchmarkMarginKey('__default__') }, [selectedBenchmark])
+
   // ── Fetch benchmark data when selection changes ───────────────────────────
   useEffect(() => {
-    if (!selectedBenchmark) { setBenchmarkData({}); return }
+    if (!selectedBenchmark || !benchmarkBlock) { setBenchmarkData({}); return }
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
 
-    const sp = savedPortfolios.find(p => p.name === selectedBenchmark)
-    if (!sp) return
-    const block = configToBlockState(sp.config?.portfolios?.[0] ?? sp.config, selectedBenchmark)
-    const portfolio = blockStateToAPIPortfolio(block, 0)
+    const portfolio = blockStateToAPIPortfolio(benchmarkBlock, 0)
     if (!portfolio.tickers.length) return
+
+    let filteredPortfolio = portfolio
+    if (benchmarkMarginKey === 'none') {
+      filteredPortfolio = { ...portfolio, marginStrategies: [], includeNoMargin: true }
+    } else if (benchmarkMarginKey !== '__default__') {
+      const idx = parseInt(benchmarkMarginKey)
+      filteredPortfolio = { ...portfolio, marginStrategies: [portfolio.marginStrategies[idx]], includeNoMargin: false }
+    }
 
     setBenchmarkData({})
     fetch('/api/backtest/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromDate: from || null, toDate: to || null, portfolios: [portfolio] }),
+      body: JSON.stringify({ fromDate: from || null, toDate: to || null, portfolios: [filteredPortfolio] }),
     })
       .then(r => r.json())
       .then(result => {
@@ -138,7 +154,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         setBenchmarkData(normalised)
       })
       .catch(() => {})
-  }, [selectedBenchmark, resolvedFrom, resolvedTo])
+  }, [selectedBenchmark, benchmarkBlock, resolvedFrom, resolvedTo, benchmarkMarginKey])
 
   // ── Import XML files ──────────────────────────────────────────────────────
   async function handleXmlImport(files: FileList) {
@@ -292,7 +308,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           {/* Fetch from IBKR */}
           <button
             className="backtest-config-btn"
-            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap', background: '#1a3050', color: '#7eb8f7', borderColor: '#2a5080' }}
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
             onClick={handleIngest}
             disabled={ingesting}
           >
@@ -310,7 +326,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           />
           <button
             className="backtest-config-btn"
-            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap', background: '#1a3050', color: '#7eb8f7', borderColor: '#2a5080' }}
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
             onClick={() => xmlInputRef.current?.click()}
             disabled={ingesting}
           >
@@ -370,6 +386,19 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 <option key={sp.name} value={sp.name}>{sp.name}</option>
               ))}
             </select>
+            {benchmarkBlock && benchmarkBlock.margins.length > 0 && (
+              <select
+                value={benchmarkMarginKey}
+                onChange={e => setBenchmarkMarginKey(e.target.value)}
+                style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem', background: isDark ? '#1a1a2e' : '#f0f0f0', color: textColor, border: `1px solid ${gridColor}`, borderRadius: 4 }}
+              >
+                <option value="__default__">Default</option>
+                {benchmarkBlock.includeNoMargin && <option value="none">No Margin</option>}
+                {benchmarkBlock.margins.map((m, i) => (
+                  <option key={i} value={String(i)}>{m.ratio}% Margin</option>
+                ))}
+              </select>
+            )}
           </div>
         )}
       </div>
@@ -406,6 +435,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 <li><code>Cash Transactions</code> — fields: <code>fxRateToBase</code>, <code>amount</code>, <code>type</code></li>
               </ul>
             </li>
+            <li>Set the output <strong>Format</strong> to <strong>XML</strong>.</li>
             <li>Set <strong>Date Range</strong> to <strong>Last 365 Days</strong> (or Last 30 Days); set <strong>Breakout by Day</strong> to <strong>Yes</strong>.</li>
             <li>For history beyond 365 days, run the query manually with a custom date range and use <strong>Import XML</strong> — overlapping dates are fine and will be deduplicated.</li>
             <li>Generate a <strong>Flex Query Token</strong> under <strong>Settings → Flex Web Service</strong>.</li>

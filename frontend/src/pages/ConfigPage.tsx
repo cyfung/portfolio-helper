@@ -574,8 +574,8 @@ export default function ConfigPage() {
 
           <ConfigField label="Privacy Scaling %" description="Scale all managed assets (quantities and cash) by this percentage for display purposes. Leave empty to disable." inputId="privacy-scale-pct">
             <input
-              type="number" id="privacy-scale-pct" placeholder="None"
-              defaultValue={cfg.privacyScalePct ?? ''} min={1} max={999} step={1}
+              type="password" id="privacy-scale-pct" placeholder="None"
+              defaultValue={cfg.privacyScalePct ?? ''}
               onChange={e => saveField('privacyScalePct', e.target.value)}
             />
           </ConfigField>

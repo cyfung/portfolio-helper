@@ -1105,7 +1105,11 @@ fun Application.configureRouting() {
             val to   = call.request.queryParameters["to"]   ?: allDates.last()
             val snapshots = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.getSnapshots(portfolio.serialId, from, to) }
             val chart = PerformanceService.buildChartData(snapshots)
-            call.respondText(appJson.encodeToString(chart), ContentType.Application.Json)
+            val scalePct = if (AppConfig.privacyScaleEnabled) AppConfig.privacyScalePct else null
+            val scaledChart = if (scalePct != null)
+                chart.copy(navSeries = chart.navSeries.map { it * scalePct / 100.0 })
+            else chart
+            call.respondText(appJson.encodeToString(scaledChart), ContentType.Application.Json)
         }
 
         get("/api/performance/snapshots/{slug}") {
