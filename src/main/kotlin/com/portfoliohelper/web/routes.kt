@@ -1044,19 +1044,51 @@ fun Application.configureRouting() {
             val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val dates = withContext(Dispatchers.IO) { PortfolioSnapshotRepository.getDates(portfolio.serialId) }
+            if (dates.size < 2) {
+                call.respondText("[]", ContentType.Application.Json)
+                return@get
+            }
+            val firstDate = LocalDate.parse(dates.first())
+            val lastDate  = LocalDate.parse(dates.last())
+            val snapshotSet = dates.map { LocalDate.parse(it) }.toSet()
+
+            // Load VT trading days for the snapshot period — same source used by backtest
+            val vtTradingDays = withContext(Dispatchers.IO) {
+                try {
+                    BacktestService.loadNormalizedSeries("VT", firstDate)
+                        .keys
+                        .filter { it in firstDate..lastDate }
+                        .sorted()
+                } catch (_: Exception) { emptyList() }
+            }
+
             val gaps = buildJsonArray {
-                for (i in 1 until dates.size) {
-                    val prev = LocalDate.parse(dates[i - 1])
-                    val curr = LocalDate.parse(dates[i])
-                    val daysBetween = ChronoUnit.DAYS.between(prev, curr)
-                    if (daysBetween > 3) {
+                if (vtTradingDays.isEmpty()) return@buildJsonArray
+                val vtIndex = vtTradingDays.withIndex().associate { (i, d) -> d to i }
+                val missing = vtTradingDays.filter { it !in snapshotSet }
+                if (missing.isEmpty()) return@buildJsonArray
+
+                var gapStart = missing[0]
+                var gapPrev  = missing[0]
+                for (i in 1 until missing.size) {
+                    val curr = missing[i]
+                    if (vtIndex[curr] == vtIndex[gapPrev]!! + 1) {
+                        gapPrev = curr
+                    } else {
                         add(buildJsonObject {
-                            put("from", dates[i - 1])
-                            put("to", dates[i])
-                            put("days", daysBetween)
+                            put("from", gapStart.toString())
+                            put("to", gapPrev.toString())
+                            put("days", (vtIndex[gapPrev]!! - vtIndex[gapStart]!! + 1).toLong())
                         })
+                        gapStart = curr
+                        gapPrev  = curr
                     }
                 }
+                add(buildJsonObject {
+                    put("from", gapStart.toString())
+                    put("to", gapPrev.toString())
+                    put("days", (vtIndex[gapPrev]!! - vtIndex[gapStart]!! + 1).toLong())
+                })
             }
             call.respondText(gaps.toString(), ContentType.Application.Json)
         }

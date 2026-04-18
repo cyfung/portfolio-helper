@@ -13,25 +13,13 @@ data class DaySnapshot(
     val date: String,
     val netLiq: Double,
     val cashBase: Double,
-    val stockBase: Double,
-    val interestAccrualsBase: Double,
     val positions: List<PositionEntry>,
-    val cashBalances: List<CashBalanceEntry>,
-    val interestAccruals: List<InterestAccrualEntry>,
     val cashFlows: List<CashFlowEntry>
 )
 
-data class PositionEntry(
-    val symbol: String,
-    val currency: String,
-    val position: Double,
-    val markPrice: Double,
-    val positionValue: Double
-)
+data class PositionEntry(val symbol: String, val positionValue: Double)
 
-data class CashBalanceEntry(val currency: String, val amount: Double)
-data class InterestAccrualEntry(val currency: String, val endingAccrualBalance: Double)
-data class CashFlowEntry(val currency: String, val fxRateToBase: Double, val amount: Double, val type: String)
+data class CashFlowEntry(val fxRateToBase: Double, val amount: Double, val type: String)
 
 // ---------------------------------------------------------------------------
 // xmlutil-mapped classes (private — only used by FlexXmlParser)
@@ -54,10 +42,8 @@ private data class XFlexStatements(
 private data class XFlexStatement(
     val fromDate: String = "",  // YYYYMMDD — the canonical date for this statement
     @XmlElement(true) val EquitySummaryInBase: XEquitySummaryInBase? = null,
-    @XmlElement(true) val CashReport: XCashReport? = null,
     @XmlElement(true) val OpenPositions: XOpenPositions? = null,
     @XmlElement(true) val CashTransactions: XCashTransactions? = null,
-    @XmlElement(true) val InterestAccruals: XInterestAccruals? = null
 )
 
 @Serializable
@@ -70,22 +56,7 @@ private data class XEquitySummaryInBase(
 @XmlSerialName("EquitySummaryByReportDateInBase", "", "")
 private data class XEquitySummaryRow(
     val cash: Double = 0.0,
-    val stock: Double = 0.0,
-    val interestAccruals: Double = 0.0,
     val total: Double = 0.0
-)
-
-@Serializable
-@XmlSerialName("CashReport", "", "")
-private data class XCashReport(
-    @XmlElement(true) val rows: List<XCashReportCurrency> = emptyList()
-)
-
-@Serializable
-@XmlSerialName("CashReportCurrency", "", "")
-private data class XCashReportCurrency(
-    val currency: String = "",
-    val endingCash: Double = 0.0
 )
 
 @Serializable
@@ -98,9 +69,6 @@ private data class XOpenPositions(
 @XmlSerialName("OpenPosition", "", "")
 private data class XOpenPosition(
     val symbol: String = "",
-    val currency: String = "",
-    val position: Double = 0.0,
-    val markPrice: Double = 0.0,
     val positionValue: Double = 0.0
 )
 
@@ -113,23 +81,9 @@ private data class XCashTransactions(
 @Serializable
 @XmlSerialName("CashTransaction", "", "")
 private data class XCashTransaction(
-    val currency: String = "",
     val fxRateToBase: Double = 1.0,
     val amount: Double = 0.0,
     val type: String = ""
-)
-
-@Serializable
-@XmlSerialName("InterestAccruals", "", "")
-private data class XInterestAccruals(
-    @XmlElement(true) val rows: List<XInterestAccrualsCurrency> = emptyList()
-)
-
-@Serializable
-@XmlSerialName("InterestAccrualsCurrency", "", "")
-private data class XInterestAccrualsCurrency(
-    val currency: String = "",
-    val endingAccrualBalance: Double = 0.0
 )
 
 // ---------------------------------------------------------------------------
@@ -173,36 +127,22 @@ object FlexXmlParser {
         // Second row is end-of-day; first row is start-of-day (carry-over from prior day)
         val eod = equityRows.getOrNull(1) ?: equityRows.firstOrNull() ?: return null
 
-        val cashBalances = stmt.CashReport?.rows
-            ?.filter { it.currency.isNotBlank() && it.currency != "BASE_SUMMARY" }
-            ?.map { CashBalanceEntry(it.currency, it.endingCash) }
-            ?: emptyList()
-
         val positions = stmt.OpenPositions?.positions
             ?.filter { it.symbol.isNotBlank() }
-            ?.map { PositionEntry(it.symbol, it.currency, it.position, it.markPrice, it.positionValue) }
+            ?.map { PositionEntry(it.symbol, it.positionValue) }
             ?: emptyList()
 
         val cashFlows = stmt.CashTransactions?.transactions
-            ?.filter { it.currency.isNotBlank() && it.amount != 0.0 }
-            ?.map { CashFlowEntry(it.currency, it.fxRateToBase, it.amount, it.type) }
-            ?: emptyList()
-
-        val interestAccruals = stmt.InterestAccruals?.rows
-            ?.filter { it.endingAccrualBalance != 0.0 }
-            ?.map { InterestAccrualEntry(it.currency.ifBlank { "BASE" }, it.endingAccrualBalance) }
+            ?.filter { it.amount != 0.0 }
+            ?.map { CashFlowEntry(it.fxRateToBase, it.amount, it.type) }
             ?: emptyList()
 
         return DaySnapshot(
-            date                 = date,
-            netLiq               = eod.total,
-            cashBase             = eod.cash,
-            stockBase            = eod.stock,
-            interestAccrualsBase = eod.interestAccruals,
-            positions            = positions,
-            cashBalances         = cashBalances,
-            interestAccruals     = interestAccruals,
-            cashFlows            = cashFlows
+            date      = date,
+            netLiq    = eod.total,
+            cashBase  = eod.cash,
+            positions = positions,
+            cashFlows = cashFlows
         )
     }
 }

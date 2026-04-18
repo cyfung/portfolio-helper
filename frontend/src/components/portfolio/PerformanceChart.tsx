@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
 import {
   ComposedChart, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush,
@@ -21,7 +22,7 @@ interface ChartData {
 }
 
 type ReturnMode = 'twr' | 'mwr' | 'position'
-type Period = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | 'All' | 'Custom'
+type Period = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | 'All'
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
@@ -42,7 +43,7 @@ function periodFrom(p: Period, firstDate: string): string {
   }
 }
 
-const PERIODS: Period[] = ['1W', '1M', '3M', '6M', 'YTD', '1Y', '3Y', 'All', 'Custom']
+const PERIODS: Period[] = ['1W', '1M', '3M', '6M', 'YTD', '1Y', '3Y', 'All']
 const BENCHMARK_COLORS = ['#e8c84a', '#c84aaa', '#4ac8e8', '#e84a4a']
 
 export default function PerformanceChart({ portfolioSlug }: Props) {
@@ -56,18 +57,17 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const toastTimerRef                     = useRef<number | null>(null)
   const xmlInputRef                       = useRef<HTMLInputElement>(null)
 
+  const [showIbkrConfig, setShowIbkrConfig] = useState(false)
+
   const [period, setPeriod]               = useState<Period>('1Y')
-  const [customFrom, setCustomFrom]       = useState('')
-  const [customTo, setCustomTo]           = useState(todayStr())
   const [mode, setMode]                   = useState<ReturnMode>('twr')
 
-  const [showNav, setShowNav]             = useState(false)
+  const [showNav, setShowNav]             = useState(true)
   const [showMargin, setShowMargin]       = useState(false)
 
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
-  const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>([])
-  // benchmark name → { date → normalised value (0-based) }
-  const [benchmarkData, setBenchmarkData] = useState<Record<string, Record<string, number>>>({})
+  const [selectedBenchmark, setSelectedBenchmark] = useState<string>('')
+  const [benchmarkData, setBenchmarkData] = useState<Record<string, number>>({})
 
   const theme = useChartTheme()
   const { gridColor, textColor, isDark } = theme
@@ -75,8 +75,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const firstDate = snapshotDates[0] ?? ''
   const lastDate  = snapshotDates[snapshotDates.length - 1] ?? todayStr()
 
-  const resolvedFrom = period === 'Custom' ? customFrom : periodFrom(period, firstDate)
-  const resolvedTo   = period === 'Custom' ? customTo   : lastDate
+  const resolvedFrom = periodFrom(period, firstDate)
+  const resolvedTo   = lastDate
 
   // ── Load snapshot dates on mount ─────────────────────────────────────────
   useEffect(() => {
@@ -111,37 +111,34 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
 
   // ── Fetch benchmark data when selection changes ───────────────────────────
   useEffect(() => {
-    if (selectedBenchmarks.length === 0) { setBenchmarkData({}); return }
+    if (!selectedBenchmark) { setBenchmarkData({}); return }
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
 
-    const fetchBenchmark = async (name: string) => {
-      const sp = savedPortfolios.find(p => p.name === name)
-      if (!sp) return
-      const block = configToBlockState(sp.config?.portfolios?.[0] ?? sp.config, name)
-      const portfolio = blockStateToAPIPortfolio(block, 0)
-      if (!portfolio.tickers.length) return
-      try {
-        const res = await fetch('/api/backtest/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fromDate: from || null, toDate: to || null, portfolios: [portfolio] }),
-        })
-        const result = await res.json()
+    const sp = savedPortfolios.find(p => p.name === selectedBenchmark)
+    if (!sp) return
+    const block = configToBlockState(sp.config?.portfolios?.[0] ?? sp.config, selectedBenchmark)
+    const portfolio = blockStateToAPIPortfolio(block, 0)
+    if (!portfolio.tickers.length) return
+
+    setBenchmarkData({})
+    fetch('/api/backtest/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromDate: from || null, toDate: to || null, portfolios: [portfolio] }),
+    })
+      .then(r => r.json())
+      .then(result => {
         const curve = result?.portfolios?.[0]?.curves?.[0]
         if (!curve?.points?.length) return
-        // Normalise to 0% at start (divide by first value, subtract 1)
         const pts: { date: string; value: number }[] = curve.points
         const base = pts[0].value
         const normalised: Record<string, number> = {}
         for (const pt of pts) normalised[pt.date] = pt.value / base - 1
-        setBenchmarkData(prev => ({ ...prev, [name]: normalised }))
-      } catch (_) {}
-    }
-
-    setBenchmarkData({})
-    for (const name of selectedBenchmarks) fetchBenchmark(name)
-  }, [selectedBenchmarks, resolvedFrom, resolvedTo])
+        setBenchmarkData(normalised)
+      })
+      .catch(() => {})
+  }, [selectedBenchmark, resolvedFrom, resolvedTo])
 
   // ── Import XML files ──────────────────────────────────────────────────────
   async function handleXmlImport(files: FileList) {
@@ -189,7 +186,6 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
       showToast(`Fetched — ${d.written} new snapshot(s) written.`)
-      // Refresh data
       setSnapshotDates([])
       setData(null)
       fetch(`/api/performance/snapshots/${portfolioSlug}`)
@@ -208,12 +204,6 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     toastTimerRef.current = window.setTimeout(() => setToast(''), isError ? 6000 : 3000)
   }
 
-  function toggleBenchmark(name: string) {
-    setSelectedBenchmarks(prev =>
-      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
-    )
-  }
-
   // ── Build chart rows ──────────────────────────────────────────────────────
   const rows = useMemo(() => {
     if (!data?.dates.length) return []
@@ -225,19 +215,19 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         : (data.positionSeries?.[i] ?? null)
 
       const row: Record<string, any> = {
-        date: date.slice(5),   // MM-DD for display
+        date: date.slice(5),
         fullDate: date,
         return: returnValue != null ? +(returnValue * 100).toFixed(4) : null,
         nav:    +data.navSeries[i].toFixed(2),
         margin: +(data.marginUtilSeries[i] * 100).toFixed(2),
       }
-      for (const [name, dateMap] of Object.entries(benchmarkData)) {
-        const bval = dateMap[date]
-        row[`bm__${name}`] = bval != null ? +(bval * 100).toFixed(4) : null
+      if (selectedBenchmark) {
+        const bval = benchmarkData[date]
+        row[`bm__${selectedBenchmark}`] = bval != null ? +(bval * 100).toFixed(4) : null
       }
       return row
     })
-  }, [data, mode, benchmarkData])
+  }, [data, mode, benchmarkData, selectedBenchmark])
 
   const mwrDisabled = data?.mwrSeries == null
 
@@ -260,10 +250,18 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const hasData = rows.length > 0
   const isEmpty = snapshotDates.length === 0 && !loading
 
+  const modeLabel = (m: ReturnMode) => m === 'twr' ? 'TWR' : m === 'mwr' ? 'MWR' : 'Position (ex-cash)'
+
+  const activeModeStyle = {
+    background: '#1a6bc7',
+    color: '#fff',
+    borderColor: '#1a6bc7',
+  }
+
   return (
     <div style={{ padding: '1rem 0' }}>
 
-      {/* ── Controls ───────────────────────────────────────────────────── */}
+      {/* ── Row 1: Period selector + action buttons ─────────────────────── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
 
         {/* Period selector */}
@@ -271,8 +269,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           {PERIODS.map(p => (
             <button
               key={p}
-              className={`backtest-config-btn${period === p ? ' active' : ''}`}
-              style={{ minWidth: 40, padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+              className="backtest-config-btn"
+              style={{ minWidth: 40, padding: '0.25rem 0.5rem', fontSize: '0.8rem', ...(period === p ? activeModeStyle : {}) }}
               onClick={() => setPeriod(p)}
             >
               {p}
@@ -280,38 +278,21 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           ))}
         </div>
 
-        {/* Custom date range */}
-        {period === 'Custom' && (
-          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', fontSize: '0.82rem' }}>
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-              style={{ fontSize: '0.82rem' }} />
-            <span>→</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-              style={{ fontSize: '0.82rem' }} />
-          </div>
-        )}
-
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {/* Return mode */}
-          <div style={{ display: 'flex', gap: '0.25rem' }}>
-            {(['twr', 'mwr', 'position'] as ReturnMode[]).map(m => (
-              <button
-                key={m}
-                className={`backtest-config-btn${mode === m ? ' active' : ''}`}
-                style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', opacity: m === 'mwr' && mwrDisabled ? 0.4 : 1 }}
-                disabled={m === 'mwr' && mwrDisabled}
-                title={m === 'mwr' && mwrDisabled ? 'No external cash flows in this period' : undefined}
-                onClick={() => setMode(m)}
-              >
-                {m === 'twr' ? 'TWR' : m === 'mwr' ? 'MWR' : 'Position (ex-cash)'}
-              </button>
-            ))}
-          </div>
+          {/* IB Config */}
+          <button
+            className="backtest-config-btn"
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
+            onClick={() => setShowIbkrConfig(true)}
+            disabled={ingesting}
+          >
+            IB Config
+          </button>
 
           {/* Fetch from IBKR */}
           <button
-            className="run-backtest-btn"
-            style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem', whiteSpace: 'nowrap' }}
+            className="backtest-config-btn"
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap', background: '#1a3050', color: '#7eb8f7', borderColor: '#2a5080' }}
             onClick={handleIngest}
             disabled={ingesting}
           >
@@ -328,8 +309,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
             onChange={e => { if (e.target.files?.length) handleXmlImport(e.target.files) }}
           />
           <button
-            className="run-backtest-btn"
-            style={{ fontSize: '0.8rem', padding: '0.3rem 0.8rem', whiteSpace: 'nowrap' }}
+            className="backtest-config-btn"
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap', background: '#1a3050', color: '#7eb8f7', borderColor: '#2a5080' }}
             onClick={() => xmlInputRef.current?.click()}
             disabled={ingesting}
           >
@@ -344,30 +325,51 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         </div>
       )}
 
-      {/* Overlay toggles + benchmark */}
+      {/* ── Row 2: Return mode + overlays + benchmark ───────────────────── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem', fontSize: '0.82rem' }}>
+
+        {/* Return mode buttons */}
+        <div style={{ display: 'flex', gap: '0.25rem' }}>
+          {(['twr', 'mwr', 'position'] as ReturnMode[]).map(m => (
+            <button
+              key={m}
+              className="backtest-config-btn"
+              style={{
+                fontSize: '0.8rem',
+                padding: '0.25rem 0.5rem',
+                ...(mode === m ? activeModeStyle : {}),
+              }}
+              onClick={() => setMode(m)}
+            >
+              {modeLabel(m)}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ width: 1, height: 16, background: gridColor, opacity: 0.4 }} />
+
         <label style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', cursor: 'pointer' }}>
           <input type="checkbox" checked={showNav} onChange={e => setShowNav(e.target.checked)} />
-          NAV (right axis)
+          NAV
         </label>
         <label style={{ display: 'flex', gap: '0.3rem', alignItems: 'center', cursor: 'pointer' }}>
           <input type="checkbox" checked={showMargin} onChange={e => setShowMargin(e.target.checked)} />
-          Margin utilisation
+          Margin
         </label>
 
         {savedPortfolios.length > 0 && (
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-            <span style={{ opacity: 0.6 }}>Benchmarks:</span>
-            {savedPortfolios.slice(0, 4).map(sp => (
-              <label key={sp.name} style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={selectedBenchmarks.includes(sp.name)}
-                  onChange={() => toggleBenchmark(sp.name)}
-                />
-                {sp.name}
-              </label>
-            ))}
+            <span style={{ opacity: 0.6 }}>Benchmark:</span>
+            <select
+              value={selectedBenchmark}
+              onChange={e => setSelectedBenchmark(e.target.value)}
+              style={{ fontSize: '0.8rem', padding: '0.2rem 0.4rem', background: isDark ? '#1a1a2e' : '#f0f0f0', color: textColor, border: `1px solid ${gridColor}`, borderRadius: 4 }}
+            >
+              <option value="">— none —</option>
+              {savedPortfolios.map(sp => (
+                <option key={sp.name} value={sp.name}>{sp.name}</option>
+              ))}
+            </select>
           </div>
         )}
       </div>
@@ -393,17 +395,37 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
 
       {/* ── Chart ──────────────────────────────────────────────────────── */}
       {isEmpty && (
-        <div style={{ textAlign: 'center', padding: '3rem', opacity: 0.5, fontSize: '0.9rem' }}>
-          No snapshots yet. Click "Fetch from IBKR" to import historical data.
+        <div style={{ padding: '2rem 1rem', fontSize: '0.85rem', lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>No data yet — set up a Flex Query in IBKR:</div>
+          <ol style={{ paddingLeft: '1.4rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+            <li>In IBKR, go to <strong>Reports → Flex Queries</strong> and create a new query.</li>
+            <li>Enable these sections:
+              <ul style={{ paddingLeft: '1.2rem', marginTop: '0.2rem' }}>
+                <li><code>Net Asset Value (NAV) in Base</code> — fields: <code>cash</code>, <code>total</code></li>
+                <li><code>Open Positions</code> — fields: <code>symbol</code>, <code>positionValue</code></li>
+                <li><code>Cash Transactions</code> — fields: <code>fxRateToBase</code>, <code>amount</code>, <code>type</code></li>
+              </ul>
+            </li>
+            <li>Set <strong>Date Range</strong> to <strong>Last 365 Days</strong> (or Last 30 Days); set <strong>Breakout by Day</strong> to <strong>Yes</strong>.</li>
+            <li>For history beyond 365 days, run the query manually with a custom date range and use <strong>Import XML</strong> — overlapping dates are fine and will be deduplicated.</li>
+            <li>Generate a <strong>Flex Query Token</strong> under <strong>Settings → Flex Web Service</strong>.</li>
+            <li>Click <strong>IB Config</strong> above, enter the token + Query ID, then click <strong>Fetch from IBKR</strong>.</li>
+          </ol>
         </div>
       )}
       {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>Loading…</div>}
       {error && <div style={{ color: '#e05c5c', padding: '0.5rem' }}>{error}</div>}
 
-      {hasData && !loading && (
+      {mode === 'mwr' && mwrDisabled && hasData && !loading && (
+        <div style={{ textAlign: 'center', padding: '3rem', opacity: 0.5, fontSize: '0.9rem' }}>
+          MWR not available — no external cash flows in this period.
+        </div>
+      )}
+
+      {hasData && !loading && !(mode === 'mwr' && mwrDisabled) && (
         <div style={{ height: 380 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={rows} margin={{ top: 8, right: 56, bottom: 8, left: 8 }}>
+            <ComposedChart data={rows} margin={{ top: 8, right: showMargin && showNav ? 112 : 56, bottom: 8, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis
                 dataKey="date"
@@ -417,14 +439,26 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 tickFormatter={v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`}
                 width={60}
               />
-              {/* Right: NAV or margin util */}
-              {(showNav || showMargin) && (
+              {/* Right: NAV (auto-scaled) */}
+              {showNav && (
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  tick={{ fill: textColor, fontSize: 11 }}
-                  tickFormatter={v => showNav && !showMargin ? navFmt(v) : `${v.toFixed(1)}%`}
+                  domain={['auto', 'auto']}
+                  tick={{ fill: '#1a8a5c', fontSize: 11 }}
+                  tickFormatter={navFmt}
                   width={64}
+                />
+              )}
+              {/* Far right: Margin % (independent scale) */}
+              {showMargin && (
+                <YAxis
+                  yAxisId="margin"
+                  orientation="right"
+                  domain={['auto', 'auto']}
+                  tick={{ fill: '#c75d1a', fontSize: 11 }}
+                  tickFormatter={v => `${v.toFixed(0)}%`}
+                  width={48}
                 />
               )}
 
@@ -466,7 +500,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
               {/* Margin utilisation area */}
               {showMargin && (
                 <Area
-                  yAxisId="right"
+                  yAxisId="margin"
                   dataKey="margin"
                   name="Margin Util %"
                   stroke="#c75d1a"
@@ -476,18 +510,18 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 />
               )}
 
-              {/* Benchmark overlays */}
-              {selectedBenchmarks.map((name, bi) => (
+              {/* Benchmark overlay */}
+              {selectedBenchmark && (
                 <Line
-                  key={name}
+                  key={selectedBenchmark}
                   yAxisId="left"
-                  dataKey={`bm__${name}`}
-                  name={name}
-                  stroke={BENCHMARK_COLORS[bi % BENCHMARK_COLORS.length]}
+                  dataKey={`bm__${selectedBenchmark}`}
+                  name={selectedBenchmark}
+                  stroke={BENCHMARK_COLORS[0]}
                   strokeDasharray="6 3"
                   {...commonLine}
                 />
-              ))}
+              )}
 
               <Brush
                 dataKey="date"
@@ -499,6 +533,12 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+      )}
+      {showIbkrConfig && (
+        <IbkrConfigDialog
+          portfolioSlug={portfolioSlug}
+          onClose={() => setShowIbkrConfig(false)}
+        />
       )}
     </div>
   )

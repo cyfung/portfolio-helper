@@ -16,16 +16,12 @@ object PortfolioSnapshotRepository {
         val date: String,
         val netLiqValue: Double,
         val cashBase: Double,
-        val stockBase: Double,
-        val interestAccrualsBase: Double,
         val contentHash: String
     )
 
     data class FullSnapshot(
         val header: SnapshotRow,
         val positions: List<PositionEntry>,
-        val cashBalances: List<CashBalanceEntry>,
-        val interestAccruals: List<InterestAccrualEntry>,
         val cashFlows: List<CashFlowEntry>
     )
 
@@ -66,8 +62,8 @@ object PortfolioSnapshotRepository {
         val preRange = allUpToTo.lastOrNull { it.date < from }
         val inRange  = allUpToTo.filter { it.date >= from }
         (listOfNotNull(preRange) + inRange).map { header ->
-            val (pos, cash, interest, flows) = loadChildren(header.id)
-            FullSnapshot(header, pos, cash, interest, flows)
+            val (pos, flows) = loadChildren(header.id)
+            FullSnapshot(header, pos, flows)
         }
     }
 
@@ -90,24 +86,20 @@ object PortfolioSnapshotRepository {
 
         return if (existing != null) {
             T.update({ (T.portfolioId eq portfolioId) and (T.snapshotDate eq snap.date) }) {
-                it[netLiqValue]          = snap.netLiq
-                it[cashBase]             = snap.cashBase
-                it[stockBase]            = snap.stockBase
-                it[interestAccrualsBase] = snap.interestAccrualsBase
-                it[contentHash]          = hash
-                it[createdAt]            = System.currentTimeMillis()
+                it[netLiqValue] = snap.netLiq
+                it[cashBase]    = snap.cashBase
+                it[contentHash] = hash
+                it[createdAt]   = System.currentTimeMillis()
             }
             existing
         } else {
             T.insert {
-                it[T.portfolioId]         = portfolioId
-                it[snapshotDate]          = snap.date
-                it[netLiqValue]           = snap.netLiq
-                it[cashBase]              = snap.cashBase
-                it[stockBase]             = snap.stockBase
-                it[interestAccrualsBase]  = snap.interestAccrualsBase
-                it[contentHash]           = hash
-                it[createdAt]             = System.currentTimeMillis()
+                it[T.portfolioId] = portfolioId
+                it[snapshotDate]  = snap.date
+                it[netLiqValue]   = snap.netLiq
+                it[cashBase]      = snap.cashBase
+                it[contentHash]   = hash
+                it[createdAt]     = System.currentTimeMillis()
             }[T.id]
         }
     }
@@ -123,79 +115,50 @@ object PortfolioSnapshotRepository {
 
     private fun contentHash(snap: DaySnapshot): String {
         val input = buildString {
-            snap.positions.sortedBy { it.symbol }.forEach { append("${it.symbol}:${it.position}:${it.markPrice};") }
-            snap.cashBalances.sortedBy { it.currency }.forEach { append("${it.currency}:${it.amount};") }
+            snap.positions.sortedBy { it.symbol }.forEach { append("${it.symbol}:${it.positionValue};") }
         }
         return MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
     }
 
     private fun toRow(r: ResultRow) = SnapshotRow(
-        id                   = r[PortfolioSnapshotsTable.id],
-        portfolioId          = r[PortfolioSnapshotsTable.portfolioId],
-        date                 = r[PortfolioSnapshotsTable.snapshotDate],
-        netLiqValue          = r[PortfolioSnapshotsTable.netLiqValue],
-        cashBase             = r[PortfolioSnapshotsTable.cashBase],
-        stockBase            = r[PortfolioSnapshotsTable.stockBase],
-        interestAccrualsBase = r[PortfolioSnapshotsTable.interestAccrualsBase],
-        contentHash          = r[PortfolioSnapshotsTable.contentHash]
+        id          = r[PortfolioSnapshotsTable.id],
+        portfolioId = r[PortfolioSnapshotsTable.portfolioId],
+        date        = r[PortfolioSnapshotsTable.snapshotDate],
+        netLiqValue = r[PortfolioSnapshotsTable.netLiqValue],
+        cashBase    = r[PortfolioSnapshotsTable.cashBase],
+        contentHash = r[PortfolioSnapshotsTable.contentHash]
     )
 
     private data class Children(
         val positions: List<PositionEntry>,
-        val cashBalances: List<CashBalanceEntry>,
-        val interestAccruals: List<InterestAccrualEntry>,
         val cashFlows: List<CashFlowEntry>
     )
 
     private fun loadChildren(snapshotId: Int): Children {
         val positions = SnapshotPositionsTable
             .selectAll().where { SnapshotPositionsTable.snapshotId eq snapshotId }
-            .map { PositionEntry(it[SnapshotPositionsTable.symbol], it[SnapshotPositionsTable.currency], it[SnapshotPositionsTable.position], it[SnapshotPositionsTable.markPrice], it[SnapshotPositionsTable.positionValue]) }
-
-        val cash = SnapshotCashBalancesTable
-            .selectAll().where { SnapshotCashBalancesTable.snapshotId eq snapshotId }
-            .map { CashBalanceEntry(it[SnapshotCashBalancesTable.currency], it[SnapshotCashBalancesTable.amount]) }
-
-        val interest = SnapshotInterestAccrualsTable
-            .selectAll().where { SnapshotInterestAccrualsTable.snapshotId eq snapshotId }
-            .map { InterestAccrualEntry(it[SnapshotInterestAccrualsTable.currency], it[SnapshotInterestAccrualsTable.endingAccrualBalance]) }
+            .map { PositionEntry(it[SnapshotPositionsTable.symbol], it[SnapshotPositionsTable.positionValue]) }
 
         val flows = SnapshotCashFlowsTable
             .selectAll().where { SnapshotCashFlowsTable.snapshotId eq snapshotId }
-            .map { CashFlowEntry(it[SnapshotCashFlowsTable.currency], it[SnapshotCashFlowsTable.fxRateToBase], it[SnapshotCashFlowsTable.amount], it[SnapshotCashFlowsTable.type]) }
+            .map { CashFlowEntry(it[SnapshotCashFlowsTable.fxRateToBase], it[SnapshotCashFlowsTable.amount], it[SnapshotCashFlowsTable.type]) }
 
-        return Children(positions, cash, interest, flows)
+        return Children(positions, flows)
     }
 
     private fun replaceChildren(snapshotId: Int, snap: DaySnapshot) {
         val sid = snapshotId
-        SnapshotPositionsTable.deleteWhere        { SnapshotPositionsTable.snapshotId eq sid }
-        SnapshotCashBalancesTable.deleteWhere     { SnapshotCashBalancesTable.snapshotId eq sid }
-        SnapshotInterestAccrualsTable.deleteWhere { SnapshotInterestAccrualsTable.snapshotId eq sid }
-        SnapshotCashFlowsTable.deleteWhere        { SnapshotCashFlowsTable.snapshotId eq sid }
+        SnapshotPositionsTable.deleteWhere { SnapshotPositionsTable.snapshotId eq sid }
+        SnapshotCashFlowsTable.deleteWhere { SnapshotCashFlowsTable.snapshotId eq sid }
 
         for (p in snap.positions) SnapshotPositionsTable.insert {
             it[SnapshotPositionsTable.snapshotId]    = sid
             it[SnapshotPositionsTable.symbol]        = p.symbol
-            it[SnapshotPositionsTable.currency]      = p.currency
-            it[SnapshotPositionsTable.position]      = p.position
-            it[SnapshotPositionsTable.markPrice]     = p.markPrice
             it[SnapshotPositionsTable.positionValue] = p.positionValue
-        }
-        for (c in snap.cashBalances) SnapshotCashBalancesTable.insert {
-            it[SnapshotCashBalancesTable.snapshotId] = sid
-            it[SnapshotCashBalancesTable.currency]   = c.currency
-            it[SnapshotCashBalancesTable.amount]     = c.amount
-        }
-        for (ia in snap.interestAccruals) SnapshotInterestAccrualsTable.insert {
-            it[SnapshotInterestAccrualsTable.snapshotId]           = sid
-            it[SnapshotInterestAccrualsTable.currency]             = ia.currency
-            it[SnapshotInterestAccrualsTable.endingAccrualBalance] = ia.endingAccrualBalance
         }
         for (cf in snap.cashFlows) SnapshotCashFlowsTable.insert {
             it[SnapshotCashFlowsTable.snapshotId]   = sid
-            it[SnapshotCashFlowsTable.currency]     = cf.currency
             it[SnapshotCashFlowsTable.fxRateToBase] = cf.fxRateToBase
             it[SnapshotCashFlowsTable.amount]       = cf.amount
             it[SnapshotCashFlowsTable.type]         = cf.type
