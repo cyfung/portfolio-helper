@@ -8,6 +8,7 @@ import { usePortfolioStore } from '@/stores/portfolioStore'
 interface Props {
   saveKey: number   // incrementing triggers save
   onSaved: () => void
+  pendingDividendDate?: string
 }
 
 interface StockRow {
@@ -58,8 +59,9 @@ function flashCopyButton(btn: HTMLElement) {
   setTimeout(() => btn.classList.remove('copy-btn-flash'), 900)
 }
 
-export default function EditMode({ saveKey, onSaved }: Props) {
+export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Props) {
   const { stocks, portfolioId, config } = usePortfolioStore()
+  const [dividendDate] = useState(pendingDividendDate ?? config.dividendStartDate ?? '')
 
   const [stockRows, setStockRows] = useState<StockRow[]>(() =>
     stocks.map(s => ({
@@ -107,7 +109,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
         body: JSON.stringify({
           stocks: updates,
           cash: cashUpdates,
-          dividendStartDate: config.dividendStartDate || null,
+          dividendStartDate: dividendDate || null,
         }),
       })
       if (!r.ok) throw new Error('Save failed')

@@ -284,52 +284,6 @@ export default function PortfolioViewer() {
             <span className="toggle-label">Groups</span>
           </button>
 
-          {virtualBalance && (
-            <button
-              className="virtual-rebal-btn"
-              id="virtual-rebal-btn"
-              type="button"
-              title="Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
-              onClick={async () => {
-                try {
-                  await fetch(`/api/backup/trigger?portfolio=${portfolioId}&label=pre-rebal&force=true`, { method: 'POST' })
-                } catch (_) { /* non-fatal */ }
-                const liveBySymbol = new Map((lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s]))
-                const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
-                const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
-                const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
-                if (!stockGrossKnown || stockGrossUsd <= 0) {
-                  setEditModeActive(true)
-                  return
-                }
-                const result = computeDisplay(
-                  store.stocks.map(s => ({
-                    symbol: s.label,
-                    qty: s.amount,
-                    targetWeight: s.targetWeight ?? 0,
-                    positionValueUsd: liveBySymbol.get(s.label)?.positionValueUsd ?? 0,
-                  })),
-                  rebalTargetUsd,
-                  store.marginTargetPct,
-                  store.allocAddMode,
-                  allocReduceMode,
-                  stockGrossUsd,
-                  marginUsd,
-                )
-                const updated = store.stocks.map(s => {
-                  const delta = result.rebalQty[s.label]
-                  if (!delta || delta === 0) return s
-                  return { ...s, amount: parseFloat((s.amount + delta).toFixed(2)) }
-                })
-                store.setStocks(updated)
-                setEditResetKey(k => k + 1)
-                setEditModeActive(true)
-              }}
-            >
-              <span className="toggle-label">Virtual Rebalance</span>
-            </button>
-          )}
-
           <button
             className={`rebal-toggle${rebalVisible ? ' active' : ''}`}
             id="rebal-toggle"
@@ -386,7 +340,7 @@ export default function PortfolioViewer() {
         <div className="stock-section">
           <RebalanceControls />
           {editModeActive ? (
-            <EditMode key={editResetKey} saveKey={saveKey} onSaved={handleSaved} />
+            <EditMode key={editResetKey} saveKey={saveKey} onSaved={handleSaved} pendingDividendDate={dividendDate} />
           ) : groupViewActive ? (
             <GroupsView />
           ) : (
@@ -403,6 +357,57 @@ export default function PortfolioViewer() {
               onClick={() => setEditModeActive(true)}
             >
               + Add Stock
+            </button>
+          </div>
+        )}
+
+        {!editModeActive && virtualBalance && (
+          <div className="virtual-rebal-row">
+            <button
+              className="virtual-rebal-btn"
+              id="virtual-rebal-btn"
+              type="button"
+              title="Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+              onClick={async () => {
+                try {
+                  await fetch(`/api/backup/trigger?portfolio=${portfolioId}&label=pre-rebal&force=true`, { method: 'POST' })
+                } catch (_) { /* non-fatal */ }
+                const liveBySymbol = new Map((lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s]))
+                const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
+                const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
+                const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
+                if (!stockGrossKnown || stockGrossUsd <= 0) {
+                  setEditModeActive(true)
+                  return
+                }
+                const result = computeDisplay(
+                  store.stocks.map(s => ({
+                    symbol: s.label,
+                    qty: s.amount,
+                    targetWeight: s.targetWeight ?? 0,
+                    positionValueUsd: liveBySymbol.get(s.label)?.positionValueUsd ?? 0,
+                  })),
+                  rebalTargetUsd,
+                  store.marginTargetPct,
+                  store.allocAddMode,
+                  allocReduceMode,
+                  stockGrossUsd,
+                  marginUsd,
+                  store.marginTargetUsd,
+                )
+                const updated = store.stocks.map(s => {
+                  const delta = result.rebalQty[s.label]
+                  if (!delta || delta === 0) return s
+                  return { ...s, amount: parseFloat((s.amount + delta).toFixed(2)) }
+                })
+                store.setStocks(updated)
+                const pendingDate = store.config.dividendCalcUpToDate || store.config.dividendStartDate || ''
+                setDividendDate(pendingDate)
+                setEditResetKey(k => k + 1)
+                setEditModeActive(true)
+              }}
+            >
+              <span className="toggle-label">Virtual Rebalance</span>
             </button>
           </div>
         )}

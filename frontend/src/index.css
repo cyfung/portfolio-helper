@@ -2824,10 +2824,16 @@ a.loan-calc-link:hover {
 }
 
 /* ============================================
-   Virtual Rebalance Button (visible only when rebalancing columns are on)
+   Virtual Rebalance Button
    ============================================ */
+.virtual-rebal-row {
+    display: flex;
+    justify-content: center;
+    padding: var(--spacing-sm) 0;
+}
+
 .virtual-rebal-btn {
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     padding: var(--spacing-sm) var(--spacing-xl);
@@ -2841,10 +2847,6 @@ a.loan-calc-link:hover {
     font-weight: var(--font-weight-medium);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-}
-
-.rebalancing-visible .virtual-rebal-btn {
-    display: flex;
 }
 
 .virtual-rebal-btn:hover {

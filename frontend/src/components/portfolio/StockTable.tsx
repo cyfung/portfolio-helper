@@ -50,6 +50,7 @@ export default function StockTable() {
         allocReduceMode,
         stockGrossUsd,
         marginUsd,
+        marginTargetUsd,
         serverAllocDollars,
       )
     : null

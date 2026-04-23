@@ -177,7 +177,8 @@ export function computeDisplay(
   allocReduceMode: AllocMode,
   stockGross: number,
   marginUsd: number,
-  serverAllocDollars?: Record<string, number>  // from rebal-alloc SSE (waterfall)
+  marginTargetUsd: number | null = null,
+  serverAllocDollars?: Record<string, number>,  // from rebal-alloc SSE (waterfall)
 ): ComputeResult {
   const rebalDollars: Record<string, number> = {}
   const rebalQty: Record<string, number> = {}
@@ -186,7 +187,7 @@ export function computeDisplay(
   const currentWeightPct: Record<string, number> = {}
 
   const portfolioTotal = stockGross + Math.max(marginUsd, 0)
-  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGross, marginUsd)
+  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGross, marginUsd, marginTargetUsd)
   const delta = rebalTotal - stockGross
 
   // Current weight %

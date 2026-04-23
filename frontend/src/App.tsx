@@ -20,7 +20,10 @@ export default function App() {
   // Bootstrap: load appConfig + portfolioId so version badge and SSE work on all pages
   const loadPortfolioData = usePortfolioStore(s => s.loadPortfolioData)
   useEffect(() => {
-    fetch('/api/portfolio/data')
+    const match = window.location.pathname.match(/\/(portfolio|analyst)\/([^/]+)/)
+    const slug = match?.[2]
+    const url = slug ? `/api/portfolio/data?portfolio=${slug}` : '/api/portfolio/data'
+    fetch(url)
       .then(r => {
         if (r.status === 401) { window.location.href = '/admin'; return null }
         if (!r.ok) return null
