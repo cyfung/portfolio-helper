@@ -27,7 +27,7 @@ object AppConfig {
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
         KEY_NAV_UPDATE_INTERVAL to "",
-        KEY_EXCHANGE_SUFFIXES   to "SBF=.PA,LSEETF=.L",
+        KEY_EXCHANGE_SUFFIXES   to "SBF=.PA,LSEETF=.L,TWSE=.TW",
         KEY_TWS_HOST            to "127.0.0.1",
         KEY_TWS_PORT            to "7496",
         KEY_IBKR_RATE_INTERVAL  to "3600",

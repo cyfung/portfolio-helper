@@ -151,6 +151,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         const base = pts[0].value
         const normalised: Record<string, number> = {}
         for (const pt of pts) normalised[pt.date] = pt.value / base - 1
+        if (from && normalised[from] == null) normalised[from] = 0
         setBenchmarkData(normalised)
       })
       .catch(() => {})
@@ -459,9 +460,10 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
             <ComposedChart data={rows} margin={{ top: 8, right: showMargin && showNav ? 112 : 56, bottom: 8, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis
-                dataKey="date"
+                dataKey="fullDate"
                 tick={{ fill: textColor, fontSize: 11 }}
                 interval={Math.max(1, Math.floor(rows.length / 8))}
+                tickFormatter={(v: string) => v.slice(5)}
               />
               {/* Left: return % */}
               <YAxis
@@ -554,11 +556,12 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
               )}
 
               <Brush
-                dataKey="date"
+                dataKey="fullDate"
                 height={24}
                 stroke={gridColor}
                 fill={isDark ? '#1a1a1a' : '#f8f8f8'}
                 travellerWidth={6}
+                tickFormatter={(v: string) => v.slice(5)}
               />
             </ComposedChart>
           </ResponsiveContainer>
