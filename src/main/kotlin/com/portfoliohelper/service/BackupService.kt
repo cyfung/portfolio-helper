@@ -115,7 +115,8 @@ object BackupService {
     fun saveToDb(
         portfolio: ManagedPortfolio,
         label: String = "",
-        resolveUsd: Boolean = false
+        resolveUsd: Boolean = false,
+        force: Boolean = false
     ) {
         // Hash computed without snapshotUsd so P-entry price fluctuations don't trigger spurious backups
         val hashJson = serializeToJson(portfolio, resolveUsd = false)
@@ -124,7 +125,7 @@ object BackupService {
         // create a duplicate row just because the in-memory map was empty.
         val lastHash =
             lastSavedHash.getOrPut(portfolio.serialId) { loadLastHashFromDb(portfolio.serialId) }
-        if (lastHash == hash) {
+        if (!force && lastHash == hash) {
             logger.debug("No changes for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}, backup skipped")
             return
         }

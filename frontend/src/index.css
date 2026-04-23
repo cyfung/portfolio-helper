@@ -2843,7 +2843,7 @@ a.loan-calc-link:hover {
     letter-spacing: 0.05em;
 }
 
-body.rebalancing-visible .virtual-rebal-btn {
+.rebalancing-visible .virtual-rebal-btn {
     display: flex;
 }
 

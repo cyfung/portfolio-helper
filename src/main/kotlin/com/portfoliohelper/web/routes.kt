@@ -576,6 +576,34 @@ fun Application.configureRouting() {
             }
         }
 
+        patch("/api/portfolio/dividend-start-date") {
+            try {
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@patch call.respond(HttpStatusCode.NotFound)
+                val root = Json.parseToJsonElement(call.receiveText()).jsonObject
+                val date = root["date"]?.jsonPrimitive?.contentOrNull
+                val pid = portfolioEntry.serialId
+                transaction {
+                    if (!date.isNullOrBlank()) {
+                        PortfolioCfgTable.upsert {
+                            it[PortfolioCfgTable.portfolioId] = pid
+                            it[PortfolioCfgTable.cfgKey] = "dividendStartDate"
+                            it[PortfolioCfgTable.cfgValue] = date
+                        }
+                    } else {
+                        PortfolioCfgTable.deleteWhere {
+                            (PortfolioCfgTable.portfolioId eq pid) and (PortfolioCfgTable.cfgKey eq "dividendStartDate")
+                        }
+                    }
+                }
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshConfig()
+                PortfolioUpdateBroadcaster.broadcastReload()
+                call.respondOk()
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
         // Loan calculation history — stored in global_settings DB table (newest first, max 5 entries)
         get("/api/loan/history") {
             val value = transaction {
@@ -753,12 +781,13 @@ fun Application.configureRouting() {
             handleSseStream()
         }
 
-        // Trigger an immediate DB backup for a portfolio
+        // Trigger an immediate DB backup for a portfolio (called before opening the restore UI or virtual rebalance)
         post("/api/backup/trigger") {
             val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@post call.respond(HttpStatusCode.NotFound)
             val label = call.request.queryParameters["label"]?.takeIf { it.isNotBlank() } ?: ""
-            BackupService.saveToDb(portfolioEntry, label)
+            val force = call.request.queryParameters["force"] == "true"
+            BackupService.saveToDb(portfolioEntry, label, force = force)
             call.respondOk()
         }
 

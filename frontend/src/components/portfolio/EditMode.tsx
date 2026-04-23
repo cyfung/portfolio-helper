@@ -71,7 +71,6 @@ export default function EditMode({ saveKey, onSaved }: Props) {
     }))
   )
   const [saving, setSaving] = useState(false)
-  const [dividendDate, setDividendDate] = useState(config.dividendStartDate ?? '')
 
   const totalWeight = stockRows
     .filter(r => !r.deleted)
@@ -108,7 +107,7 @@ export default function EditMode({ saveKey, onSaved }: Props) {
         body: JSON.stringify({
           stocks: updates,
           cash: cashUpdates,
-          dividendStartDate: dividendDate || null,
+          dividendStartDate: config.dividendStartDate || null,
         }),
       })
       if (!r.ok) throw new Error('Save failed')
@@ -370,20 +369,6 @@ export default function EditMode({ saveKey, onSaved }: Props) {
           + Add Stock
         </button>
       </div>
-
-      {config.virtualBalanceEnabled && (
-        <div className="dividend-from-section" style={{ marginTop: '0.5rem' }}>
-          <label htmlFor="dividend-from-input-edit">Dividend From</label>
-          <input
-            type="date"
-            id="dividend-from-input"
-            className="dividend-from-input"
-            value={dividendDate}
-            autoComplete="off"
-            onChange={e => setDividendDate(e.target.value)}
-          />
-        </div>
-      )}
 
       {saving && (
         <p style={{ color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>Saving…</p>

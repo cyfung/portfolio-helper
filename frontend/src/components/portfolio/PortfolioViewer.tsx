@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { StockData, CashData } from '@/types/portfolio'
+import { computeDisplay, getRebalTotal } from '@/lib/rebalance'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
 function parseCashKey(key: string, value: string): CashData | null {
@@ -42,13 +43,15 @@ export default function PortfolioViewer() {
     portfolioId, cash, sseStatus, lastPortfolioTotals,
     currentDisplayCurrency, moreInfoVisible, rebalVisible,
     groupViewActive, editModeActive, afterHoursGray,
-    allPortfolios, appConfig,
+    allPortfolios, appConfig, lastStockDisplay,
+    rebalTargetUsd, marginTargetUsd, allocReduceMode,
     setMoreInfoVisible, setRebalVisible, setGroupViewActive, setEditModeActive,
   } = store
 
   const [backupOpen, setBackupOpen]           = useState(false)
   const [saveKey, setSaveKey] = useState(0)
   const [editResetKey, setEditResetKey] = useState(0)
+  const [dividendDate, setDividendDate] = useState(store.config.dividendStartDate ?? '')
   const [twsSyncing, setTwsSyncing] = useState(false)
   const [syncToast, setSyncToast] = useState({ msg: '', type: '' })
   const syncToastTimer = useRef<number | null>(null)
@@ -64,6 +67,14 @@ export default function PortfolioViewer() {
 
   const hasMargin = cash.some(c => c.marginFlag)
   const virtualBalance = store.config.virtualBalanceEnabled
+
+  async function saveDividendDate(date: string) {
+    await fetch(`/api/portfolio/dividend-start-date?portfolio=${portfolioId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: date || null }),
+    })
+  }
   const displayCurrencies = appConfig?.displayCurrencies ?? ['USD']
 
   // ── TWS sync ──────────────────────────────────────────────────────────────
@@ -138,19 +149,32 @@ export default function PortfolioViewer() {
 
   // ── Save to backtest ───────────────────────────────────────────────────────
   const handleSaveToBacktest = useCallback(async () => {
-    const { stocks } = store
+    const { stocks, marginTargetPct, allocAddMode } = store
     const tickers = stocks
       .filter(s => s.targetWeight > 0)
       .map(s => ({ ticker: s.label, weight: s.targetWeight }))
     if (!tickers.length) { alert('No target weights set'); return }
-    const name = prompt('Save as backtest preset:')
-    if (!name) return
-    await fetch('/api/backtest/savedPortfolios', {
+    const name = allPortfolios.find(p => p.slug === portfolioId)?.name || portfolioId
+    const config = {
+      tickers,
+      rebalanceStrategy: 'YEARLY',
+      marginStrategies: marginTargetPct && marginTargetPct > 0 ? [{
+        marginRatio:          marginTargetPct / 100,
+        marginSpread:         0.015,
+        marginDeviationUpper: 0.05,
+        marginDeviationLower: 0.05,
+        upperRebalanceMode:   allocAddMode,
+        lowerRebalanceMode:   allocAddMode,
+      }] : [],
+      includeNoMargin: true,
+    }
+    const res = await fetch('/api/backtest/savedPortfolios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, config: { portfolios: [{ label: name, tickers, rebalanceStrategy: 'YEARLY' }] } }),
+      body: JSON.stringify({ name, config }),
     })
-  }, [store, portfolioId])
+    if (res.ok) showSyncToast('Saved to backtest!', 'ok')
+  }, [store, portfolioId, allPortfolios])
 
   // ── After save callback ────────────────────────────────────────────────────
   const handleSaved = useCallback(() => {
@@ -266,6 +290,41 @@ export default function PortfolioViewer() {
               id="virtual-rebal-btn"
               type="button"
               title="Apply rebalancing quantities to the portfolio (virtual — requires Save to persist)"
+              onClick={async () => {
+                try {
+                  await fetch(`/api/backup/trigger?portfolio=${portfolioId}&label=pre-rebal&force=true`, { method: 'POST' })
+                } catch (_) { /* non-fatal */ }
+                const liveBySymbol = new Map((lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s]))
+                const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
+                const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
+                const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
+                if (!stockGrossKnown || stockGrossUsd <= 0) {
+                  setEditModeActive(true)
+                  return
+                }
+                const result = computeDisplay(
+                  store.stocks.map(s => ({
+                    symbol: s.label,
+                    qty: s.amount,
+                    targetWeight: s.targetWeight ?? 0,
+                    positionValueUsd: liveBySymbol.get(s.label)?.positionValueUsd ?? 0,
+                  })),
+                  rebalTargetUsd,
+                  store.marginTargetPct,
+                  store.allocAddMode,
+                  allocReduceMode,
+                  stockGrossUsd,
+                  marginUsd,
+                )
+                const updated = store.stocks.map(s => {
+                  const delta = result.rebalQty[s.label]
+                  if (!delta || delta === 0) return s
+                  return { ...s, amount: parseFloat((s.amount + delta).toFixed(2)) }
+                })
+                store.setStocks(updated)
+                setEditResetKey(k => k + 1)
+                setEditModeActive(true)
+              }}
             >
               <span className="toggle-label">Virtual Rebalance</span>
             </button>
@@ -314,8 +373,10 @@ export default function PortfolioViewer() {
                 type="date"
                 id="dividend-from-input"
                 className="dividend-from-input"
-                defaultValue={store.config.dividendStartDate}
+                value={dividendDate}
                 autoComplete="off"
+                onChange={e => setDividendDate(e.target.value)}
+                onBlur={e => saveDividendDate(e.target.value)}
               />
             </div>
           )}
