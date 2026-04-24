@@ -92,8 +92,9 @@ object BacktestService {
             throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
         }
 
-        // Step 7: Compute portfolio results
-        val portfolioResults = request.portfolios.mapIndexed { idx, pConfig ->
+        // Step 7: Compute portfolio results (portfolios and strategies run in parallel)
+        val portfolioResults = request.portfolios.indices.toList().parallelStream().map { idx ->
+            val pConfig = request.portfolios[idx]
             val seriesMap = allSeriesMaps[idx]
 
             val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
@@ -105,7 +106,17 @@ object BacktestService {
                 curves.add(CurveResult("No Margin", noMarginPoints, noMarginStats))
             }
 
-            pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
+            fun modeAbbr(m: MarginRebalanceMode) = when (m) {
+                MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
+                MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
+                MarginRebalanceMode.FULL_REBALANCE -> "Full"
+                MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
+                MarginRebalanceMode.WATERFALL -> "WaterFall"
+                MarginRebalanceMode.DAILY -> "Daily"
+            }
+
+            val marginCurves = pConfig.marginStrategies.indices.toList().parallelStream().map { mIdx ->
+                val mc = pConfig.marginStrategies[mIdx]
                 val marginResult =
                     if (mc.upperRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT ||
                         mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT
@@ -120,33 +131,22 @@ object BacktestService {
                             pConfig.rebalanceStrategy
                         )
                 val marginPoints = globalDates.mapIndexed { i, d ->
-                    DataPoint(
-                        d.toString(),
-                        marginResult.values[i]
-                    )
+                    DataPoint(d.toString(), marginResult.values[i])
                 }
                 val marginStats = computeBacktestStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers
                 )
-
-                fun modeAbbr(m: MarginRebalanceMode) = when (m) {
-                    MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
-                    MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
-                    MarginRebalanceMode.FULL_REBALANCE -> "Full"
-                    MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
-                    MarginRebalanceMode.WATERFALL -> "WaterFall"
-                    MarginRebalanceMode.DAILY -> "Daily"
-                }
-
                 val uAbbr = modeAbbr(mc.upperRebalanceMode)
                 val lAbbr = modeAbbr(mc.lowerRebalanceMode)
                 val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
                 else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
-                curves.add(CurveResult(label, marginPoints, marginStats))
-            }
+                CurveResult(label, marginPoints, marginStats)
+            }.toList()
+
+            curves.addAll(marginCurves)
             PortfolioResult(pConfig.label, curves)
-        }
+        }.toList()
 
         return MultiBacktestResult(portfolioResults)
     }
@@ -707,6 +707,8 @@ object BacktestService {
         val values = mutableListOf<Double>()
         values.add(startValue)
 
+        val returnRatios = buildReturnRatios(tickers, seriesMap, dates)
+
         for (i in 1 until dates.size) {
             val prevDate = dates[i - 1]
             val curDate = dates[i]
@@ -720,7 +722,7 @@ object BacktestService {
                 }
             }
 
-            applyDailyReturns(tickers, holdings, seriesMap, prevDate, curDate)
+            applyDailyReturns(tickers, holdings, returnRatios, i)
 
             values.add(holdings.values.sum())
         }
@@ -740,6 +742,49 @@ object BacktestService {
             val cur = s[curDate] ?: continue
             if (prev == 0.0) continue
             holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
+        }
+    }
+
+    private fun applyDailyReturns(
+        tickers: List<String>,
+        holdings: MutableMap<String, Double>,
+        returnRatios: Map<String, DoubleArray>,
+        i: Int
+    ) {
+        for (ticker in tickers)
+            holdings[ticker] = (holdings[ticker] ?: 0.0) * (returnRatios[ticker]?.get(i) ?: 1.0)
+    }
+
+    private fun buildReturnRatios(
+        tickers: List<String>,
+        seriesMap: Map<String, Map<LocalDate, Double>>,
+        dates: List<LocalDate>
+    ): Map<String, DoubleArray> {
+        val n = dates.size
+        return tickers.associateWith { ticker ->
+            val s = seriesMap[ticker] ?: return@associateWith DoubleArray(n) { 1.0 }
+            DoubleArray(n) { i ->
+                if (i == 0) 1.0
+                else {
+                    val prev = s[dates[i - 1]] ?: 1.0
+                    val cur = s[dates[i]] ?: 1.0
+                    if (prev == 0.0) 1.0 else cur / prev
+                }
+            }
+        }
+    }
+
+    private fun buildDailyLoanRates(
+        dates: List<LocalDate>,
+        effrx: Map<LocalDate, Double>,
+        dailySpread: Double
+    ): DoubleArray = DoubleArray(dates.size) { i ->
+        if (i == 0) dailySpread
+        else {
+            val prev = effrx[dates[i - 1]]
+            val cur = effrx[dates[i]]
+            if (prev != null && cur != null && prev != 0.0) (cur / prev - 1.0) + dailySpread
+            else dailySpread
         }
     }
 
@@ -788,6 +833,9 @@ object BacktestService {
         var upperTriggers = 0
         var lowerTriggers = 0
 
+        val dailySpread = spread / 252.0
+        val dailyLoanRates = buildDailyLoanRates(dates, effrx, dailySpread)
+
         for (i in 1 until noMargin.size) {
             val prevDate = dates[i - 1]
             val curDate = dates[i]
@@ -796,16 +844,7 @@ object BacktestService {
             val portfolioReturn = if (noMargin[i - 1] != 0.0) noMargin[i] / noMargin[i - 1] else 1.0
             totalExposure *= portfolioReturn
 
-            // Daily loan cost from EFFRX
-            val effrxPrev = effrx[prevDate]
-            val effrxCur = effrx[curDate]
-            val dailyLoanRate = if (effrxPrev != null && effrxCur != null && effrxPrev != 0.0) {
-                (effrxCur / effrxPrev - 1) + spread / 252.0
-            } else {
-                spread / 252.0
-            }
-
-            borrowed *= (1.0 + dailyLoanRate)
+            borrowed *= (1.0 + dailyLoanRates[i])
             equity = totalExposure - borrowed
 
             // Margin ratio check
@@ -910,39 +949,38 @@ object BacktestService {
         var upperTriggers = 0
         var lowerTriggers = 0
 
+        val dailySpread = mc.marginSpread / 252.0
+        val targetRatio = mc.marginRatio
+        val upperThreshold = mc.marginRatio + mc.marginDeviationUpper
+        val lowerThreshold = mc.marginRatio - mc.marginDeviationLower
+        val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
+        val returnRatios = buildReturnRatios(tickers, seriesMap, dates)
+        val dailyLoanRates = buildDailyLoanRates(dates, effrx, dailySpread)
+
         for (i in 1 until dates.size) {
             val prevDate = dates[i - 1]
             val curDate = dates[i]
+            val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
 
             // Scheduled full asset rebalance (before today's return)
-            if (shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)) {
+            if (rebalanceDay) {
                 val currentEquity = holdings.values.sum() - borrowed
-                borrowed = currentEquity * mc.marginRatio
+                borrowed = currentEquity * targetRatio
                 val newTotalExposure = currentEquity + borrowed
                 for (ticker in tickers) {
                     holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
                 }
             }
 
-            applyDailyReturns(tickers, holdings, seriesMap, prevDate, curDate)
+            applyDailyReturns(tickers, holdings, returnRatios, i)
 
-            // Daily loan cost from EFFRX
-            val effrxPrev = effrx[prevDate]
-            val effrxCur = effrx[curDate]
-            val dailyLoanRate = if (effrxPrev != null && effrxCur != null && effrxPrev != 0.0) {
-                (effrxCur / effrxPrev - 1) + mc.marginSpread / 252.0
-            } else {
-                mc.marginSpread / 252.0
-            }
-            borrowed *= (1.0 + dailyLoanRate)
+            borrowed *= (1.0 + dailyLoanRates[i])
 
             val equity = holdings.values.sum() - borrowed
 
-            val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
-
             if (isDailyMode) {
                 // Reset margin ratio daily using current weights (no deviation tracking)
-                val newBorrowed = equity * mc.marginRatio
+                val newBorrowed = equity * targetRatio
                 val delta = newBorrowed - borrowed
                 val totalHoldings = holdings.values.sum()
                 if (totalHoldings != 0.0)
@@ -951,10 +989,9 @@ object BacktestService {
                 borrowed = newBorrowed
             } else {
                 // Margin ratio deviation check
-                val currentMarginRatio = if (equity != 0.0) borrowed / equity else mc.marginRatio
-                val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
-                val upperBreach = currentMarginRatio > mc.marginRatio + mc.marginDeviationUpper
-                val lowerBreach = currentMarginRatio < mc.marginRatio - mc.marginDeviationLower
+                val currentMarginRatio = if (equity != 0.0) borrowed / equity else targetRatio
+                val upperBreach = currentMarginRatio > upperThreshold
+                val lowerBreach = currentMarginRatio < lowerThreshold
                 val deviationBreach = upperBreach || lowerBreach
 
                 if (deviationBreach && !rebalanceDay) {
@@ -962,7 +999,7 @@ object BacktestService {
                 }
 
                 if (deviationBreach) {
-                    val newBorrowed = equity * mc.marginRatio
+                    val newBorrowed = equity * targetRatio
                     val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
                     when (mode) {
                         MarginRebalanceMode.FULL_REBALANCE -> {
