@@ -20,6 +20,12 @@ export default defineConfig(({ command }) => ({
         entryFileNames: 'assets/index.js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/index[extname]',
+        manualChunks(id) {
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-')) return 'vendor-charts'
+          if (id.includes('@radix-ui')) return 'vendor-radix'
+          if (id.includes('lucide-react')) return 'vendor-lucide'
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('react-router')) return 'vendor-react'
+        },
       },
     },
   },

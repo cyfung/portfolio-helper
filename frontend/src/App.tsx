@@ -1,15 +1,16 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSSE } from '@/hooks/useSSE'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import PortfolioPage from '@/pages/PortfolioPage'
-import PortfolioAnalystPage from '@/pages/PortfolioAnalystPage'
-import LoanPage from '@/pages/LoanPage'
-import BacktestPage from '@/pages/BacktestPage'
-import MonteCarloPage from '@/pages/MonteCarloPage'
-import ConfigPage from '@/pages/ConfigPage'
 import type { PortfolioData } from '@/types/portfolio'
+
+const PortfolioPage        = lazy(() => import('@/pages/PortfolioPage'))
+const PortfolioAnalystPage = lazy(() => import('@/pages/PortfolioAnalystPage'))
+const LoanPage             = lazy(() => import('@/pages/LoanPage'))
+const BacktestPage         = lazy(() => import('@/pages/BacktestPage'))
+const MonteCarloPage       = lazy(() => import('@/pages/MonteCarloPage'))
+const ConfigPage           = lazy(() => import('@/pages/ConfigPage'))
 
 export default function App() {
   // Single global SSE connection for the whole app lifetime
@@ -34,6 +35,7 @@ export default function App() {
   }, [loadPortfolioData])
 
   return (
+    <Suspense fallback={null}>
     <Routes>
       <Route path="/" element={<Navigate to="/portfolio/" replace />} />
       <Route path="/portfolio/" element={<PortfolioPage />} />
@@ -45,5 +47,6 @@ export default function App() {
       <Route path="/montecarlo" element={<MonteCarloPage />} />
       <Route path="/config" element={<ConfigPage />} />
     </Routes>
+    </Suspense>
   )
 }
