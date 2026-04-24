@@ -69,6 +69,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [selectedBenchmark, setSelectedBenchmark] = useState<string>('')
   const [benchmarkData, setBenchmarkData] = useState<Record<string, number>>({})
   const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('none')
+  const [benchmarkLoading, setBenchmarkLoading]   = useState(false)
 
   const theme = useChartTheme()
   const { gridColor, textColor, isDark } = theme
@@ -122,7 +123,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
 
   // ── Fetch benchmark data when selection changes ───────────────────────────
   useEffect(() => {
-    if (!selectedBenchmark || !benchmarkBlock) { setBenchmarkData({}); return }
+    if (!selectedBenchmark || !benchmarkBlock) { setBenchmarkData({}); setBenchmarkLoading(false); return }
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
 
@@ -137,7 +138,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       filteredPortfolio = { ...portfolio, marginStrategies: [portfolio.marginStrategies[idx]], includeNoMargin: false }
     }
 
-    setBenchmarkData({})
+    setBenchmarkLoading(true)
     fetch('/api/backtest/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -146,7 +147,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       .then(r => r.json())
       .then(result => {
         const curve = result?.portfolios?.[0]?.curves?.[0]
-        if (!curve?.points?.length) return
+        if (!curve?.points?.length) { setBenchmarkData({}); return }
         const pts: { date: string; value: number }[] = curve.points
         const base = pts[0].value
         const normalised: Record<string, number> = {}
@@ -154,7 +155,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         if (from && normalised[from] == null) normalised[from] = 0
         setBenchmarkData(normalised)
       })
-      .catch(() => {})
+      .catch(() => { setBenchmarkData({}) })
+      .finally(() => setBenchmarkLoading(false))
   }, [selectedBenchmark, benchmarkBlock, resolvedFrom, resolvedTo, benchmarkMarginKey])
 
   // ── Import XML files ──────────────────────────────────────────────────────
@@ -315,7 +317,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
             onClick={handleIngest}
             disabled={ingesting}
           >
-            {ingesting ? 'Fetching…' : 'Fetch from IBKR'}
+            {ingesting ? <><span className="btn-spinner" />Fetching…</> : 'Fetch from IBKR'}
           </button>
 
           {/* Import XML */}
@@ -401,6 +403,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 ))}
               </select>
             )}
+            {benchmarkLoading && <span className="btn-spinner" style={{ marginLeft: 4 }} />}
           </div>
         )}
       </div>
@@ -445,7 +448,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           </ol>
         </div>
       )}
-      {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>Loading…</div>}
+      {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}><span className="btn-spinner" style={{ marginLeft: 0, marginRight: 6 }} />Loading…</div>}
       {error && <div style={{ color: '#e05c5c', padding: '0.5rem' }}>{error}</div>}
 
       {mode === 'mwr' && mwrDisabled && hasData && !loading && (

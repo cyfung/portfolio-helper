@@ -222,6 +222,13 @@ export default function BacktestPage() {
   // Empty selected = show all
   const showLine = (key: string) => selected.size === 0 || selected.has(key)
 
+  const REAL_LABEL_KEY: Record<string, string> = {
+    'Real – NAV':      'real-nav',
+    'Real – TWR':      'real-twr',
+    'Real – MWR':      'real-mwr',
+    'Real – Position': 'real-pos',
+  }
+
   const theme  = useChartTheme()
   const { isDark, gridColor, textColor } = theme
 
@@ -432,7 +439,9 @@ export default function BacktestPage() {
 
       // Both set in same React 18 batch → single re-render, no delay
       setResults(data)
-      setSelected(new Set())
+      const defaultKeys = data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
+      if (newRealData?.twrSeries?.length) defaultKeys.push('real-twr')
+      setSelected(new Set(defaultKeys))
       setRealData(newRealData)
     } catch (e: any) {
       setError('Request failed: ' + e.message)
@@ -630,7 +639,7 @@ export default function BacktestPage() {
         </div>
 
         <button className="run-backtest-btn" type="button" onClick={handleRun} disabled={running}>
-          {running ? 'Running…' : 'Run Backtest'}
+          {running ? <><span className="btn-spinner" />Running…</> : 'Run Backtest'}
         </button>
       </div>
 
@@ -863,7 +872,7 @@ export default function BacktestPage() {
                 <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
                 <Legend content={renderLegend} />
                 {chartData.ddData.datasets
-                  .filter(ds => ds.label !== 'Real \u2013 NAV' || showLine('real-nav'))
+                  .filter(ds => { const k = REAL_LABEL_KEY[ds.label]; return !k || showLine(k) })
                   .map(ds => (
                     <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
@@ -891,7 +900,7 @@ export default function BacktestPage() {
                 <Tooltip content={makeTooltip(v => v.toFixed(2) + 'x')} />
                 <Legend content={renderLegend} />
                 {chartData.rtrData.datasets
-                  .filter(ds => ds.label !== 'Real \u2013 NAV' || showLine('real-nav'))
+                  .filter(ds => { const k = REAL_LABEL_KEY[ds.label]; return !k || showLine(k) })
                   .map(ds => (
                     <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}

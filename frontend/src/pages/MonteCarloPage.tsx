@@ -340,7 +340,7 @@ export default function MonteCarloPage() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <button className="run-backtest-btn" type="button" onClick={() => doRun(null)} disabled={running}>
-            {running ? 'Running…' : 'Run Simulation'}
+            {running ? <><span className="btn-spinner" />Running…</> : 'Run Simulation'}
           </button>
           {lastSeed != null && (
             <button
