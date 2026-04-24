@@ -1,7 +1,8 @@
 // ── SummaryTable.tsx — Port of buildSummaryRows from PortfolioRenderer.kt ────
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { formatCurrency, formatDisplayCurrency, formatSignedCurrency, formatSignedDisplayCurrency, hasFxRate } from '@/lib/portfolio-utils'
+import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
 
 export default function SummaryTable() {
   const store = usePortfolioStore()
@@ -10,8 +11,13 @@ export default function SummaryTable() {
     lastPortfolioTotals, lastCashDisplay, lastStockDisplay,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     setRebalTargetUsd, setMarginTargetPct, setMarginTargetUsd,
-    portfolioId,
+    portfolioId, appConfig,
   } = store
+
+  const sortedCcys = useMemo(() => buildSortedCcys(
+    appConfig?.displayCurrencies ?? [],
+    (lastStockDisplay?.stocks ?? []).map(s => s.currency).filter(Boolean),
+  ), [appConfig?.displayCurrencies, lastStockDisplay?.stocks])
 
   const hasMargin = cash.some(c => c.marginFlag)
   const hasCash = cash.length > 0
@@ -246,9 +252,11 @@ export default function SummaryTable() {
                 </span>
               </td>
 
-              {/* Col 3: Currency */}
-              <td className="text-sm text-muted-foreground">
-                {isRef ? 'USD' : entry.currency}
+              {/* Col 3: Currency pill */}
+              <td className="align-middle">
+                <span className={`ccy-pill ccy-color-${getCcyClass(isRef ? 'USD' : entry.currency, sortedCcys)}`}>
+                  {isRef ? 'USD' : entry.currency}
+                </span>
               </td>
 
               {/* Col 4: Raw amount in own currency (right-aligned) */}

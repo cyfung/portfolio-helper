@@ -3113,6 +3113,45 @@ a.loan-calc-link:hover {
     height: 12px;
 }
 
+/* ── CCY color pills ─────────────────────────────────────────────────────── */
+.ccy-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.8em;
+    padding: 1px 0;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 0.7rem;
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+[data-theme="dark"]  .ccy-color-1 { background: #1a3a5c; border-color: #2a5a8c; color: #6fb3f2; }
+[data-theme="dark"]  .ccy-color-2 { background: #1a3d2e; border-color: #2a6648; color: #5dd898; }
+[data-theme="dark"]  .ccy-color-3 { background: #3d2a10; border-color: #7a5020; color: #e8a44a; }
+[data-theme="dark"]  .ccy-color-4 { background: #3a1a3a; border-color: #6a2a7a; color: #d47aee; }
+[data-theme="dark"]  .ccy-color-5 { background: #1a3d3d; border-color: #2a7070; color: #4dd6d6; }
+[data-theme="dark"]  .ccy-color-6 { background: #3a1a20; border-color: #7a2030; color: #f07090; }
+[data-theme="dark"]  .ccy-color-7 { background: #2a2a10; border-color: #5a5a18; color: #c8cc44; }
+
+[data-theme="light"] .ccy-color-1 { background: #ddeeff; border-color: #4a90d0; color: #1a4a80; }
+[data-theme="light"] .ccy-color-2 { background: #d6f5e6; border-color: #2a9050; color: #0f4a28; }
+[data-theme="light"] .ccy-color-3 { background: #fdecd4; border-color: #c87820; color: #7a3e00; }
+[data-theme="light"] .ccy-color-4 { background: #f2d6f8; border-color: #9040b8; color: #52116e; }
+[data-theme="light"] .ccy-color-5 { background: #d0f4f4; border-color: #1a9494; color: #0a4848; }
+[data-theme="light"] .ccy-color-6 { background: #fdd6df; border-color: #c83050; color: #7a0e24; }
+[data-theme="light"] .ccy-color-7 { background: #f0f0c4; border-color: #8a8a10; color: #404400; }
+
+.ccy-color-plain {
+    background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-text-secondary) 25%, transparent);
+    color: var(--color-text-secondary);
+}
+
 /* Paste / format hint text */
 .edit-hint {
     font-size: var(--font-size-xs);

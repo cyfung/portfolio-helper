@@ -1,6 +1,7 @@
 // ── StockTable.tsx — Port of buildStockTable from PortfolioRenderer.kt ────────
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
 import {
   formatCurrency, formatQty, convertFromUsd,
   parseLetfAttr, formatSignedCurrency,
@@ -17,7 +18,13 @@ export default function StockTable() {
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     allocAddMode, allocReduceMode,
     showStockDisplayCurrency, groupViewActive,
+    appConfig,
   } = usePortfolioStore()
+
+  const sortedCcys = useMemo(() => buildSortedCcys(
+    appConfig?.displayCurrencies ?? [],
+    (lastStockDisplay?.stocks ?? []).map(s => s.currency).filter(Boolean),
+  ), [appConfig?.displayCurrencies, lastStockDisplay?.stocks])
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
@@ -139,6 +146,7 @@ export default function StockTable() {
             <th className="rebal-column col-moreinfo">Rebal Qty</th>
             <th className="alloc-column">Alloc💰</th>
             <th className="alloc-column col-moreinfo">Alloc Qty</th>
+            <th className="col-ccy">CCY</th>
           </tr>
         </thead>
         <tbody>
@@ -266,7 +274,13 @@ export default function StockTable() {
                 data-groups={stock.groups || undefined}
               >
                 {/* Symbol */}
-                <td>{sym}</td>
+                <td>
+                  {sym}
+                  {' '}
+                  <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
+                    {stockCcy}
+                  </span>
+                </td>
 
                 {/* Qty */}
                 <td className="amount col-moreinfo" id={`amount-${sym}`}>
@@ -319,6 +333,13 @@ export default function StockTable() {
 
                 {/* Weight / Rebal / Alloc */}
                 {weightCells}
+
+                {/* CCY */}
+                <td className="col-ccy text-center">
+                  <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
+                    {stockCcy}
+                  </span>
+                </td>
               </tr>
             )
           })}
