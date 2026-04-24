@@ -71,7 +71,9 @@ class IbkrInterestService(
         var cheapestDailyUsd = 0.0
 
         for (ccy in marginCurrencies) {
-            val rates = allRates[ccy] ?: continue
+            // Fall back to USD rates for currencies that have no IBKR pro rate
+            val usingUsdFallback = allRates[ccy] == null
+            val rates = allRates[ccy] ?: allRates["USD"] ?: continue
             val tiers = rates.tiers
             val baseRate = tiers.firstOrNull()?.rate ?: continue
 
@@ -84,24 +86,37 @@ class IbkrInterestService(
             // Interest charged on net loan per currency only (positive balance = no interest)
             val scaleFactor = (scale ?: 100.0) / 100.0
             val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0)) * scaleFactor
-            val blended = if (nativeLoan > 0) blendedRate(tiers, nativeLoan) else null
+            // For USD-fallback CCYs: convert to USD so tier thresholds (expressed in USD) apply correctly
+            val loanForRate = if (usingUsdFallback) nativeLoan * fxRate else nativeLoan
+            val blended = if (nativeLoan > 0) blendedRate(tiers, loanForRate) else null
             val effectiveRate = blended ?: baseRate
-            val days = CurrencyConventions.getDaysInYear(ccy)
+            val days = if (usingUsdFallback) CurrencyConventions.getDaysInYear("USD")
+                       else CurrencyConventions.getDaysInYear(ccy)
 
-            val nativeDaily = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days else 0.0
-            val dailyInterestUsd = nativeDaily * fxRate
+            val dailyInterestUsd = if (usingUsdFallback)
+                if (nativeLoan > 0) loanForRate * effectiveRate / 100.0 / days else 0.0
+            else {
+                val nativeDaily = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days else 0.0
+                nativeDaily * fxRate
+            }
             currentDailyUsd += dailyInterestUsd
 
             // Use 0.0 when totalMarginUsd == 0 so blendedRate returns null (base tier shown)
             val hypotheticalNative = if (totalMarginUsd > 0) totalMarginUsd / fxRate else 0.0
-            val hypotheticalBlended = blendedRate(tiers, hypotheticalNative)
+            val hypotheticalLoanForRate = if (usingUsdFallback) totalMarginUsd else hypotheticalNative
+            val hypotheticalBlended = blendedRate(tiers, hypotheticalLoanForRate)
             val hypotheticalRate = hypotheticalBlended ?: baseRate
-            val hypotheticalDaily = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
+            val hypotheticalDaily = if (usingUsdFallback)
+                hypotheticalLoanForRate * hypotheticalRate / 100.0 / days
+            else
+                hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
 
             if (totalMarginUsd > 0 && (cheapestCcy == null || hypotheticalDaily < cheapestDailyUsd)) {
                 cheapestDailyUsd = hypotheticalDaily
                 cheapestCcy = ccy
             }
+
+            if (usingUsdFallback) continue
 
             val displayRateText = if (hypotheticalBlended != null)
                 "%.3f%% (%.3f%%)".format(hypotheticalBlended, baseRate)
