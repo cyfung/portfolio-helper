@@ -1616,6 +1616,34 @@ h1 {
     width: max-content;
 }
 
+.group-by-control {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+    margin-right: auto;
+}
+.group-by-control select {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    border: none;
+}
+
+.stock-group-header td {
+    padding-top: 1rem;
+    padding-bottom: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid var(--color-border);
+}
+.stock-group-header:first-child td {
+    padding-top: var(--spacing-sm);
+}
+
 .alloc-controls {
     display: flex;
     justify-content: flex-end;

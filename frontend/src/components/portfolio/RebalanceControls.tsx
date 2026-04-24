@@ -9,10 +9,11 @@ const ALLOC_OPTIONS: { value: AllocMode; label: string }[] = [
   { value: 'WATERFALL',          label: 'Waterfall' },
 ]
 
-export default function RebalanceControls() {
+export default function RebalanceControls({ showGroupBy }: { showGroupBy?: boolean }) {
   const {
     allocAddMode, allocReduceMode, portfolioId,
     setAllocAddMode, setAllocReduceMode,
+    stockGroupBy, setStockGroupBy,
   } = usePortfolioStore()
 
   async function saveMode(key: string, value: string) {
@@ -21,6 +22,20 @@ export default function RebalanceControls() {
 
   return (
     <div className="alloc-controls">
+      {showGroupBy && (
+        <div className="group-by-control">
+          <span className="alloc-controls-label">Group By</span>
+          <select
+            id="stock-group-by"
+            value={stockGroupBy}
+            onChange={e => setStockGroupBy(e.target.value as 'none' | 'ccy' | 'mainGroup')}
+          >
+            <option value="none">None</option>
+            <option value="ccy">CCY</option>
+            <option value="mainGroup">Main Group</option>
+          </select>
+        </div>
+      )}
       <span className="alloc-controls-label">Alloc Strategy</span>
 
       <div className="alloc-mode-group">

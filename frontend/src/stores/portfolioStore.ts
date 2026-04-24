@@ -40,6 +40,7 @@ interface PortfolioState {
   marginTargetUsd: number | null
   allocAddMode: AllocMode
   allocReduceMode: AllocMode
+  stockGroupBy: 'none' | 'ccy' | 'mainGroup'
 
   // ── Actions ───────────────────────────────────────────────────────────────
   loadPortfolioData: (data: PortfolioData) => void
@@ -60,6 +61,7 @@ interface PortfolioState {
   setMarginTargetUsd: (v: number | null) => void
   setAllocAddMode: (mode: AllocMode) => void
   setAllocReduceMode: (mode: AllocMode) => void
+  setStockGroupBy: (v: 'none' | 'ccy' | 'mainGroup') => void
   setStocks: (stocks: StockData[]) => void
   setCash: (cash: CashData[]) => void
   updateAppConfig: (patch: Partial<AppConfig>) => void
@@ -72,6 +74,7 @@ const LS_KEYS = {
   allocAdd: 'portfolio-helper-alloc-add-mode',
   allocReduce: 'portfolio-helper-alloc-reduce-mode',
   theme: 'portfolio-helper-theme',
+  stockGroupBy: 'portfolio-helper-stock-group-by',
 }
 
 function lsGet(key: string): string | null {
@@ -120,6 +123,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   marginTargetUsd: null,
   allocAddMode: (lsGet(LS_KEYS.allocAdd) as AllocMode | null) ?? 'PROPORTIONAL',
   allocReduceMode: (lsGet(LS_KEYS.allocReduce) as AllocMode | null) ?? 'PROPORTIONAL',
+  stockGroupBy: (lsGet(LS_KEYS.stockGroupBy) as 'none' | 'ccy' | 'mainGroup' | null) ?? 'none',
 
   // ── Actions ────────────────────────────────────────────────────────────────
   loadPortfolioData: (data: PortfolioData) => {
@@ -216,6 +220,11 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   setAllocReduceMode: (mode) => {
     localStorage.setItem(LS_KEYS.allocReduce, mode)
     set({ allocReduceMode: mode })
+  },
+
+  setStockGroupBy: (v) => {
+    localStorage.setItem(LS_KEYS.stockGroupBy, v)
+    set({ stockGroupBy: v })
   },
 
   setStocks: (stocks) => set({ stocks }),

@@ -1,5 +1,5 @@
 // ── StockTable.tsx — Port of buildStockTable from PortfolioRenderer.kt ────────
-import { useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
 import {
@@ -8,6 +8,15 @@ import {
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
 import { getRebalTotal, computeDisplay } from '@/lib/rebalance'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getMainGroup(groups: string): string {
+  if (!groups) return ''
+  const first = groups.split(';')[0].trim()
+  const sp = first.indexOf(' ')
+  return sp >= 0 ? first.slice(sp + 1).trim() : ''
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -18,7 +27,7 @@ export default function StockTable() {
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     allocAddMode, allocReduceMode,
     showStockDisplayCurrency, groupViewActive,
-    appConfig,
+    appConfig, stockGroupBy,
   } = usePortfolioStore()
 
   const sortedCcys = useMemo(() => buildSortedCcys(
@@ -32,9 +41,29 @@ export default function StockTable() {
   const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd, marginTargetUsd)
 
   // Index SSE market data by symbol
-  const liveBySymbol = new Map(
+  const liveBySymbol = useMemo(() => new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
-  )
+  ), [lastStockDisplay])
+
+  const groupedStocks = useMemo(() => {
+    if (stockGroupBy === 'none') return [{ key: null as string | null, stocks }]
+    const map = new Map<string, typeof stocks>()
+    for (const stock of stocks) {
+      const key = stockGroupBy === 'ccy'
+        ? (liveBySymbol.get(stock.label)?.currency ?? 'USD')
+        : (getMainGroup(stock.groups) || 'No Group')
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(stock)
+    }
+    const entries = [...map.entries()].sort(([a], [b]) => {
+      if (stockGroupBy === 'mainGroup') {
+        if (a === 'No Group') return 1
+        if (b === 'No Group') return -1
+      }
+      return a.localeCompare(b)
+    })
+    return entries.map(([key, stocks]) => ({ key, stocks }))
+  }, [stocks, stockGroupBy, liveBySymbol])
 
   // For group portfolios: pass GA server alloc as serverAllocDollars so waterfall uses it
   const hasGroups = stocks.some(s => s.groups)
@@ -150,7 +179,18 @@ export default function StockTable() {
           </tr>
         </thead>
         <tbody>
-          {stocks.map(stock => {
+          {groupedStocks.map(({ key, stocks: groupStocks }) => (
+            <Fragment key={key ?? '__all'}>
+              {key !== null && (
+                <tr className="stock-group-header">
+                  <td colSpan={15}>
+                    {stockGroupBy === 'ccy'
+                      ? <span className={`ccy-pill ccy-color-${getCcyClass(key, sortedCcys)}`}>{key}</span>
+                      : key}
+                  </td>
+                </tr>
+              )}
+              {groupStocks.map((stock) => {
             const sym = stock.label
             const live = liveBySymbol.get(sym) ?? null
             const targetWeight = stock.targetWeight ?? 0
@@ -163,8 +203,8 @@ export default function StockTable() {
             const estPrice = live?.estPriceNative ?? null
             const posVal = live?.positionValueUsd ?? null
             const dayCh = live?.dayChangeNative ?? null
-            const stockCcy = live?.currency ?? 'USD'
-            const fxRate = fxRates[stockCcy] ?? null
+            const stockCcy = live?.currency ?? null
+            const fxRate = stockCcy ? (fxRates[stockCcy] ?? null) : null
 
             // Mark value (native currency)
             const isAfterHours = live?.isMarketClosed ?? false
@@ -179,7 +219,7 @@ export default function StockTable() {
             const mktValStr = posVal !== null
               ? (showStockDisplayCurrency
                   ? fmt(posVal)
-                  : hasNativeRate ? formatCurrency(convertFromUsd(posVal, fxRates, stockCcy)) : '—')
+                  : (stockCcy && hasNativeRate) ? formatCurrency(convertFromUsd(posVal, fxRates, stockCcy)) : '—')
               : '—'
 
             // Day change (CHG) always in native currency (dayChangeNative is per-share, native)
@@ -276,10 +316,6 @@ export default function StockTable() {
                 {/* Symbol */}
                 <td>
                   {sym}
-                  {' '}
-                  <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
-                    {stockCcy}
-                  </span>
                 </td>
 
                 {/* Qty */}
@@ -336,13 +372,16 @@ export default function StockTable() {
 
                 {/* CCY */}
                 <td className="col-ccy text-center">
-                  <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
-                    {stockCcy}
-                  </span>
+                  {stockCcy && (
+                    <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
+                      {stockCcy}
+                    </span>
+                  )}
                 </td>
               </tr>
-            )
-          })}
+            )})}
+            </Fragment>
+          ))}
         </tbody>
       </table>
 
