@@ -430,7 +430,8 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
-                runCatching { saveBacktestSettings(json, "backtest.settings") }
+                if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
+                    runCatching { saveBacktestSettings(json, "backtest.settings") }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }

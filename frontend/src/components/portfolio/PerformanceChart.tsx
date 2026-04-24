@@ -67,7 +67,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
 
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedBenchmark, setSelectedBenchmark] = useState<string>('')
-  const [benchmarkData, setBenchmarkData] = useState<Record<string, number>>({})
+  const [benchmarkCache, setBenchmarkCache] = useState<Record<string, Record<string, number>>>({})
   const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('none')
   const [benchmarkLoading, setBenchmarkLoading]   = useState(false)
 
@@ -118,46 +118,52 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       .finally(() => setLoading(false))
   }, [portfolioSlug, resolvedFrom, resolvedTo])
 
-  // ── Reset margin key when benchmark changes ───────────────────────────────
-  useEffect(() => { setBenchmarkMarginKey('none') }, [selectedBenchmark])
+  // ── Reset margin key + cache when benchmark changes ──────────────────────
+  useEffect(() => { setBenchmarkMarginKey('none'); setBenchmarkCache({}) }, [selectedBenchmark])
 
-  // ── Fetch benchmark data when selection changes ───────────────────────────
+  // ── Pre-fetch all margin options when benchmark or date range changes ─────
   useEffect(() => {
-    if (!selectedBenchmark || !benchmarkBlock) { setBenchmarkData({}); setBenchmarkLoading(false); return }
+    if (!selectedBenchmark || !benchmarkBlock) { setBenchmarkCache({}); setBenchmarkLoading(false); return }
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
 
     const portfolio = blockStateToAPIPortfolio(benchmarkBlock, 0)
     if (!portfolio.tickers.length) return
 
-    let filteredPortfolio = portfolio
-    if (benchmarkMarginKey === 'none') {
-      filteredPortfolio = { ...portfolio, marginStrategies: [], includeNoMargin: true }
-    } else if (/^\d+$/.test(benchmarkMarginKey)) {
-      const idx = parseInt(benchmarkMarginKey)
-      filteredPortfolio = { ...portfolio, marginStrategies: [portfolio.marginStrategies[idx]], includeNoMargin: false }
+    const marginKeys: string[] = ['none', ...benchmarkBlock.margins.map((_, i) => String(i))]
+
+    function buildFilteredPortfolio(key: string) {
+      if (key === 'none') return { ...portfolio, marginStrategies: [], includeNoMargin: true }
+      const idx = parseInt(key)
+      return { ...portfolio, marginStrategies: [portfolio.marginStrategies[idx]], includeNoMargin: false }
     }
 
-    setBenchmarkLoading(true)
-    fetch('/api/backtest/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromDate: from || null, toDate: to || null, portfolios: [filteredPortfolio] }),
-    })
-      .then(r => r.json())
-      .then(result => {
-        const curve = result?.portfolios?.[0]?.curves?.[0]
-        if (!curve?.points?.length) { setBenchmarkData({}); return }
-        const pts: { date: string; value: number }[] = curve.points
-        const base = pts[0].value
-        const normalised: Record<string, number> = {}
-        for (const pt of pts) normalised[pt.date] = pt.value / base - 1
-        if (from && normalised[from] == null) normalised[from] = 0
-        setBenchmarkData(normalised)
+    async function fetchOne(key: string): Promise<[string, Record<string, number>]> {
+      const r = await fetch('/api/backtest/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromDate: from || null, toDate: to || null, portfolios: [buildFilteredPortfolio(key)], saveSettings: false }),
       })
-      .catch(() => { setBenchmarkData({}) })
-      .finally(() => setBenchmarkLoading(false))
-  }, [selectedBenchmark, benchmarkBlock, resolvedFrom, resolvedTo, benchmarkMarginKey])
+      const result = await r.json()
+      const curve = result?.portfolios?.[0]?.curves?.[0]
+      if (!curve?.points?.length) return [key, {}]
+      const pts: { date: string; value: number }[] = curve.points
+      const base = pts[0].value
+      const normalised: Record<string, number> = {}
+      for (const pt of pts) normalised[pt.date] = pt.value / base - 1
+      if (normalised[from] == null) normalised[from] = 0
+      return [key, normalised]
+    }
+
+    let cancelled = false
+    setBenchmarkLoading(true)
+    setBenchmarkCache({})
+    Promise.all(marginKeys.map(fetchOne))
+      .then(entries => { if (!cancelled) setBenchmarkCache(Object.fromEntries(entries)) })
+      .catch(() => { if (!cancelled) setBenchmarkCache({}) })
+      .finally(() => { if (!cancelled) setBenchmarkLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedBenchmark, benchmarkBlock, resolvedFrom, resolvedTo])
 
   // ── Import XML files ──────────────────────────────────────────────────────
   async function handleXmlImport(files: FileList) {
@@ -241,6 +247,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       }
     })
   }, [data, mode])
+
+  const benchmarkData = benchmarkCache[benchmarkMarginKey] ?? {}
 
   const rows = useMemo(() => {
     if (!selectedBenchmark || !baseRows.length) return baseRows
