@@ -10,8 +10,12 @@ import io.ktor.client.statement.*
 import kotlinx.serialization.json.*
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import java.util.TreeMap
 import kotlin.math.abs
 import kotlin.math.pow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 private fun CashFlowEntry.isExternalTransfer() = type == "Deposits/Withdrawals"
 
@@ -104,32 +108,35 @@ object PerformanceService {
         val t0Date = LocalDate.parse(all.first().header.date)
         val t0Nav  = all.first().header.netLiqValue
 
-        // Collect all external cash flows with their offset in years
-        val flowsByDate: Map<String, Double> = all.drop(1).associate { snap ->
-            snap.header.date to snap.cashFlows.filter { it.isExternalTransfer() }.sumOf { it.amount * it.fxRateToBase }
+        // Pre-parse dates and pre-build sorted flow points — O(N) total, not O(N) per row
+        data class FlowPoint(val date: LocalDate, val t: Double, val negFlow: Double)
+        val flowPoints: List<FlowPoint> = all.drop(1).mapNotNull { snap ->
+            val snapDate = LocalDate.parse(snap.header.date)
+            val flowAmt  = snap.cashFlows.filter { it.isExternalTransfer() }.sumOf { it.amount * it.fxRateToBase }
+            if (flowAmt != 0.0) FlowPoint(snapDate, ChronoUnit.DAYS.between(t0Date, snapDate) / 365.25, -flowAmt)
+            else null
         }
 
-        return series.map { row ->
-            val tDate = LocalDate.parse(row.date)
-            val T = ChronoUnit.DAYS.between(t0Date, tDate) / 365.25
+        val seriesDates = series.map { LocalDate.parse(it.date) }
 
-            // Cash flow list: [-startNAV at t=0, external flows at their t, +endNAV at T]
-            val cashFlows = mutableListOf(Pair(0.0, -t0Nav))
-            for (snap in all.drop(1)) {
-                val snapDate = LocalDate.parse(snap.header.date)
-                if (!snapDate.isAfter(tDate)) {
-                    val flowAmt = flowsByDate[snap.header.date] ?: 0.0
-                    if (flowAmt != 0.0) {
-                        val t = ChronoUnit.DAYS.between(t0Date, snapDate) / 365.25
-                        cashFlows.add(Pair(t, -flowAmt))
-                    }
-                }
-            }
+        // Advance a single pointer across the sorted series — total O(F) pointer advances, not O(N*F)
+        var flowIdx = 0
+        val result  = ArrayList<Double>(series.size)
+        for ((idx, row) in series.withIndex()) {
+            val tDate = seriesDates[idx]
+            val T     = ChronoUnit.DAYS.between(t0Date, tDate) / 365.25
+
+            while (flowIdx < flowPoints.size && !flowPoints[flowIdx].date.isAfter(tDate)) flowIdx++
+
+            val cashFlows = ArrayList<Pair<Double, Double>>(flowIdx + 2)
+            cashFlows.add(Pair(0.0, -t0Nav))
+            for (i in 0 until flowIdx) cashFlows.add(Pair(flowPoints[i].t, flowPoints[i].negFlow))
             cashFlows.add(Pair(T, row.netLiqValue))
 
             val annualized = bisectIRR(cashFlows) ?: 0.0
-            (1.0 + annualized).pow(T) - 1.0
+            result.add((1.0 + annualized).pow(T) - 1.0)
         }
+        return result
     }
 
     /** Bisection method to find IRR. Returns annualised rate or null if no solution. */
@@ -165,9 +172,10 @@ object PerformanceService {
         val startEpoch = startDate.toEpochDay() * 86_400
         val endEpoch   = (endDate.toEpochDay() + 1) * 86_400
 
-        // Fetch historical adj-close prices per symbol
-        val priceMap: Map<String, Map<String, Double>> = symbols.associateWith { symbol ->
-            fetchAdjClose(symbol, startEpoch, endEpoch)
+        // Fetch historical adj-close prices per symbol — all in parallel
+        val priceMap: Map<String, TreeMap<String, Double>> = coroutineScope {
+            symbols.map { symbol -> async { symbol to fetchAdjClose(symbol, startEpoch, endEpoch) } }
+                .awaitAll().toMap()
         }
 
         if (priceMap.values.all { it.isEmpty() }) return null
@@ -202,8 +210,8 @@ object PerformanceService {
         return result.takeIf { it.isNotEmpty() }
     }
 
-    /** Fetches adjusted close prices from Yahoo Finance; returns map of YYYY-MM-DD → adjClose. */
-    private suspend fun fetchAdjClose(symbol: String, period1: Long, period2: Long): Map<String, Double> {
+    /** Fetches adjusted close prices from Yahoo Finance; returns TreeMap of YYYY-MM-DD → adjClose. */
+    private suspend fun fetchAdjClose(symbol: String, period1: Long, period2: Long): TreeMap<String, Double> {
         return try {
             val url = "https://query2.finance.yahoo.com/v8/finance/chart/$symbol?period1=$period1&period2=$period2&interval=1d&events=adjclose"
             val body = httpClient.get(url) {
@@ -211,29 +219,26 @@ object PerformanceService {
             }.bodyAsText()
 
             val json    = appJson.parseToJsonElement(body).jsonObject
-            val result  = json["chart"]?.jsonObject?.get("result")?.jsonArray?.firstOrNull()?.jsonObject ?: return emptyMap()
-            val timestamps = result["timestamp"]?.jsonArray?.map { it.jsonPrimitive.long } ?: return emptyMap()
+            val result  = json["chart"]?.jsonObject?.get("result")?.jsonArray?.firstOrNull()?.jsonObject ?: return TreeMap()
+            val timestamps = result["timestamp"]?.jsonArray?.map { it.jsonPrimitive.long } ?: return TreeMap()
             val adjClose   = result["indicators"]?.jsonObject
                 ?.get("adjclose")?.jsonArray?.firstOrNull()?.jsonObject
-                ?.get("adjclose")?.jsonArray ?: return emptyMap()
+                ?.get("adjclose")?.jsonArray ?: return TreeMap()
 
-            timestamps.zip(adjClose).mapNotNull { (ts, price) ->
+            TreeMap(timestamps.zip(adjClose).mapNotNull { (ts, price) ->
                 val date = LocalDate.ofEpochDay(ts / 86_400).toString()
                 val p    = price.jsonPrimitive.doubleOrNull ?: return@mapNotNull null
                 date to p
-            }.toMap()
+            }.toMap())
         } catch (_: Exception) {
-            emptyMap()
+            TreeMap()
         }
     }
 
-    /** Returns the price for [date], or the closest prior date's price (carry-forward). */
-    private fun closestPrice(prices: Map<String, Double>, date: String): Double? {
+    /** Returns the price for [date], or the closest prior date's price (carry-forward). O(log N). */
+    private fun closestPrice(prices: TreeMap<String, Double>, date: String): Double? {
         if (prices.isEmpty()) return null
-        return prices[date] ?: prices.entries
-            .filter { it.key <= date }
-            .maxByOrNull { it.key }
-            ?.value
+        return prices[date] ?: prices.floorKey(date)?.let { prices[it] }
     }
 
     private fun empty() = ChartData(emptyList(), emptyList(), null, null, emptyList(), emptyList())

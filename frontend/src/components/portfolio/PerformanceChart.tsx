@@ -224,7 +224,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   }
 
   // ── Build chart rows ──────────────────────────────────────────────────────
-  const rows = useMemo(() => {
+  const baseRows = useMemo(() => {
     if (!data?.dates.length) return []
     return data.dates.map((date, i) => {
       const returnValue = mode === 'twr'
@@ -232,21 +232,23 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         : mode === 'mwr'
         ? (data.mwrSeries?.[i] ?? null)
         : (data.positionSeries?.[i] ?? null)
-
-      const row: Record<string, any> = {
+      return {
         date: date.slice(5),
         fullDate: date,
         return: returnValue != null ? +(returnValue * 100).toFixed(4) : null,
         nav:    +data.navSeries[i].toFixed(2),
         margin: +(data.marginUtilSeries[i] * 100).toFixed(2),
-      }
-      if (selectedBenchmark) {
-        const bval = benchmarkData[date]
-        row['benchmark'] = bval != null ? +(bval * 100).toFixed(4) : null
-      }
-      return row
+      } as Record<string, any>
     })
-  }, [data, mode, benchmarkData, selectedBenchmark])
+  }, [data, mode])
+
+  const rows = useMemo(() => {
+    if (!selectedBenchmark || !baseRows.length) return baseRows
+    return baseRows.map(row => {
+      const bval = benchmarkData[row.fullDate]
+      return { ...row, benchmark: bval != null ? +(bval * 100).toFixed(4) : null }
+    })
+  }, [baseRows, benchmarkData, selectedBenchmark])
 
   const mwrDisabled = data?.mwrSeries == null
 
