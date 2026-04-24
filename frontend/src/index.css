@@ -258,12 +258,12 @@ h1 {
     display: inline-block;
     width: 9px;
     height: 9px;
-    border: 1.5px solid var(--color-text-tertiary);
+    border: 1.5px solid currentColor;
     border-top-color: transparent;
     border-radius: 50%;
     animation: btn-spin 0.7s linear infinite;
     vertical-align: middle;
-    margin-left: 5px;
+    margin-left: 8px;
 }
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 

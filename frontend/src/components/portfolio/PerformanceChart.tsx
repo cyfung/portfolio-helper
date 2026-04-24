@@ -317,7 +317,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
             onClick={handleIngest}
             disabled={ingesting}
           >
-            {ingesting ? <><span className="btn-spinner" />Fetching…</> : 'Fetch from IBKR'}
+            {ingesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
           </button>
 
           {/* Import XML */}
@@ -403,7 +403,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
                 ))}
               </select>
             )}
-            {benchmarkLoading && <span className="btn-spinner" style={{ marginLeft: 4 }} />}
+            {benchmarkLoading && <span className="btn-spinner" />}
           </div>
         )}
       </div>
@@ -448,7 +448,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           </ol>
         </div>
       )}
-      {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}><span className="btn-spinner" style={{ marginLeft: 0, marginRight: 6 }} />Loading…</div>}
+      {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>Loading…<span className="btn-spinner" /></div>}
       {error && <div style={{ color: '#e05c5c', padding: '0.5rem' }}>{error}</div>}
 
       {mode === 'mwr' && mwrDisabled && hasData && !loading && (

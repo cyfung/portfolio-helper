@@ -639,7 +639,7 @@ export default function BacktestPage() {
         </div>
 
         <button className="run-backtest-btn" type="button" onClick={handleRun} disabled={running}>
-          {running ? <><span className="btn-spinner" />Running…</> : 'Run Backtest'}
+          {running ? <>Running…<span className="btn-spinner" /></> : 'Run Backtest'}
         </button>
       </div>
 
