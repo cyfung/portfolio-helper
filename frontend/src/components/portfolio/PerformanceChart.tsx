@@ -224,7 +224,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   }
 
   // ── Build chart rows ──────────────────────────────────────────────────────
-  const baseRows = useMemo(() => {
+  const baseRows = useMemo((): Record<string, any>[] => {
     if (!data?.dates.length) return []
     return data.dates.map((date, i) => {
       const returnValue = mode === 'twr'
@@ -238,7 +238,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
         return: returnValue != null ? +(returnValue * 100).toFixed(4) : null,
         nav:    +data.navSeries[i].toFixed(2),
         margin: +(data.marginUtilSeries[i] * 100).toFixed(2),
-      } as Record<string, any>
+      }
     })
   }, [data, mode])
 

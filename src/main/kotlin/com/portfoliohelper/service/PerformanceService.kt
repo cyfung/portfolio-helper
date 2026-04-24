@@ -225,21 +225,18 @@ object PerformanceService {
                 ?.get("adjclose")?.jsonArray?.firstOrNull()?.jsonObject
                 ?.get("adjclose")?.jsonArray ?: return TreeMap()
 
-            TreeMap(timestamps.zip(adjClose).mapNotNull { (ts, price) ->
+            timestamps.zip(adjClose).mapNotNull { (ts, price) ->
                 val date = LocalDate.ofEpochDay(ts / 86_400).toString()
                 val p    = price.jsonPrimitive.doubleOrNull ?: return@mapNotNull null
                 date to p
-            }.toMap())
+            }.toMap(TreeMap())
         } catch (_: Exception) {
             TreeMap()
         }
     }
 
-    /** Returns the price for [date], or the closest prior date's price (carry-forward). O(log N). */
-    private fun closestPrice(prices: TreeMap<String, Double>, date: String): Double? {
-        if (prices.isEmpty()) return null
-        return prices[date] ?: prices.floorKey(date)?.let { prices[it] }
-    }
+    private fun closestPrice(prices: TreeMap<String, Double>, date: String): Double? =
+        prices[date] ?: prices.floorKey(date)?.let { prices[it] }
 
     private fun empty() = ChartData(emptyList(), emptyList(), null, null, emptyList(), emptyList())
 
