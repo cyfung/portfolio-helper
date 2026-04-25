@@ -34,6 +34,13 @@ export default function RebalanceControls({ showGroupBy }: { showGroupBy?: boole
             <option value="ccy">CCY</option>
             <option value="mainGroup">Main Group</option>
           </select>
+          {stockGroupBy !== 'none' && (
+            <button
+              className="group-by-clear"
+              onClick={() => setStockGroupBy('none')}
+              title="Clear group by"
+            >✕</button>
+          )}
         </div>
       )}
       <span className="alloc-controls-label">Alloc Strategy</span>
