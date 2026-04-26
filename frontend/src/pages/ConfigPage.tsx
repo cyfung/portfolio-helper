@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
+import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 import { showConfirm } from '@/components/ConfirmDialog'
 import IbkrConfigDialog, { IbkrConfig } from '@/components/portfolio/IbkrConfigDialog'
 
@@ -468,10 +469,6 @@ export default function ConfigPage() {
     if (info.download?.phase != null) setCfg(prev => ({ ...prev, _downloadPhase: info.download.phase }))
   }
 
-  function attemptReconnect() {
-    fetch('/').then(r => { if (r.ok) location.reload(); else setTimeout(attemptReconnect, 1000) }).catch(() => setTimeout(attemptReconnect, 1000))
-  }
-
   async function handleCheckUpdate() {
     setUpdateStatus({ msg: 'Checking for updates…', type: 'ok' })
     try {
@@ -503,20 +500,20 @@ export default function ConfigPage() {
   }
 
   async function handleApplyUpdate() {
+    showRestartOverlay()
     setUpdateStatus({ msg: 'Applying update and restarting…', type: 'ok' })
     try {
       await fetch('/api/admin/apply-update', { method: 'POST' })
-      setUpdateStatus({ msg: 'Restarting… reconnecting when ready.', type: 'ok' })
       setTimeout(attemptReconnect, 2000)
     } catch (err: any) { setUpdateStatus({ msg: 'Error: ' + err.message, type: 'error' }) }
   }
 
   async function handleRestart() {
+    showRestartOverlay()
     setUpdateStatus({ msg: 'Restarting app…', type: 'ok' })
     try {
       await fetch('/api/admin/restart', { method: 'POST' })
     } catch (_) {}
-    setUpdateStatus({ msg: 'Restarting… reconnecting when ready.', type: 'ok' })
     setTimeout(attemptReconnect, 2000)
   }
 

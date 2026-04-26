@@ -701,7 +701,7 @@ export default function LoanPage() {
                     <input
                       type="number" id="payment-upd" placeholder="536.82" min={0} step="any"
                       value={payment}
-                      onChange={e => { setPayment(e.target.value); setRateApy(''); setRateFlat(''); clearResults() }}
+                      onChange={e => { setPayment(e.target.value); setRateApy(''); setRateFlat(''); setTotalNewLoanAmount(''); clearResults() }}
                     />
                     <hr />
                     <label htmlFor="rate-apy-upd">Annual Rate (APY %)</label>

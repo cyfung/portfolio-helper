@@ -5,6 +5,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { showConfirm } from '@/components/ConfirmDialog'
+import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 
 // ── Page nav tabs (same as renderPageNavTabs in common.kt) ───────────────────
 
@@ -177,7 +178,11 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const showReadyTag       = isReady
 
   async function handleApplyUpdate() {
-    await fetch('/api/admin/apply-update', { method: 'POST' })
+    showRestartOverlay()
+    try {
+      await fetch('/api/admin/apply-update', { method: 'POST' })
+    } catch (_) {}
+    setTimeout(attemptReconnect, 2000)
   }
 
   return (

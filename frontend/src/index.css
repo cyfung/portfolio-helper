@@ -3177,6 +3177,49 @@ a.loan-calc-link:hover {
 }
 
 /* ============================================
+   Restart Overlay
+   ============================================ */
+.restart-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.restart-dialog {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: 2rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.restart-spinner {
+    display: block;
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--color-border-medium);
+    border-top-color: var(--color-accent-primary);
+    border-radius: 50%;
+    animation: btn-spin 0.8s linear infinite;
+}
+
+.restart-dialog-text {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+}
+
+/* ============================================
    Cash Type Badges
    ============================================ */
 /* Badge column in cash view table */
