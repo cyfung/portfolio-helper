@@ -123,7 +123,7 @@
     body {
         background-color: var(--color-bg-primary);
         color: var(--color-text-primary);
-        font-family: var(--font-family-base);
+        font-family: var(--font-family-base), sans-serif;
         min-height: 100vh;
         padding: var(--spacing-lg);
         line-height: 1.4;
@@ -141,7 +141,7 @@
 }
 
 body {
-    font-family: var(--font-family-base);
+    font-family: var(--font-family-base), sans-serif;
     font-weight: var(--font-weight-normal);
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
@@ -231,7 +231,7 @@ h1 {
 .header-timestamp {
     font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-weight: var(--font-weight-medium);
     font-variant-numeric: tabular-nums;
 }
@@ -755,7 +755,7 @@ h1 {
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     box-sizing: border-box;
     transition: border-color var(--transition-fast);
 }
@@ -792,7 +792,7 @@ h1 {
 
 .pin-number-display {
     font-size: 1.8rem;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-weight: var(--font-weight-semibold);
     letter-spacing: 0.25em;
     color: var(--color-text-primary);
@@ -969,7 +969,7 @@ h1 {
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     width: 160px;
     box-sizing: border-box;
     transition: border-color var(--transition-fast);
@@ -1266,14 +1266,14 @@ h1 {
 
 .portfolio-cash-table td:last-child {
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
 }
 
 .portfolio-cash-table .cash-raw-col {
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
 }
@@ -1322,7 +1322,7 @@ h1 {
     font-size: var(--font-size-sm);
     text-align: right;
     margin-top: 2px;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1397,7 +1397,7 @@ h1 {
 .portfolio-table .price,
 .portfolio-table .amount {
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1415,7 +1415,7 @@ h1 {
 /* Mkt Val column - use secondary text color */
 .portfolio-table .value {
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
 }
@@ -1426,7 +1426,7 @@ h1 {
 
 .portfolio-table .weight {
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
     white-space: nowrap;
@@ -1438,7 +1438,7 @@ h1 {
 
 /* Price Change Indicators */
 .price-change {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
     text-align: right;
@@ -1484,7 +1484,7 @@ h1 {
 
 /* Weight Difference Display */
 .weight-display {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
@@ -1733,7 +1733,7 @@ h1 {
 
 .portfolio-table .total-value {
     color: var(--color-accent-primary);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1749,7 +1749,7 @@ h1 {
 .total-main {
     font-weight: var(--font-weight-bold);
     color: var(--color-text-primary);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
 }
 
 .total-change {
@@ -1759,7 +1759,7 @@ h1 {
 }
 
 .change-dollars, .change-percent {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-weight: var(--font-weight-semibold);
 }
 
@@ -1819,7 +1819,7 @@ h1 {
 
 .timestamp-value {
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
 }
@@ -2069,7 +2069,7 @@ h1 {
     border-radius: var(--radius-sm);
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-md);
     text-align: right;
     -moz-appearance: textfield;
@@ -2161,7 +2161,7 @@ h1 {
    ============================================ */
 .portfolio-cash-table .margin-row td {
     color: var(--color-warning);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
 }
 
@@ -2181,7 +2181,7 @@ h1 {
 .rebal-target-input {
     width: 150px;
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     font-size: var(--font-size-sm);
     background-color: var(--color-bg-primary);
@@ -2210,7 +2210,7 @@ h1 {
 .margin-target-input {
     width: 70px;
     text-align: right;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     font-size: var(--font-size-sm);
     background-color: var(--color-bg-primary);
@@ -2287,7 +2287,7 @@ h1 {
 .loan-inputs input,
 .loan-inputs select {
     width: 100%;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     font-size: var(--font-size-sm);
     background-color: var(--color-bg-primary);
@@ -2387,7 +2387,7 @@ h1 {
 
 .cashflow-row .cf-amount {
     flex: 2;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
@@ -2411,7 +2411,7 @@ h1 {
 
 .cashflow-row .cf-period {
     flex: 1;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     background-color: var(--color-bg-primary);
     color: var(--color-text-primary);
@@ -2464,7 +2464,7 @@ h1 {
 }
 
 .result-row span:last-child {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     color: var(--color-text-primary);
 }
@@ -2587,7 +2587,7 @@ h1 {
 }
 
 .loan-history-label {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     color: var(--color-text-secondary);
     flex: 1;
     min-width: 0;
@@ -2674,7 +2674,7 @@ a.loan-calc-link:hover {
 
 .ibkr-rates-table td {
     padding: 2px 8px;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
     white-space: nowrap;
@@ -2688,7 +2688,7 @@ a.loan-calc-link:hover {
 .ibkr-interest-summary {
     margin-top: 8px;
     font-size: 0.85em;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     border-collapse: collapse;
     width: 100%;
 }
@@ -2728,7 +2728,7 @@ a.loan-calc-link:hover {
 }
 
 .ibkr-last-fetch {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: 0.78em;
     color: var(--color-text-tertiary);
 }
@@ -3109,7 +3109,7 @@ a.loan-calc-link:hover {
     border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     color: var(--color-text-primary);
     background: var(--color-bg-secondary);
 }
@@ -3391,7 +3391,7 @@ a.loan-calc-link:hover {
     background: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     width: 100%;
     box-sizing: border-box;
 }
@@ -3411,7 +3411,7 @@ a.loan-calc-link:hover {
 }
 
 .backtest-ticker-row .ticker-input {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--color-border-medium);
@@ -3421,7 +3421,7 @@ a.loan-calc-link:hover {
 }
 
 .backtest-ticker-row .weight-input {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--color-border-medium);
@@ -3456,7 +3456,7 @@ a.loan-calc-link:hover {
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     min-height: 1.2em;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
 }
 
 .backtest-weight-hint.hint-ok {
@@ -3773,7 +3773,7 @@ a.loan-calc-link:hover {
     background: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-size: var(--font-size-xs);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     text-align: right;
     width: 100%;
     box-sizing: border-box;
@@ -4022,7 +4022,7 @@ a.loan-calc-link:hover {
     border-radius: 4px;
     padding: 6px 10px;
     font-size: 0.78rem;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     pointer-events: none;
     white-space: pre;
     width: max-content;
@@ -4076,7 +4076,7 @@ td[id^="est-val-"].loaded {
     max-width: 400px;
     box-shadow: var(--shadow-lg);
     animation: confirm-slide-up 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
-    font-family: var(--font-family-base);
+    font-family: var(--font-family-base), sans-serif;
 }
 
 @keyframes confirm-slide-up {
@@ -4105,7 +4105,7 @@ td[id^="est-val-"].loaded {
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: opacity var(--transition-fast), transform 0.1s;
-    font-family: var(--font-family-base);
+    font-family: var(--font-family-base), sans-serif;
 }
 
 .confirm-overlay-btn:hover  { opacity: 0.85; }
@@ -4129,7 +4129,7 @@ td[id^="est-val-"].loaded {
     display: inline-block;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     padding: 1px 5px;
     border-radius: 3px;
     margin-left: 5px;
@@ -4183,7 +4183,7 @@ td[id^="est-val-"].loaded {
     padding: var(--spacing-md) var(--spacing-lg);
     pointer-events: none;
     font-size: var(--font-size-sm);
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     white-space: nowrap;
 }
 
@@ -4215,7 +4215,7 @@ td[id^="est-val-"].loaded {
    ============================================ */
 .portfolio-table .action-neutral,
 .action-neutral {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
@@ -4224,7 +4224,7 @@ td[id^="est-val-"].loaded {
 
 .portfolio-table .action-positive,
 .action-positive {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
     text-align: right;
@@ -4234,7 +4234,7 @@ td[id^="est-val-"].loaded {
 
 .portfolio-table .action-negative,
 .action-negative {
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-mono), monospace;
     font-variant-numeric: tabular-nums;
     font-weight: var(--font-weight-semibold);
     text-align: right;
@@ -4277,7 +4277,7 @@ td[id^="est-val-"].loaded {
     max-width: 400px;
     box-shadow: var(--shadow-lg);
     animation: confirm-slide-up 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
-    font-family: var(--font-family-base);
+    font-family: var(--font-family-base), sans-serif;
 }
 
 @keyframes confirm-slide-up {
@@ -4306,7 +4306,7 @@ td[id^="est-val-"].loaded {
     font-weight: var(--font-weight-medium);
     cursor: pointer;
     transition: opacity var(--transition-fast), transform 0.1s;
-    font-family: var(--font-family-base);
+    font-family: var(--font-family-base), sans-serif;
 }
 
 .confirm-overlay-btn:hover  { opacity: 0.85; }
