@@ -54,6 +54,9 @@ data class PortfolioSnapshot(
             // allow TWS to send initial MANAGED_ACCTS and connection messages
             Thread.sleep(1000)
 
+            if (client.startupError)
+                error("TWS reported errors during startup — aborting sync")
+
             val resolvedAccount = account
                 ?: client.firstIndividualAccount()
                 ?: error("No individual account (U-prefix) found in: ${client.managedAccounts}")
@@ -97,6 +100,7 @@ private object AcctKey {
     const val CASH_BALANCE = "CashBalance"
     const val ACCRUED_CASH = "AccruedCash"      // MTD interest earned/paid
     const val ACCRUED_DIVIDEND = "AccruedDividend"  // pending dividends
+    const val EXCHANGE_RATE = "ExchangeRate"    // currency -> rate-to-base
 }
 
 // ── TWS Socket Client (internal) ───────────────────────────────────────────────
@@ -117,11 +121,18 @@ internal class TwsClient(
     // account -> key -> currency -> value
     private val acctValues =
         ConcurrentHashMap<String, ConcurrentHashMap<String, ConcurrentHashMap<String, Double>>>()
+
+    // account -> currency -> rate-to-base
+    private val acctExchangeRates =
+        ConcurrentHashMap<String, ConcurrentHashMap<String, Double>>()
     private var acctLatch = CountDownLatch(1)
     private var acctSubscribed = false
 
     val managedAccounts = mutableListOf<String>()
     fun firstIndividualAccount(): String? = managedAccounts.firstOrNull { it.startsWith("U") }
+
+    @Volatile var startupError = false
+        private set
 
     var serverVersion: Int = 0
         private set
@@ -181,7 +192,7 @@ internal class TwsClient(
         val complete = positionLatch.await(timeoutSeconds, TimeUnit.SECONDS)
         cancelPositions()
 
-        if (!complete) logger.warn("Position stream timed out — partial results returned")
+        if (!complete) error("Position stream timed out — aborting, results discarded")
 
         return positions.values
             .filter {
@@ -199,6 +210,7 @@ internal class TwsClient(
         timeoutSeconds: Long = 10
     ): AccountSummary {
         acctValues.clear()
+        acctExchangeRates.clear()
         acctLatch = CountDownLatch(1)
 
         requestAccountUpdates(subscribe = true, account = account)
@@ -207,7 +219,9 @@ internal class TwsClient(
         cancelAccountUpdates(account)
         acctSubscribed = false
 
-        if (!complete) logger.warn("Account stream timed out — partial results returned")
+        if (!complete) error("Account stream timed out — aborting, results discarded")
+
+        validateAccountChecksum(account)
 
         fun valuesFor(key: String): Map<String, Double> =
             acctValues[account]?.get(key)
@@ -273,7 +287,10 @@ internal class TwsClient(
                     val msg = fields[4]
                     val infoOnly = code in listOf("2104", "2106", "2158", "2100", "2119")
                     if (infoOnly) logger.info("[{}] {}", code, msg)
-                    else logger.warn("TWS error [{}]: {}", code, msg)
+                    else {
+                        logger.warn("TWS error [{}]: {}", code, msg)
+                        startupError = true
+                    }
                 }
             }
 
@@ -326,7 +343,10 @@ internal class TwsClient(
         val currency = fields[4].ifBlank { "BASE" }
         val account = fields[5]
 
-        logger.trace("[{}] {}  {} = {}", account, key, currency, value)
+        if (key == AcctKey.EXCHANGE_RATE) {
+            acctExchangeRates.getOrPut(account) { ConcurrentHashMap() }[currency] = value
+            return
+        }
 
         if (key !in listOf(
                 AcctKey.CASH_BALANCE,
@@ -335,9 +355,35 @@ internal class TwsClient(
             )
         ) return
 
+        logger.info("[{}] {}  {} = {}  | raw fields: {}", account, key, currency, value, fields)
+
         acctValues
             .getOrPut(account) { ConcurrentHashMap() }
             .getOrPut(key) { ConcurrentHashMap() }[currency] = value
+    }
+
+    // ── Validation ───────────────────────────────────────────────────────────
+
+    private fun validateAccountChecksum(account: String) {
+        val rates = acctExchangeRates[account] ?: return
+        val keys = listOf(AcctKey.CASH_BALANCE, AcctKey.ACCRUED_CASH, AcctKey.ACCRUED_DIVIDEND)
+        for (key in keys) {
+            val byCurrency = acctValues[account]?.get(key) ?: continue
+            val base = byCurrency["BASE"] ?: continue
+            if (base == 0.0) continue
+            val computed = byCurrency.entries
+                .filter { it.key != "BASE" }
+                .sumOf { (ccy, amt) -> amt * (rates[ccy] ?: return) }
+            val deviation = Math.abs(computed - base) / Math.abs(base)
+            if (deviation > 0.05) {
+                error(
+                    "Account data integrity check failed for $key: " +
+                    "computed BASE=${"%.4f".format(computed)}, " +
+                    "reported BASE=${"%.4f".format(base)} " +
+                    "(${(deviation * 100).toInt()}% deviation)"
+                )
+            }
+        }
     }
 
     // ── Wire Helpers ──────────────────────────────────────────────────────────
