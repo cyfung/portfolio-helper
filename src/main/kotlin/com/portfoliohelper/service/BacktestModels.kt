@@ -39,10 +39,18 @@ data class PortfolioConfig(
     val includeNoMargin: Boolean = true
 )
 
+enum class CashflowFrequency { NONE, MONTHLY, QUARTERLY, YEARLY }
+
+data class CashflowConfig(
+    val amount: Double,
+    val frequency: CashflowFrequency
+)
+
 data class MultiBacktestRequest(
     val fromDate: String?,
     val toDate: String?,
-    val portfolios: List<PortfolioConfig>  // 1–3
+    val portfolios: List<PortfolioConfig>,  // 1–3
+    val cashflow: CashflowConfig? = null
 )
 
 @Serializable

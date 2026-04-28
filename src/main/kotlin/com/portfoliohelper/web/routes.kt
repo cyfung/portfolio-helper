@@ -72,11 +72,11 @@ private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNul
 }
 
 private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
-    json["portfolios"]?.jsonArray?.map { pel ->
+    (json["portfolios"] as? JsonArray)?.map { pel ->
         val pObj = pel.jsonObject
         PortfolioConfig(
             label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
-            tickers = pObj["tickers"]?.jsonArray?.map { el ->
+            tickers = (pObj["tickers"] as? JsonArray)?.map { el ->
                 val obj = el.jsonObject
                 TickerWeight(
                     ticker = obj["ticker"]!!.jsonPrimitive.content,
@@ -86,7 +86,7 @@ private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
             rebalanceStrategy = runCatching {
                 RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
             }.getOrDefault(RebalanceStrategy.YEARLY),
-            marginStrategies = pObj["marginStrategies"]?.jsonArray?.map { mel ->
+            marginStrategies = (pObj["marginStrategies"] as? JsonArray)?.map { mel ->
                 val mObj = mel.jsonObject
                 MarginConfig(
                     marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
@@ -108,6 +108,93 @@ private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
             includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
         )
     } ?: emptyList()
+
+private fun parseSinglePortfolioConfig(pObj: JsonObject): PortfolioConfig = PortfolioConfig(
+    label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
+    tickers = (pObj["tickers"] as? JsonArray)?.map { el ->
+        val obj = el.jsonObject
+        TickerWeight(obj["ticker"]!!.jsonPrimitive.content, obj["weight"]!!.jsonPrimitive.double)
+    } ?: emptyList(),
+    rebalanceStrategy = runCatching {
+        RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
+    }.getOrDefault(RebalanceStrategy.YEARLY),
+    marginStrategies = (pObj["marginStrategies"] as? JsonArray)?.map { mel ->
+        val mObj = mel.jsonObject
+        MarginConfig(
+            marginRatio          = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            marginSpread         = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+            marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+            marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+            upperRebalanceMode   = runCatching {
+                MarginRebalanceMode.valueOf(mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
+            }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
+            lowerRebalanceMode   = runCatching {
+                MarginRebalanceMode.valueOf(mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
+            }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
+        )
+    } ?: emptyList(),
+    includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
+)
+
+private fun parsePriceMoveTrigger(obj: JsonObject): PriceMoveTrigger {
+    val pct = obj["pct"]?.jsonPrimitive?.double ?: 0.0
+    return when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+        "VS_N_DAYS_AGO"  -> PriceMoveTrigger.VsNDaysAgo(obj["nDays"]?.jsonPrimitive?.int ?: 20, pct)
+        "VS_RUNNING_AVG" -> PriceMoveTrigger.VsRunningAvg(obj["nDays"]?.jsonPrimitive?.int ?: 20, pct)
+        else             -> PriceMoveTrigger.PeakDeviation(pct)
+    }
+}
+
+private fun parseExecutionMethod(obj: JsonObject): ExecutionMethod =
+    when (obj["method"]?.jsonPrimitive?.contentOrNull) {
+        "CONSECUTIVE" -> ExecutionMethod.Consecutive(obj["days"]?.jsonPrimitive?.int ?: 7)
+        "STEPPED"     -> ExecutionMethod.Stepped(
+            portions      = obj["portions"]?.jsonPrimitive?.int ?: 3,
+            additionalPct = obj["additionalPct"]?.jsonPrimitive?.double ?: 0.05
+        )
+        else          -> ExecutionMethod.Once
+    }
+
+private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig = DipSurgeConfig(
+    scope         = runCatching { DipSurgeScope.valueOf(obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK") }
+                        .getOrDefault(DipSurgeScope.INDIVIDUAL_STOCK),
+    allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+    },
+    triggers      = (obj["triggers"] as? JsonArray)?.map { parsePriceMoveTrigger(it.jsonObject) } ?: emptyList(),
+    method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once
+)
+
+private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = MarginTriggerAction(
+    deviationPct  = obj["deviationPct"]?.jsonPrimitive?.doubleOrNull,
+    allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+    }
+)
+
+private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = RebalStrategyConfig(
+    label                      = obj["label"]?.jsonPrimitive?.contentOrNull ?: "Strategy",
+    marginRatio                = obj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
+    marginSpread               = obj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+    rebalancePeriod            = runCatching {
+        RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "INHERIT")
+    }.getOrDefault(RebalancePeriodOverride.INHERIT),
+    cashflowImmediateInvestPct = obj["cashflowImmediateInvestPct"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
+    cashflowScaling            = runCatching {
+        CashflowScaling.valueOf(obj["cashflowScaling"]?.jsonPrimitive?.content ?: "SCALED_BY_TARGET_MARGIN")
+    }.getOrDefault(CashflowScaling.SCALED_BY_TARGET_MARGIN),
+    deviationMode              = runCatching {
+        DeviationMode.valueOf(obj["deviationMode"]?.jsonPrimitive?.content ?: "ABSOLUTE")
+    }.getOrDefault(DeviationMode.ABSOLUTE),
+    upperLimit                 = obj["upperLimit"]?.jsonPrimitive?.doubleOrNull,
+    lowerLimit                 = obj["lowerLimit"]?.jsonPrimitive?.doubleOrNull,
+    sellOnHighMargin           = (obj["sellOnHighMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) }
+                                    ?: MarginTriggerAction(null, null),
+    buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) }
+                                    ?: MarginTriggerAction(null, null),
+    buyTheDip                  = (obj["buyTheDip"] as? JsonObject)?.let { parseDipSurgeConfig(it) },
+    sellOnSurge                = (obj["sellOnSurge"] as? JsonObject)?.let { parseDipSurgeConfig(it) }
+)
 
 private suspend fun ApplicationCall.respondOk() =
     respondText("{\"status\":\"ok\"}", ContentType.Application.Json)
@@ -440,9 +527,55 @@ fun Application.configureRouting() {
 
                 val portfolios = parsePortfolioConfigs(json)
 
-                val result =
-                    BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios))
+                val cashflow = (json["cashflow"] as? JsonObject)?.let { cf ->
+                    CashflowConfig(
+                        amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
+                        frequency = runCatching {
+                            CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
+                        }.getOrDefault(CashflowFrequency.NONE)
+                    )
+                }
 
+                val result =
+                    BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios, cashflow))
+
+                call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        post("/api/rebalance-strategy/run") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+
+                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+
+                val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
+                    ?: throw IllegalArgumentException("Missing portfolio")
+
+                val cashflow = (json["cashflow"] as? JsonObject)?.let { cf ->
+                    CashflowConfig(
+                        amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
+                        frequency = runCatching {
+                            CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
+                        }.getOrDefault(CashflowFrequency.NONE)
+                    )
+                }
+
+                val strategies = (json["strategies"] as? JsonArray)?.map { el ->
+                    parseRebalStrategyConfig(el.jsonObject)
+                } ?: emptyList()
+
+                val result = RebalanceStrategyService.run(
+                    RebalanceStrategyRequest(fromDate, toDate, portfolio, cashflow, strategies)
+                )
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
@@ -544,8 +677,8 @@ fun Application.configureRouting() {
                     ?: return@post call.respond(HttpStatusCode.NotFound)
 
                 val root = Json.parseToJsonElement(call.receiveText()).jsonObject
-                val stockRows = root["stocks"]?.jsonArray?.let { parsePositionRows(it) } ?: emptyList()
-                val cashEntries = root["cash"]?.jsonArray?.parseCashEntries() ?: emptyList()
+                val stockRows = (root["stocks"] as? JsonArray)?.let { parsePositionRows(it) } ?: emptyList()
+                val cashEntries = (root["cash"] as? JsonArray)?.parseCashEntries() ?: emptyList()
 
                 val dividendStartDate = root["dividendStartDate"]?.jsonPrimitive?.contentOrNull
 

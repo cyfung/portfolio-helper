@@ -9,8 +9,9 @@ const PortfolioPage        = lazy(() => import('@/pages/PortfolioPage'))
 const PortfolioAnalystPage = lazy(() => import('@/pages/PortfolioAnalystPage'))
 const LoanPage             = lazy(() => import('@/pages/LoanPage'))
 const BacktestPage         = lazy(() => import('@/pages/BacktestPage'))
-const MonteCarloPage       = lazy(() => import('@/pages/MonteCarloPage'))
-const ConfigPage           = lazy(() => import('@/pages/ConfigPage'))
+const MonteCarloPage            = lazy(() => import('@/pages/MonteCarloPage'))
+const RebalanceStrategyPage     = lazy(() => import('@/pages/RebalanceStrategyPage'))
+const ConfigPage                = lazy(() => import('@/pages/ConfigPage'))
 
 export default function App() {
   // Single global SSE connection for the whole app lifetime
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/loan" element={<LoanPage />} />
       <Route path="/backtest" element={<BacktestPage />} />
       <Route path="/montecarlo" element={<MonteCarloPage />} />
+      <Route path="/rebalance-strategy" element={<RebalanceStrategyPage />} />
       <Route path="/config" element={<ConfigPage />} />
     </Routes>
     </Suspense>

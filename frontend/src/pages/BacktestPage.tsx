@@ -14,7 +14,7 @@ import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
-  configToBlockState, PALETTE,
+  configToBlockState, PALETTE, CASHFLOW_FREQUENCY_OPTIONS,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
@@ -125,7 +125,9 @@ export default function BacktestPage() {
   const [blocks, setBlocks]           = useState<BlockState[]>([0, 1, 2].map(emptyBlock))
   const [fromDate, setFromDate]       = useState('')
   const [toDate, setToDate]           = useState('')
-  const [importCode, setImportCode]   = useState('')
+  const [cashflowAmount, setCashflowAmount]       = useState('')
+  const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
+  const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
   const [running, setRunning]         = useState(false)
   const [error, setError]             = useState('')
@@ -414,7 +416,14 @@ export default function BacktestPage() {
         fetch('/api/backtest/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fromDate: fromDate || null, toDate: toDate || null, portfolios }),
+          body: JSON.stringify({
+            fromDate: fromDate || null,
+            toDate: toDate || null,
+            portfolios,
+            cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
+              ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
+              : null,
+          }),
         }),
         realSlug
           ? fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`)
@@ -592,6 +601,20 @@ export default function BacktestPage() {
         <div className="backtest-section backtest-grid-2">
           <DateFieldWithQuickSelect label="From Date" inputId="from-date" value={fromDate} onChange={setFromDate} />
           <DateFieldWithQuickSelect label="To Date"   inputId="to-date"   value={toDate}   onChange={setToDate} />
+
+          <div>
+            <label htmlFor="cashflow-amount">Cashflow Amount</label>
+            <input
+              type="number" id="cashflow-amount" placeholder="e.g. 1000" min="0" step="100"
+              value={cashflowAmount} onChange={e => setCashflowAmount(e.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="cashflow-frequency">Cashflow Frequency</label>
+            <select id="cashflow-frequency" value={cashflowFrequency} onChange={e => setCashflowFrequency(e.target.value)}>
+              {CASHFLOW_FREQUENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
 
           <div className="backtest-config-controls">
             <label htmlFor="backtest-import-code">Config Code</label>

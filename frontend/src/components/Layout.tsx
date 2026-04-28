@@ -15,6 +15,7 @@ const NAV_PAGES = [
   { line1: 'Loan',      line2: 'Calculator', href: '/loan' },
   { line1: 'Portfolio', line2: 'Backtest', href: '/backtest' },
   { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
+  { line1: 'Rebalance',  line2: 'Strategy',   href: '/rebalance-strategy' },
 ]
 
 export function PageNavTabs({ active }: { active: string }) {

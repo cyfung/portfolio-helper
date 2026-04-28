@@ -755,7 +755,7 @@ object BacktestService {
             holdings[ticker] = (holdings[ticker] ?: 0.0) * (returnRatios[ticker]?.get(i) ?: 1.0)
     }
 
-    private fun buildReturnRatios(
+    internal fun buildReturnRatios(
         tickers: List<String>,
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>
@@ -774,7 +774,7 @@ object BacktestService {
         }
     }
 
-    private fun buildDailyLoanRates(
+    internal fun buildDailyLoanRates(
         dates: List<LocalDate>,
         effrx: Map<LocalDate, Double>,
         dailySpread: Double
@@ -1085,7 +1085,7 @@ object BacktestService {
 
     // ── Statistics ────────────────────────────────────────────────────────────
 
-    private fun computeBacktestStats(
+    internal fun computeBacktestStats(
         values: List<Double>,
         dates: List<LocalDate>,
         effrx: Map<LocalDate, Double>,
