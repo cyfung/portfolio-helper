@@ -162,14 +162,15 @@ private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig = DipSurgeConfi
         runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
     },
     triggers      = (obj["triggers"] as? JsonArray)?.map { parsePriceMoveTrigger(it.jsonObject) } ?: emptyList(),
-    method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once
+    method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once,
+    limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15
 )
 
 private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = MarginTriggerAction(
-    deviationPct  = obj["deviationPct"]?.jsonPrimitive?.doubleOrNull,
+    deviationPct  = obj["deviationPct"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
         runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-    }
+    } ?: MarginRebalanceMode.PROPORTIONAL
 )
 
 private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = RebalStrategyConfig(
@@ -186,12 +187,8 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     deviationMode              = runCatching {
         DeviationMode.valueOf(obj["deviationMode"]?.jsonPrimitive?.content ?: "ABSOLUTE")
     }.getOrDefault(DeviationMode.ABSOLUTE),
-    upperLimit                 = obj["upperLimit"]?.jsonPrimitive?.doubleOrNull,
-    lowerLimit                 = obj["lowerLimit"]?.jsonPrimitive?.doubleOrNull,
-    sellOnHighMargin           = (obj["sellOnHighMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) }
-                                    ?: MarginTriggerAction(null, null),
-    buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) }
-                                    ?: MarginTriggerAction(null, null),
+    sellOnHighMargin           = (obj["sellOnHighMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
+    buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
     buyTheDip                  = (obj["buyTheDip"] as? JsonObject)?.let { parseDipSurgeConfig(it) },
     sellOnSurge                = (obj["sellOnSurge"] as? JsonObject)?.let { parseDipSurgeConfig(it) }
 )

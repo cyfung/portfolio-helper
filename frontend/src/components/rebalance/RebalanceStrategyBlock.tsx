@@ -19,8 +19,6 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
   const s = value
   const set = (patch: Partial<RebalStrategyState>) => onChange({ ...s, ...patch })
 
-  const devLabel = s.deviationMode === 'RELATIVE' ? 'Rel %' : 'Abs %'
-
   return (
     <div className="portfolio-block">
       <div className="block-header">
@@ -91,16 +89,6 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
                 {' '}Relative
               </label>
             </label>
-          </div>
-          <div className="strategy-row">
-            <label>Upper Limit ({devLabel})</label>
-            <input type="number" min="0" step="1" placeholder="e.g. 15" value={s.upperLimit}
-              onChange={e => set({ upperLimit: e.target.value })} style={{ width: '5rem' }} />
-          </div>
-          <div className="strategy-row">
-            <label>Lower Limit ({devLabel})</label>
-            <input type="number" min="0" step="1" placeholder="e.g. 15" value={s.lowerLimit}
-              onChange={e => set({ lowerLimit: e.target.value })} style={{ width: '5rem' }} />
           </div>
         </div>
       </details>

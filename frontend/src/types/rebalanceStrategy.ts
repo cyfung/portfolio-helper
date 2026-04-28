@@ -21,6 +21,7 @@ export interface DipSurgeState {
   allocStrategy: string    // MarginRebalanceMode value
   triggers: (PriceMoveTriggerState & { id: string })[]
   execution: ExecutionMethodState
+  limit: string
 }
 
 export interface RebalStrategyState {
@@ -31,8 +32,6 @@ export interface RebalStrategyState {
   cashflowImmediateInvestPct: string   // default '100'
   cashflowScaling: string              // CashflowScaling value
   deviationMode: string                // 'ABSOLUTE' | 'RELATIVE'
-  upperLimit: string
-  lowerLimit: string
   sellHighEnabled: boolean
   sellHighDeviationPct: string
   sellHighAllocStrategy: string
@@ -84,6 +83,7 @@ function emptyDipSurge(): DipSurgeState {
     allocStrategy: 'PROPORTIONAL',
     triggers: [],
     execution: { method: 'ONCE' },
+    limit: '15',
   }
 }
 
@@ -96,8 +96,6 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     cashflowImmediateInvestPct: '100',
     cashflowScaling: 'SCALED_BY_TARGET_MARGIN',
     deviationMode: 'ABSOLUTE',
-    upperLimit: '15',
-    lowerLimit: '15',
     sellHighEnabled: false,
     sellHighDeviationPct: '',
     sellHighAllocStrategy: 'PROPORTIONAL',
@@ -142,6 +140,7 @@ function serializeDipSurge(d: DipSurgeState): object {
     allocStrategy: d.scope === 'WHOLE_PORTFOLIO' ? d.allocStrategy : null,
     triggers: d.triggers.map(serializeTrigger),
     method: serializeExecution(d.execution),
+    limit: (parseFloat(d.limit) || 15) / 100,
   }
 }
 
@@ -157,8 +156,6 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
     cashflowImmediateInvestPct: pct(s.cashflowImmediateInvestPct, 100),
     cashflowScaling: s.cashflowScaling || 'SCALED_BY_TARGET_MARGIN',
     deviationMode: s.deviationMode || 'ABSOLUTE',
-    upperLimit: optPct(s.upperLimit),
-    lowerLimit: optPct(s.lowerLimit),
     sellOnHighMargin: {
       deviationPct: s.sellHighEnabled ? optPct(s.sellHighDeviationPct) : null,
       allocStrategy: s.sellHighEnabled ? (s.sellHighAllocStrategy || 'PROPORTIONAL') : null,

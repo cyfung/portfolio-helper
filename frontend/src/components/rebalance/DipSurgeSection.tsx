@@ -30,7 +30,7 @@ export default function DipSurgeSection({ direction, value, onChange }: Props) {
   const enabled = value !== null
 
   function enable() {
-    onChange({ scope: 'INDIVIDUAL_STOCK', allocStrategy: 'PROPORTIONAL', triggers: [], execution: { method: 'ONCE' } })
+    onChange({ scope: 'INDIVIDUAL_STOCK', allocStrategy: 'PROPORTIONAL', triggers: [], execution: { method: 'ONCE' }, limit: '15' })
   }
 
   function update(patch: Partial<DipSurgeState>) {
@@ -91,6 +91,17 @@ export default function DipSurgeSection({ direction, value, onChange }: Props) {
               </select>
             </div>
           )}
+
+          {/* Limit */}
+          <div className="strategy-row">
+            <label>{direction === 'buy' ? 'Max margin over target (%)' : 'Max margin under target (%)'}</label>
+            <input
+              type="number" min="0" step="1"
+              value={value.limit}
+              onChange={e => update({ limit: e.target.value })}
+              style={{ width: '5rem' }}
+            />
+          </div>
 
           {/* Triggers */}
           <div className="strategy-row">
