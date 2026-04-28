@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush,
 } from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
@@ -74,6 +74,13 @@ export default function RebalanceStrategyPage() {
     if (portfolioApi.tickers.length === 0) {
       setError('Add at least one ticker with a positive weight to the portfolio.'); return
     }
+    for (const [i, s] of strategies.entries()) {
+      const n = i + 1
+      if (s.sellHighEnabled && (!s.sellHighDeviationPct.trim() || parseFloat(s.sellHighDeviationPct) <= 0))
+        { setError(`Strategy ${n}: Sell on High Margin threshold must be greater than 0`); return }
+      if (s.buyLowEnabled && (!s.buyLowDeviationPct.trim() || parseFloat(s.buyLowDeviationPct) <= 0))
+        { setError(`Strategy ${n}: Buy on Low Margin threshold must be greater than 0`); return }
+    }
 
     setRunning(true)
     try {
@@ -106,10 +113,19 @@ export default function RebalanceStrategyPage() {
   const chartData = useMemo(() => {
     if (!results) return null
     const labels = buildCommonLabels(results)
-    const mainData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value))
-    const ddData   = buildRechartsData(results, labels, selected, computeDrawdown)
-    const rtrData  = buildRechartsData(results, labels, selected, computeRTR)
-    return { labels, mainData, ddData, rtrData }
+    const mainData   = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value))
+    const ddData     = buildRechartsData(results, labels, selected, computeDrawdown)
+    const rtrData    = buildRechartsData(results, labels, selected, computeRTR)
+    const marginData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value), c => c.marginPoints)
+    const marginDatasets = marginData.datasets.map(ds => ({ ...ds, label: `m:${ds.label}` }))
+    const combinedRows = mainData.rows.map((row, i) => {
+      const extra: Record<string, any> = {}
+      for (const [k, v] of Object.entries(marginData.rows[i])) {
+        if (k !== 'x') extra[`m:${k}`] = v
+      }
+      return { ...row, ...extra }
+    })
+    return { labels, mainData, ddData, rtrData, marginDatasets, combinedRows }
   }, [results, selected])
 
   const allKeys    = results ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`)) : []
@@ -244,7 +260,7 @@ export default function RebalanceStrategyPage() {
             </table>
           </div>
 
-          {/* Portfolio Value chart */}
+          {/* Portfolio Value + Margin Utilization chart */}
           <div className="backtest-chart-title">Portfolio Value</div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.25rem' }}>
             <button className={`chart-scale-toggle${logScale ? ' active' : ''}`} type="button"
@@ -252,23 +268,39 @@ export default function RebalanceStrategyPage() {
           </div>
           <div className="backtest-chart-container" ref={chartContainerRef}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData.mainData.rows} syncId="rs-backtest"
-                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+              <ComposedChart data={chartData.combinedRows} syncId="rs-backtest"
+                margin={{ top: 8, right: chartData.marginDatasets.length > 0 ? 64 : 16, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
                   interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
                 <YAxis yAxisId="main" scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
                   allowDataOverflow={logScale} tick={{ fill: textColor, fontSize: 11 }}
                   tickFormatter={v => '$' + Number(v).toFixed(0)} width={72} />
-                <Tooltip content={makeTooltip(v => '$' + v.toFixed(2))} />
+                {chartData.marginDatasets.length > 0 && (
+                  <YAxis yAxisId="margin" orientation="right" domain={['auto', 'auto']}
+                    tick={{ fill: '#c75d1a', fontSize: 11 }}
+                    tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'} width={48} />
+                )}
+                <Tooltip
+                  contentStyle={{ background: theme.isDark ? '#1e1e1e' : '#fff', border: `1px solid ${gridColor}`, fontSize: '0.78rem' }}
+                  formatter={(value: any, name: string) => {
+                    if (name.startsWith('m:')) return [(Number(value) * 100).toFixed(2) + '%', name.slice(2) + ' (Margin)']
+                    return ['$' + Number(value).toFixed(2), name]
+                  }}
+                />
                 <Legend content={renderLegend} />
                 {chartData.mainData.datasets.map(ds => (
                   <Line key={ds.label} {...commonLineProps} yAxisId="main" dataKey={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                 ))}
+                {chartData.marginDatasets.map(ds => (
+                  <Area key={ds.label} {...commonLineProps} yAxisId="margin" dataKey={ds.label}
+                    name={ds.label} stroke={ds.color} fill={ds.color} fillOpacity={0.12}
+                    strokeWidth={1} strokeDasharray="4 2" />
+                ))}
                 <Brush dataKey="x" height={26} stroke={gridColor}
                   fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
 
@@ -313,6 +345,7 @@ export default function RebalanceStrategyPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
         </>
       )}
     </div>

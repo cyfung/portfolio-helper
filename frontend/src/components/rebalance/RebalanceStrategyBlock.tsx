@@ -18,6 +18,7 @@ interface Props {
 export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) {
   const s = value
   const set = (patch: Partial<RebalStrategyState>) => onChange({ ...s, ...patch })
+  const devLabel = '%'
 
   return (
     <div className="portfolio-block">

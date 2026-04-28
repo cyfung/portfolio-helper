@@ -164,6 +164,7 @@ export interface BacktestCurve {
   label: string
   points: { date: string; value: number }[]
   stats: BacktestCurveStats
+  marginPoints?: { date: string; value: number }[]
 }
 
 export interface BacktestPortfolioResult {

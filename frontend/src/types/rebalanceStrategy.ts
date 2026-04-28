@@ -156,14 +156,12 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
     cashflowImmediateInvestPct: pct(s.cashflowImmediateInvestPct, 100),
     cashflowScaling: s.cashflowScaling || 'SCALED_BY_TARGET_MARGIN',
     deviationMode: s.deviationMode || 'ABSOLUTE',
-    sellOnHighMargin: {
-      deviationPct: s.sellHighEnabled ? optPct(s.sellHighDeviationPct) : null,
-      allocStrategy: s.sellHighEnabled ? (s.sellHighAllocStrategy || 'PROPORTIONAL') : null,
-    },
-    buyOnLowMargin: {
-      deviationPct: s.buyLowEnabled ? optPct(s.buyLowDeviationPct) : null,
-      allocStrategy: s.buyLowEnabled ? (s.buyLowAllocStrategy || 'PROPORTIONAL') : null,
-    },
+    sellOnHighMargin: s.sellHighEnabled
+      ? { deviationPct: optPct(s.sellHighDeviationPct), allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL' }
+      : null,
+    buyOnLowMargin: s.buyLowEnabled
+      ? { deviationPct: optPct(s.buyLowDeviationPct), allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL' }
+      : null,
     buyTheDip: s.buyTheDip ? serializeDipSurge(s.buyTheDip) : null,
     sellOnSurge: s.sellOnSurge ? serializeDipSurge(s.sellOnSurge) : null,
   }

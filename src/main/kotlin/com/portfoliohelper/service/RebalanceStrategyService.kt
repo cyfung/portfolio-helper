@@ -102,6 +102,7 @@ object RebalanceStrategyService {
         val rawPrices: Map<String, Map<LocalDate, Double>> = seriesMap
 
         val values = mutableListOf(startEquity)
+        val marginUtils = mutableListOf(marginTarget)
 
         // ── Pre-loop: build trigger checkers and executors ────────────────────
         fun DipSurgeConfig.buildResources(): DipSurgeResources {
@@ -200,7 +201,7 @@ object RebalanceStrategyService {
                 if (equityBefore > 0) {
                     val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
 
-                    strategy.sellOnHighMargin?.let { cfg ->
+                    strategy.sellOnHighMargin?.takeIf { it.deviationPct > 0 }?.let { cfg ->
                         val threshold = computeThreshold(marginTarget, cfg.deviationPct, strategy.deviationMode, high = true)
                         if (currentRatio > threshold) {
                             val targetCashBalance = -equity * marginTarget
@@ -212,7 +213,7 @@ object RebalanceStrategyService {
                         }
                     }
 
-                    strategy.buyOnLowMargin?.let { cfg ->
+                    strategy.buyOnLowMargin?.takeIf { it.deviationPct > 0 }?.let { cfg ->
                         val threshold = computeThreshold(marginTarget, cfg.deviationPct, strategy.deviationMode, high = false)
                         if (currentRatio < threshold) {
                             val targetCashBalance = -equity * marginTarget
@@ -256,12 +257,16 @@ object RebalanceStrategyService {
 
             // Step 9: Record equity
             equity = max(0.0, holdings.values.sum() + cashBalance)
+            marginUtils.add(if (equity > 0.0) (-cashBalance).coerceAtLeast(0.0) / equity else 0.0)
             values.add(equity)
         }
 
         val points = dates.mapIndexed { i, d -> DataPoint(d.toString(), values[i]) }
+        val marginPoints = if (marginTarget > 0.0)
+            dates.mapIndexed { i, d -> DataPoint(d.toString(), marginUtils[i]) }
+        else null
         val stats = BacktestService.computeBacktestStats(values, dates, effrx)
-        return CurveResult(strategy.label, points, stats)
+        return CurveResult(strategy.label, points, stats, marginPoints)
     }
 
     // ── Eligible amount calculation ───────────────────────────────────────────

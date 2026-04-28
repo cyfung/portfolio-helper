@@ -1,6 +1,6 @@
 // ── chartData.ts — Helpers to convert dataset arrays into Recharts row format ──
 
-import { BacktestResults, PALETTE } from '@/types/backtest'
+import { BacktestResults, BacktestCurve, PALETTE } from '@/types/backtest'
 import { getGroupStrokeWidths } from '@/lib/colorScheme'
 
 export interface RechartsDataset {
@@ -31,6 +31,7 @@ export function buildRechartsData(
   labels: string[],
   selected: Set<string>,
   valueFn: (pts: { date: string; value: number }[]) => (number | null)[],
+  pointsSelector?: (curve: BacktestCurve) => { date: string; value: number }[] | undefined,
 ): RechartsChartData {
   const rows: Record<string, any>[] = labels.map(x => ({ x }))
   const datasets: RechartsDataset[] = []
@@ -40,9 +41,11 @@ export function buildRechartsData(
     const widths  = getGroupStrokeWidths(portfolio.curves.length)
     portfolio.curves.forEach((curve, ci) => {
       if (selected.size > 0 && !selected.has(`${pi}-${ci}`)) return
+      const pts = pointsSelector ? pointsSelector(curve) : curve.points
+      if (!pts) return
       const key = `${portfolio.label} \u2013 ${curve.label}`
-      const vals = valueFn(curve.points)
-      const byDate = new Map(curve.points.map((p, i) => [p.date, vals[i]]))
+      const vals = valueFn(pts)
+      const byDate = new Map(pts.map((p, i) => [p.date, vals[i]]))
       labels.forEach((d, i) => { rows[i][key] = byDate.get(d) ?? undefined })
       datasets.push({
         label: key,

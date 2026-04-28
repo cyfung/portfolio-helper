@@ -74,7 +74,8 @@ data class BacktestStats(
 data class CurveResult(
     val label: String,
     val points: List<DataPoint>,
-    val stats: BacktestStats
+    val stats: BacktestStats,
+    val marginPoints: List<DataPoint>? = null
 )
 
 @Serializable
