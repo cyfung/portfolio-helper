@@ -40,6 +40,8 @@ export interface RebalStrategyState {
   buyLowAllocStrategy: string
   buyTheDip: DipSurgeState | null
   sellOnSurge: DipSurgeState | null
+  comfortZoneLow: string
+  comfortZoneHigh: string
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -104,6 +106,8 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     buyLowAllocStrategy: 'PROPORTIONAL',
     buyTheDip: null,
     sellOnSurge: null,
+    comfortZoneLow: '0',
+    comfortZoneHigh: '0',
   }
 }
 
@@ -164,5 +168,7 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
       : null,
     buyTheDip: s.buyTheDip ? serializeDipSurge(s.buyTheDip) : null,
     sellOnSurge: s.sellOnSurge ? serializeDipSurge(s.sellOnSurge) : null,
+    comfortZoneLow:  pct(s.comfortZoneLow,  0),
+    comfortZoneHigh: pct(s.comfortZoneHigh, 0),
   }
 }

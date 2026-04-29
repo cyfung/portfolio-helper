@@ -47,6 +47,16 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
               onChange={e => set({ marginSpread: e.target.value })} style={{ width: '5rem' }} />
           </div>
           <div className="strategy-row">
+            <label>Comfort Zone Low %</label>
+            <input type="number" min="0" step="1" value={s.comfortZoneLow}
+              onChange={e => set({ comfortZoneLow: e.target.value })} style={{ width: '5rem' }} />
+          </div>
+          <div className="strategy-row">
+            <label>Comfort Zone High %</label>
+            <input type="number" min="0" step="1" value={s.comfortZoneHigh}
+              onChange={e => set({ comfortZoneHigh: e.target.value })} style={{ width: '5rem' }} />
+          </div>
+          <div className="strategy-row">
             <label>Rebalance Period</label>
             <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
               {REBALANCE_PERIOD_OVERRIDE_OPTIONS.map(o => (

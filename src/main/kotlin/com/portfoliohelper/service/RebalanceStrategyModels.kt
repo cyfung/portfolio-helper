@@ -150,7 +150,9 @@ data class RebalStrategyConfig(
     val buyOnLowMargin: MarginTriggerAction?,
     // Sections 5 & 6
     val buyTheDip: DipSurgeConfig?,
-    val sellOnSurge: DipSurgeConfig?
+    val sellOnSurge: DipSurgeConfig?,
+    val comfortZoneLow: Double = 0.0,
+    val comfortZoneHigh: Double = 0.0
 )
 
 data class RebalanceStrategyRequest(
