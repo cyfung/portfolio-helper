@@ -9,6 +9,7 @@ import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButto
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
@@ -96,6 +97,7 @@ interface RealPortfolioData {
   mwrSeries: number[] | null
   positionSeries: number[] | null
   navSeries: number[]
+  navScaleFactor: number
 }
 
 // ── Legend canvas line preview ─────────────────────────────────────────────────
@@ -141,6 +143,12 @@ export default function BacktestPage() {
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
   const [realSlug, setRealSlug]             = useState(() => localStorage.getItem('backtest-real-slug') ?? '')
   const [realData, setRealData]             = useState<RealPortfolioData | null>(null)
+  const appConfig = usePortfolioStore(s => s.appConfig)
+  const appConfigReady = !!appConfig
+  const privacyNavScaleFactor = useMemo(() => {
+    const pct = parseFloat(appConfig?.privacyScalePct ?? '')
+    return appConfig?.privacyScaleEnabled && pct > 0 ? pct / 100 : 1
+  }, [appConfig?.privacyScaleEnabled, appConfig?.privacyScalePct])
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const [chartWidth, setChartWidth] = useState(1000)
@@ -170,6 +178,7 @@ export default function BacktestPage() {
   // Fetch real portfolio data when slug or date range changes
   useEffect(() => {
     if (!realSlug) { setRealData(null); return }
+    if (!appConfigReady) return
     const params = [fromDate && `from=${fromDate}`, toDate && `to=${toDate}`].filter(Boolean).join('&')
     fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`)
       .then(r => r.json())
@@ -179,9 +188,10 @@ export default function BacktestPage() {
         mwrSeries:      d.mwrSeries      ?? null,
         positionSeries: d.positionSeries ?? null,
         navSeries:      d.navSeries      ?? [],
+        navScaleFactor: privacyNavScaleFactor,
       }))
       .catch(() => setRealData(null))
-  }, [realSlug, fromDate, toDate])
+  }, [realSlug, fromDate, toDate, appConfigReady, privacyNavScaleFactor])
 
   // Persist real portfolio selection
   useEffect(() => {
@@ -244,6 +254,8 @@ export default function BacktestPage() {
     if (!results) return null
     const labels        = buildCommonLabels(results)
     const backtestStart = results.portfolios[0]?.curves[0]?.points[0]?.value ?? 1
+    const navDisplayFactor = realData ? privacyNavScaleFactor / realData.navScaleFactor : 1
+    const realNavSeries = realData?.navSeries.map(v => v * navDisplayFactor) ?? []
 
     // Build date→index lookup for real portfolio data
     const realDateIndex: Map<string, number> = realData?.dates.length
@@ -253,7 +265,7 @@ export default function BacktestPage() {
     // NAV scale is only valid when the real portfolio existed at the FIRST backtest date.
     // If the portfolio started later, navStart = 0 → scaling disabled.
     const firstLabelRealIdx = realData?.dates.length ? realDateIndex.get(labels[0]) : undefined
-    const navStart          = firstLabelRealIdx != null ? (realData!.navSeries[firstLabelRealIdx] ?? 0) : 0
+    const navStart          = firstLabelRealIdx != null ? (realNavSeries[firstLabelRealIdx] ?? 0) : 0
     const shouldScaleToNav  = scaleToNav && navStart > 0 && !!realSlug
 
     // Backtest curves: when shouldScaleToNav, scale each so its first-date value = navStart
@@ -307,7 +319,7 @@ export default function BacktestPage() {
         const ri = realDateIndex.get(row.x as string)
         if (ri == null) continue
 
-        const nav = realData.navSeries[ri]
+        const nav = realNavSeries[ri]
         if (nav != null) row['Real – NAV'] = +nav.toFixed(4)
 
         const twr = realData.twrSeries[ri]
@@ -323,7 +335,7 @@ export default function BacktestPage() {
 
     // Stats computed from the overlap window (same period as what the chart shows)
     const od = firstOverlapRealIdx >= 0 ? realData!.dates.slice(firstOverlapRealIdx)    : []
-    const nv = firstOverlapRealIdx >= 0 ? realData!.navSeries.slice(firstOverlapRealIdx) : []
+    const nv = firstOverlapRealIdx >= 0 ? realNavSeries.slice(firstOverlapRealIdx) : []
     const tv = firstOverlapRealIdx >= 0
       ? realData!.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)) : []
     const mv = realData?.mwrSeries && firstOverlapRealIdx >= 0
@@ -367,8 +379,8 @@ export default function BacktestPage() {
         rtrData.datasets.push({ ...dataset })
       }
 
-      if (realData.navSeries.length)
-        injectDDRTR(realData.navSeries, 0, 'Real \u2013 NAV', ac[0])
+      if (realNavSeries.length)
+        injectDDRTR(realNavSeries, 0, 'Real \u2013 NAV', ac[0])
       if (firstOverlapRealIdx >= 0 && realData.twrSeries.length)
         injectDDRTR(
           realData.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)),
@@ -399,7 +411,7 @@ export default function BacktestPage() {
       navStart,
       shouldScaleToNav,
     }
-  }, [results, selected, realData, scaleToNav, realSlug, isDark])
+  }, [results, selected, realData, scaleToNav, realSlug, isDark, privacyNavScaleFactor])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -450,6 +462,7 @@ export default function BacktestPage() {
             mwrSeries:      d.mwrSeries      ?? null,
             positionSeries: d.positionSeries ?? null,
             navSeries:      d.navSeries      ?? [],
+            navScaleFactor: privacyNavScaleFactor,
           }
         } catch { newRealData = null }
       }
