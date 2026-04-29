@@ -125,6 +125,7 @@ export default function BacktestPage() {
   const [blocks, setBlocks]           = useState<BlockState[]>([0, 1, 2].map(emptyBlock))
   const [fromDate, setFromDate]       = useState('')
   const [toDate, setToDate]           = useState('')
+  const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
   const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
   const [importCode, setImportCode]               = useState('')
@@ -195,6 +196,9 @@ export default function BacktestPage() {
         if (!req.portfolios) return
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate)   setToDate(req.toDate)
+        if (req.startingBalance != null) setStartingBalance(String(req.startingBalance))
+        if (req.cashflow?.amount != null) setCashflowAmount(String(req.cashflow.amount))
+        if (req.cashflow?.frequency) setCashflowFrequency(req.cashflow.frequency)
         setBlocks(prev => {
           const next = [...prev]
           req.portfolios.forEach((p: any, i: number) => {
@@ -382,11 +386,14 @@ export default function BacktestPage() {
         )
     }
 
+    const marginData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value), c => c.marginPoints)
+
     return {
       labels,
       mainData,
       ddData,
       rtrData,
+      marginData,
       realStats,
       curveScaleFactors,
       navStart,
@@ -419,6 +426,7 @@ export default function BacktestPage() {
           body: JSON.stringify({
             fromDate: fromDate || null,
             toDate: toDate || null,
+            startingBalance: parseFloat(startingBalance) || 10000,
             portfolios,
             cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
               ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
@@ -463,7 +471,15 @@ export default function BacktestPage() {
 
   async function handleExport() {
     const portfolios = blocks.map((b, i) => blockStateToAPIPortfolio(b, i))
-    const code = await compressToCode({ fromDate: fromDate || null, toDate: toDate || null, portfolios })
+    const code = await compressToCode({
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      startingBalance: parseFloat(startingBalance) || 10000,
+      portfolios,
+      cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
+        ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
+        : null,
+    })
     setImportCode(code)
     try { await navigator.clipboard.writeText(code) } catch (_) {}
   }
@@ -474,6 +490,9 @@ export default function BacktestPage() {
       const req: any = await decompressFromCode(importCode.trim())
       if (req.fromDate) setFromDate(req.fromDate)
       if (req.toDate)   setToDate(req.toDate)
+      if (req.startingBalance != null) setStartingBalance(String(req.startingBalance))
+      if (req.cashflow?.amount != null) setCashflowAmount(String(req.cashflow.amount))
+      if (req.cashflow?.frequency) setCashflowFrequency(req.cashflow.frequency)
       if (req.portfolios) {
         setBlocks(prev => {
           const next = [...prev]
@@ -598,10 +617,32 @@ export default function BacktestPage() {
       </div>
 
       <div className="backtest-form-card">
-        <div className="backtest-section backtest-grid-2">
+        <div className="backtest-section backtest-config-row">
           <DateFieldWithQuickSelect label="From Date" inputId="from-date" value={fromDate} onChange={setFromDate} />
           <DateFieldWithQuickSelect label="To Date"   inputId="to-date"   value={toDate}   onChange={setToDate} />
 
+          <div className="backtest-config-controls">
+            <label htmlFor="backtest-import-code">Config Code</label>
+            <div className="backtest-config-group">
+              <input
+                type="text" id="backtest-import-code" placeholder="Paste code..." spellCheck={false}
+                value={importCode} onChange={e => setImportCode(e.target.value)}
+              />
+              <button className="backtest-config-btn" onClick={handleImport}>Import</button>
+              <button className="backtest-config-btn" onClick={handleExport}>Export</button>
+              {configError && <div className="backtest-config-error">{configError}</div>}
+            </div>
+          </div>
+        </div>
+
+        <div className="backtest-section backtest-cashflow-row">
+          <div>
+            <label htmlFor="starting-balance">Starting Balance</label>
+            <input
+              type="number" id="starting-balance" min="0" step="100"
+              value={startingBalance} onChange={e => setStartingBalance(e.target.value)}
+            />
+          </div>
           <div>
             <label htmlFor="cashflow-amount">Cashflow Amount</label>
             <input
@@ -614,19 +655,6 @@ export default function BacktestPage() {
             <select id="cashflow-frequency" value={cashflowFrequency} onChange={e => setCashflowFrequency(e.target.value)}>
               {CASHFLOW_FREQUENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-          </div>
-
-          <div className="backtest-config-controls">
-            <label htmlFor="backtest-import-code">Config Code</label>
-            <div className="backtest-config-group">
-              <input
-                type="text" id="backtest-import-code" placeholder="Paste code…" spellCheck={false}
-                value={importCode} onChange={e => setImportCode(e.target.value)}
-              />
-              <button className="backtest-config-btn" onClick={handleImport}>Import</button>
-              <button className="backtest-config-btn" onClick={handleExport}>Export</button>
-              {configError && <div className="backtest-config-error">{configError}</div>}
-            </div>
           </div>
         </div>
 
@@ -930,6 +958,36 @@ export default function BacktestPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Margin Utilization chart */}
+          {chartData.marginData.datasets.length > 0 && (
+            <>
+              <div className="backtest-chart-title">Margin Utilization</div>
+              <div className="backtest-chart-container">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData.marginData.rows} syncId="backtest" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                    <XAxis
+                      dataKey="x"
+                      tick={{ fill: textColor, fontSize: 11 }}
+                      interval={Math.max(1, Math.floor(chartData.labels.length / 8))}
+                    />
+                    <YAxis
+                      domain={['auto', 'auto']}
+                      tick={{ fill: textColor, fontSize: 11 }}
+                      tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'}
+                      width={60}
+                    />
+                    <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
+                    <Legend content={renderLegend} />
+                    {chartData.marginData.datasets.map(ds => (
+                      <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

@@ -523,6 +523,7 @@ fun Application.configureRouting() {
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate =
                     json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
 
                 val portfolios = parsePortfolioConfigs(json)
 
@@ -536,7 +537,7 @@ fun Application.configureRouting() {
                 }
 
                 val result =
-                    BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios, cashflow))
+                    BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios, cashflow, startingBalance))
 
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
@@ -555,6 +556,7 @@ fun Application.configureRouting() {
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
 
                 val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
                     ?: throw IllegalArgumentException("Missing portfolio")
@@ -573,7 +575,7 @@ fun Application.configureRouting() {
                 } ?: emptyList()
 
                 val result = RebalanceStrategyService.run(
-                    RebalanceStrategyRequest(fromDate, toDate, portfolio, cashflow, strategies)
+                    RebalanceStrategyRequest(fromDate, toDate, portfolio, cashflow, strategies, startingBalance)
                 )
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
@@ -607,6 +609,15 @@ fun Application.configureRouting() {
                 val maxChunkYears = json["maxChunkYears"]?.jsonPrimitive?.doubleOrNull ?: 8.0
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
+                val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
+                val cashflow = (json["cashflow"] as? JsonObject)?.let { cf ->
+                    CashflowConfig(
+                        amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
+                        frequency = runCatching {
+                            CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
+                        }.getOrDefault(CashflowFrequency.NONE)
+                    )
+                }
 
                 val portfolios = parsePortfolioConfigs(json)
 
@@ -617,7 +628,10 @@ fun Application.configureRouting() {
                     maxChunkYears,
                     simulatedYears,
                     numSimulations,
-                    portfolios
+                    portfolios,
+                    cashflow,
+                    startingBalance,
+                    json["seed"]?.jsonPrimitive?.longOrNull
                 )
                 val result = MonteCarloService.runMonteCarlo(request)
 

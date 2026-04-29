@@ -50,7 +50,8 @@ data class MultiBacktestRequest(
     val fromDate: String?,
     val toDate: String?,
     val portfolios: List<PortfolioConfig>,  // 1–3
-    val cashflow: CashflowConfig? = null
+    val cashflow: CashflowConfig? = null,
+    val startingBalance: Double = 10_000.0
 )
 
 @Serializable

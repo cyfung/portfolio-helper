@@ -56,12 +56,29 @@ object RebalanceStrategyService {
         val dates = BacktestService.intersectDates(seriesMap.values.toList(), fromDate, toDate)
         if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
 
-        val portfolioResults = request.strategies.map { strategy ->
+        val baseResult = BacktestService.runMulti(
+            MultiBacktestRequest(
+                request.fromDate,
+                request.toDate,
+                listOf(request.portfolio),
+                request.cashflow,
+                request.startingBalance
+            )
+        )
+        val strategyResults = request.strategies.map { strategy ->
             val curve =
-                runStrategy(request.portfolio, strategy, request.cashflow, seriesMap, dates, effrx)
+                runStrategy(
+                    request.portfolio,
+                    strategy,
+                    request.cashflow,
+                    seriesMap,
+                    dates,
+                    effrx,
+                    request.startingBalance
+                )
             PortfolioResult(strategy.label, listOf(curve))
         }
-        return MultiBacktestResult(portfolioResults)
+        return MultiBacktestResult(baseResult.portfolios + strategyResults)
     }
 
     internal fun runStrategyForTest(
@@ -70,9 +87,10 @@ object RebalanceStrategyService {
         cashflow: CashflowConfig?,
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>,
-        effrx: Map<LocalDate, Double>
+        effrx: Map<LocalDate, Double>,
+        startingBalance: Double = 10_000.0
     ): List<Double> =
-        runStrategy(portfolio, strategy, cashflow, seriesMap, dates, effrx).points.map { it.value }
+        runStrategy(portfolio, strategy, cashflow, seriesMap, dates, effrx, startingBalance).points.map { it.value }
 
     // ── Core simulation ───────────────────────────────────────────────────────
 
@@ -82,7 +100,8 @@ object RebalanceStrategyService {
         cashflow: CashflowConfig?,
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>,
-        effrx: Map<LocalDate, Double>
+        effrx: Map<LocalDate, Double>,
+        startingBalance: Double = 10_000.0
     ): CurveResult {
         val (tickers, targetWeights) = portfolio.mergeWeights()
         val effectiveRebalance =
@@ -91,7 +110,7 @@ object RebalanceStrategyService {
         val comfortLowBound  = computeThreshold(marginTarget, strategy.comfortZoneLow,  strategy.deviationMode, high = false)
         val comfortHighBound = computeThreshold(marginTarget, strategy.comfortZoneHigh, strategy.deviationMode, high = true)
 
-        val startEquity = 10_000.0
+        val startEquity = startingBalance
         val grossStockValue = startEquity * (1 + marginTarget)
         val holdings =
             tickers.associateWith { grossStockValue * (targetWeights[it] ?: 0.0) }.toMutableMap()

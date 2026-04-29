@@ -160,7 +160,8 @@ data class RebalanceStrategyRequest(
     val toDate: String?,
     val portfolio: PortfolioConfig,
     val cashflow: CashflowConfig?,
-    val strategies: List<RebalStrategyConfig>  // exactly 2
+    val strategies: List<RebalStrategyConfig>,  // exactly 2
+    val startingBalance: Double = 10_000.0
 )
 
 // ── TriggerChecker implementations ───────────────────────────────────────────

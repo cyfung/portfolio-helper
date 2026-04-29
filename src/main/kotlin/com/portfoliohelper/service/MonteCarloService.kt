@@ -168,7 +168,7 @@ object MonteCarloService {
 
             portfolioCurveConfigs.forEachIndexed { pi, (pConfig, curves) ->
                 curves.forEachIndexed { ci, curveConfig ->
-                    val values = simulate(pConfig, curveConfig.mc, path)
+                    val values = simulate(pConfig, curveConfig.mc, path, request.startingBalance, request.cashflow)
                     val stats = computeStats(values, years, rfAnnualized)
                     allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                 }
@@ -212,7 +212,7 @@ object MonteCarloService {
                 val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
                     val simIdx = pctSimIndices[pi][ci][pctIdx]
                     val path = fullPaths[simIdx]!!
-                    val values = simulate(pConfig, curveConfig.mc, path)
+                    val values = simulate(pConfig, curveConfig.mc, path, request.startingBalance, request.cashflow)
                     val endValue = values.last()
                     val stats = computeStats(values, years, rfAnnualized)
                     MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
@@ -300,14 +300,21 @@ object MonteCarloService {
     private fun simulate(
         pConfig: PortfolioConfig,
         mc: MarginConfig?,
-        path: List<AssembledDay>
-    ): List<Double> = if (mc == null) simulateNoMargin(pConfig, path)
-                      else simulateWithMargin(pConfig, mc, path)
+        path: List<AssembledDay>,
+        startingBalance: Double,
+        cashflow: CashflowConfig?
+    ): List<Double> = if (mc == null) simulateNoMargin(pConfig, path, startingBalance, cashflow)
+                      else simulateWithMargin(pConfig, mc, path, startingBalance, cashflow)
 
-    private fun simulateNoMargin(pConfig: PortfolioConfig, path: List<AssembledDay>): List<Double> {
+    private fun simulateNoMargin(
+        pConfig: PortfolioConfig,
+        path: List<AssembledDay>,
+        startingBalance: Double,
+        cashflow: CashflowConfig?
+    ): List<Double> {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
-        val startValue = 10_000.0
+        val startValue = startingBalance
         val holdings = tickers.associateWith { startValue * (targetWeights[it] ?: 0.0) }
             .toMutableMap()
 
@@ -327,6 +334,11 @@ object MonteCarloService {
                 val ret = if (day.isChunkBoundary) 1.0 else (day.tickerReturns[ticker] ?: 1.0)
                 holdings[ticker] = (holdings[ticker] ?: 0.0) * ret
             }
+            if (!day.isChunkBoundary && cashflow != null && isCashflowDay(cashflow.frequency, tradingDayCount)) {
+                for (ticker in tickers) {
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) + cashflow.amount * (targetWeights[ticker] ?: 0.0)
+                }
+            }
             values.add(holdings.values.sum())
         }
         return values
@@ -335,11 +347,13 @@ object MonteCarloService {
     private fun simulateWithMargin(
         pConfig: PortfolioConfig,
         mc: MarginConfig,
-        path: List<AssembledDay>
+        path: List<AssembledDay>,
+        startingBalance: Double,
+        cashflow: CashflowConfig?
     ): List<Double> {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
-        val startEquity = 10_000.0
+        val startEquity = startingBalance
         var borrowed = startEquity * mc.marginRatio
         val holdings = tickers.associateWith {
             (startEquity + borrowed) * (targetWeights[it] ?: 0.0)
@@ -365,6 +379,15 @@ object MonteCarloService {
             for (ticker in tickers) {
                 val ret = if (day.isChunkBoundary) 1.0 else (day.tickerReturns[ticker] ?: 1.0)
                 holdings[ticker] = (holdings[ticker] ?: 0.0) * ret
+            }
+
+            if (!day.isChunkBoundary && cashflow != null && isCashflowDay(cashflow.frequency, tradingDayCount)) {
+                val contributionExposure = cashflow.amount * (1.0 + mc.marginRatio)
+                borrowed += cashflow.amount * mc.marginRatio
+                for (ticker in tickers) {
+                    holdings[ticker] =
+                        (holdings[ticker] ?: 0.0) + contributionExposure * (targetWeights[ticker] ?: 0.0)
+                }
             }
 
             val dailyLoanRate = day.effrxRate + mc.marginSpread / 252.0
@@ -433,5 +456,13 @@ object MonteCarloService {
             RebalanceStrategy.MONTHLY -> count % 21 == 0
             RebalanceStrategy.QUARTERLY -> count % 63 == 0
             RebalanceStrategy.YEARLY -> count % 252 == 0
+        }
+
+    private fun isCashflowDay(frequency: CashflowFrequency, tradingDayCount: Int): Boolean =
+        tradingDayCount > 0 && when (frequency) {
+            CashflowFrequency.NONE -> false
+            CashflowFrequency.MONTHLY -> tradingDayCount % 21 == 0
+            CashflowFrequency.QUARTERLY -> tradingDayCount % 63 == 0
+            CashflowFrequency.YEARLY -> tradingDayCount % 252 == 0
         }
 }

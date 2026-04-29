@@ -97,7 +97,9 @@ object BacktestService {
             val pConfig = request.portfolios[idx]
             val seriesMap = allSeriesMaps[idx]
 
-            val noMarginValues = computeNoMargin(pConfig, seriesMap, globalDates)
+            val noMarginValues = computeNoMargin(
+                pConfig, seriesMap, globalDates, request.startingBalance, request.cashflow
+            )
             val curves = mutableListOf<CurveResult>()
             if (pConfig.includeNoMargin) {
                 val noMarginPoints =
@@ -121,7 +123,9 @@ object BacktestService {
                     if (mc.upperRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT ||
                         mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT
                     )
-                        applyMarginProportional(pConfig, seriesMap, globalDates, effrxSeries, mc)
+                        applyMarginProportional(
+                            pConfig, seriesMap, globalDates, effrxSeries, mc, request.startingBalance, request.cashflow
+                        )
                     else
                         applyMargin(
                             noMarginValues,
@@ -130,8 +134,11 @@ object BacktestService {
                             mc,
                             pConfig.rebalanceStrategy
                         )
-                val marginPoints = globalDates.mapIndexed { i, d ->
+                val marginValuePoints = globalDates.mapIndexed { i, d ->
                     DataPoint(d.toString(), marginResult.values[i])
+                }
+                val marginUtilPoints = globalDates.mapIndexed { i, d ->
+                    DataPoint(d.toString(), marginResult.marginUtilization[i])
                 }
                 val marginStats = computeBacktestStats(
                     marginResult.values, globalDates, effrxSeries,
@@ -141,7 +148,7 @@ object BacktestService {
                 val lAbbr = modeAbbr(mc.lowerRebalanceMode)
                 val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
                 else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
-                CurveResult(label, marginPoints, marginStats)
+                CurveResult(label, marginValuePoints, marginStats, marginUtilPoints)
             }.toList()
 
             curves.addAll(marginCurves)
@@ -694,12 +701,14 @@ object BacktestService {
     private fun computeNoMargin(
         pConfig: PortfolioConfig,
         seriesMap: Map<String, Map<LocalDate, Double>>,
-        dates: List<LocalDate>
+        dates: List<LocalDate>,
+        startingBalance: Double = 10_000.0,
+        cashflow: CashflowConfig? = null
     ): List<Double> {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
         // Initial allocation: weights × start value
-        val startValue = 10_000.0
+        val startValue = startingBalance
         val holdings = tickers.associateWith { ticker ->
             startValue * (targetWeights[ticker] ?: 0.0)
         }.toMutableMap()
@@ -723,6 +732,12 @@ object BacktestService {
             }
 
             applyDailyReturns(tickers, holdings, returnRatios, i)
+
+            if (cashflow != null && isCashflowDate(cashflow.frequency, curDate)) {
+                for (ticker in tickers) {
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) + cashflow.amount * (targetWeights[ticker] ?: 0.0)
+                }
+            }
 
             values.add(holdings.values.sum())
         }
@@ -807,8 +822,17 @@ object BacktestService {
 
     // ── Margin computation ────────────────────────────────────────────────────
 
+    private fun isCashflowDate(frequency: CashflowFrequency, date: LocalDate): Boolean =
+        when (frequency) {
+            CashflowFrequency.NONE -> false
+            CashflowFrequency.MONTHLY -> date.dayOfMonth == 1
+            CashflowFrequency.QUARTERLY -> date.dayOfMonth == 1 && date.monthValue in listOf(1, 4, 7, 10)
+            CashflowFrequency.YEARLY -> date.dayOfMonth == 1 && date.monthValue == 1
+        }
+
     private data class MarginApplyResult(
         val values: List<Double>,
+        val marginUtilization: List<Double>,
         val upperTriggers: Int,   // ratio > target + deviation (market fell, forced to de-lever)
         val lowerTriggers: Int    // ratio < target - deviation (market rose, forced to re-lever)
     )
@@ -830,6 +854,7 @@ object BacktestService {
         var totalExposure = equity + borrowed
 
         val result = mutableListOf(equity)
+        val marginUtilization = mutableListOf(marginTarget)
         var upperTriggers = 0
         var lowerTriggers = 0
 
@@ -864,8 +889,9 @@ object BacktestService {
             }
 
             result.add(equity)
+            marginUtilization.add(if (equity > 0.0) borrowed.coerceAtLeast(0.0) / equity else 0.0)
         }
-        return MarginApplyResult(result, upperTriggers, lowerTriggers)
+        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers)
     }
 
     fun computeWaterfall(
@@ -935,22 +961,25 @@ object BacktestService {
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>,
         effrx: Map<LocalDate, Double>,
-        mc: MarginConfig
+        mc: MarginConfig,
+        startingBalance: Double = 10_000.0,
+        cashflow: CashflowConfig? = null
     ): MarginApplyResult {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
-        val startEquity = 10_000.0
+        val startEquity = startingBalance
         var borrowed = startEquity * mc.marginRatio
         val holdings = tickers.associateWith { ticker ->
             (startEquity + borrowed) * (targetWeights[ticker] ?: 0.0)
         }.toMutableMap()
 
+        val dailySpread = mc.marginSpread / 252.0
+        val targetRatio = mc.marginRatio
         val result = mutableListOf(startEquity)
+        val marginUtilization = mutableListOf(targetRatio)
         var upperTriggers = 0
         var lowerTriggers = 0
 
-        val dailySpread = mc.marginSpread / 252.0
-        val targetRatio = mc.marginRatio
         val upperThreshold = mc.marginRatio + mc.marginDeviationUpper
         val lowerThreshold = mc.marginRatio - mc.marginDeviationLower
         val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
@@ -973,6 +1002,15 @@ object BacktestService {
             }
 
             applyDailyReturns(tickers, holdings, returnRatios, i)
+
+            if (cashflow != null && isCashflowDate(cashflow.frequency, curDate)) {
+                val contributionExposure = cashflow.amount * (1.0 + targetRatio)
+                borrowed += cashflow.amount * targetRatio
+                for (ticker in tickers) {
+                    holdings[ticker] =
+                        (holdings[ticker] ?: 0.0) + contributionExposure * (targetWeights[ticker] ?: 0.0)
+                }
+            }
 
             borrowed *= (1.0 + dailyLoanRates[i])
 
@@ -1045,9 +1083,11 @@ object BacktestService {
                 }
             }
 
-            result.add(holdings.values.sum() - borrowed)
+            val endEquity = holdings.values.sum() - borrowed
+            result.add(endEquity)
+            marginUtilization.add(if (endEquity > 0.0) borrowed.coerceAtLeast(0.0) / endEquity else 0.0)
         }
-        return MarginApplyResult(result, upperTriggers, lowerTriggers)
+        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers)
     }
 
     fun computeUndervalueFirst(

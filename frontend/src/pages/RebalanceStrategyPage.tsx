@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ComposedChart, LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush,
 } from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
@@ -10,12 +10,12 @@ import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
 import { useChartTheme } from '@/lib/chartTheme'
+import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
-  PALETTE, CASHFLOW_FREQUENCY_OPTIONS,
+  configToBlockState, PALETTE, CASHFLOW_FREQUENCY_OPTIONS,
 } from '@/types/backtest'
-import { scaleDash } from '@/lib/colorScheme'
 import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
@@ -46,8 +46,11 @@ export default function RebalanceStrategyPage() {
   const [strategies, setStrategies] = useState<RebalStrategyState[]>([emptyStrategy(0), emptyStrategy(1)])
   const [fromDate, setFromDate]   = useState('')
   const [toDate, setToDate]       = useState('')
+  const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
   const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
+  const [importCode, setImportCode]               = useState('')
+  const [configError, setConfigError] = useState('')
   const [running, setRunning]     = useState(false)
   const [error, setError]         = useState('')
   const [results, setResults]     = useState<BacktestResults | null>(null)
@@ -90,6 +93,7 @@ export default function RebalanceStrategyPage() {
         body: JSON.stringify({
           fromDate: fromDate || null,
           toDate: toDate || null,
+          startingBalance: parseFloat(startingBalance) || 10000,
           portfolio: portfolioApi,
           cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
             ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
@@ -108,6 +112,41 @@ export default function RebalanceStrategyPage() {
     }
   }
 
+  async function handleExport() {
+    const code = await compressToCode({
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      startingBalance: parseFloat(startingBalance) || 10000,
+      portfolio: blockStateToAPIPortfolio(portfolio, 0),
+      portfolioState: portfolio,
+      cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
+        ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
+        : null,
+      strategies,
+    })
+    setImportCode(code)
+    try { await navigator.clipboard.writeText(code) } catch (_) {}
+  }
+
+  async function handleImport() {
+    if (!importCode.trim()) return
+    try {
+      const req: any = await decompressFromCode(importCode.trim())
+      if (req.fromDate) setFromDate(req.fromDate)
+      if (req.toDate) setToDate(req.toDate)
+      if (req.startingBalance != null) setStartingBalance(String(req.startingBalance))
+      if (req.cashflow?.amount != null) setCashflowAmount(String(req.cashflow.amount))
+      if (req.cashflow?.frequency) setCashflowFrequency(req.cashflow.frequency)
+      if (req.portfolioState) setPortfolio(req.portfolioState)
+      else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, req.portfolio.label || ''))
+      if (Array.isArray(req.strategies)) setStrategies(req.strategies.slice(0, 2))
+      setConfigError('')
+    } catch (_) {
+      setConfigError('Invalid config code.')
+      setTimeout(() => setConfigError(''), 3000)
+    }
+  }
+
   // ── Chart data ────────────────────────────────────────────────────────────
 
   const chartData = useMemo(() => {
@@ -117,15 +156,7 @@ export default function RebalanceStrategyPage() {
     const ddData     = buildRechartsData(results, labels, selected, computeDrawdown)
     const rtrData    = buildRechartsData(results, labels, selected, computeRTR)
     const marginData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value), c => c.marginPoints)
-    const marginDatasets = marginData.datasets.map(ds => ({ ...ds, label: `m:${ds.label}` }))
-    const combinedRows = mainData.rows.map((row, i) => {
-      const extra: Record<string, any> = {}
-      for (const [k, v] of Object.entries(marginData.rows[i])) {
-        if (k !== 'x') extra[`m:${k}`] = v
-      }
-      return { ...row, ...extra }
-    })
-    return { labels, mainData, ddData, rtrData, marginDatasets, combinedRows }
+    return { labels, mainData, ddData, rtrData, marginData }
   }, [results, selected])
 
   const allKeys    = results ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`)) : []
@@ -177,10 +208,32 @@ export default function RebalanceStrategyPage() {
       </div>
 
       <div className="backtest-form-card">
-        <div className="backtest-section backtest-grid-2">
+        <div className="backtest-section backtest-config-row">
           <DateFieldWithQuickSelect label="From Date" inputId="rs-from-date" value={fromDate} onChange={setFromDate} />
           <DateFieldWithQuickSelect label="To Date"   inputId="rs-to-date"   value={toDate}   onChange={setToDate} />
 
+          <div className="backtest-config-controls">
+            <label htmlFor="rs-import-code">Config Code</label>
+            <div className="backtest-config-group">
+              <input
+                type="text" id="rs-import-code" placeholder="Paste code..." spellCheck={false}
+                value={importCode} onChange={e => setImportCode(e.target.value)}
+              />
+              <button className="backtest-config-btn" onClick={handleImport}>Import</button>
+              <button className="backtest-config-btn" onClick={handleExport}>Export</button>
+              {configError && <div className="backtest-config-error">{configError}</div>}
+            </div>
+          </div>
+        </div>
+
+        <div className="backtest-section backtest-cashflow-row">
+          <div>
+            <label htmlFor="rs-starting-balance">Starting Balance</label>
+            <input
+              type="number" id="rs-starting-balance" min="0" step="100"
+              value={startingBalance} onChange={e => setStartingBalance(e.target.value)}
+            />
+          </div>
           <div>
             <label htmlFor="rs-cashflow-amount">Cashflow Amount</label>
             <input
@@ -268,39 +321,23 @@ export default function RebalanceStrategyPage() {
           </div>
           <div className="backtest-chart-container" ref={chartContainerRef}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData.combinedRows} syncId="rs-backtest"
-                margin={{ top: 8, right: chartData.marginDatasets.length > 0 ? 64 : 16, bottom: 8, left: 8 }}>
+              <LineChart data={chartData.mainData.rows} syncId="rs-backtest"
+                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
                   interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
-                <YAxis yAxisId="main" scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
+                <YAxis scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
                   allowDataOverflow={logScale} tick={{ fill: textColor, fontSize: 11 }}
                   tickFormatter={v => '$' + Number(v).toFixed(0)} width={72} />
-                {chartData.marginDatasets.length > 0 && (
-                  <YAxis yAxisId="margin" orientation="right" domain={['auto', 'auto']}
-                    tick={{ fill: '#c75d1a', fontSize: 11 }}
-                    tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'} width={48} />
-                )}
-                <Tooltip
-                  contentStyle={{ background: theme.isDark ? '#1e1e1e' : '#fff', border: `1px solid ${gridColor}`, fontSize: '0.78rem' }}
-                  formatter={(value: any, name: string) => {
-                    if (name.startsWith('m:')) return [(Number(value) * 100).toFixed(2) + '%', name.slice(2) + ' (Margin)']
-                    return ['$' + Number(value).toFixed(2), name]
-                  }}
-                />
+                <Tooltip content={makeTooltip(v => '$' + v.toFixed(2))} />
                 <Legend content={renderLegend} />
                 {chartData.mainData.datasets.map(ds => (
-                  <Line key={ds.label} {...commonLineProps} yAxisId="main" dataKey={ds.label}
+                  <Line key={ds.label} {...commonLineProps} dataKey={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
-                ))}
-                {chartData.marginDatasets.map(ds => (
-                  <Area key={ds.label} {...commonLineProps} yAxisId="margin" dataKey={ds.label}
-                    name={ds.label} stroke={ds.color} fill={ds.color} fillOpacity={0.12}
-                    strokeWidth={1} strokeDasharray="4 2" />
                 ))}
                 <Brush dataKey="x" height={26} stroke={gridColor}
                   fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
-              </ComposedChart>
+              </LineChart>
             </ResponsiveContainer>
           </div>
 
@@ -345,6 +382,31 @@ export default function RebalanceStrategyPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Margin Utilization chart */}
+          {chartData.marginData.datasets.length > 0 && (
+            <>
+              <div className="backtest-chart-title">Margin Utilization</div>
+              <div className="backtest-chart-container">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData.marginData.rows} syncId="rs-backtest"
+                    margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                    <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
+                      interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
+                    <YAxis domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
+                      tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'} width={60} />
+                    <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
+                    <Legend content={renderLegend} />
+                    {chartData.marginData.datasets.map(ds => (
+                      <Line key={ds.label} {...commonLineProps} dataKey={ds.label}
+                        stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
 
         </>
       )}

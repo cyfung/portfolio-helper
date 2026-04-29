@@ -3367,6 +3367,22 @@ a.loan-calc-link:hover {
     align-items: stretch;
 }
 
+.backtest-config-row {
+    display: grid;
+    grid-template-columns: auto auto minmax(360px, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+    align-items: stretch;
+}
+
+.backtest-cashflow-row {
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    gap: 0.75rem;
+    width: fit-content;
+    align-items: stretch;
+}
+
 .backtest-date-field,
 .backtest-config-controls {
     display: flex;
@@ -3382,7 +3398,8 @@ a.loan-calc-link:hover {
 }
 
 .backtest-section .backtest-config-group input {
-    width: 200px;
+    width: 100%;
+    min-width: 200px;
 }
 
 /* Backtest config button — size override for .btn-outline-accent */
@@ -3415,8 +3432,11 @@ a.loan-calc-link:hover {
 
 @media (max-width: 600px) {
     .backtest-grid-2,
+    .backtest-config-row,
+    .backtest-cashflow-row,
     .backtest-grid-3 {
         grid-template-columns: 1fr;
+        width: 100%;
     }
 }
 

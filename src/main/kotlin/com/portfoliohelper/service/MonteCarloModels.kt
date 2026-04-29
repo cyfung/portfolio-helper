@@ -12,6 +12,8 @@ data class MonteCarloRequest(
     val simulatedYears: Int,
     val numSimulations: Int,
     val portfolios: List<PortfolioConfig>,
+    val cashflow: CashflowConfig? = null,
+    val startingBalance: Double = 10_000.0,
     val seed: Long? = null            // null = generate fresh random seed
 )
 
