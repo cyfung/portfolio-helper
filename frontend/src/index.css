@@ -4044,6 +4044,48 @@ a.loan-calc-link:hover {
     border-color: var(--color-accent-primary);
 }
 
+.margin-point-slider {
+    width: min(100%, 18rem);
+    display: grid;
+    gap: 0.35rem;
+}
+
+.margin-point-range-stack {
+    position: relative;
+    height: 1.4rem;
+}
+
+.margin-point-range-stack input[type="range"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    background: transparent;
+    pointer-events: none;
+    accent-color: var(--color-accent-primary);
+}
+
+.margin-point-range-stack input[type="range"]::-webkit-slider-thumb {
+    pointer-events: auto;
+}
+
+.margin-point-range-stack input[type="range"]::-moz-range-thumb {
+    pointer-events: auto;
+}
+
+.margin-point-values {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.25rem;
+}
+
+.strategy-row .margin-point-values input[type="number"] {
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+    padding-inline: 0.2rem;
+}
+
 .strategy-row input[type="radio"] {
     accent-color: var(--color-accent-primary);
 }

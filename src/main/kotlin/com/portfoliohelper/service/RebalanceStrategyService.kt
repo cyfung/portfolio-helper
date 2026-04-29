@@ -259,7 +259,7 @@ object RebalanceStrategyService {
                 val raw = cashflow.amount
                 val currentMarginRatio =
                     if (equity > 0) (-cashBalance).coerceAtLeast(0.0) / equity else marginTarget
-                val scaleFactor = when (strategy.cashflowScaling) {
+                val scaleFactor = strategy.cashflowScalingMargin?.let { 1.0 + it } ?: when (strategy.cashflowScaling) {
                     CashflowScaling.SCALED_BY_TARGET_MARGIN -> 1.0 + marginTarget
                     CashflowScaling.SCALED_BY_CURRENT_MARGIN -> 1.0 + currentMarginRatio
                     CashflowScaling.NO_SCALING -> 1.0

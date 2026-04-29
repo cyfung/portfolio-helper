@@ -1,10 +1,7 @@
-// ── RebalanceStrategyBlock.tsx — One strategy configuration block ─────────────
-
 import {
   RebalStrategyState,
   DipSurgeState,
   REBALANCE_PERIOD_OVERRIDE_OPTIONS,
-  CASHFLOW_SCALING_OPTIONS,
 } from '@/types/rebalanceStrategy'
 import { MARGIN_MODE_OPTIONS } from '@/types/backtest'
 import DipSurgeSection from './DipSurgeSection'
@@ -13,12 +10,70 @@ interface Props {
   idx: number
   value: RebalStrategyState
   onChange: (s: RebalStrategyState) => void
+  sliderMax?: number
 }
 
-export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) {
+const DEFAULT_POINTS = ['40', '45', '50', '55', '60']
+
+function normalizePointIndex(v: string | undefined) {
+  const n = parseInt(v ?? '', 10)
+  return Number.isFinite(n) && n >= 0 && n < 5 ? String(n) : '2'
+}
+
+function pointLabel(points: string[], i: number) {
+  return `${points[i] ?? DEFAULT_POINTS[i]}%`
+}
+
+function MarginPointSlider({
+  points, max, onChange,
+}: { points: string[]; max: number; onChange: (points: string[]) => void }) {
+  const safePoints = DEFAULT_POINTS.map((def, i) => points?.[i] ?? def)
+
+  function updatePoint(i: number, value: string) {
+    const next = [...safePoints]
+    next[i] = value
+    onChange(next)
+  }
+
+  return (
+    <div className="margin-point-slider">
+      <div className="margin-point-range-stack">
+        {safePoints.map((p, i) => (
+          <input
+            key={i}
+            type="range"
+            min="0"
+            max={max}
+            step="1"
+            value={p}
+            aria-label={`Margin point ${i + 1}`}
+            onChange={e => updatePoint(i, e.target.value)}
+          />
+        ))}
+      </div>
+      <div className="margin-point-values">
+        {safePoints.map((p, i) => (
+          <input
+            key={i}
+            type="number"
+            min="0"
+            max={max}
+            step="1"
+            value={p}
+            aria-label={`Margin point ${i + 1} value`}
+            onChange={e => updatePoint(i, e.target.value)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax = 150 }: Props) {
   const s = value
   const set = (patch: Partial<RebalStrategyState>) => onChange({ ...s, ...patch })
-  const devLabel = '%'
+  const marginPoints = DEFAULT_POINTS.map((def, i) => s.marginPoints?.[i] ?? def)
+  const cashflowPointIndex = s.cashflowScalingPointIndex ?? '3'
 
   return (
     <div className="portfolio-block">
@@ -32,29 +87,21 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
         />
       </div>
 
-      {/* ── Section 1: Basic Settings ───────────────────────────────────────── */}
       <details open>
         <summary className="strategy-section-title">Basic Settings</summary>
         <div className="strategy-section-body">
           <div className="strategy-row">
-            <label>Margin Ratio %</label>
-            <input type="number" min="0" step="1" value={s.marginRatio}
-              onChange={e => set({ marginRatio: e.target.value })} style={{ width: '5rem' }} />
+            <label>Margin Points %</label>
+            <MarginPointSlider
+              points={marginPoints}
+              max={sliderMax}
+              onChange={points => set({ marginPoints: points, marginRatio: points[2] })}
+            />
           </div>
           <div className="strategy-row">
             <label>Spread %</label>
             <input type="number" min="0" step="0.1" value={s.marginSpread}
               onChange={e => set({ marginSpread: e.target.value })} style={{ width: '5rem' }} />
-          </div>
-          <div className="strategy-row">
-            <label>Comfort Zone Low %</label>
-            <input type="number" min="0" step="1" value={s.comfortZoneLow}
-              onChange={e => set({ comfortZoneLow: e.target.value })} style={{ width: '5rem' }} />
-          </div>
-          <div className="strategy-row">
-            <label>Comfort Zone High %</label>
-            <input type="number" min="0" step="1" value={s.comfortZoneHigh}
-              onChange={e => set({ comfortZoneHigh: e.target.value })} style={{ width: '5rem' }} />
           </div>
           <div className="strategy-row">
             <label>Rebalance Period</label>
@@ -71,40 +118,16 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
           </div>
           <div className="strategy-row">
             <label>Scaling</label>
-            <select value={s.cashflowScaling} onChange={e => set({ cashflowScaling: e.target.value })}>
-              {CASHFLOW_SCALING_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+            <select value={cashflowPointIndex} onChange={e => set({ cashflowScalingPointIndex: e.target.value })}>
+              <option value="0">0%</option>
+              {marginPoints.map((_, i) => (
+                <option key={i} value={String(i + 1)}>{pointLabel(marginPoints, i)}</option>
               ))}
             </select>
           </div>
         </div>
       </details>
 
-      {/* ── Section 2: Margin Deviation Mode ───────────────────────────────── */}
-      <details open>
-        <summary className="strategy-section-title">Margin Deviation Mode</summary>
-        <div className="strategy-section-body">
-          <div className="strategy-row">
-            <label>Mode</label>
-            <label style={{ display: 'inline-flex', gap: '1rem' }}>
-              <label>
-                <input type="radio" name={`dev-mode-${idx}`} value="ABSOLUTE"
-                  checked={s.deviationMode === 'ABSOLUTE'}
-                  onChange={() => set({ deviationMode: 'ABSOLUTE' })} />
-                {' '}Absolute
-              </label>
-              <label>
-                <input type="radio" name={`dev-mode-${idx}`} value="RELATIVE"
-                  checked={s.deviationMode === 'RELATIVE'}
-                  onChange={() => set({ deviationMode: 'RELATIVE' })} />
-                {' '}Relative
-              </label>
-            </label>
-          </div>
-        </div>
-      </details>
-
-      {/* ── Section 3: Buy on Low Margin ───────────────────────────────────── */}
       <details open={s.buyLowEnabled}>
         <summary className="strategy-section-title">
           Buy on Low Margin
@@ -117,10 +140,10 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
         {s.buyLowEnabled && (
           <div className="strategy-section-body">
             <div className="strategy-row">
-              <label>Threshold ({devLabel})</label>
-              <input type="number" min="0" step="1" placeholder="required" value={s.buyLowDeviationPct}
-                onChange={e => set({ buyLowDeviationPct: e.target.value })}
-                style={{ width: '6rem', borderColor: !s.buyLowDeviationPct.trim() ? 'var(--color-danger, red)' : undefined }} />
+              <label>Reference Point</label>
+              <select value={normalizePointIndex(s.buyLowPointIndex)} onChange={e => set({ buyLowPointIndex: e.target.value })}>
+                {marginPoints.map((_, i) => <option key={i} value={i}>{pointLabel(marginPoints, i)}</option>)}
+              </select>
             </div>
             <div className="strategy-row">
               <label>Alloc Strategy</label>
@@ -135,7 +158,6 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
         )}
       </details>
 
-      {/* ── Section 4: Sell on High Margin ─────────────────────────────────── */}
       <details open={s.sellHighEnabled}>
         <summary className="strategy-section-title">
           Sell on High Margin
@@ -148,10 +170,10 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
         {s.sellHighEnabled && (
           <div className="strategy-section-body">
             <div className="strategy-row">
-              <label>Threshold ({devLabel})</label>
-              <input type="number" min="0" step="1" placeholder="required" value={s.sellHighDeviationPct}
-                onChange={e => set({ sellHighDeviationPct: e.target.value })}
-                style={{ width: '6rem', borderColor: !s.sellHighDeviationPct.trim() ? 'var(--color-danger, red)' : undefined }} />
+              <label>Reference Point</label>
+              <select value={normalizePointIndex(s.sellHighPointIndex)} onChange={e => set({ sellHighPointIndex: e.target.value })}>
+                {marginPoints.map((_, i) => <option key={i} value={i}>{pointLabel(marginPoints, i)}</option>)}
+              </select>
             </div>
             <div className="strategy-row">
               <label>Alloc Strategy</label>
@@ -166,16 +188,17 @@ export default function RebalanceStrategyBlock({ idx, value, onChange }: Props) 
         )}
       </details>
 
-      {/* ── Sections 5 & 6: Dip / Surge ────────────────────────────────────── */}
       <DipSurgeSection
         direction="buy"
         value={s.buyTheDip}
         onChange={(v: DipSurgeState | null) => set({ buyTheDip: v })}
+        marginPoints={marginPoints}
       />
       <DipSurgeSection
         direction="sell"
         value={s.sellOnSurge}
         onChange={(v: DipSurgeState | null) => set({ sellOnSurge: v })}
+        marginPoints={marginPoints}
       />
     </div>
   )

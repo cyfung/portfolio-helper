@@ -23,6 +23,7 @@ object AppConfig {
     const val KEY_PRIVACY_SCALE_PCT     = "privacyScalePct"
     const val KEY_PRIVACY_SCALE_ENABLED = "privacyScaleEnabled"
     const val KEY_AFTER_HOURS_GRAY      = "afterHoursGray"
+    const val KEY_REBALANCE_SLIDER_MAX  = "rebalanceSliderMax"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -38,7 +39,8 @@ object AppConfig {
         KEY_DIVIDEND_SAFE_LAG_DAYS to "5",
         KEY_PRIVACY_SCALE_PCT   to "",
         KEY_PRIVACY_SCALE_ENABLED to "true",
-        KEY_AFTER_HOURS_GRAY    to "true"
+        KEY_AFTER_HOURS_GRAY    to "true",
+        KEY_REBALANCE_SLIDER_MAX to "150"
     )
 
     fun get(key: String): String {
@@ -84,6 +86,7 @@ object AppConfig {
     }
     val privacyScalePctFlow: StateFlow<Double?> by lazy { _privacyScalePct.asStateFlow() }
     val afterHoursGray: Boolean get() = get(KEY_AFTER_HOURS_GRAY).lowercase() != "false"
+    val rebalanceSliderMax: Int get() = get(KEY_REBALANCE_SLIDER_MAX).toIntOrNull()?.takeIf { it > 0 } ?: 150
     val exchangeSuffixes: Map<String, String>
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->

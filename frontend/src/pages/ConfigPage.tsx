@@ -22,6 +22,7 @@ interface ConfigValues {
   dividendSafeLagDays?: string
   updateCheckInterval?: string
   autoUpdate?: string
+  rebalanceSliderMax?: string
   _version?: string
   _latestVersion?: string
   _hasUpdate?: string
@@ -428,6 +429,7 @@ export default function ConfigPage() {
     openBrowser: 'true', dataDir: '', navUpdateInterval: '',
     exchangeSuffixes: 'SBF=.PA,LSEETF=.L', twsHost: '127.0.0.1', twsPort: '7496',
     ibkrRateInterval: '3600', autoUpdate: 'true', updateCheckInterval: '86400',
+    rebalanceSliderMax: '150',
   }
 
   async function handleRestoreDefaults() {
@@ -589,6 +591,15 @@ export default function ConfigPage() {
               type="checkbox" id="after-hours-gray"
               defaultChecked={cfg.afterHoursGray !== 'false'}
               onChange={e => saveField('afterHoursGray', String(e.target.checked))}
+            />
+          </ConfigField>
+
+          <ConfigField label="Rebalance Slider Max" description="Maximum value for the five-point margin slider. Default: 150." inputId="rebalance-slider-max">
+            <input
+              type="number" id="rebalance-slider-max" placeholder="150"
+              defaultValue={cfg.rebalanceSliderMax ?? ''}
+              min={1} step={1}
+              onChange={e => saveField('rebalanceSliderMax', e.target.value)}
             />
           </ConfigField>
         </ConfigSection>

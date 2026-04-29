@@ -11,6 +11,7 @@ interface Props {
   direction: 'buy' | 'sell'
   value: DipSurgeState | null
   onChange: (v: DipSurgeState | null) => void
+  marginPoints?: string[]
 }
 
 const triggerLabels: Record<string, (d: string) => string> = {
@@ -25,12 +26,12 @@ const methodLabels: Record<string, (d: string) => string> = {
   STEPPED:     d => `Averaging ${d === 'buy' ? 'Down' : 'Up'}`,
 }
 
-export default function DipSurgeSection({ direction, value, onChange }: Props) {
+export default function DipSurgeSection({ direction, value, onChange, marginPoints = ['40', '45', '50', '55', '60'] }: Props) {
   const title = direction === 'buy' ? 'Buy the Dip' : 'Sell on Surge'
   const enabled = value !== null
 
   function enable() {
-    onChange({ scope: 'INDIVIDUAL_STOCK', allocStrategy: 'PROPORTIONAL', triggers: [], execution: { method: 'ONCE' }, limit: '15' })
+    onChange({ scope: 'INDIVIDUAL_STOCK', allocStrategy: 'PROPORTIONAL', triggers: [], execution: { method: 'ONCE' }, limit: marginPoints[2] ?? '50', limitPointIndex: '2' })
   }
 
   function update(patch: Partial<DipSurgeState>) {
@@ -95,12 +96,12 @@ export default function DipSurgeSection({ direction, value, onChange }: Props) {
           {/* Limit */}
           <div className="strategy-row">
             <label>{direction === 'buy' ? 'Max margin over target (%)' : 'Max margin under target (%)'}</label>
-            <input
-              type="number" min="0" step="1"
-              value={value.limit}
-              onChange={e => update({ limit: e.target.value })}
-              style={{ width: '5rem' }}
-            />
+            <select
+              value={value.limitPointIndex ?? '2'}
+              onChange={e => update({ limitPointIndex: e.target.value, limit: marginPoints[parseInt(e.target.value, 10)] ?? value.limit })}
+            >
+              {marginPoints.map((point, i) => <option key={i} value={i}>{point}%</option>)}
+            </select>
           </div>
 
           {/* Triggers */}

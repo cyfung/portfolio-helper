@@ -184,6 +184,7 @@ fun Route.configureAdminRoutes() {
             AppConfig.KEY_DIVIDEND_SAFE_LAG_DAYS,
             AppConfig.KEY_UPDATE_CHECK_INTERVAL,
             AppConfig.KEY_AUTO_UPDATE,
+            AppConfig.KEY_REBALANCE_SLIDER_MAX,
         )
         val values = keys.associateWith { AppConfig.get(it) }
         val updateInfo = UpdateService.getInfo()

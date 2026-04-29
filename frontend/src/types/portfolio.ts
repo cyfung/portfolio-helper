@@ -45,6 +45,7 @@ export interface AppConfig {
   autoUpdate: boolean
   privacyScalePct: string
   privacyScaleEnabled: boolean
+  rebalanceSliderMax: number
 }
 
 export interface PortfolioData {

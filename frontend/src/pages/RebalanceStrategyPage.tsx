@@ -52,6 +52,7 @@ export default function RebalanceStrategyPage() {
   const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
+  const [rebalanceSliderMax, setRebalanceSliderMax] = useState(150)
   const [running, setRunning]     = useState(false)
   const [error, setError]         = useState('')
   const [results, setResults]     = useState<BacktestResults | null>(null)
@@ -85,6 +86,14 @@ export default function RebalanceStrategyPage() {
         if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
       })
       .catch(() => {})
+
+    fetch('/api/admin/config-values')
+      .then(r => r.json())
+      .then((data: any) => {
+        const max = parseInt(data.rebalanceSliderMax ?? '', 10)
+        if (Number.isFinite(max) && max > 0) setRebalanceSliderMax(max)
+      })
+      .catch(() => {})
   }, [])
 
   // ── Run ───────────────────────────────────────────────────────────────────
@@ -95,14 +104,6 @@ export default function RebalanceStrategyPage() {
     if (portfolioApi.tickers.length === 0) {
       setError('Add at least one ticker with a positive weight to the portfolio.'); return
     }
-    for (const [i, s] of strategies.entries()) {
-      const n = i + 1
-      if (s.sellHighEnabled && (!s.sellHighDeviationPct.trim() || parseFloat(s.sellHighDeviationPct) <= 0))
-        { setError(`Strategy ${n}: Sell on High Margin threshold must be greater than 0`); return }
-      if (s.buyLowEnabled && (!s.buyLowDeviationPct.trim() || parseFloat(s.buyLowDeviationPct) <= 0))
-        { setError(`Strategy ${n}: Buy on Low Margin threshold must be greater than 0`); return }
-    }
-
     setRunning(true)
     try {
       const res = await fetch('/api/rebalance-strategy/run', {
@@ -274,7 +275,7 @@ export default function RebalanceStrategyPage() {
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
           <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
           {strategies.map((s, i) => (
-            <RebalanceStrategyBlock key={i} idx={i} value={s} onChange={updateStrategy(i)} />
+            <RebalanceStrategyBlock key={i} idx={i} value={s} onChange={updateStrategy(i)} sliderMax={rebalanceSliderMax} />
           ))}
         </div>
 

@@ -216,6 +216,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     cashflowScaling            = runCatching {
         CashflowScaling.valueOf(obj["cashflowScaling"]?.jsonPrimitive?.content ?: "SCALED_BY_TARGET_MARGIN")
     }.getOrDefault(CashflowScaling.SCALED_BY_TARGET_MARGIN),
+    cashflowScalingMargin      = obj["cashflowScalingMargin"]?.jsonPrimitive?.doubleOrNull,
     deviationMode              = runCatching {
         DeviationMode.valueOf(obj["deviationMode"]?.jsonPrimitive?.content ?: "ABSOLUTE")
     }.getOrDefault(DeviationMode.ABSOLUTE),
@@ -324,7 +325,8 @@ private data class AppConfigDto(
     val isJpackageInstall: Boolean,
     val autoUpdate: Boolean,
     val privacyScalePct: String,
-    val privacyScaleEnabled: Boolean
+    val privacyScaleEnabled: Boolean,
+    val rebalanceSliderMax: Int
 )
 
 @Serializable
@@ -476,7 +478,8 @@ fun Application.configureRouting() {
                     isJpackageInstall = updateInfo.isJpackageInstall,
                     autoUpdate = AppConfig.autoUpdate,
                     privacyScalePct = AppConfig.get(AppConfig.KEY_PRIVACY_SCALE_PCT),
-                    privacyScaleEnabled = AppConfig.privacyScaleEnabled
+                    privacyScaleEnabled = AppConfig.privacyScaleEnabled,
+                    rebalanceSliderMax = AppConfig.rebalanceSliderMax
                 )
             )
 

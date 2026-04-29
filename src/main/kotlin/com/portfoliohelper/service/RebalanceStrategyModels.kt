@@ -143,6 +143,7 @@ data class RebalStrategyConfig(
     val rebalancePeriod: RebalancePeriodOverride,
     val cashflowImmediateInvestPct: Double,   // 0.0–1.0; default 1.0
     val cashflowScaling: CashflowScaling,
+    val cashflowScalingMargin: Double? = null,
     // Section 2: deviation mode applies to all sections
     val deviationMode: DeviationMode,
     // Sections 3 & 4: deviationPct IS the threshold; null = disabled
