@@ -58,6 +58,38 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
     )
 }
 
+private fun saveBacktestSettingsFirstPortfolio(json: JsonObject, settingsKey: String) = transaction {
+    fun get(k: String) = GlobalSettingsTable.selectAll()
+        .where { GlobalSettingsTable.key eq k }
+        .firstOrNull()?.get(GlobalSettingsTable.value)
+    fun upsert(k: String, v: String) = GlobalSettingsTable.upsert {
+        it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
+    }
+
+    val existingPortfolios = get("backtest.portfolios")
+        ?.let { runCatching { Json.parseToJsonElement(it).jsonArray }.getOrNull() }
+        ?: JsonArray(emptyList())
+    val firstPortfolio = json["portfolio"] ?: (json["portfolios"] as? JsonArray)?.firstOrNull()
+
+    if (firstPortfolio != null) {
+        upsert(
+            "backtest.portfolios",
+            buildJsonArray {
+                add(firstPortfolio)
+                existingPortfolios.drop(1).forEach { add(it) }
+            }.toString()
+        )
+    }
+    upsert(
+        settingsKey,
+        buildJsonObject {
+            json.forEach { (k, v) ->
+                if (k != "portfolio" && k != "portfolios") put(k, v)
+            }
+        }.toString()
+    )
+}
+
 private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNull { el ->
     val obj = el.jsonObject
     val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
@@ -553,6 +585,8 @@ fun Application.configureRouting() {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
+                if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
+                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings") }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }

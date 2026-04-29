@@ -8,6 +8,7 @@ import {
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
+import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
 import { useChartTheme } from '@/lib/chartTheme'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
@@ -57,6 +58,7 @@ export default function RebalanceStrategyPage() {
   const [selected, setSelected]   = useState<Set<string>>(new Set())
   const [logScale, setLogScale]   = useState(false)
 
+  const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const [chartWidth, setChartWidth] = useState(1000)
   const chartObsRef = useRef<ResizeObserver | null>(null)
   const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
@@ -68,6 +70,22 @@ export default function RebalanceStrategyPage() {
 
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
+
+  // Restore the shared backtest portfolio cache, but only load portfolio slot 0.
+  useEffect(() => {
+    fetch('/api/backtest/settings')
+      .then(r => r.json())
+      .then((req: any) => {
+        if (!req.portfolios) return
+        if (req.fromDate) setFromDate(req.fromDate)
+        if (req.toDate)   setToDate(req.toDate)
+        if (req.startingBalance != null) setStartingBalance(String(req.startingBalance))
+        if (req.cashflow?.amount != null) setCashflowAmount(String(req.cashflow.amount))
+        if (req.cashflow?.frequency) setCashflowFrequency(req.cashflow.frequency)
+        if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
+      })
+      .catch(() => {})
+  }, [])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -173,6 +191,7 @@ export default function RebalanceStrategyPage() {
     (s: RebalStrategyState) => setStrategies(prev => { const n = [...prev]; n[i] = s; return n }),
     [],
   )
+  const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
 
   const numPoints      = chartData?.labels.length ?? 2
   const pixelsPerPoint = chartWidth / Math.max(numPoints - 1, 1)
@@ -249,9 +268,11 @@ export default function RebalanceStrategyPage() {
           </div>
         </div>
 
+        <SavedPortfoliosBar ref={savedBarRef} />
+
         {/* Portfolio + Strategy blocks side by side */}
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
-          <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={() => {}} />
+          <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
           {strategies.map((s, i) => (
             <RebalanceStrategyBlock key={i} idx={i} value={s} onChange={updateStrategy(i)} />
           ))}
