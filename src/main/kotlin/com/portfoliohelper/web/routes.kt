@@ -202,7 +202,8 @@ private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = Mar
     deviationPct  = obj["deviationPct"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
         runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-    } ?: MarginRebalanceMode.PROPORTIONAL
+    } ?: MarginRebalanceMode.PROPORTIONAL,
+    targetMargin  = obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
 )
 
 private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = RebalStrategyConfig(

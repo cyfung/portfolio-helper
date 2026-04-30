@@ -204,7 +204,7 @@ object RebalanceStrategyService {
               ?.takeIf { it.deviationPct > 0 }
               ?.let { cfg ->
                 if (currentRatio > cfg.deviationPct) {
-                  val targetCashBalance = -account.equity() * comfortHighBound
+                  val targetCashBalance = -account.equity() * cfg.targetMargin
                   if (account.cashBalance() < targetCashBalance) {
                     val excess = targetCashBalance - account.cashBalance()
                     applyAllocDelta(tickers, account, targetWeights, -excess, cfg.allocStrategy)
@@ -216,7 +216,7 @@ object RebalanceStrategyService {
               ?.takeIf { it.deviationPct > 0 }
               ?.let { cfg ->
                 if (currentRatio < cfg.deviationPct) {
-                  val targetCashBalance = -account.equity() * comfortLowBound
+                  val targetCashBalance = -account.equity() * cfg.targetMargin
                   if (account.cashBalance() > targetCashBalance) {
                     val deficit = account.cashBalance() - targetCashBalance
                     applyAllocDelta(tickers, account, targetWeights, deficit, cfg.allocStrategy)
@@ -309,11 +309,11 @@ object RebalanceStrategyService {
         if (direction == Direction.BUY) {
           val target = targetWeight * equity * (1 + limit) - cur
           val capPortfolioValueAdjust = equity * (1 + limit) - grossValue
-          maxOf(0.0, target).coerceAtMost(capPortfolioValueAdjust)
+          maxOf(0.0, target.coerceAtMost(capPortfolioValueAdjust))
         } else {
           val target = cur - targetWeight * equity * (1 + limit)
           val capPortfolioValueAdjust = grossValue - equity * (1 + limit)
-          maxOf(0.0, target).coerceAtMost(capPortfolioValueAdjust)
+          maxOf(0.0, target.coerceAtMost(capPortfolioValueAdjust))
         }
       }
     }

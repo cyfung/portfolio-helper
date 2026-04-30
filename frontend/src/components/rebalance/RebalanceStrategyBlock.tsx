@@ -54,6 +54,8 @@ function MarginPointSlider({
 }: { points: string[]; max: number; onChange: (points: string[]) => void }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<number | null>(null)
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null])
+  const endpointDivRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null, null])
   const [activeThumb, setActiveThumb] = useState<number | null>(null)
   const safePoints = normalizeMarginPoints(points, max)
   const [minPoint, maxPoint] = [safePoints[0], safePoints[4]]
@@ -106,6 +108,21 @@ function MarginPointSlider({
     }
   }, [handlePointerMove])
 
+  useEffect(() => {
+    const handlers: { el: HTMLDivElement; fn: (e: WheelEvent) => void }[] = []
+    for (let i = 0; i < 5; i++) {
+      const el = endpointDivRefs.current[i]
+      if (!el) continue
+      const fn = (e: WheelEvent) => {
+        e.preventDefault()
+        updatePoint(i, safePoints[i] + (e.deltaY < 0 ? 1 : -1))
+      }
+      el.addEventListener('wheel', fn, { passive: false })
+      handlers.push({ el, fn })
+    }
+    return () => { handlers.forEach(({ el, fn }) => el.removeEventListener('wheel', fn)) }
+  }, [safePoints])
+
   function startDrag(i: number, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault()
     draggingRef.current = i
@@ -117,8 +134,33 @@ function MarginPointSlider({
     return `${((value - minPoint) / span) * 100}%`
   }
 
+  function renderFlanked(i: number) {
+    const p = safePoints[i]
+    return (
+      <div key={i} className="margin-point-endpoint" ref={el => { endpointDivRefs.current[i] = el }}>
+        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => updatePoint(i, p - 1)}>−</button>
+        <input
+          className="margin-point-number-input"
+          ref={el => { inputRefs.current[i] = el }}
+          type="number"
+          min="0"
+          max={max}
+          step="1"
+          value={p}
+          aria-label={`Margin point ${i + 1} value`}
+          onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
+        />
+        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => updatePoint(i, p + 1)}>+</button>
+      </div>
+    )
+  }
+
   return (
     <div className="margin-point-slider">
+      <div className="margin-point-endpoints-row">
+        {renderFlanked(0)}
+        {renderFlanked(4)}
+      </div>
       <div className="margin-point-range-stack" ref={trackRef}>
         <div className="margin-point-track" />
         <div
@@ -137,19 +179,7 @@ function MarginPointSlider({
         ))}
       </div>
       <div className="margin-point-values">
-        {safePoints.map((p, i) => (
-          <input
-            className="margin-point-number-input"
-            key={i}
-            type="number"
-            min="0"
-            max={max}
-            step="1"
-            value={p}
-            aria-label={`Margin point ${i + 1} value`}
-            onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
-          />
-        ))}
+        {[1, 2, 3].map(i => renderFlanked(i))}
       </div>
     </div>
   )
@@ -173,34 +203,31 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
         />
       </div>
 
-      <details open>
-        <summary className="strategy-section-title">General</summary>
-        <div className="strategy-section-body">
-          <div className="strategy-row">
-            <label>Margin Points %</label>
-            <MarginPointSlider
-              points={marginPoints}
-              max={sliderMax}
-              onChange={points => set({ marginPoints: points, marginRatio: points[2] })}
-            />
-          </div>
-          <div className="strategy-row">
-            <label>Spread %</label>
-            <input className="no-spinner" type="number" min="0" step="0.1" value={s.marginSpread}
-              onChange={e => set({ marginSpread: e.target.value })} style={{ width: '5rem' }} />
-          </div>
-          <div className="strategy-row">
-            <label>Rebalance Period</label>
-            <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
-              {REBALANCE_PERIOD_OVERRIDE_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
+      <div className="strategy-section-body">
+        <div className="strategy-row">
+          <label>Margin Points %</label>
+          <MarginPointSlider
+            points={marginPoints}
+            max={sliderMax}
+            onChange={points => set({ marginPoints: points, marginRatio: points[2] })}
+          />
         </div>
-      </details>
+        <div className="strategy-row">
+          <label>Spread %</label>
+          <input className="no-spinner" type="number" min="0" step="0.1" value={s.marginSpread}
+            onChange={e => set({ marginSpread: e.target.value })} style={{ width: '5rem' }} />
+        </div>
+        <div className="strategy-row">
+          <label>Rebalance Period</label>
+          <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
+            {REBALANCE_PERIOD_OVERRIDE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-      <details open>
+      <details open style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
         <summary className="strategy-section-title">Cashflow</summary>
         <div className="strategy-section-body">
           <div className="strategy-row">
@@ -220,7 +247,7 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
         </div>
       </details>
 
-      <details open={s.buyLowEnabled}>
+      <details open={s.buyLowEnabled} style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
         <summary className="strategy-section-title">
           Buy on Low Margin
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
@@ -240,11 +267,20 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
                 ))}
               </select>
             </div>
+            <div className="strategy-row">
+              <label>Restore To</label>
+              <select value={s.buyLowRestorePointIndex}
+                onChange={e => set({ buyLowRestorePointIndex: e.target.value })}>
+                {marginPoints.map((_, i) => (
+                  <option key={i} value={String(i)}>{pointLabel(marginPoints, i)}</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </details>
 
-      <details open={s.sellHighEnabled}>
+      <details open={s.sellHighEnabled} style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
         <summary className="strategy-section-title">
           Sell on High Margin
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
@@ -264,22 +300,35 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
                 ))}
               </select>
             </div>
+            <div className="strategy-row">
+              <label>Restore To</label>
+              <select value={s.sellHighRestorePointIndex}
+                onChange={e => set({ sellHighRestorePointIndex: e.target.value })}>
+                {marginPoints.map((_, i) => (
+                  <option key={i} value={String(i)}>{pointLabel(marginPoints, i)}</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </details>
 
-      <DipSurgeSection
-        direction="buy"
-        value={s.buyTheDip}
-        onChange={(v: DipSurgeState | null) => set({ buyTheDip: v })}
-        marginPoints={marginPoints}
-      />
-      <DipSurgeSection
-        direction="sell"
-        value={s.sellOnSurge}
-        onChange={(v: DipSurgeState | null) => set({ sellOnSurge: v })}
-        marginPoints={marginPoints}
-      />
+      <div style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+        <DipSurgeSection
+          direction="buy"
+          value={s.buyTheDip}
+          onChange={(v: DipSurgeState | null) => set({ buyTheDip: v })}
+          marginPoints={marginPoints}
+        />
+      </div>
+      <div style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+        <DipSurgeSection
+          direction="sell"
+          value={s.sellOnSurge}
+          onChange={(v: DipSurgeState | null) => set({ sellOnSurge: v })}
+          marginPoints={marginPoints}
+        />
+      </div>
     </div>
   )
 }

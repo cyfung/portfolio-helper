@@ -88,6 +88,7 @@ sealed class ExecutionMethod {
 data class MarginTriggerAction(
     val deviationPct: Double,
     val allocStrategy: MarginRebalanceMode,
+    val targetMargin: Double,
 )
 
 data class DipSurgeConfig(

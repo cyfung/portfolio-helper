@@ -4050,6 +4050,12 @@ a.loan-calc-link:hover {
     gap: 0.55rem;
 }
 
+.margin-point-endpoints-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .margin-point-range-stack {
     position: relative;
     height: 1.5rem;
@@ -4102,7 +4108,7 @@ a.loan-calc-link:hover {
 
 .margin-point-values {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.3rem;
 }
 
@@ -4129,6 +4135,59 @@ a.loan-calc-link:hover {
 .margin-point-number-input:focus {
     outline: none;
     border-color: var(--color-accent-primary);
+}
+
+.margin-point-endpoint {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.margin-point-endpoint .margin-point-number-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    border-radius: 0;
+    color: var(--color-accent-primary);
+    font-weight: 600;
+}
+
+.margin-point-step {
+    flex-shrink: 0;
+    width: 1.4rem;
+    height: 1.6rem;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+
+.margin-point-endpoint .margin-point-step:first-child {
+    border-right: 1px solid var(--color-border-medium);
+}
+
+.margin-point-endpoint .margin-point-step:last-child {
+    border-left: 1px solid var(--color-border-medium);
+}
+
+.margin-point-step:hover {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+}
+
+.margin-point-step:active {
+    background: var(--color-accent-primary);
+    color: #fff;
 }
 
 input.no-spinner::-webkit-inner-spin-button,

@@ -36,13 +36,11 @@ export interface RebalStrategyState {
   cashflowScalingPointIndex: string
   deviationMode: string                // 'ABSOLUTE' | 'RELATIVE'
   sellHighEnabled: boolean
-  sellHighDeviationPct: string
-  sellHighPointIndex: string
   sellHighAllocStrategy: string
+  sellHighRestorePointIndex: string    // index into marginPoints[] for restore target; default '2'
   buyLowEnabled: boolean
-  buyLowDeviationPct: string
-  buyLowPointIndex: string
   buyLowAllocStrategy: string
+  buyLowRestorePointIndex: string      // index into marginPoints[] for restore target; default '2'
   buyTheDip: DipSurgeState | null
   sellOnSurge: DipSurgeState | null
   comfortZoneLow: string
@@ -107,13 +105,11 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     cashflowScalingPointIndex: '3',
     deviationMode: 'ABSOLUTE',
     sellHighEnabled: false,
-    sellHighDeviationPct: '',
-    sellHighPointIndex: '2',
     sellHighAllocStrategy: 'PROPORTIONAL',
+    sellHighRestorePointIndex: '2',
     buyLowEnabled: false,
-    buyLowDeviationPct: '',
-    buyLowPointIndex: '2',
     buyLowAllocStrategy: 'PROPORTIONAL',
+    buyLowRestorePointIndex: '2',
     buyTheDip: null,
     sellOnSurge: null,
     comfortZoneLow: '0',
@@ -185,10 +181,10 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
     cashflowScalingMargin,
     deviationMode: 'ABSOLUTE',
     sellOnHighMargin: s.sellHighEnabled
-      ? { deviationPct: high / 100, allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL' }
+      ? { deviationPct: high / 100, allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL', targetMargin: pointPct(s.sellHighRestorePointIndex) }
       : null,
     buyOnLowMargin: s.buyLowEnabled
-      ? { deviationPct: low / 100, allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL' }
+      ? { deviationPct: low / 100, allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL', targetMargin: pointPct(s.buyLowRestorePointIndex) }
       : null,
     buyTheDip: s.buyTheDip ? serializeDipSurge(s.buyTheDip, points) : null,
     sellOnSurge: s.sellOnSurge ? serializeDipSurge(s.sellOnSurge, points) : null,
