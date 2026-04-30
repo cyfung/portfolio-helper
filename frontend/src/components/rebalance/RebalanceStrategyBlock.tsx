@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   RebalStrategyState,
   DipSurgeState,
@@ -15,9 +16,33 @@ interface Props {
 
 const DEFAULT_POINTS = ['40', '45', '50', '55', '60']
 
-function normalizePointIndex(v: string | undefined) {
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v))
+}
+
+function parsePoint(v: string | undefined, fallback: number) {
   const n = parseInt(v ?? '', 10)
-  return Number.isFinite(n) && n >= 0 && n < 5 ? String(n) : '2'
+  return Number.isFinite(n) ? n : fallback
+}
+
+function normalizeMarginPoints(points: string[] | undefined, max: number) {
+  const sliderMax = Math.max(4, Math.floor(max))
+  const values = DEFAULT_POINTS.map((def, i) => clamp(parsePoint(points?.[i], parseInt(def, 10)), 0, sliderMax))
+
+  values[0] = clamp(values[0], 0, sliderMax - 4)
+  values[1] = clamp(values[1], values[0] + 1, sliderMax - 3)
+  values[2] = clamp(values[2], values[1] + 1, sliderMax - 2)
+  values[3] = clamp(values[3], values[2] + 1, sliderMax - 1)
+  values[4] = clamp(values[4], values[3] + 1, sliderMax)
+
+  for (let i = 3; i >= 0; i -= 1) {
+    values[i] = Math.min(values[i], values[i + 1] - 1)
+  }
+  for (let i = 1; i < values.length; i += 1) {
+    values[i] = Math.max(values[i], values[i - 1] + 1)
+  }
+
+  return values
 }
 
 function pointLabel(points: string[], i: number) {
@@ -27,33 +52,94 @@ function pointLabel(points: string[], i: number) {
 function MarginPointSlider({
   points, max, onChange,
 }: { points: string[]; max: number; onChange: (points: string[]) => void }) {
-  const safePoints = DEFAULT_POINTS.map((def, i) => points?.[i] ?? def)
+  const trackRef = useRef<HTMLDivElement>(null)
+  const draggingRef = useRef<number | null>(null)
+  const [activeThumb, setActiveThumb] = useState<number | null>(null)
+  const safePoints = normalizeMarginPoints(points, max)
+  const [minPoint, maxPoint] = [safePoints[0], safePoints[4]]
+  const span = Math.max(maxPoint - minPoint, 1)
 
-  function updatePoint(i: number, value: string) {
+  function emit(values: number[]) {
+    onChange(values.map(String))
+  }
+
+  function updatePoint(i: number, value: number) {
     const next = [...safePoints]
-    next[i] = value
-    onChange(next)
+
+    if (i === 0) {
+      next[0] = clamp(value, 0, next[1] - 1)
+    } else if (i === 4) {
+      next[4] = clamp(value, next[3] + 1, Math.max(4, Math.floor(max)))
+    } else {
+      next[i] = clamp(value, next[i - 1] + 1, next[i + 1] - 1)
+    }
+
+    emit(next)
+  }
+
+  const valueFromClientX = useCallback((clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect) return minPoint
+    const pct = clamp((clientX - rect.left) / rect.width, 0, 1)
+    return Math.round(minPoint + pct * span)
+  }, [minPoint, span])
+
+  const handlePointerMove = useCallback((event: PointerEvent) => {
+    const i = draggingRef.current
+    if (i == null) return
+    updatePoint(i, valueFromClientX(event.clientX))
+  }, [safePoints, valueFromClientX])
+
+  useEffect(() => {
+    const handlePointerUp = () => {
+      draggingRef.current = null
+      setActiveThumb(null)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+    }
+  }, [handlePointerMove])
+
+  function startDrag(i: number, event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    draggingRef.current = i
+    setActiveThumb(i)
+    updatePoint(i, valueFromClientX(event.clientX))
+  }
+
+  function pctFromValue(value: number) {
+    return `${((value - minPoint) / span) * 100}%`
   }
 
   return (
     <div className="margin-point-slider">
-      <div className="margin-point-range-stack">
-        {safePoints.map((p, i) => (
-          <input
+      <div className="margin-point-range-stack" ref={trackRef}>
+        <div className="margin-point-track" />
+        <div
+          className="margin-point-track-active"
+          style={{ left: pctFromValue(safePoints[1]), right: `${100 - parseFloat(pctFromValue(safePoints[3]))}%` }}
+        />
+        {[1, 2, 3].map(i => (
+          <button
             key={i}
-            type="range"
-            min="0"
-            max={max}
-            step="1"
-            value={p}
+            type="button"
+            className={`margin-point-thumb${activeThumb === i ? ' active' : ''}`}
+            style={{ left: pctFromValue(safePoints[i]) }}
             aria-label={`Margin point ${i + 1}`}
-            onChange={e => updatePoint(i, e.target.value)}
+            onPointerDown={e => startDrag(i, e)}
           />
         ))}
       </div>
       <div className="margin-point-values">
         {safePoints.map((p, i) => (
           <input
+            className="margin-point-number-input"
             key={i}
             type="number"
             min="0"
@@ -61,7 +147,7 @@ function MarginPointSlider({
             step="1"
             value={p}
             aria-label={`Margin point ${i + 1} value`}
-            onChange={e => updatePoint(i, e.target.value)}
+            onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
           />
         ))}
       </div>
@@ -88,7 +174,7 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
       </div>
 
       <details open>
-        <summary className="strategy-section-title">Basic Settings</summary>
+        <summary className="strategy-section-title">General</summary>
         <div className="strategy-section-body">
           <div className="strategy-row">
             <label>Margin Points %</label>
@@ -100,7 +186,7 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
           </div>
           <div className="strategy-row">
             <label>Spread %</label>
-            <input type="number" min="0" step="0.1" value={s.marginSpread}
+            <input className="no-spinner" type="number" min="0" step="0.1" value={s.marginSpread}
               onChange={e => set({ marginSpread: e.target.value })} style={{ width: '5rem' }} />
           </div>
           <div className="strategy-row">
@@ -111,13 +197,19 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
               ))}
             </select>
           </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary className="strategy-section-title">Cashflow</summary>
+        <div className="strategy-section-body">
           <div className="strategy-row">
             <label>Cashflow Immediate Invest %</label>
-            <input type="number" min="0" max="100" step="5" value={s.cashflowImmediateInvestPct}
+            <input className="no-spinner" type="number" min="0" max="100" step="5" value={s.cashflowImmediateInvestPct}
               onChange={e => set({ cashflowImmediateInvestPct: e.target.value })} style={{ width: '5rem' }} />
           </div>
           <div className="strategy-row">
-            <label>Scaling</label>
+            <label>Cashflow Scaling</label>
             <select value={cashflowPointIndex} onChange={e => set({ cashflowScalingPointIndex: e.target.value })}>
               <option value="0">0%</option>
               {marginPoints.map((_, i) => (
@@ -139,12 +231,6 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
         </summary>
         {s.buyLowEnabled && (
           <div className="strategy-section-body">
-            <div className="strategy-row">
-              <label>Reference Point</label>
-              <select value={normalizePointIndex(s.buyLowPointIndex)} onChange={e => set({ buyLowPointIndex: e.target.value })}>
-                {marginPoints.map((_, i) => <option key={i} value={i}>{pointLabel(marginPoints, i)}</option>)}
-              </select>
-            </div>
             <div className="strategy-row">
               <label>Alloc Strategy</label>
               <select value={s.buyLowAllocStrategy}
@@ -169,12 +255,6 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
         </summary>
         {s.sellHighEnabled && (
           <div className="strategy-section-body">
-            <div className="strategy-row">
-              <label>Reference Point</label>
-              <select value={normalizePointIndex(s.sellHighPointIndex)} onChange={e => set({ sellHighPointIndex: e.target.value })}>
-                {marginPoints.map((_, i) => <option key={i} value={i}>{pointLabel(marginPoints, i)}</option>)}
-              </select>
-            </div>
             <div className="strategy-row">
               <label>Alloc Strategy</label>
               <select value={s.sellHighAllocStrategy}

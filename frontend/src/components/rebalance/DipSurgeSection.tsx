@@ -95,7 +95,7 @@ export default function DipSurgeSection({ direction, value, onChange, marginPoin
 
           {/* Limit */}
           <div className="strategy-row">
-            <label>{direction === 'buy' ? 'Max margin over target (%)' : 'Max margin under target (%)'}</label>
+            <label>{direction === 'buy' ? 'Max Margin (%)' : 'Min Margin (%)'}</label>
             <select
               value={value.limitPointIndex ?? '2'}
               onChange={e => update({ limitPointIndex: e.target.value, limit: marginPoints[parseInt(e.target.value, 10)] ?? value.limit })}

@@ -107,8 +107,8 @@ object RebalanceStrategyService {
         val effectiveRebalance =
             strategy.rebalancePeriod.toRebalanceStrategy(portfolio.rebalanceStrategy)
         val marginTarget = strategy.marginRatio
-        val comfortLowBound  = computeThreshold(marginTarget, strategy.comfortZoneLow,  strategy.deviationMode, high = false)
-        val comfortHighBound = computeThreshold(marginTarget, strategy.comfortZoneHigh, strategy.deviationMode, high = true)
+        val comfortLowBound = strategy.comfortZoneLow
+        val comfortHighBound = strategy.comfortZoneHigh
 
         val startEquity = startingBalance
         val grossStockValue = startEquity * (1 + marginTarget)
@@ -172,9 +172,7 @@ object RebalanceStrategyService {
                             targetWeights,
                             cashBalance,
                             direction,
-                            marginTarget,
-                            res.limit,
-                            strategy.deviationMode
+                            res.limit
                         )
                     }
                 ) { amount ->
@@ -229,7 +227,7 @@ object RebalanceStrategyService {
                     val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
 
                     strategy.sellOnHighMargin?.takeIf { it.deviationPct > 0 }?.let { cfg ->
-                        val threshold = computeThreshold(marginTarget, cfg.deviationPct, strategy.deviationMode, high = true)
+                        val threshold = cfg.deviationPct
                         if (currentRatio > threshold) {
                             val targetCashBalance = -equity * comfortHighBound
                             if (cashBalance < targetCashBalance) {
@@ -241,7 +239,7 @@ object RebalanceStrategyService {
                     }
 
                     strategy.buyOnLowMargin?.takeIf { it.deviationPct > 0 }?.let { cfg ->
-                        val threshold = computeThreshold(marginTarget, cfg.deviationPct, strategy.deviationMode, high = false)
+                        val threshold = cfg.deviationPct
                         if (currentRatio < threshold) {
                             val targetCashBalance = -equity * comfortLowBound
                             if (cashBalance > targetCashBalance) {
@@ -304,9 +302,7 @@ object RebalanceStrategyService {
         targetWeights: Map<String, Double>,
         cashBalance: Double,
         direction: Direction,
-        marginTarget: Double,
-        limit: Double,
-        deviationMode: DeviationMode
+        limit: Double
     ): Double {
         val grossValue = holdings.values.sum()
         val equity = grossValue + cashBalance
@@ -316,11 +312,9 @@ object RebalanceStrategyService {
             is DipSurgeKey.WholePortfolio -> {
                 val currentRatio = (-cashBalance).coerceAtLeast(0.0) / equity
                 if (direction == Direction.BUY) {
-                    val capMargin = computeThreshold(marginTarget, limit, deviationMode, high = true)
-                    max(0.0, equity * (capMargin - currentRatio))
+                    max(0.0, equity * (limit - currentRatio))
                 } else {
-                    val floorMargin = computeThreshold(marginTarget, limit, deviationMode, high = false)
-                    max(0.0, equity * (currentRatio - floorMargin))
+                    max(0.0, equity * (currentRatio - limit))
                 }
             }
 
@@ -328,14 +322,12 @@ object RebalanceStrategyService {
                 val cur = holdings[key.ticker] ?: 0.0
                 val targetWeight = targetWeights[key.ticker] ?: 0.0
                 if (direction == Direction.BUY) {
-                    val capMargin = computeThreshold(marginTarget, limit, deviationMode, high = true)
-                    val target = targetWeight * equity * (1 + capMargin) - cur
-                    val capPortfolioValueAdjust = equity * (1+ capMargin) - grossValue
+                    val target = targetWeight * equity * (1 + limit) - cur
+                    val capPortfolioValueAdjust = equity * (1 + limit) - grossValue
                     maxOf(0.0, target).coerceAtMost(capPortfolioValueAdjust)
                 } else {
-                    val floorMargin = computeThreshold(marginTarget, limit, deviationMode, high = false)
-                    val target = cur - targetWeight * equity * (1 + floorMargin)
-                    val capPortfolioValueAdjust = grossValue - equity * (1 + floorMargin)
+                    val target = cur - targetWeight * equity * (1 + limit)
+                    val capPortfolioValueAdjust = grossValue - equity * (1 + limit)
                     maxOf(0.0, target).coerceAtMost(capPortfolioValueAdjust)
                 }
             }
@@ -404,10 +396,6 @@ object RebalanceStrategyService {
     }
 
     // ── Utility ───────────────────────────────────────────────────────────────
-
-    private fun computeThreshold(target: Double, pct: Double, mode: DeviationMode, high: Boolean): Double =
-        if (mode == DeviationMode.ABSOLUTE) if (high) target + pct else target - pct
-        else if (high) target * (1 + pct) else target * (1 - pct)
 
     private fun isCashflowDate(frequency: CashflowFrequency, date: LocalDate): Boolean =
         when (frequency) {

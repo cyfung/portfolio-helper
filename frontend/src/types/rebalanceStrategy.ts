@@ -166,14 +166,12 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
   const pct = (v: string, def = 0) => (parseFloat(v) || def) / 100
   const points = [...Array(5)].map((_, i) => parseFloat(s.marginPoints?.[i] ?? '') || [40, 45, 50, 55, 60][i])
   const margin = points[2]
-  const low = Math.min(...points)
-  const high = Math.max(...points)
+  const low = points[0]
+  const high = points[4]
   const pointPct = (idx: string) => {
     const n = parseInt(idx, 10)
     return (Number.isFinite(n) && points[n] != null ? points[n] : margin) / 100
   }
-  const buyDev = Math.max(0, margin - (pointPct(s.buyLowPointIndex) * 100))
-  const sellDev = Math.max(0, (pointPct(s.sellHighPointIndex) * 100) - margin)
   const cashflowIdx = parseInt(s.cashflowScalingPointIndex, 10)
   const cashflowScalingMargin = cashflowIdx <= 0 ? 0 : pointPct(String(cashflowIdx - 1))
 
@@ -187,14 +185,14 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
     cashflowScalingMargin,
     deviationMode: 'ABSOLUTE',
     sellOnHighMargin: s.sellHighEnabled
-      ? { deviationPct: sellDev / 100, allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL' }
+      ? { deviationPct: high / 100, allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL' }
       : null,
     buyOnLowMargin: s.buyLowEnabled
-      ? { deviationPct: buyDev / 100, allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL' }
+      ? { deviationPct: low / 100, allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL' }
       : null,
     buyTheDip: s.buyTheDip ? serializeDipSurge(s.buyTheDip, points) : null,
     sellOnSurge: s.sellOnSurge ? serializeDipSurge(s.sellOnSurge, points) : null,
-    comfortZoneLow:  Math.max(0, margin - low) / 100,
-    comfortZoneHigh: Math.max(0, high - margin) / 100,
+    comfortZoneLow:  low / 100,
+    comfortZoneHigh: high / 100,
   }
 }
