@@ -1,7 +1,5 @@
 package com.portfoliohelper.service
 
-import java.time.LocalDate
-
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
 enum class DeviationMode { ABSOLUTE, RELATIVE }
@@ -24,11 +22,11 @@ sealed class DipSurgeKey {
 // ── TriggerChecker interface ──────────────────────────────────────────────────
 
 interface TriggerChecker {
-    /** Advance internal cached state with today's data. Called every day for all keys. */
-    fun advance(dayIndex: Int)
+    /** Called every day with today's value (stock price for Stock keys, portfolio gross value for WholePortfolio). */
+    fun advance(value: Double)
 
-    /** Evaluate trigger against cached state. Called only for eligible keys. */
-    fun check(dayIndex: Int, direction: Direction): Boolean
+    /** Evaluate trigger against accumulated state. Called after advance on the same day. */
+    fun check(direction: Direction): Boolean
 }
 
 // ── DipSurgeExecutor interface ────────────────────────────────────────────────
@@ -39,7 +37,6 @@ interface DipSurgeExecutor {
      * [currentValue] ticker price for Stock keys, total holdings value for WholePortfolio.
      */
     fun advance(
-        dayIndex: Int,
         triggered: Boolean,
         currentValue: Double,
         eligible: () -> Double,
@@ -50,52 +47,19 @@ interface DipSurgeExecutor {
 // ── Sealed trigger types ──────────────────────────────────────────────────────
 
 sealed interface PriceMoveTrigger {
-    fun buildChecker(
-        key: DipSurgeKey,
-        dates: List<LocalDate>,
-        rawPrices: Map<String, Map<LocalDate, Double>>
-    ): TriggerChecker
+    fun buildChecker(key: DipSurgeKey): TriggerChecker
 
     data class VsNDaysAgo(val nDays: Int, val pct: Double) : PriceMoveTrigger {
-        override fun buildChecker(
-            key: DipSurgeKey,
-            dates: List<LocalDate>,
-            rawPrices: Map<String, Map<LocalDate, Double>>
-        ): TriggerChecker =
-            VsNDaysAgoChecker(
-                nDays,
-                pct,
-                (key as? DipSurgeKey.Stock)?.let { rawPrices[it.ticker] },
-                dates
-            )
+        override fun buildChecker(key: DipSurgeKey): TriggerChecker = VsNDaysAgoChecker(nDays, pct)
     }
 
     data class VsRunningAvg(val nDays: Int, val pct: Double) : PriceMoveTrigger {
-        override fun buildChecker(
-            key: DipSurgeKey,
-            dates: List<LocalDate>,
-            rawPrices: Map<String, Map<LocalDate, Double>>
-        ): TriggerChecker =
-            VsRunningAvgChecker(
-                nDays,
-                pct,
-                (key as? DipSurgeKey.Stock)?.let { rawPrices[it.ticker] },
-                dates
-            )
+        override fun buildChecker(key: DipSurgeKey): TriggerChecker = VsRunningAvgChecker(nDays, pct)
     }
 
     /** Drawdown from peak (buy the dip) or surge from trough (sell on surge) */
     data class PeakDeviation(val pct: Double) : PriceMoveTrigger {
-        override fun buildChecker(
-            key: DipSurgeKey,
-            dates: List<LocalDate>,
-            rawPrices: Map<String, Map<LocalDate, Double>>
-        ): TriggerChecker =
-            PeakDeviationChecker(
-                pct,
-                (key as? DipSurgeKey.Stock)?.let { rawPrices[it.ticker] },
-                dates
-            )
+        override fun buildChecker(key: DipSurgeKey): TriggerChecker = PeakDeviationChecker(pct)
     }
 }
 
@@ -169,16 +133,19 @@ data class RebalanceStrategyRequest(
 
 private class VsNDaysAgoChecker(
     private val nDays: Int,
-    private val pct: Double,
-    private val history: Map<LocalDate, Double>?,
-    private val dates: List<LocalDate>
+    private val pct: Double
 ) : TriggerChecker {
-    override fun advance(dayIndex: Int) = Unit
+    private val window = ArrayDeque<Double>()
 
-    override fun check(dayIndex: Int, direction: Direction): Boolean {
-        if (history == null || dayIndex < nDays) return false
-        val cur = history[dates[dayIndex]] ?: return false
-        val past = history[dates[dayIndex - nDays]] ?: return false
+    override fun advance(value: Double) {
+        window.addLast(value)
+        if (window.size > nDays + 1) window.removeFirst()
+    }
+
+    override fun check(direction: Direction): Boolean {
+        if (window.size < nDays + 1) return false
+        val past = window.first()
+        val cur = window.last()
         if (past <= 0) return false
         val move = (cur - past) / past
         return if (direction == Direction.BUY) move < -pct else move > pct
@@ -187,53 +154,48 @@ private class VsNDaysAgoChecker(
 
 private class VsRunningAvgChecker(
     private val nDays: Int,
-    private val pct: Double,
-    private val history: Map<LocalDate, Double>?,
-    private val dates: List<LocalDate>
+    private val pct: Double
 ) : TriggerChecker {
     private val window = ArrayDeque<Double>()
+    private var current = Double.NaN
 
-    // Adds the previous day's price so the window at check time equals [i-nDays..i-1].
-    override fun advance(dayIndex: Int) {
-        if (history == null || dayIndex == 0) return
-        val price = history[dates[dayIndex - 1]] ?: return
-        window.addLast(price)
-        if (window.size > nDays) window.removeFirst()
+    // Pushes the previous day's value into the window so the average at check time equals [i-nDays..i-1].
+    override fun advance(value: Double) {
+        if (!current.isNaN()) {
+            window.addLast(current)
+            if (window.size > nDays) window.removeFirst()
+        }
+        current = value
     }
 
-    override fun check(dayIndex: Int, direction: Direction): Boolean {
-        if (history == null || window.isEmpty()) return false
-        val cur = history[dates[dayIndex]] ?: return false
+    override fun check(direction: Direction): Boolean {
+        if (window.isEmpty() || current.isNaN()) return false
         val avg = window.average()
         if (avg <= 0) return false
-        val move = (cur - avg) / avg
+        val move = (current - avg) / avg
         return if (direction == Direction.BUY) move < -pct else move > pct
     }
 }
 
 private class PeakDeviationChecker(
-    private val pct: Double,
-    private val history: Map<LocalDate, Double>?,
-    private val dates: List<LocalDate>
+    private val pct: Double
 ) : TriggerChecker {
     private var runningPeak = Double.MIN_VALUE
     private var runningTrough = Double.MAX_VALUE
+    private var current = Double.NaN
 
-    // Includes the current day in peak/trough tracking, matching original (0..i) semantics.
-    override fun advance(dayIndex: Int) {
-        if (history == null) return
-        val price = history[dates[dayIndex]] ?: return
-        if (price > runningPeak) runningPeak = price
-        if (price < runningTrough) runningTrough = price
+    override fun advance(value: Double) {
+        current = value
+        if (value > runningPeak) runningPeak = value
+        if (value < runningTrough) runningTrough = value
     }
 
-    override fun check(dayIndex: Int, direction: Direction): Boolean {
-        if (history == null) return false
-        val cur = history[dates[dayIndex]] ?: return false
+    override fun check(direction: Direction): Boolean {
+        if (current.isNaN()) return false
         return if (direction == Direction.BUY) {
-            runningPeak > 0 && (runningPeak - cur) / runningPeak > pct
+            runningPeak > 0 && (runningPeak - current) / runningPeak > pct
         } else {
-            runningTrough > 0 && (cur - runningTrough) / runningTrough > pct
+            runningTrough > 0 && (current - runningTrough) / runningTrough > pct
         }
     }
 }
@@ -242,7 +204,6 @@ private class PeakDeviationChecker(
 
 public class OnceExecutor : DipSurgeExecutor {
     override fun advance(
-        dayIndex: Int,
         triggered: Boolean,
         currentValue: Double,
         eligible: () -> Double,
@@ -256,7 +217,6 @@ class ConsecutiveExecutor(private val totalDays: Int) : DipSurgeExecutor {
     private var daysRemaining = 0
 
     override fun advance(
-        dayIndex: Int,
         triggered: Boolean,
         currentValue: Double,
         eligible: () -> Double,
@@ -279,7 +239,6 @@ class SteppedExecutor(
     private var portionsFired = 0
 
     override fun advance(
-        dayIndex: Int,
         triggered: Boolean,
         currentValue: Double,
         eligible: () -> Double,
@@ -299,5 +258,53 @@ class SteppedExecutor(
             execute(eligible() / (totalPortions - portionIdx))
             if (portionsFired >= totalPortions) portionsFired = 0
         }
+    }
+}
+
+// ── PaperTradingPortfolio ─────────────────────────────────────────────────────
+
+class PaperTradingPortfolio(
+    tickers: List<String>,
+    targetWeights: Map<String, Double>,
+    startEquity: Double,
+    marginRatio: Double
+) {
+    private val _holdings: MutableMap<String, Double> =
+        tickers.associateWith { startEquity * (1.0 + marginRatio) * (targetWeights[it] ?: 0.0) }.toMutableMap()
+    private var _cashBalance: Double = -startEquity * marginRatio
+
+    fun grossStockValue(): Double = _holdings.values.sum()
+    fun cashBalance(): Double = _cashBalance
+    fun equity(): Double = grossStockValue() + _cashBalance
+    fun holding(ticker: String): Double = _holdings[ticker] ?: 0.0
+    fun currentMarginRatio(): Double {
+        val eq = equity()
+        return if (eq > 0) (-_cashBalance).coerceAtLeast(0.0) / eq else 0.0
+    }
+
+    fun applyDayReturns(returnRatios: Map<String, DoubleArray>, dayIndex: Int) {
+        for ((ticker, ratios) in returnRatios)
+            _holdings[ticker] = (_holdings[ticker] ?: 0.0) * ratios[dayIndex]
+    }
+
+    fun accrueMarginInterest(dailyRate: Double) {
+        if (_cashBalance < 0) _cashBalance *= (1.0 + dailyRate)
+    }
+
+    /** Buy [amount] of [ticker]: holdings increase, cash decreases. */
+    fun buy(ticker: String, amount: Double) {
+        _holdings[ticker] = (_holdings[ticker] ?: 0.0) + amount
+        _cashBalance -= amount
+    }
+
+    /** Sell [amount] of [ticker]: holdings decrease, cash increases. */
+    fun sell(ticker: String, amount: Double) {
+        _holdings[ticker] = (_holdings[ticker] ?: 0.0) - amount
+        _cashBalance += amount
+    }
+
+    /** Deposit cash only — no holdings change. */
+    fun deposit(amount: Double) {
+        _cashBalance += amount
     }
 }
