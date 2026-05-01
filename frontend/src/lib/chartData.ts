@@ -4,6 +4,7 @@ import { BacktestResults, BacktestCurve, PALETTE } from '@/types/backtest'
 import { getGroupStrokeWidths } from '@/lib/colorScheme'
 
 export interface RechartsDataset {
+  dataKey: string
   label: string
   color: string
   strokeDasharray?: string
@@ -25,7 +26,7 @@ export function buildCommonLabels(data: BacktestResults): string[] {
   return [...common].sort()
 }
 
-/** Convert datasets into Recharts row objects keyed by label. */
+/** Convert datasets into Recharts row objects keyed by stable series id. */
 export function buildRechartsData(
   data: BacktestResults,
   labels: string[],
@@ -43,12 +44,14 @@ export function buildRechartsData(
       if (selected.size > 0 && !selected.has(`${pi}-${ci}`)) return
       const pts = pointsSelector ? pointsSelector(curve) : curve.points
       if (!pts) return
-      const key = `${portfolio.label} \u2013 ${curve.label}`
+      const key = `p${pi}-c${ci}`
+      const label = `${portfolio.label} \u2013 ${curve.label}`
       const vals = valueFn(pts)
       const byDate = new Map(pts.map((p, i) => [p.date, vals[i]]))
       labels.forEach((d, i) => { rows[i][key] = byDate.get(d) ?? undefined })
       datasets.push({
-        label: key,
+        dataKey: key,
+        label,
         color: palette[ci % palette.length],
         strokeWidth: widths[ci] ?? 1.0,
       })

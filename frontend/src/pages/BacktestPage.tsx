@@ -374,7 +374,7 @@ export default function BacktestPage() {
           const rtr = rtrVals[ri - dateOffset]
           if (rtr != null) row[key] = +rtr.toFixed(6)
         }
-        const dataset = { label: key, color, strokeWidth: 2, ...(strokeDasharray ? { strokeDasharray } : {}) }
+        const dataset = { dataKey: key, label: key, color, strokeWidth: 2, ...(strokeDasharray ? { strokeDasharray } : {}) }
         ddData.datasets.push(dataset)
         rtrData.datasets.push({ ...dataset })
       }
@@ -837,7 +837,7 @@ export default function BacktestPage() {
 
                 {/* Backtest portfolio curves */}
                 {chartData.mainData.datasets.map(ds => (
-                  <Line key={ds.label} {...commonLineProps} yAxisId="main" dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
+                  <Line key={ds.dataKey} {...commonLineProps} yAxisId="main" dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                 ))}
 
                 {/* Real portfolio lines */}
@@ -938,7 +938,7 @@ export default function BacktestPage() {
                 {chartData.ddData.datasets
                   .filter(ds => { const k = REAL_LABEL_KEY[ds.label]; return !k || showLine(k) })
                   .map(ds => (
-                    <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
+                    <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
               </LineChart>
             </ResponsiveContainer>
@@ -966,7 +966,7 @@ export default function BacktestPage() {
                 {chartData.rtrData.datasets
                   .filter(ds => { const k = REAL_LABEL_KEY[ds.label]; return !k || showLine(k) })
                   .map(ds => (
-                    <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
+                    <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
               </LineChart>
             </ResponsiveContainer>
@@ -994,7 +994,7 @@ export default function BacktestPage() {
                     <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
                     <Legend content={renderLegend} />
                     {chartData.marginData.datasets.map(ds => (
-                      <Line key={ds.label} {...commonLineProps} dataKey={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
+                      <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                     ))}
                   </LineChart>
                 </ResponsiveContainer>

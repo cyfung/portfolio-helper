@@ -9,7 +9,7 @@ import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButto
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
-import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
+import RebalanceStrategyBlock, { type RebalanceStrategyBlockRef } from '@/components/rebalance/RebalanceStrategyBlock'
 import SavedStrategiesBar, { type SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { useChartTheme } from '@/lib/chartTheme'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
@@ -41,6 +41,27 @@ function LegendLine({ color, strokeWidth, strokeDasharray }: { color: string; st
   return <canvas ref={ref} width={28} height={10} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
 }
 
+function labelKey(label: string) {
+  return label.trim().toLocaleLowerCase()
+}
+
+function makeUniqueStrategyLabels(strategies: RebalStrategyState[], portfolioLabel: string) {
+  const taken = new Set<string>()
+  if (portfolioLabel.trim()) taken.add(labelKey(portfolioLabel))
+
+  return strategies.map((strategy, i) => {
+    const base = strategy.label.trim() || `Strategy ${i + 1}`
+    let label = base
+    let suffix = 2
+    while (taken.has(labelKey(label))) {
+      label = `${base} (${suffix})`
+      suffix += 1
+    }
+    taken.add(labelKey(label))
+    return label === strategy.label ? strategy : { ...strategy, label }
+  })
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function RebalanceStrategyPage() {
@@ -62,6 +83,7 @@ export default function RebalanceStrategyPage() {
 
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
+  const strategyBlockRefs = useRef<(RebalanceStrategyBlockRef | null)[]>([])
   const [chartWidth, setChartWidth] = useState(1000)
   const chartObsRef = useRef<ResizeObserver | null>(null)
   const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
@@ -106,6 +128,10 @@ export default function RebalanceStrategyPage() {
     if (portfolioApi.tickers.length === 0) {
       setError('Add at least one ticker with a positive weight to the portfolio.'); return
     }
+    const currentStrategies = strategies.map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+    strategyBlockRefs.current.forEach(ref => ref?.commit())
+    const runStrategies = makeUniqueStrategyLabels(currentStrategies, portfolioApi.label)
+    if (runStrategies.some((s, i) => s.label !== strategies[i]?.label)) setStrategies(runStrategies)
     setRunning(true)
     try {
       const res = await fetch('/api/rebalance-strategy/run', {
@@ -119,7 +145,7 @@ export default function RebalanceStrategyPage() {
           cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
             ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
             : null,
-          strategies: strategies.map(s => strategyStateToAPI(s, portfolio.rebalance)),
+          strategies: runStrategies.map(s => strategyStateToAPI(s, portfolio.rebalance)),
         }),
       })
       const data: BacktestResults = await res.json()
@@ -134,6 +160,8 @@ export default function RebalanceStrategyPage() {
   }
 
   async function handleExport() {
+    const currentStrategies = strategies.map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+    strategyBlockRefs.current.forEach(ref => ref?.commit())
     const code = await compressToCode({
       fromDate: fromDate || null,
       toDate: toDate || null,
@@ -143,7 +171,7 @@ export default function RebalanceStrategyPage() {
       cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
         ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
         : null,
-      strategies,
+      strategies: currentStrategies,
     })
     setImportCode(code)
     try { await navigator.clipboard.writeText(code) } catch (_) {}
@@ -281,7 +309,15 @@ export default function RebalanceStrategyPage() {
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
           <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
           {strategies.map((s, i) => (
-            <RebalanceStrategyBlock key={i} idx={i} value={s} onChange={strategyHandlers[i]} sliderMax={rebalanceSliderMax} onSavedRefresh={refreshSavedStrategies} />
+            <RebalanceStrategyBlock
+              key={i}
+              ref={el => { strategyBlockRefs.current[i] = el }}
+              idx={i}
+              value={s}
+              onChange={strategyHandlers[i]}
+              sliderMax={rebalanceSliderMax}
+              onSavedRefresh={refreshSavedStrategies}
+            />
           ))}
         </div>
 
@@ -360,7 +396,7 @@ export default function RebalanceStrategyPage() {
                 <Tooltip content={makeTooltip(v => '$' + v.toFixed(2))} />
                 <Legend content={renderLegend} />
                 {chartData.mainData.datasets.map(ds => (
-                  <Line key={ds.label} {...commonLineProps} dataKey={ds.label}
+                  <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                 ))}
                 <Brush dataKey="x" height={26} stroke={gridColor}
@@ -383,7 +419,7 @@ export default function RebalanceStrategyPage() {
                 <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
                 <Legend content={renderLegend} />
                 {chartData.ddData.datasets.map(ds => (
-                  <Line key={ds.label} {...commonLineProps} dataKey={ds.label}
+                  <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
               </LineChart>
@@ -404,7 +440,7 @@ export default function RebalanceStrategyPage() {
                 <Tooltip content={makeTooltip(v => v.toFixed(2) + 'x')} />
                 <Legend content={renderLegend} />
                 {chartData.rtrData.datasets.map(ds => (
-                  <Line key={ds.label} {...commonLineProps} dataKey={ds.label}
+                  <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
               </LineChart>
@@ -427,7 +463,7 @@ export default function RebalanceStrategyPage() {
                     <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
                     <Legend content={renderLegend} />
                     {chartData.marginData.datasets.map(ds => (
-                      <Line key={ds.label} {...commonLineProps} dataKey={ds.label}
+                      <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                         stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                     ))}
                   </LineChart>

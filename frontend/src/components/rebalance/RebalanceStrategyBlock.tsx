@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   RebalStrategyState,
   DipSurgeState,
@@ -15,6 +15,11 @@ interface Props {
   onChange: (s: RebalStrategyState) => void
   sliderMax?: number
   onSavedRefresh?: () => void
+}
+
+export interface RebalanceStrategyBlockRef {
+  getValue: () => RebalStrategyState
+  commit: () => void
 }
 
 const DEFAULT_POINTS = ['40', '45', '50', '55', '60']
@@ -56,11 +61,16 @@ function samePoints(a: string[], b: string[]) {
   return a.length === b.length && a.every((point, i) => point === b[i])
 }
 
+function keepSectionOpen(e: React.SyntheticEvent<HTMLElement>) {
+  e.preventDefault()
+}
+
 const MarginPointSlider = React.memo(function MarginPointSlider({
   points, max, onChange, onCommit,
 }: { points: string[]; max: number; onChange: (points: string[]) => void; onCommit?: () => void }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<number | null>(null)
+  const idleCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null])
   const endpointDivRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null, null])
   const [activeThumb, setActiveThumb] = useState<number | null>(null)
@@ -84,6 +94,11 @@ const MarginPointSlider = React.memo(function MarginPointSlider({
     }
 
     emit(next)
+  }
+
+  function scheduleIdleCommit() {
+    if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
+    idleCommitTimerRef.current = setTimeout(() => onCommit?.(), 180)
   }
 
   const valueFromClientX = useCallback((clientX: number) => {
@@ -124,12 +139,16 @@ const MarginPointSlider = React.memo(function MarginPointSlider({
       const fn = (e: WheelEvent) => {
         e.preventDefault()
         updatePoint(i, safePoints[i] + (e.deltaY < 0 ? 5 : -5))
+        scheduleIdleCommit()
       }
       el.addEventListener('wheel', fn, { passive: false })
       handlers.push({ el, fn })
     }
-    return () => { handlers.forEach(({ el, fn }) => el.removeEventListener('wheel', fn)) }
-  }, [safePoints])
+    return () => {
+      handlers.forEach(({ el, fn }) => el.removeEventListener('wheel', fn))
+      if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
+    }
+  }, [safePoints, onCommit])
 
   function startDrag(i: number, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -146,7 +165,7 @@ const MarginPointSlider = React.memo(function MarginPointSlider({
     const p = safePoints[i]
     return (
       <div key={i} className="margin-point-endpoint" ref={el => { endpointDivRefs.current[i] = el }}>
-        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { updatePoint(i, p - 1); onCommit?.() }}>−</button>
+        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { updatePoint(i, p - 1); scheduleIdleCommit() }}>−</button>
         <input
           className="margin-point-number-input"
           ref={el => { inputRefs.current[i] = el }}
@@ -159,7 +178,7 @@ const MarginPointSlider = React.memo(function MarginPointSlider({
           onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
           onBlur={onCommit}
         />
-        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { updatePoint(i, p + 1); onCommit?.() }}>+</button>
+        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { updatePoint(i, p + 1); scheduleIdleCommit() }}>+</button>
       </div>
     )
   }
@@ -194,18 +213,49 @@ const MarginPointSlider = React.memo(function MarginPointSlider({
   )
 })
 
-export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange, sliderMax = 150, onSavedRefresh }: Props) {
-  const s = value
-  const sRef = useRef(s)
-  sRef.current = s
-  const set = useCallback((patch: Partial<RebalStrategyState>) => onChange({ ...sRef.current, ...patch }), [onChange])
+const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBlockRef, Props>(function RebalanceStrategyBlock(
+  { idx, value, onChange, sliderMax = 150, onSavedRefresh },
+  ref,
+) {
+  const [local, setLocal] = useState<RebalStrategyState>(value)
+  const localRef = useRef(local)
+  const prevValueRef = useRef(value)
+  const s = local
+
+  const commit = useCallback((next = localRef.current) => {
+    prevValueRef.current = next
+    onChange(next)
+  }, [onChange])
+
+  const updateLocal = useCallback((next: RebalStrategyState, sync = false) => {
+    localRef.current = next
+    setLocal(next)
+    if (sync) commit(next)
+  }, [commit])
+
+  const set = useCallback((patch: Partial<RebalStrategyState>) => {
+    updateLocal({ ...localRef.current, ...patch })
+  }, [updateLocal])
+
+  useEffect(() => {
+    if (prevValueRef.current !== value) {
+      prevValueRef.current = value
+      localRef.current = value
+      setLocal(value)
+    }
+  }, [value])
+
+  useImperativeHandle(ref, () => ({
+    getValue: () => localRef.current,
+    commit: () => commit(localRef.current),
+  }), [commit])
+
   const valueMarginPoints = useMemo(
     () => DEFAULT_POINTS.map((def, i) => s.marginPoints?.[i] ?? def),
     [s.marginPoints],
   )
   const [draftMarginPoints, setDraftMarginPoints] = useState(valueMarginPoints)
   const draftMarginPointsRef = useRef(draftMarginPoints)
-  const marginCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!samePoints(valueMarginPoints, draftMarginPointsRef.current)) {
@@ -215,36 +265,28 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
   }, [valueMarginPoints])
 
   const commitMarginPoints = useCallback((points = draftMarginPointsRef.current) => {
-    if (marginCommitTimerRef.current) {
-      clearTimeout(marginCommitTimerRef.current)
-      marginCommitTimerRef.current = null
-    }
-    if (samePoints(points, valueMarginPoints)) return
-    onChange({ ...sRef.current, marginPoints: points, marginRatio: points[2] })
-  }, [onChange, valueMarginPoints])
-
-  useEffect(() => () => {
-    if (marginCommitTimerRef.current) clearTimeout(marginCommitTimerRef.current)
-  }, [])
+    commit({ ...localRef.current, marginPoints: points, marginRatio: points[2] })
+  }, [commit])
 
   const handleMarginChange = useCallback((points: string[]) => {
     draftMarginPointsRef.current = points
     setDraftMarginPoints(points)
-    if (marginCommitTimerRef.current) clearTimeout(marginCommitTimerRef.current)
-    marginCommitTimerRef.current = setTimeout(() => commitMarginPoints(points), 180)
-  }, [commitMarginPoints])
+    updateLocal({ ...localRef.current, marginPoints: points, marginRatio: points[2] })
+  }, [updateLocal])
   const marginPoints = draftMarginPoints
   const cashflowPointIndex = s.cashflowScalingPointIndex ?? '3'
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
   async function handleSave(overwrite: boolean) {
-    const name = s.label.trim(); if (!name) return
+    commit()
+    const current = localRef.current
+    const name = current.label.trim(); if (!name) return
     if (overwrite) await fetch(`/api/rebalance-strategy/savedStrategies?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
     const res = await fetch('/api/rebalance-strategy/savedStrategies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, config: strategyStateToSavedConfig(s) }),
+      body: JSON.stringify({ name, config: strategyStateToSavedConfig(current) }),
     })
     if (res.ok) { onSavedRefresh?.(); setSaveMsg('Saved!'); setTimeout(() => setSaveMsg(''), 1500) }
   }
@@ -259,7 +301,7 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
     e.preventDefault(); setDragOver(false)
     if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
       const { name, config } = JSON.parse(e.dataTransfer.getData('application/x-strategy-chip'))
-      onChange(savedConfigToStrategyState(config, name))
+      updateLocal(savedConfigToStrategyState(config, name))
     }
   }
 
@@ -277,6 +319,7 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
           placeholder={`Strategy ${idx + 1}`}
           value={s.label}
           onChange={e => set({ label: e.target.value })}
+          onBlur={() => commit()}
         />
         <button
           type="button"
@@ -309,7 +352,9 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
         <div className="strategy-row">
           <label>Spread %</label>
           <input className="no-spinner" type="number" min="0" step="0.1" value={s.marginSpread}
-            onChange={e => set({ marginSpread: e.target.value })} style={{ width: '5rem' }} />
+            onChange={e => set({ marginSpread: e.target.value })}
+            onBlur={() => commit()}
+            style={{ width: '5rem' }} />
         </div>
         <div className="strategy-row">
           <label>Rebalance Period</label>
@@ -322,12 +367,14 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
       </div>
 
       <details open style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
-        <summary className="strategy-section-title">Cashflow</summary>
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>Cashflow</summary>
         <div className="strategy-section-body">
           <div className="strategy-row">
             <label>Cashflow Immediate Invest %</label>
             <input className="no-spinner" type="number" min="0" max="100" step="5" value={s.cashflowImmediateInvestPct}
-              onChange={e => set({ cashflowImmediateInvestPct: e.target.value })} style={{ width: '5rem' }} />
+              onChange={e => set({ cashflowImmediateInvestPct: e.target.value })}
+              onBlur={() => commit()}
+              style={{ width: '5rem' }} />
           </div>
           <div className="strategy-row">
             <label>Cashflow Scaling</label>
@@ -342,7 +389,7 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
       </details>
 
       <details open={s.buyLowEnabled} style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
-        <summary className="strategy-section-title">
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>
           Buy on Low Margin
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={s.buyLowEnabled}
@@ -375,7 +422,7 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
       </details>
 
       <details open={s.sellHighEnabled} style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
-        <summary className="strategy-section-title">
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>
           Sell on High Margin
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={s.sellHighEnabled}
@@ -425,4 +472,6 @@ export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange
       </div>
     </div>
   )
-})
+}))
+
+export default RebalanceStrategyBlock
