@@ -60,6 +60,13 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
     )
 }
 
+private fun saveBacktestPortfolios(json: JsonObject) = transaction {
+    fun upsert(k: String, v: String) = GlobalSettingsTable.upsert {
+        it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
+    }
+    upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
+}
+
 private fun saveBacktestSettingsFirstPortfolio(json: JsonObject, settingsKey: String) = transaction {
     fun get(k: String) = GlobalSettingsTable.selectAll()
         .where { GlobalSettingsTable.key eq k }
@@ -586,6 +593,13 @@ fun Application.configureRouting() {
                 loadBacktestSettings("backtest.settings"),
                 ContentType.Application.Json
             )
+        }
+
+        post("/api/backtest/settings/portfolios") {
+            val body = call.receiveText()
+            val json = Json.parseToJsonElement(body).jsonObject
+            saveBacktestPortfolios(json)
+            call.respondOk()
         }
 
         get("/api/montecarlo/settings") {

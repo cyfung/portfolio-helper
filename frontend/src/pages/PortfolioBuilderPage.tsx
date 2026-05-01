@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Pin } from 'lucide-react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { BlockState } from '@/types/backtest'
 import type { SavedPortfolio } from '@/types/backtest'
+import { blockStateToAPIPortfolio, configToBlockState } from '@/types/backtest'
 import { resolveBlockState, type ResolvedStockWeight } from '@/lib/portfolioRefs'
 import { parseGroupsAttr } from '@/lib/portfolio-utils'
 
@@ -130,6 +132,8 @@ export default function PortfolioBuilderPage() {
   const [groupOverlayPos, setGroupOverlayPos] = useState({ x: 0, y: 0 })
   const [error, setError] = useState('')
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
+  const settingsLoadedRef = useRef(false)
+  const lastSavedPortfoliosRef = useRef('')
 
   function updateGroupOverlayPos(e: React.MouseEvent) {
     const overlay = document.querySelector('.portfolio-builder-group-composition')
@@ -157,7 +161,38 @@ export default function PortfolioBuilderPage() {
     } catch (_) {}
   }
 
-  useEffect(() => { loadSaved() }, [])
+  useEffect(() => {
+    loadSaved()
+    fetch('/api/backtest/settings')
+      .then(res => res.ok ? res.json() : null)
+      .then((settings: any) => {
+        if (!settings?.portfolios) return
+        setBlocks(prev => {
+          const next = [...prev]
+          settings.portfolios.forEach((portfolio: any, i: number) => {
+            if (i < next.length) next[i] = configToBlockState(portfolio, portfolio.label || '')
+          })
+          lastSavedPortfoliosRef.current = JSON.stringify(next.map((block, i) => blockStateToAPIPortfolio(block, i)))
+          return next
+        })
+      })
+      .catch(() => {})
+      .finally(() => { settingsLoadedRef.current = true })
+  }, [])
+
+  useEffect(() => {
+    if (!settingsLoadedRef.current) return
+    const portfolios = blocks.map((block, i) => blockStateToAPIPortfolio(block, i))
+    const serialized = JSON.stringify(portfolios)
+    if (serialized === lastSavedPortfoliosRef.current) return
+    lastSavedPortfoliosRef.current = serialized
+
+    fetch('/api/backtest/settings/portfolios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ portfolios }),
+    }).catch(() => {})
+  }, [blocks])
 
   const updateBlock = useCallback((i: number) =>
     (s: BlockState) => setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
@@ -332,7 +367,11 @@ export default function PortfolioBuilderPage() {
                   >
                     <table className="backtest-stats-table portfolio-builder-table portfolio-builder-group-table">
                       <thead>
-                        <tr><th>Group</th><th>Weight</th></tr>
+                        <tr>
+                          <th>Group</th>
+                          <th>Weight</th>
+                          {hasMargin && <th>Margin Scaled</th>}
+                        </tr>
                       </thead>
                       <tbody>
                         {groupRows.map(group => (
@@ -349,11 +388,24 @@ export default function PortfolioBuilderPage() {
                             onClick={e => {
                               e.stopPropagation()
                               updateGroupOverlayPos(e)
-                              setPinnedGroupByBlock(prev => ({ ...prev, [i]: group.name }))
+                              setPinnedGroupByBlock(prev => {
+                                const next = { ...prev }
+                                if (next[i] === group.name) delete next[i]
+                                else next[i] = group.name
+                                return next
+                              })
                             }}
                           >
-                            <td>{group.name}</td>
+                            <td>
+                              <span className="portfolio-builder-group-name">
+                                {pinnedGroupByBlock[i] === group.name && <Pin size={12} aria-hidden="true" />}
+                                {group.name}
+                              </span>
+                            </td>
                             <td>{group.weight.toFixed(2)}%</td>
+                            {hasMargin && (
+                              <td>{((rawGroupRows.find(raw => raw.name === group.name)?.weight ?? 0) * multiplier).toFixed(2)}%</td>
+                            )}
                           </tr>
                         ))}
                       </tbody>

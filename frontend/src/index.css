@@ -10,6 +10,7 @@
     --color-bg-secondary: #f8f9fa;
     --color-bg-elevated: #ffffff;
     --color-bg-hover: #f1f3f5;
+    --color-bg-tertiary: #eef1f4;
 
     --color-text-primary: #1a1a1a;
     --color-text-secondary: #495057;
@@ -80,6 +81,7 @@
     --color-bg-secondary: #191C24;
     --color-bg-elevated: #141924;
     --color-bg-hover: #1a1f2e;
+    --color-bg-tertiary: #202637;
 
     --color-text-primary: #ffffff;
     --color-text-secondary: #8b949e;
@@ -4651,6 +4653,17 @@ input.no-spinner[type="number"] {
     background: color-mix(in srgb, var(--color-accent-primary) 16%, transparent);
     color: var(--color-text-primary);
     font-weight: 700;
+}
+
+.portfolio-builder-group-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.portfolio-builder-group-name svg {
+    color: var(--color-accent-primary);
+    flex: 0 0 auto;
 }
 
 .portfolio-builder-group-composition {
