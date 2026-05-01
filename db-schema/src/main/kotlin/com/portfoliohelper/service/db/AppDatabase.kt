@@ -83,6 +83,14 @@ object SavedBacktestPortfoliosTable : Table("saved_backtest_portfolios") {
     override val primaryKey = PrimaryKey(name)
 }
 
+/** One row per saved rebalance strategy — enables clean per-row CRUD. */
+object SavedRebalanceStrategiesTable : Table("saved_rebalance_strategies") {
+    val name = varchar("name", 256)
+    val config = text("config")
+    val createdAt = long("created_at")
+    override val primaryKey = PrimaryKey(name)
+}
+
 /** One row per portfolio backup snapshot stored as JSON. */
 object PortfolioBackupsTable : Table("portfolio_backups") {
     val id = integer("id").autoIncrement()
@@ -140,6 +148,7 @@ object AppDatabase {
         AdminSessionsTable,
         GlobalSettingsTable,
         SavedBacktestPortfoliosTable,
+        SavedRebalanceStrategiesTable,
         PortfolioBackupsTable,
         PortfolioSnapshotsTable,
         SnapshotPositionsTable,

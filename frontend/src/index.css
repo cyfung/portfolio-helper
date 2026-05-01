@@ -3937,6 +3937,16 @@ a.loan-calc-link:hover {
     opacity: 1;
 }
 
+.saved-strategy-chip {
+    background: color-mix(in srgb, #f97316 18%, transparent);
+    border-color: #f97316;
+    color: #f97316;
+}
+
+.saved-strategy-chip:hover {
+    background: color-mix(in srgb, #f97316 28%, transparent);
+}
+
 /* Drop target highlight */
 .portfolio-block.drag-over {
     outline: 2px dashed var(--color-accent-primary);

@@ -8,6 +8,7 @@ import com.portfoliohelper.util.appJson
 import com.portfoliohelper.service.db.GlobalSettingsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
+import com.portfoliohelper.service.db.SavedRebalanceStrategiesTable
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -267,6 +268,9 @@ private fun JsonArray.parseCashEntries() = mapNotNull { el ->
 
 @Serializable
 private data class SavedBacktestPortfolio(val name: String, val config: JsonElement)
+
+@Serializable
+private data class SavedRebalanceStrategy(val name: String, val config: JsonElement)
 
 @Serializable
 private data class TwsPositionItem(val symbol: String, val qty: Double)
@@ -583,6 +587,49 @@ fun Application.configureRouting() {
                     HttpStatusCode.InternalServerError
                 )
             }
+        }
+
+        get("/api/rebalance-strategy/savedStrategies") {
+            val rows = transaction {
+                SavedRebalanceStrategiesTable.selectAll()
+                    .orderBy(SavedRebalanceStrategiesTable.createdAt)
+                    .map {
+                        SavedRebalanceStrategy(
+                            name = it[SavedRebalanceStrategiesTable.name],
+                            config = Json.parseToJsonElement(it[SavedRebalanceStrategiesTable.config])
+                        )
+                    }
+            }
+            call.respondText(appJson.encodeToString(rows), ContentType.Application.Json)
+        }
+
+        delete("/api/rebalance-strategy/savedStrategies") {
+            val name = call.request.queryParameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            transaction { SavedRebalanceStrategiesTable.deleteWhere { SavedRebalanceStrategiesTable.name eq name } }
+            call.respondOk()
+        }
+
+        post("/api/rebalance-strategy/savedStrategies") {
+            val body = call.receiveText()
+            val entry = Json.parseToJsonElement(body).jsonObject
+            val name = entry["name"]?.jsonPrimitive?.contentOrNull ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val saved = transaction {
+                val takenNames = SavedRebalanceStrategiesTable.selectAll()
+                    .map { it[SavedRebalanceStrategiesTable.name] }.toSet()
+                var finalName = name
+                var counter = 2
+                while (finalName in takenNames) {
+                    finalName = "$name ($counter)"; counter++
+                }
+                SavedRebalanceStrategiesTable.insert {
+                    it[SavedRebalanceStrategiesTable.name] = finalName
+                    it[SavedRebalanceStrategiesTable.config] = config.toString()
+                    it[SavedRebalanceStrategiesTable.createdAt] = System.currentTimeMillis()
+                }
+                SavedRebalanceStrategy(finalName, config)
+            }
+            call.respondText(appJson.encodeToString(saved), ContentType.Application.Json)
         }
 
         post("/api/rebalance-strategy/run") {

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   RebalStrategyState,
   DipSurgeState,
   REBALANCE_PERIOD_OVERRIDE_OPTIONS,
+  strategyStateToSavedConfig,
+  savedConfigToStrategyState,
 } from '@/types/rebalanceStrategy'
 import { MARGIN_MODE_OPTIONS } from '@/types/backtest'
 import DipSurgeSection from './DipSurgeSection'
@@ -12,6 +14,7 @@ interface Props {
   value: RebalStrategyState
   onChange: (s: RebalStrategyState) => void
   sliderMax?: number
+  onSavedRefresh?: () => void
 }
 
 const DEFAULT_POINTS = ['40', '45', '50', '55', '60']
@@ -49,15 +52,19 @@ function pointLabel(points: string[], i: number) {
   return `${points[i] ?? DEFAULT_POINTS[i]}%`
 }
 
-function MarginPointSlider({
-  points, max, onChange,
-}: { points: string[]; max: number; onChange: (points: string[]) => void }) {
+function samePoints(a: string[], b: string[]) {
+  return a.length === b.length && a.every((point, i) => point === b[i])
+}
+
+const MarginPointSlider = React.memo(function MarginPointSlider({
+  points, max, onChange, onCommit,
+}: { points: string[]; max: number; onChange: (points: string[]) => void; onCommit?: () => void }) {
   const trackRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<number | null>(null)
   const inputRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null])
   const endpointDivRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null, null])
   const [activeThumb, setActiveThumb] = useState<number | null>(null)
-  const safePoints = normalizeMarginPoints(points, max)
+  const safePoints = useMemo(() => normalizeMarginPoints(points, max), [points, max])
   const [minPoint, maxPoint] = [safePoints[0], safePoints[4]]
   const span = Math.max(maxPoint - minPoint, 1)
 
@@ -94,6 +101,7 @@ function MarginPointSlider({
 
   useEffect(() => {
     const handlePointerUp = () => {
+      if (draggingRef.current != null) onCommit?.()
       draggingRef.current = null
       setActiveThumb(null)
     }
@@ -106,7 +114,7 @@ function MarginPointSlider({
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [handlePointerMove])
+  }, [handlePointerMove, onCommit])
 
   useEffect(() => {
     const handlers: { el: HTMLDivElement; fn: (e: WheelEvent) => void }[] = []
@@ -115,7 +123,7 @@ function MarginPointSlider({
       if (!el) continue
       const fn = (e: WheelEvent) => {
         e.preventDefault()
-        updatePoint(i, safePoints[i] + (e.deltaY < 0 ? 1 : -1))
+        updatePoint(i, safePoints[i] + (e.deltaY < 0 ? 5 : -5))
       }
       el.addEventListener('wheel', fn, { passive: false })
       handlers.push({ el, fn })
@@ -138,7 +146,7 @@ function MarginPointSlider({
     const p = safePoints[i]
     return (
       <div key={i} className="margin-point-endpoint" ref={el => { endpointDivRefs.current[i] = el }}>
-        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => updatePoint(i, p - 1)}>−</button>
+        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { updatePoint(i, p - 1); onCommit?.() }}>−</button>
         <input
           className="margin-point-number-input"
           ref={el => { inputRefs.current[i] = el }}
@@ -149,8 +157,9 @@ function MarginPointSlider({
           value={p}
           aria-label={`Margin point ${i + 1} value`}
           onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
+          onBlur={onCommit}
         />
-        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => updatePoint(i, p + 1)}>+</button>
+        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { updatePoint(i, p + 1); onCommit?.() }}>+</button>
       </div>
     )
   }
@@ -183,16 +192,84 @@ function MarginPointSlider({
       </div>
     </div>
   )
-}
+})
 
-export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax = 150 }: Props) {
+export default React.memo(function RebalanceStrategyBlock({ idx, value, onChange, sliderMax = 150, onSavedRefresh }: Props) {
   const s = value
-  const set = (patch: Partial<RebalStrategyState>) => onChange({ ...s, ...patch })
-  const marginPoints = DEFAULT_POINTS.map((def, i) => s.marginPoints?.[i] ?? def)
+  const sRef = useRef(s)
+  sRef.current = s
+  const set = useCallback((patch: Partial<RebalStrategyState>) => onChange({ ...sRef.current, ...patch }), [onChange])
+  const valueMarginPoints = useMemo(
+    () => DEFAULT_POINTS.map((def, i) => s.marginPoints?.[i] ?? def),
+    [s.marginPoints],
+  )
+  const [draftMarginPoints, setDraftMarginPoints] = useState(valueMarginPoints)
+  const draftMarginPointsRef = useRef(draftMarginPoints)
+  const marginCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!samePoints(valueMarginPoints, draftMarginPointsRef.current)) {
+      draftMarginPointsRef.current = valueMarginPoints
+      setDraftMarginPoints(valueMarginPoints)
+    }
+  }, [valueMarginPoints])
+
+  const commitMarginPoints = useCallback((points = draftMarginPointsRef.current) => {
+    if (marginCommitTimerRef.current) {
+      clearTimeout(marginCommitTimerRef.current)
+      marginCommitTimerRef.current = null
+    }
+    if (samePoints(points, valueMarginPoints)) return
+    onChange({ ...sRef.current, marginPoints: points, marginRatio: points[2] })
+  }, [onChange, valueMarginPoints])
+
+  useEffect(() => () => {
+    if (marginCommitTimerRef.current) clearTimeout(marginCommitTimerRef.current)
+  }, [])
+
+  const handleMarginChange = useCallback((points: string[]) => {
+    draftMarginPointsRef.current = points
+    setDraftMarginPoints(points)
+    if (marginCommitTimerRef.current) clearTimeout(marginCommitTimerRef.current)
+    marginCommitTimerRef.current = setTimeout(() => commitMarginPoints(points), 180)
+  }, [commitMarginPoints])
+  const marginPoints = draftMarginPoints
   const cashflowPointIndex = s.cashflowScalingPointIndex ?? '3'
+  const [saveMsg, setSaveMsg] = useState('')
+  const [dragOver, setDragOver] = useState(false)
+
+  async function handleSave(overwrite: boolean) {
+    const name = s.label.trim(); if (!name) return
+    if (overwrite) await fetch(`/api/rebalance-strategy/savedStrategies?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
+    const res = await fetch('/api/rebalance-strategy/savedStrategies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, config: strategyStateToSavedConfig(s) }),
+    })
+    if (res.ok) { onSavedRefresh?.(); setSaveMsg('Saved!'); setTimeout(() => setSaveMsg(''), 1500) }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
+      e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOver(true)
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault(); setDragOver(false)
+    if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
+      const { name, config } = JSON.parse(e.dataTransfer.getData('application/x-strategy-chip'))
+      onChange(savedConfigToStrategyState(config, name))
+    }
+  }
 
   return (
-    <div className="portfolio-block">
+    <div
+      className={`portfolio-block${dragOver ? ' drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
       <div className="block-header">
         <input
           className="block-label-input"
@@ -201,6 +278,22 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
           value={s.label}
           onChange={e => set({ label: e.target.value })}
         />
+        <button
+          type="button"
+          className="overwrite-portfolio-btn save-portfolio-btn"
+          disabled={!s.label.trim()}
+          onClick={() => handleSave(true)}
+        >
+          {saveMsg || 'Save'}
+        </button>
+        <button
+          type="button"
+          className="save-portfolio-btn"
+          disabled={!s.label.trim()}
+          onClick={() => handleSave(false)}
+        >
+          Save New
+        </button>
       </div>
 
       <div className="strategy-section-body">
@@ -209,7 +302,8 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
           <MarginPointSlider
             points={marginPoints}
             max={sliderMax}
-            onChange={points => set({ marginPoints: points, marginRatio: points[2] })}
+            onChange={handleMarginChange}
+            onCommit={commitMarginPoints}
           />
         </div>
         <div className="strategy-row">
@@ -331,4 +425,4 @@ export default function RebalanceStrategyBlock({ idx, value, onChange, sliderMax
       </div>
     </div>
   )
-}
+})

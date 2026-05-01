@@ -10,6 +10,7 @@ import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
+import SavedStrategiesBar, { type SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { useChartTheme } from '@/lib/chartTheme'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
@@ -60,6 +61,7 @@ export default function RebalanceStrategyPage() {
   const [logScale, setLogScale]   = useState(false)
 
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
+  const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
   const [chartWidth, setChartWidth] = useState(1000)
   const chartObsRef = useRef<ResizeObserver | null>(null)
   const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
@@ -188,11 +190,14 @@ export default function RebalanceStrategyPage() {
   }
   function toggleAll(checked: boolean) { setSelected(checked ? new Set(allKeys) : new Set()) }
 
-  const updateStrategy = useCallback((i: number) =>
-    (s: RebalStrategyState) => setStrategies(prev => { const n = [...prev]; n[i] = s; return n }),
+  const strategyHandlers = useMemo(
+    () => [0, 1].map(i => (s: RebalStrategyState) =>
+      setStrategies(prev => { const n = [...prev]; n[i] = s; return n })
+    ),
     [],
   )
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
+  const refreshSavedStrategies = useCallback(() => savedStrategiesBarRef.current?.refresh(), [])
 
   const numPoints      = chartData?.labels.length ?? 2
   const pixelsPerPoint = chartWidth / Math.max(numPoints - 1, 1)
@@ -270,12 +275,13 @@ export default function RebalanceStrategyPage() {
         </div>
 
         <SavedPortfoliosBar ref={savedBarRef} />
+        <SavedStrategiesBar ref={savedStrategiesBarRef} />
 
         {/* Portfolio + Strategy blocks side by side */}
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
           <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
           {strategies.map((s, i) => (
-            <RebalanceStrategyBlock key={i} idx={i} value={s} onChange={updateStrategy(i)} sliderMax={rebalanceSliderMax} />
+            <RebalanceStrategyBlock key={i} idx={i} value={s} onChange={strategyHandlers[i]} sliderMax={rebalanceSliderMax} onSavedRefresh={refreshSavedStrategies} />
           ))}
         </div>
 

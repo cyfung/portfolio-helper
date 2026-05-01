@@ -158,6 +158,14 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   }
 }
 
+export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategyState {
+  return { ...s }
+}
+
+export function savedConfigToStrategyState(config: any, name: string): RebalStrategyState {
+  return { ...config, label: name }
+}
+
 export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: string): object {
   const pct = (v: string, def = 0) => (parseFloat(v) || def) / 100
   const points = [...Array(5)].map((_, i) => parseFloat(s.marginPoints?.[i] ?? '') || [40, 45, 50, 55, 60][i])
