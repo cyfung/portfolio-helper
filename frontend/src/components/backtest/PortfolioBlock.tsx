@@ -1,6 +1,7 @@
 // ── PortfolioBlock.tsx — Controlled portfolio block for Backtest & MonteCarlo ─
 
 import React, { useState, useEffect, useRef } from 'react'
+import { Settings } from 'lucide-react'
 import {
   BlockState, MarginRow, newId,
   blockStateToSavedConfig, configToBlockState,
@@ -17,6 +18,14 @@ interface Props {
 const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
   const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
+  const [tickerConfig, setTickerConfig] = useState<{
+    symbol: string
+    letf: string
+    groups: string
+    loading: boolean
+    saving: boolean
+    error: string
+  } | null>(null)
 
   // Local state — text inputs update this only; parent is notified on blur or structural change
   const [local, setLocal] = useState<BlockState>(value)
@@ -82,6 +91,50 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   function removeTicker(id: string) {
     commit({ ...localRef.current, tickers: localRef.current.tickers.filter(t => t.id !== id) })
+  }
+
+  async function openTickerConfig(rawSymbol: string) {
+    const symbol = rawSymbol.trim().toUpperCase()
+    if (!symbol || symbol.includes(' ')) return
+    setTickerConfig({ symbol, letf: '', groups: '', loading: true, saving: false, error: '' })
+    try {
+      const res = await fetch(`/api/ticker-config?symbol=${encodeURIComponent(symbol)}`)
+      if (!res.ok) throw new Error('Failed to load ticker config')
+      const data = await res.json()
+      setTickerConfig({
+        symbol,
+        letf: data.letf ?? '',
+        groups: data.groups ?? '',
+        loading: false,
+        saving: false,
+        error: '',
+      })
+    } catch (err) {
+      setTickerConfig({
+        symbol,
+        letf: '',
+        groups: '',
+        loading: false,
+        saving: false,
+        error: String(err),
+      })
+    }
+  }
+
+  async function saveTickerConfig() {
+    if (!tickerConfig || tickerConfig.loading || tickerConfig.saving) return
+    setTickerConfig({ ...tickerConfig, saving: true, error: '' })
+    try {
+      const res = await fetch(`/api/ticker-config?symbol=${encodeURIComponent(tickerConfig.symbol)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ letf: tickerConfig.letf, groups: tickerConfig.groups }),
+      })
+      if (!res.ok) throw new Error('Failed to save ticker config')
+      setTickerConfig(null)
+    } catch (err) {
+      setTickerConfig({ ...tickerConfig, saving: false, error: String(err) })
+    }
   }
 
   // ── Margin helpers ────────────────────────────────────────────────────────
@@ -233,6 +286,20 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 onBlur={commitBlur}
               />
               <span className="weight-unit">%</span>
+              {t.isPortfolioRef ? (
+                <span />
+              ) : (
+                <button
+                  className="ticker-config-btn"
+                  type="button"
+                  title="Ticker config"
+                  aria-label={`Configure ${t.ticker || 'ticker'}`}
+                  disabled={!t.ticker.trim() || t.ticker.includes(' ')}
+                  onClick={() => openTickerConfig(t.ticker)}
+                >
+                  <Settings size={14} />
+                </button>
+              )}
               <button className="remove-ticker-btn" type="button" title="Remove" onClick={() => removeTicker(t.id)}>
                 ✕
               </button>
@@ -318,6 +385,50 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
           ))}
         </div>
       </div>
+
+      {tickerConfig && (
+        <div className="ticker-config-overlay" role="dialog" aria-modal="true" onMouseDown={e => {
+          if (e.target === e.currentTarget) setTickerConfig(null)
+        }}>
+          <div className="ticker-config-dialog">
+            <div className="ticker-config-header">
+              <h2>{tickerConfig.symbol}</h2>
+              <button type="button" className="ticker-config-close" onClick={() => setTickerConfig(null)}>x</button>
+            </div>
+            {tickerConfig.loading ? (
+              <div className="ticker-config-status">Loading...</div>
+            ) : (
+              <>
+                <label>
+                  <span>LETF</span>
+                  <textarea
+                    value={tickerConfig.letf}
+                    placeholder="e.g. 2 QQQ S=1.5 R=Q"
+                    rows={3}
+                    onChange={e => setTickerConfig({ ...tickerConfig, letf: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Groups</span>
+                  <input
+                    type="text"
+                    value={tickerConfig.groups}
+                    placeholder="e.g. 1 Equity;0.5 Growth"
+                    onChange={e => setTickerConfig({ ...tickerConfig, groups: e.target.value })}
+                  />
+                </label>
+                {tickerConfig.error && <div className="ticker-config-error">{tickerConfig.error}</div>}
+                <div className="ticker-config-actions">
+                  <button type="button" onClick={() => setTickerConfig(null)}>Cancel</button>
+                  <button type="button" className="ticker-config-save" disabled={tickerConfig.saving} onClick={saveTickerConfig}>
+                    {tickerConfig.saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 })

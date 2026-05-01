@@ -5,6 +5,7 @@ import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
+import com.portfoliohelper.service.db.StockTickersTable
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
 import com.portfoliohelper.util.appJson
 import kotlinx.coroutines.CoroutineScope
@@ -276,15 +277,16 @@ object BackupService {
     ): BackupRoot {
         val pid = portfolio.serialId
         val stocks = transaction {
-            PositionsTable.selectAll()
+            PositionsTable.leftJoin(StockTickersTable, { PositionsTable.symbol }, { StockTickersTable.symbol })
+                .selectAll()
                 .where { PositionsTable.portfolioId eq pid }
                 .map { row ->
                     BackupStock(
                         symbol = row[PositionsTable.symbol],
                         amount = row[PositionsTable.amount],
                         targetWeight = row[PositionsTable.targetWeight],
-                        letf = row[PositionsTable.letf],
-                        groups = row[PositionsTable.groups]
+                        letf = row.getOrNull(StockTickersTable.letf) ?: "",
+                        groups = row.getOrNull(StockTickersTable.groups) ?: ""
                     )
                 }
         }

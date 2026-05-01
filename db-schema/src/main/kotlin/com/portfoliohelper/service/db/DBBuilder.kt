@@ -37,11 +37,17 @@ fun newDB(outPath: String) {
             it[amount]       = 100.0
             it[targetWeight] = 60.0
         }
+        StockTickersTable.insert {
+            it[symbol] = "VTI"
+        }
         PositionsTable.insert {
             it[portfolioId]  = mainId
             it[symbol]       = "VXUS"
             it[amount]       = 260.0
             it[targetWeight] = 40.0
+        }
+        StockTickersTable.insert {
+            it[symbol] = "VXUS"
         }
 
         CashTable.insert {

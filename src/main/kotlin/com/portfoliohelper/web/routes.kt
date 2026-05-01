@@ -9,6 +9,7 @@ import com.portfoliohelper.service.db.GlobalSettingsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.service.db.SavedRebalanceStrategiesTable
+import com.portfoliohelper.service.db.StockTickersTable
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -93,7 +94,7 @@ private fun saveBacktestSettingsFirstPortfolio(json: JsonObject, settingsKey: St
 
 private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNull { el ->
     val obj = el.jsonObject
-    val symbol = obj["symbol"]?.jsonPrimitive?.content ?: return@mapNotNull null
+    val symbol = obj["symbol"]?.jsonPrimitive?.content?.trim()?.uppercase()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
     val amount = obj["amount"]?.jsonPrimitive?.double ?: return@mapNotNull null
     BackupStock(
         symbol = symbol,
@@ -102,6 +103,17 @@ private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNul
         letf = obj["letf"]?.jsonPrimitive?.content ?: "",
         groups = obj["groups"]?.jsonPrimitive?.content ?: ""
     )
+}
+
+private data class TickerMetadata(val letf: String, val groups: String)
+
+private fun tickerMetadataBySymbol(): Map<String, TickerMetadata> = transaction {
+    StockTickersTable.selectAll().associate {
+        it[StockTickersTable.symbol].uppercase() to TickerMetadata(
+            letf = it[StockTickersTable.letf],
+            groups = it[StockTickersTable.groups]
+        )
+    }
 }
 
 private fun savedBacktestPortfolioConfigs(): Map<String, JsonObject> = transaction {
@@ -119,6 +131,7 @@ private fun isPortfolioRef(obj: JsonObject): Boolean =
 private fun resolveTickerWeights(
     rows: JsonArray?,
     savedConfigs: Map<String, JsonObject>,
+    tickerMetadata: Map<String, TickerMetadata>,
     stack: List<String>
 ): List<TickerWeight> {
     val merged = linkedMapOf<String, Double>()
@@ -142,10 +155,15 @@ private fun resolveTickerWeights(
             if (refName in stack) {
                 throw IllegalArgumentException("Circular portfolio reference: ${(stack + refName).joinToString(" -> ")}")
             }
-            resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
+            resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, tickerMetadata, stack + refName)
                 .forEach { add(it.ticker, weight * it.weight / 100.0) }
         } else {
-            add(obj["ticker"]?.jsonPrimitive?.content ?: "", weight)
+            val rawTicker = obj["ticker"]?.jsonPrimitive?.content ?: ""
+            val metadataLetf = tickerMetadata[rawTicker.trim().uppercase()]
+                ?.letf
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+            add(metadataLetf ?: rawTicker, weight)
         }
     }
 
@@ -154,12 +172,18 @@ private fun resolveTickerWeights(
 
 private fun parseSinglePortfolioConfig(
     pObj: JsonObject,
-    savedConfigs: Map<String, JsonObject> = savedBacktestPortfolioConfigs()
+    savedConfigs: Map<String, JsonObject> = savedBacktestPortfolioConfigs(),
+    tickerMetadata: Map<String, TickerMetadata> = tickerMetadataBySymbol()
 ): PortfolioConfig {
     val label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio"
     return PortfolioConfig(
         label = label,
-        tickers = resolveTickerWeights(pObj["tickers"] as? JsonArray, savedConfigs, listOf(label).filter { it.isNotBlank() }),
+        tickers = resolveTickerWeights(
+            pObj["tickers"] as? JsonArray,
+            savedConfigs,
+            tickerMetadata,
+            listOf(label).filter { it.isNotBlank() }
+        ),
         rebalanceStrategy = runCatching {
             RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
         }.getOrDefault(RebalanceStrategy.YEARLY),
@@ -184,8 +208,9 @@ private fun parseSinglePortfolioConfig(
 
 private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> {
     val savedConfigs = savedBacktestPortfolioConfigs()
+    val tickerMetadata = tickerMetadataBySymbol()
     return (json["portfolios"] as? JsonArray)?.map { pel ->
-        parseSinglePortfolioConfig(pel.jsonObject, savedConfigs)
+        parseSinglePortfolioConfig(pel.jsonObject, savedConfigs, tickerMetadata)
     } ?: emptyList()
 }
 
@@ -308,6 +333,9 @@ private data class TwsSnapshotResponse(
 
 @Serializable
 private data class PortfolioOptionDto(val slug: String, val name: String, val seqOrder: Double)
+
+@Serializable
+private data class TickerConfigDto(val symbol: String, val letf: String, val groups: String)
 
 @Serializable
 private data class StockDto(
@@ -510,6 +538,47 @@ fun Application.configureRouting() {
             )
 
             call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
+        }
+
+        get("/api/ticker-config") {
+            val symbol = call.request.queryParameters["symbol"]
+                ?.trim()
+                ?.uppercase()
+                ?.takeIf { it.isNotBlank() }
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val config = transaction {
+                StockTickersTable.selectAll()
+                    .where { StockTickersTable.symbol eq symbol }
+                    .singleOrNull()
+                    ?.let { TickerConfigDto(symbol, it[StockTickersTable.letf], it[StockTickersTable.groups]) }
+            } ?: TickerConfigDto(symbol, "", "")
+            call.respondText(appJson.encodeToString(config), ContentType.Application.Json)
+        }
+
+        post("/api/ticker-config") {
+            try {
+                val symbol = call.request.queryParameters["symbol"]
+                    ?.trim()
+                    ?.uppercase()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val body = Json.parseToJsonElement(call.receiveText()).jsonObject
+                val letf = body["letf"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+                val groups = body["groups"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+                transaction {
+                    StockTickersTable.upsert {
+                        it[StockTickersTable.symbol] = symbol
+                        it[StockTickersTable.letf] = letf
+                        it[StockTickersTable.groups] = groups
+                    }
+                }
+                PortfolioMasterService.refreshAllStocks()
+                PortfolioUpdateBroadcaster.broadcastReload()
+                MarketDataCoordinator.refresh()
+                call.respondText(appJson.encodeToString(TickerConfigDto(symbol, letf, groups)), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
         }
 
         get("/api/backtest/settings") {

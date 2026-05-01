@@ -20,9 +20,14 @@ object PositionsTable : Table("positions") {
     val symbol = varchar("symbol", 32)
     val amount = double("amount")
     val targetWeight = double("target_weight").default(0.0)
+    override val primaryKey = PrimaryKey(portfolioId, symbol)
+}
+
+object StockTickersTable : Table("stock_tickers") {
+    val symbol = varchar("symbol", 32)
     val letf = text("letf").default("")
     val groups = text("groups").default("")
-    override val primaryKey = PrimaryKey(portfolioId, symbol)
+    override val primaryKey = PrimaryKey(symbol)
 }
 
 object CashTable : Table("cash") {
@@ -142,6 +147,7 @@ object AppDatabase {
     internal val allTables = arrayOf(
         PortfoliosTable,
         PositionsTable,
+        StockTickersTable,
         CashTable,
         PortfolioCfgTable,
         PairedDevicesTable,

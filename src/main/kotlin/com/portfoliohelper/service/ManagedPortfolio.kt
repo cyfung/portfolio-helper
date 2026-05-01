@@ -7,6 +7,7 @@ import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
+import com.portfoliohelper.service.db.StockTickersTable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -34,11 +35,14 @@ class ManagedPortfolio(
     fun getStocks(): List<Stock> {
         val pid = serialId
         val stocks = transaction {
-            PositionsTable.selectAll()
+            PositionsTable.leftJoin(StockTickersTable, { PositionsTable.symbol }, { StockTickersTable.symbol })
+                .selectAll()
                 .where { PositionsTable.portfolioId eq pid }
                 .map { row ->
-                    val letfComponents = parseLetf(row[PositionsTable.letf])
-                    val groups = parseGroups(row[PositionsTable.groups])
+                    val letf = row.getOrNull(StockTickersTable.letf) ?: ""
+                    val rawGroups = row.getOrNull(StockTickersTable.groups) ?: ""
+                    val letfComponents = parseLetf(letf)
+                    val groups = parseGroups(rawGroups)
                     Stock(
                         label          = row[PositionsTable.symbol],
                         amount         = row[PositionsTable.amount],
@@ -115,8 +119,13 @@ class ManagedPortfolio(
             this[PositionsTable.symbol] = s.symbol
             this[PositionsTable.amount] = s.amount
             this[PositionsTable.targetWeight] = s.targetWeight
-            this[PositionsTable.letf] = s.letf
-            this[PositionsTable.groups] = s.groups
+        }
+        stocks.forEach { s ->
+            StockTickersTable.upsert {
+                it[symbol] = s.symbol
+                it[letf] = s.letf
+                it[groups] = s.groups
+            }
         }
     }
 

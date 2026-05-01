@@ -3532,7 +3532,7 @@ a.loan-calc-link:hover {
 
 .backtest-ticker-row {
     display: grid;
-    grid-template-columns: 1fr 80px 20px auto;
+    grid-template-columns: 1fr 80px 20px 28px auto;
     gap: 0.5rem;
     align-items: center;
 }
@@ -3561,6 +3561,29 @@ a.loan-calc-link:hover {
 .backtest-ticker-row .weight-unit {
     font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
+}
+
+.ticker-config-btn {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.ticker-config-btn:hover:not(:disabled) {
+    color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+}
+
+.ticker-config-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 
 /* remove-ticker-btn — base from .btn-remove */
@@ -4709,6 +4732,103 @@ td[id^="est-val-"].loaded {
 #confirm-overlay-ok {
     background: var(--color-warning);
     color: var(--color-text-inverse);
+}
+
+.ticker-config-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2200;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.ticker-config-dialog {
+    width: min(460px, 100%);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-medium);
+    border-radius: 6px;
+    box-shadow: var(--shadow-lg);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.ticker-config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ticker-config-header h2 {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-family: var(--font-family-mono), monospace;
+    color: var(--color-text-primary);
+}
+
+.ticker-config-close {
+    border: none;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.ticker-config-dialog label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.ticker-config-dialog input,
+.ticker-config-dialog textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    padding: 0.45rem 0.55rem;
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+}
+
+.ticker-config-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+.ticker-config-actions button {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.ticker-config-actions .ticker-config-save {
+    border-color: var(--color-accent-primary);
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.ticker-config-error {
+    color: var(--color-negative);
+    font-size: var(--font-size-sm);
+}
+
+.ticker-config-status {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
 }
 
 /* ============================================

@@ -118,6 +118,10 @@ object PortfolioMasterService {
 
     fun get(slug: String): PortfolioServices? = _services.value[slug]
 
+    fun refreshAllStocks() {
+        _services.value.values.forEach { it.refreshStocks() }
+    }
+
     // flatMapLatest re-merges whenever the portfolio set changes, so long-lived
     // collectors (e.g. SSE) automatically track portfolios being added/removed.
     val stockFlow: Flow<StockDisplaySnapshot> = childFlow { it.stockDisplay.updates }
