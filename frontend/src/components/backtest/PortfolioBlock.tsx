@@ -15,7 +15,7 @@ interface Props {
 }
 
 const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
-  const [dragOver, setDragOver] = useState<'chip' | 'margin' | null>(null)
+  const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
 
   // Local state — text inputs update this only; parent is notified on blur or structural change
@@ -73,6 +73,13 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     commit({ ...localRef.current, tickers: [...localRef.current.tickers, { id: newId(), ticker, weight }] })
   }
 
+  function addPortfolioRef(name: string, weight = '') {
+    commit({
+      ...localRef.current,
+      tickers: [...localRef.current.tickers, { id: newId(), ticker: name, weight, isPortfolioRef: true }],
+    })
+  }
+
   function removeTicker(id: string) {
     commit({ ...localRef.current, tickers: localRef.current.tickers.filter(t => t.id !== id) })
   }
@@ -126,8 +133,17 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     if (types.includes('application/x-margin-config') || types.includes('application/x-portfolio-chip')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
-      setDragOver(types.includes('application/x-margin-config') ? 'margin' : 'chip')
+      if (types.includes('application/x-margin-config')) {
+        setDragOver('margin')
+      } else {
+        setDragOver((e.target as HTMLElement | null)?.closest('.ticker-rows') ? 'portfolio-ref' : 'chip')
+      }
     }
+  }
+
+  function isTickerListDrop(e: React.DragEvent) {
+    return e.dataTransfer.types.includes('application/x-portfolio-chip') &&
+      !!(e.target as HTMLElement | null)?.closest('.ticker-rows')
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -140,7 +156,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       const raw = e.dataTransfer.getData('application/x-portfolio-chip')
       if (raw) {
         const { name, config } = JSON.parse(raw)
-        commit(configToBlockState(config, name))
+        if (isTickerListDrop(e)) addPortfolioRef(name)
+        else commit(configToBlockState(config, name))
       }
     }
   }
@@ -149,7 +166,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   return (
     <div
-      className={`portfolio-block${dragOver === 'chip' ? ' drag-over' : dragOver === 'margin' ? ' drag-over-margin' : ''}`}
+      className={`portfolio-block${dragOver === 'chip' ? ' drag-over' : dragOver === 'portfolio-ref' ? ' drag-over-portfolio-ref' : dragOver === 'margin' ? ' drag-over-margin' : ''}`}
       data-portfolio-index={idx}
       onDragOver={handleDragOver}
       onDragLeave={() => setDragOver(null)}
@@ -191,15 +208,22 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">
           {local.tickers.map(t => (
-            <div key={t.id} className="backtest-ticker-row">
-              <input
-                type="text"
-                className="ticker-input"
-                placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5"
-                value={t.ticker}
-                onChange={e => updateLocal({ ...localRef.current, tickers: localRef.current.tickers.map(x => x.id === t.id ? { ...x, ticker: e.target.value } : x) })}
-                onBlur={commitBlur}
-              />
+            <div key={t.id} className={`backtest-ticker-row${t.isPortfolioRef ? ' portfolio-ref-row' : ''}`}>
+              {t.isPortfolioRef ? (
+                <div className="ticker-input portfolio-ref-name" title="Saved portfolio reference">
+                  <span className="portfolio-ref-badge">Portfolio</span>
+                  <span>{t.ticker}</span>
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="ticker-input"
+                  placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5"
+                  value={t.ticker}
+                  onChange={e => updateLocal({ ...localRef.current, tickers: localRef.current.tickers.map(x => x.id === t.id ? { ...x, ticker: e.target.value } : x) })}
+                  onBlur={commitBlur}
+                />
+              )}
               <input
                 type="text"
                 className="weight-input"

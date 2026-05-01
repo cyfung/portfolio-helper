@@ -104,70 +104,90 @@ private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNul
     )
 }
 
-private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> =
-    (json["portfolios"] as? JsonArray)?.map { pel ->
-        val pObj = pel.jsonObject
-        PortfolioConfig(
-            label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
-            tickers = (pObj["tickers"] as? JsonArray)?.map { el ->
-                val obj = el.jsonObject
-                TickerWeight(
-                    ticker = obj["ticker"]!!.jsonPrimitive.content,
-                    weight = obj["weight"]!!.jsonPrimitive.double
-                )
-            } ?: emptyList(),
-            rebalanceStrategy = runCatching {
-                RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
-            }.getOrDefault(RebalanceStrategy.YEARLY),
-            marginStrategies = (pObj["marginStrategies"] as? JsonArray)?.map { mel ->
-                val mObj = mel.jsonObject
-                MarginConfig(
-                    marginRatio = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-                    marginSpread = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
-                    marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                    marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                    upperRebalanceMode = runCatching {
-                        MarginRebalanceMode.valueOf(
-                            mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
-                        )
-                    }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-                    lowerRebalanceMode = runCatching {
-                        MarginRebalanceMode.valueOf(
-                            mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL"
-                        )
-                    }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
-                )
-            } ?: emptyList(),
-            includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
-        )
-    } ?: emptyList()
+private fun savedBacktestPortfolioConfigs(): Map<String, JsonObject> = transaction {
+    SavedBacktestPortfoliosTable.selectAll().associate {
+        it[SavedBacktestPortfoliosTable.name] to
+            Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config]).jsonObject
+    }
+}
 
-private fun parseSinglePortfolioConfig(pObj: JsonObject): PortfolioConfig = PortfolioConfig(
-    label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio",
-    tickers = (pObj["tickers"] as? JsonArray)?.map { el ->
+private fun isPortfolioRef(obj: JsonObject): Boolean =
+    obj["isPortfolioRef"]?.jsonPrimitive?.booleanOrNull == true ||
+        obj["type"]?.jsonPrimitive?.contentOrNull == "PORTFOLIO_REF" ||
+        obj["portfolioRef"]?.jsonPrimitive?.contentOrNull != null
+
+private fun resolveTickerWeights(
+    rows: JsonArray?,
+    savedConfigs: Map<String, JsonObject>,
+    stack: List<String>
+): List<TickerWeight> {
+    val merged = linkedMapOf<String, Double>()
+
+    fun add(ticker: String, weight: Double) {
+        val key = ticker.trim().uppercase()
+        if (key.isNotBlank() && weight > 0.0) merged[key] = (merged[key] ?: 0.0) + weight
+    }
+
+    rows?.forEach { el ->
         val obj = el.jsonObject
-        TickerWeight(obj["ticker"]!!.jsonPrimitive.content, obj["weight"]!!.jsonPrimitive.double)
-    } ?: emptyList(),
-    rebalanceStrategy = runCatching {
-        RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
-    }.getOrDefault(RebalanceStrategy.YEARLY),
-    marginStrategies = (pObj["marginStrategies"] as? JsonArray)?.map { mel ->
-        val mObj = mel.jsonObject
-        MarginConfig(
-            marginRatio          = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            marginSpread         = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
-            marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-            marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-            upperRebalanceMode   = runCatching {
-                MarginRebalanceMode.valueOf(mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
-            }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-            lowerRebalanceMode   = runCatching {
-                MarginRebalanceMode.valueOf(mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
-            }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
-        )
-    } ?: emptyList(),
-    includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
-)
+        val weight = obj["weight"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+        if (weight <= 0.0) return@forEach
+
+        if (isPortfolioRef(obj)) {
+            val refName = obj["portfolioRef"]?.jsonPrimitive?.contentOrNull
+                ?: obj["ticker"]?.jsonPrimitive?.contentOrNull
+                ?: throw IllegalArgumentException("Portfolio reference row is missing a name")
+            val child = savedConfigs[refName]
+                ?: throw IllegalArgumentException("Missing portfolio reference: $refName")
+            if (refName in stack) {
+                throw IllegalArgumentException("Circular portfolio reference: ${(stack + refName).joinToString(" -> ")}")
+            }
+            resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
+                .forEach { add(it.ticker, weight * it.weight / 100.0) }
+        } else {
+            add(obj["ticker"]?.jsonPrimitive?.content ?: "", weight)
+        }
+    }
+
+    return merged.map { (ticker, weight) -> TickerWeight(ticker, weight) }
+}
+
+private fun parseSinglePortfolioConfig(
+    pObj: JsonObject,
+    savedConfigs: Map<String, JsonObject> = savedBacktestPortfolioConfigs()
+): PortfolioConfig {
+    val label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio"
+    return PortfolioConfig(
+        label = label,
+        tickers = resolveTickerWeights(pObj["tickers"] as? JsonArray, savedConfigs, listOf(label).filter { it.isNotBlank() }),
+        rebalanceStrategy = runCatching {
+            RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
+        }.getOrDefault(RebalanceStrategy.YEARLY),
+        marginStrategies = (pObj["marginStrategies"] as? JsonArray)?.map { mel ->
+            val mObj = mel.jsonObject
+            MarginConfig(
+                marginRatio          = mObj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                marginSpread         = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+                marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
+                upperRebalanceMode   = runCatching {
+                    MarginRebalanceMode.valueOf(mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
+                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
+                lowerRebalanceMode   = runCatching {
+                    MarginRebalanceMode.valueOf(mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
+                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
+            )
+        } ?: emptyList(),
+        includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
+    )
+}
+
+private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> {
+    val savedConfigs = savedBacktestPortfolioConfigs()
+    return (json["portfolios"] as? JsonArray)?.map { pel ->
+        parseSinglePortfolioConfig(pel.jsonObject, savedConfigs)
+    } ?: emptyList()
+}
 
 private fun parsePriceMoveTrigger(obj: JsonObject): PriceMoveTrigger {
     val pct = obj["pct"]?.jsonPrimitive?.double ?: 0.0

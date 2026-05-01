@@ -6,6 +6,7 @@ export interface TickerRow {
   id: string
   ticker: string
   weight: string
+  isPortfolioRef?: boolean
 }
 
 export interface MarginRow {
@@ -90,8 +91,9 @@ export function configToBlockState(config: any, name: string): BlockState {
     label: name,
     tickers: (config.tickers || []).map((t: any) => ({
       id: newId(),
-      ticker: String(t.ticker || ''),
+      ticker: String(t.portfolioRef || t.ticker || ''),
       weight: String(t.weight ?? ''),
+      isPortfolioRef: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef,
     })),
     rebalance: config.rebalanceStrategy || 'YEARLY',
     margins: (config.marginStrategies || []).map((m: any) => ({
@@ -112,7 +114,10 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
   return {
     label: state.label.trim() || `Portfolio ${idx + 1}`,
     tickers: state.tickers
-      .map(t => ({ ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }))
+      .map(t => t.isPortfolioRef
+        ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
+        : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
+      )
       .filter(t => t.ticker && t.weight > 0),
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
@@ -131,7 +136,10 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
 export function blockStateToSavedConfig(state: BlockState) {
   return {
     tickers: state.tickers
-      .map(t => ({ ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 })),
+      .map(t => t.isPortfolioRef
+        ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
+        : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
+      ),
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
       marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,

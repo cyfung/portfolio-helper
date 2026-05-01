@@ -13,6 +13,7 @@ import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 const STRATEGY_NAV_STORAGE_KEY = 'portfolio-helper-active-strategy-page'
 
 const STRATEGY_PAGES = [
+  { line1: 'Portfolio', line2: 'Builder', href: '/portfolio-builder' },
   { line1: 'Portfolio', line2: 'Backtest', href: '/backtest' },
   { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
   { line1: 'Rebalance', line2: 'Strategy', href: '/rebalance-strategy' },
@@ -45,8 +46,9 @@ export function PageNavTabs({ active }: { active: string }) {
       {NAV_PAGES.map(page => {
         const isStrategyGroup = page.children?.some(child => child.href === active || child.href === location.pathname)
         const href = page.children ? getStrategyHref() : page.href
+        const isPortfolioRoute = location.pathname === '/portfolio/' || location.pathname.startsWith('/portfolio/')
         const isActive = isStrategyGroup || page.href === active ||
-          (page.href === '/portfolio/' && location.pathname.startsWith('/portfolio')) ||
+          (page.href === '/portfolio/' && isPortfolioRoute) ||
           (page.href === '/analyst/' && location.pathname.startsWith('/analyst'))
         return (
           <div
