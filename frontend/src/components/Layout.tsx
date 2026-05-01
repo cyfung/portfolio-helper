@@ -2,6 +2,7 @@
 // Each page renders its own .portfolio-header div to match the Kotlin renderers exactly.
 // This file exports helpers used by all pages.
 
+import { useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { showConfirm } from '@/components/ConfirmDialog'
@@ -9,32 +10,74 @@ import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 
 // ── Page nav tabs (same as renderPageNavTabs in common.kt) ───────────────────
 
+const STRATEGY_NAV_STORAGE_KEY = 'portfolio-helper-active-strategy-page'
+
+const STRATEGY_PAGES = [
+  { line1: 'Portfolio', line2: 'Backtest', href: '/backtest' },
+  { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
+  { line1: 'Rebalance', line2: 'Strategy', href: '/rebalance-strategy' },
+]
+
 const NAV_PAGES = [
   { line1: 'Portfolio', line2: 'Viewer',   href: '/portfolio/' },
   { line1: 'Portfolio', line2: 'Analyst',  href: '/analyst/' },
   { line1: 'Loan',      line2: 'Calculator', href: '/loan' },
-  { line1: 'Portfolio', line2: 'Backtest', href: '/backtest' },
-  { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
-  { line1: 'Rebalance',  line2: 'Strategy',   href: '/rebalance-strategy' },
+  { line1: 'Strategy', line2: 'Tools', href: '/backtest', children: STRATEGY_PAGES },
 ]
 
 export function PageNavTabs({ active }: { active: string }) {
   const location = useLocation()
+
+  useEffect(() => {
+    const activeStrategyPage = STRATEGY_PAGES.find(page => page.href === location.pathname)
+    if (!activeStrategyPage) return
+    localStorage.setItem(STRATEGY_NAV_STORAGE_KEY, activeStrategyPage.href)
+  }, [location.pathname])
+
+  function getStrategyHref() {
+    const storedHref = localStorage.getItem(STRATEGY_NAV_STORAGE_KEY)
+    if (STRATEGY_PAGES.some(page => page.href === storedHref)) return storedHref
+    return STRATEGY_PAGES[0].href
+  }
+
   return (
     <div className="page-nav-tabs">
       {NAV_PAGES.map(page => {
-        const isActive = page.href === active ||
+        const isStrategyGroup = page.children?.some(child => child.href === active || child.href === location.pathname)
+        const href = page.children ? getStrategyHref() : page.href
+        const isActive = isStrategyGroup || page.href === active ||
           (page.href === '/portfolio/' && location.pathname.startsWith('/portfolio')) ||
           (page.href === '/analyst/' && location.pathname.startsWith('/analyst'))
         return (
-          <Link
+          <div
             key={page.href}
-            to={page.href}
-            className={`page-nav-tab${isActive ? ' active' : ''}`}
+            className={`page-nav-tab-wrapper${page.children ? ' has-subnav' : ''}`}
           >
-            <span className="page-nav-tab-line1">{page.line1}</span>
-            <span className="page-nav-tab-line2">{page.line2}</span>
-          </Link>
+            <Link
+              to={href}
+              className={`page-nav-tab${isActive ? ' active' : ''}`}
+            >
+              <span className="page-nav-tab-line1">{page.line1}</span>
+              <span className="page-nav-tab-line2">{page.line2}</span>
+            </Link>
+            {page.children && (
+              <div className="page-nav-submenu">
+                {page.children.map(child => {
+                  const isChildActive = child.href === active || child.href === location.pathname
+                  return (
+                    <Link
+                      key={child.href}
+                      to={child.href}
+                      className={`page-nav-submenu-item${isChildActive ? ' active' : ''}`}
+                    >
+                      <span>{child.line1}</span>
+                      <span>{child.line2}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )
       })}
     </div>
