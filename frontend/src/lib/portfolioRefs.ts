@@ -1,3 +1,4 @@
+import { blockStateToAPIPortfolio } from '@/types/backtest'
 import type { BlockState, SavedPortfolio } from '@/types/backtest'
 
 export interface ResolvedStockWeight {
@@ -21,6 +22,14 @@ function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = ticker.trim().toUpperCase()
   if (!key || weight <= 0) return
   map.set(key, (map.get(key) ?? 0) + weight)
+}
+
+export function savedPortfolioConfig(config: any) {
+  return config?.portfolios?.[0] ?? config
+}
+
+export function savedPortfolioConfigMap(savedPortfolios: SavedPortfolio[]) {
+  return new Map(savedPortfolios.map(p => [p.name, savedPortfolioConfig(p.config)]))
 }
 
 export function resolveSavedPortfolioConfig(
@@ -58,7 +67,7 @@ export function resolveBlockState(
   block: BlockState,
   savedPortfolios: SavedPortfolio[],
 ): ResolvedStockWeight[] {
-  const savedByName = new Map(savedPortfolios.map(p => [p.name, p.config]))
+  const savedByName = savedPortfolioConfigMap(savedPortfolios)
   const config = {
     tickers: block.tickers.map(row => row.isPortfolioRef
       ? { ticker: row.ticker, portfolioRef: row.ticker, isPortfolioRef: true, weight: rowWeight(row) }
@@ -66,4 +75,17 @@ export function resolveBlockState(
     ),
   }
   return resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : [])
+}
+
+export function resolvedBlockStateToAPIPortfolio(
+  block: BlockState,
+  idx: number,
+  savedPortfolios: SavedPortfolio[],
+) {
+  const apiPortfolio = blockStateToAPIPortfolio(block, idx)
+  const tickers = resolveBlockState(block, savedPortfolios)
+    .map(row => ({ ticker: row.ticker, weight: row.weight }))
+    .filter(row => row.ticker && row.weight > 0)
+
+  return { ...apiPortfolio, tickers }
 }

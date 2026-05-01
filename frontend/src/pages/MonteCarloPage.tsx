@@ -21,6 +21,7 @@ import {
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
   cashflowStateFromSettings, cashflowToPayload, startingBalanceToPayload,
 } from '@/types/backtest'
+import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 // ── Effective curves helper ───────────────────────────────────────────────────
 
@@ -79,6 +80,16 @@ export default function MonteCarloPage() {
     obs.observe(node)
     chartObsRef.current = obs
   }, [])
+
+  async function loadSavedPortfolios() {
+    try {
+      const res = await fetch('/api/backtest/savedPortfolios')
+      if (!res.ok) return []
+      return await res.json()
+    } catch (_) {
+      return []
+    }
+  }
 
   // Restore settings on mount
   useEffect(() => {
@@ -160,9 +171,16 @@ export default function MonteCarloPage() {
 
   async function doRun(seed: number | null = null) {
     setError('')
-    const portfolios = blocks
-      .map((b, i) => blockStateToAPIPortfolio(b, i))
-      .filter(p => p.tickers.length > 0)
+    let portfolios
+    try {
+      const savedPortfolios = await loadSavedPortfolios()
+      portfolios = blocks
+        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios))
+        .filter(p => p.tickers.length > 0)
+    } catch (e: any) {
+      setError(e.message || 'Unable to resolve saved portfolio references.')
+      return
+    }
 
     if (portfolios.length === 0) {
       setError('Add at least one ticker with a positive weight to any portfolio block.')

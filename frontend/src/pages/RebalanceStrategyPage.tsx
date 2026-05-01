@@ -27,6 +27,7 @@ import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import {
   RebalStrategyState, emptyStrategy, strategyStateToAPI,
 } from '@/types/rebalanceStrategy'
+import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 // ── Legend line ───────────────────────────────────────────────────────────────
 
@@ -125,9 +126,25 @@ export default function RebalanceStrategyPage() {
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
+  async function loadSavedPortfolios() {
+    try {
+      const res = await fetch('/api/backtest/savedPortfolios')
+      if (!res.ok) return []
+      return await res.json()
+    } catch (_) {
+      return []
+    }
+  }
+
   async function handleRun() {
     setError('')
-    const portfolioApi = blockStateToAPIPortfolio(portfolio, 0)
+    let portfolioApi
+    try {
+      portfolioApi = resolvedBlockStateToAPIPortfolio(portfolio, 0, await loadSavedPortfolios())
+    } catch (e: any) {
+      setError(e.message || 'Unable to resolve saved portfolio references.')
+      return
+    }
     if (portfolioApi.tickers.length === 0) {
       setError('Add at least one ticker with a positive weight to the portfolio.'); return
     }

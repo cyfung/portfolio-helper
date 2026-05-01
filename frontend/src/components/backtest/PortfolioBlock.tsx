@@ -13,9 +13,10 @@ interface Props {
   value: BlockState
   onChange: (s: BlockState) => void
   onSavedRefresh: () => void
+  showTickerConfig?: boolean
 }
 
-const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
+const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh, showTickerConfig = false }: Props) {
   const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
   const [tickerConfig, setTickerConfig] = useState<{
@@ -286,7 +287,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 onBlur={commitBlur}
               />
               <span className="weight-unit">%</span>
-              {t.isPortfolioRef ? (
+              {t.isPortfolioRef || !showTickerConfig ? (
                 <span />
               ) : (
                 <button

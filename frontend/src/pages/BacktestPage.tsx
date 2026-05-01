@@ -24,6 +24,7 @@ import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
+import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 // ── Stats helper ──────────────────────────────────────────────────────────────
 
@@ -176,6 +177,16 @@ export default function BacktestPage() {
       })
       .catch(() => {})
   }, [])
+
+  async function loadSavedPortfolios() {
+    try {
+      const res = await fetch('/api/backtest/savedPortfolios')
+      if (!res.ok) return []
+      return await res.json()
+    } catch (_) {
+      return []
+    }
+  }
 
   // Fetch real portfolio data when slug or date range changes
   useEffect(() => {
@@ -420,9 +431,16 @@ export default function BacktestPage() {
 
   async function handleRun() {
     setError('')
-    const portfolios = blocks
-      .map((b, i) => blockStateToAPIPortfolio(b, i))
-      .filter(p => p.tickers.length > 0)
+    let portfolios
+    try {
+      const latestSavedPortfolios = await loadSavedPortfolios()
+      portfolios = blocks
+        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
+        .filter(p => p.tickers.length > 0)
+    } catch (e: any) {
+      setError(e.message || 'Unable to resolve saved portfolio references.')
+      return
+    }
     if (portfolios.length === 0) {
       setError('Add at least one ticker with a positive weight to any portfolio block.')
       return
@@ -536,7 +554,9 @@ export default function BacktestPage() {
     (s: BlockState) => setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
     [],
   )
-  const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
+  const refreshSaved = useCallback(() => {
+    savedBarRef.current?.refresh()
+  }, [])
 
   const numPoints      = chartData?.labels.length ?? 2
   const pixelsPerPoint = chartWidth / Math.max(numPoints - 1, 1)

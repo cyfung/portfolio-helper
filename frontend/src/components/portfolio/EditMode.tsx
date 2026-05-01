@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import { resolveSavedPortfolioConfig } from '@/lib/portfolioRefs'
+import { resolveSavedPortfolioConfig, savedPortfolioConfig, savedPortfolioConfigMap } from '@/lib/portfolioRefs'
 import type { SavedPortfolio } from '@/types/backtest'
 
 interface Props {
@@ -24,10 +24,6 @@ interface StockRow {
 
 
 const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
-
-function savedPortfolioConfig(config: any) {
-  return config?.portfolios?.[0] ?? config
-}
 
 function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
   const validRows = rows.filter(row => row.ticker.trim() && row.weight > 0)
@@ -183,7 +179,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
     if (!selected) return
 
     try {
-      const savedByName = new Map(savedPortfolios.map(p => [p.name, savedPortfolioConfig(p.config)]))
+      const savedByName = savedPortfolioConfigMap(savedPortfolios)
       const resolved = resolveSavedPortfolioConfig(
         savedPortfolioConfig(selected.config),
         savedByName,

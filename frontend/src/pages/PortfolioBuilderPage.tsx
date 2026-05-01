@@ -265,6 +265,7 @@ export default function PortfolioBuilderPage() {
               value={b}
               onChange={updateBlock(i)}
               onSavedRefresh={refreshSaved}
+              showTickerConfig
             />
           ))}
         </div>
