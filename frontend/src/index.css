@@ -4555,15 +4555,61 @@ input.no-spinner[type="number"] {
     border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
     background: var(--color-bg-elevated);
-    overflow: hidden;
+    overflow: visible;
 }
 
 .portfolio-builder-result-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.45rem 0.6rem;
     background: var(--color-bg-secondary);
     border-bottom: 1px solid var(--color-border-subtle);
     font-size: var(--font-size-sm);
     font-weight: 700;
+}
+
+.portfolio-builder-result-title span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.portfolio-builder-result-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+}
+
+.portfolio-builder-toggle-btn {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.portfolio-builder-toggle-btn:hover {
+    border-color: var(--color-accent-primary);
+}
+
+.portfolio-builder-margin-select {
+    max-width: 9rem;
+    flex: 0 0 auto;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    padding: 0.15rem 0.35rem;
 }
 
 .portfolio-builder-table {
@@ -4572,8 +4618,8 @@ input.no-spinner[type="number"] {
     margin: 0.5rem auto 0.75rem;
 }
 
-.portfolio-builder-table th:last-child,
-.portfolio-builder-table td:last-child {
+.portfolio-builder-table th:not(:first-child),
+.portfolio-builder-table td:not(:first-child) {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
@@ -4581,6 +4627,57 @@ input.no-spinner[type="number"] {
 .portfolio-builder-table th:first-child,
 .portfolio-builder-table td:first-child {
     text-align: left;
+}
+
+.portfolio-builder-table tfoot th {
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.portfolio-builder-group-section {
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 0.15rem;
+    position: relative;
+}
+
+.portfolio-builder-group-table {
+    margin-top: 0.35rem;
+}
+
+.portfolio-builder-group-table tbody tr {
+    cursor: pointer;
+}
+
+.portfolio-builder-group-table tbody tr.selected td {
+    background: color-mix(in srgb, var(--color-accent-primary) 16%, transparent);
+    color: var(--color-text-primary);
+    font-weight: 700;
+}
+
+.portfolio-builder-group-composition {
+    position: fixed;
+    z-index: 30;
+    min-width: 14rem;
+    max-width: min(24rem, 90vw);
+    margin: 0;
+    padding: 0.35rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-elevated);
+    box-shadow: 0 14px 34px color-mix(in srgb, #000 24%, transparent);
+    pointer-events: auto;
+}
+
+.portfolio-builder-group-composition th,
+.portfolio-builder-group-composition td {
+    border-radius: 0;
+}
+
+.portfolio-builder-group-composition th:first-child {
+    border-top-left-radius: var(--radius-md);
+}
+
+.portfolio-builder-group-composition th:last-child {
+    border-top-right-radius: var(--radius-md);
 }
 
 .portfolio-builder-result-block .stats-container {
