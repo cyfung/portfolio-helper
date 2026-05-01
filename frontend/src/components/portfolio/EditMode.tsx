@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import { resolveSavedPortfolioConfig } from '@/lib/portfolioRefs'
+import type { SavedPortfolio } from '@/types/backtest'
 
 interface Props {
   saveKey: number   // incrementing triggers save
@@ -22,6 +24,34 @@ interface StockRow {
 
 
 const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
+
+function savedPortfolioConfig(config: any) {
+  return config?.portfolios?.[0] ?? config
+}
+
+function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
+  const validRows = rows.filter(row => row.ticker.trim() && row.weight > 0)
+  const total = validRows.reduce((sum, row) => sum + row.weight, 0)
+  if (total <= 0) return validRows
+
+  const scaled = validRows.map(row => {
+    const exactCents = row.weight * 10000 / total
+    const cents = Math.floor(exactCents)
+    return {
+      ticker: row.ticker,
+      cents,
+      remainder: exactCents - cents,
+    }
+  })
+
+  let diff = 10000 - scaled.reduce((sum, row) => sum + row.cents, 0)
+  const byRemainder = [...scaled].sort((a, b) => b.remainder - a.remainder || a.ticker.localeCompare(b.ticker))
+  for (let i = 0; diff > 0 && byRemainder.length > 0; i += 1, diff -= 1) {
+    byRemainder[i % byRemainder.length].cents += 1
+  }
+
+  return scaled.map(row => ({ ticker: row.ticker, weight: row.cents / 100 }))
+}
 
 function letfAttrToStr(attr: string): string {
   if (!attr) return ''
@@ -62,6 +92,9 @@ function flashCopyButton(btn: HTMLElement) {
 export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Props) {
   const { stocks, portfolioId, config } = usePortfolioStore()
   const [dividendDate] = useState(pendingDividendDate ?? config.dividendStartDate ?? '')
+  const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
+  const [selectedImportName, setSelectedImportName] = useState('')
+  const [importStatus, setImportStatus] = useState('')
 
   const [stockRows, setStockRows] = useState<StockRow[]>(() =>
     stocks.map(s => ({
@@ -73,6 +106,22 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
     }))
   )
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/backtest/savedPortfolios')
+      .then(res => res.ok ? res.json() : [])
+      .then((data: SavedPortfolio[]) => {
+        if (cancelled) return
+        const list = data ?? []
+        setSavedPortfolios(list)
+        setSelectedImportName(current => current || list[0]?.name || '')
+      })
+      .catch(() => {
+        if (!cancelled) setSavedPortfolios([])
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const totalWeight = stockRows
     .filter(r => !r.deleted)
@@ -127,6 +176,46 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
 
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
     setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  function importSavedPortfolioWeights() {
+    const selected = savedPortfolios.find(p => p.name === selectedImportName)
+    if (!selected) return
+
+    try {
+      const savedByName = new Map(savedPortfolios.map(p => [p.name, savedPortfolioConfig(p.config)]))
+      const resolved = resolveSavedPortfolioConfig(
+        savedPortfolioConfig(selected.config),
+        savedByName,
+        [selected.name],
+      )
+      const rounded = roundWeightsToHundred(resolved)
+
+      setStockRows(rows => {
+        const next = rows.map(r => ({ ...r }))
+        const rowBySymbol = new Map<string, number>()
+        next.forEach((row, idx) => {
+          if (!row.deleted && row.symbol.trim()) rowBySymbol.set(row.symbol.trim().toUpperCase(), idx)
+        })
+
+        for (const row of rounded) {
+          const symbol = row.ticker.trim().toUpperCase()
+          if (!symbol) continue
+          const existingIdx = rowBySymbol.get(symbol)
+          if (existingIdx !== undefined) {
+            next[existingIdx].weight = row.weight
+          } else {
+            rowBySymbol.set(symbol, next.length)
+            next.push({ symbol, qty: 0, weight: row.weight, letf: '', groups: '' })
+          }
+        }
+        return next
+      })
+
+      setImportStatus(`Imported ${rounded.length} weights from ${selected.name}. Review and save when ready.`)
+    } catch (err: any) {
+      setImportStatus(err?.message || 'Unable to import saved portfolio weights.')
+    }
   }
 
   // ── Enter key: move to same column in next visible row ───────────────────
@@ -251,6 +340,32 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
 
   return (
     <>
+      {savedPortfolios.length > 0 && (
+        <div className="edit-import-controls">
+          <span className="edit-import-label">Import Weights</span>
+          <select
+            value={selectedImportName}
+            onChange={e => {
+              setSelectedImportName(e.target.value)
+              setImportStatus('')
+            }}
+          >
+            {savedPortfolios.map(p => (
+              <option key={p.name} value={p.name}>{p.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="add-stock-btn"
+            disabled={!selectedImportName}
+            onClick={importSavedPortfolioWeights}
+          >
+            Import
+          </button>
+          {importStatus && <span className="edit-import-status">{importStatus}</span>}
+        </div>
+      )}
+
       {/* ── Stock edit table ─────────────────────────────────────────── */}
       <table className="portfolio-table" id="stock-edit-table" onClick={handleCopyClick}>
         <thead>

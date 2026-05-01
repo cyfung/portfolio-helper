@@ -338,7 +338,7 @@ export default function PortfolioViewer() {
         </div>
 
         <div className="stock-section">
-          <RebalanceControls showGroupBy={!groupViewActive && !editModeActive} />
+          {!editModeActive && <RebalanceControls showGroupBy={!groupViewActive} />}
           {editModeActive ? (
             <EditMode key={editResetKey} saveKey={saveKey} onSaved={handleSaved} pendingDividendDate={dividendDate} />
           ) : groupViewActive ? (

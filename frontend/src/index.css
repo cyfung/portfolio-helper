@@ -2967,6 +2967,44 @@ a.loan-calc-link:hover {
     font-size: var(--font-size-sm);
     width: 110px;
 }
+
+.edit-import-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) 0 var(--spacing-sm);
+}
+
+.edit-import-label,
+.edit-import-status {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.edit-import-label {
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.edit-import-controls select {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.edit-import-controls .add-stock-btn {
+    padding: var(--spacing-xs) var(--spacing-lg);
+}
+
+.edit-import-controls .add-stock-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
 .cash-margin-toggle,
 .cash-ref-toggle-label {
     display: inline-flex;
