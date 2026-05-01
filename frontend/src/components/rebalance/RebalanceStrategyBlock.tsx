@@ -364,6 +364,14 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             ))}
           </select>
         </div>
+        <div className="strategy-row">
+          <label>Use Comfort Zone</label>
+          <input
+            type="checkbox"
+            checked={s.useComfortZone ?? true}
+            onChange={e => set({ useComfortZone: e.target.checked })}
+          />
+        </div>
       </div>
 
       <details open style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>

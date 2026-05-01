@@ -226,6 +226,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
     buyTheDip                  = (obj["buyTheDip"] as? JsonObject)?.let { parseDipSurgeConfig(it) },
     sellOnSurge                = (obj["sellOnSurge"] as? JsonObject)?.let { parseDipSurgeConfig(it) },
+    useComfortZone             = obj["useComfortZone"]?.jsonPrimitive?.booleanOrNull ?: true,
     comfortZoneLow              = obj["comfortZoneLow"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     comfortZoneHigh             = obj["comfortZoneHigh"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
 )

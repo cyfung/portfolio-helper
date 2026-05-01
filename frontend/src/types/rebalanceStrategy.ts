@@ -43,6 +43,7 @@ export interface RebalStrategyState {
   buyLowRestorePointIndex: string      // index into marginPoints[] for restore target; default '2'
   buyTheDip: DipSurgeState | null
   sellOnSurge: DipSurgeState | null
+  useComfortZone: boolean
   comfortZoneLow: string
   comfortZoneHigh: string
 }
@@ -112,6 +113,7 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     buyLowRestorePointIndex: '2',
     buyTheDip: null,
     sellOnSurge: null,
+    useComfortZone: true,
     comfortZoneLow: '0',
     comfortZoneHigh: '0',
   }
@@ -163,7 +165,7 @@ export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategy
 }
 
 export function savedConfigToStrategyState(config: any, name: string): RebalStrategyState {
-  return { ...config, label: name }
+  return { ...config, label: name, useComfortZone: config.useComfortZone ?? true }
 }
 
 export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: string): object {
@@ -196,6 +198,7 @@ export function strategyStateToAPI(s: RebalStrategyState, portfolioRebalance: st
       : null,
     buyTheDip: s.buyTheDip ? serializeDipSurge(s.buyTheDip, points) : null,
     sellOnSurge: s.sellOnSurge ? serializeDipSurge(s.sellOnSurge, points) : null,
+    useComfortZone: s.useComfortZone ?? true,
     comfortZoneLow:  low / 100,
     comfortZoneHigh: high / 100,
   }

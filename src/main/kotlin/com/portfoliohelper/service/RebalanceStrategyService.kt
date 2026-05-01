@@ -187,10 +187,14 @@ object RebalanceStrategyService {
         if (eq > 0) {
           val currentRatio = account.currentMarginRatio()
           val effectiveMargin =
-              when {
-                currentRatio > comfortHighBound -> comfortHighBound
-                currentRatio < comfortLowBound -> comfortLowBound
-                else -> currentRatio
+              if (strategy.useComfortZone) {
+                when {
+                  currentRatio > comfortHighBound -> comfortHighBound
+                  currentRatio < comfortLowBound -> comfortLowBound
+                  else -> currentRatio
+                }
+              } else {
+                marginTarget
               }
           val targetTotal = eq * (1.0 + effectiveMargin)
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)

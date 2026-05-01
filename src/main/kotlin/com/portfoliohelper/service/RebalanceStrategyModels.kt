@@ -117,6 +117,7 @@ data class RebalStrategyConfig(
     // Sections 5 & 6
     val buyTheDip: DipSurgeConfig?,
     val sellOnSurge: DipSurgeConfig?,
+    val useComfortZone: Boolean = true,
     val comfortZoneLow: Double = 0.0,
     val comfortZoneHigh: Double = 0.0
 )

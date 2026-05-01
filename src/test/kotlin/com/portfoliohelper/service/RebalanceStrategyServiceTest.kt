@@ -1,6 +1,8 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.AppDirs
 import java.time.LocalDate
+import java.nio.file.Files
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertNull
@@ -55,7 +57,8 @@ class RebalanceStrategyServiceTest {
         buyTheDip: DipSurgeConfig? = null,
         sellOnSurge: DipSurgeConfig? = null,
         cashflowImmediateInvestPct: Double = 1.0,
-        cashflowScaling: CashflowScaling = CashflowScaling.NO_SCALING
+        cashflowScaling: CashflowScaling = CashflowScaling.NO_SCALING,
+        useComfortZone: Boolean = true
     ) = RebalStrategyConfig(
         label = "test",
         marginRatio = marginRatio,
@@ -68,6 +71,7 @@ class RebalanceStrategyServiceTest {
         buyOnLowMargin = buyOnLowMargin,
         buyTheDip = buyTheDip,
         sellOnSurge = sellOnSurge,
+        useComfortZone = useComfortZone,
         comfortZoneLow = comfortLow,
         comfortZoneHigh = comfortHigh
     )
@@ -117,6 +121,235 @@ class RebalanceStrategyServiceTest {
         assertTrue(result.marginPoints != null, "marginPoints must be non-null when marginRatio=0.5")
         // marginUtil = (-CB)/equity = 5_000/10_000 = 0.5 throughout (no price movement, no interest)
         result.marginPoints!!.forEachIndexed { i, p -> assertApprox(0.5, p.value, label = "margin[$i]") }
+    }
+
+    @Test
+    fun monthlyRebalance_canIgnoreComfortZoneAndRestoreTargetMargin() {
+        val dates = days(LocalDate.of(2024, 1, 30), 4)
+        val prices = mapOf(
+            dates[0] to 1.0,
+            dates[1] to 2.0,
+            dates[2] to 2.0,
+            dates[3] to 2.0,
+        )
+        val series = mapOf("SPY" to prices)
+        val portfolio = singleStockPortfolio(rebalance = RebalanceStrategy.MONTHLY)
+
+        val withComfort = RebalanceStrategyService.runStrategyResultForTest(
+            portfolio,
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.INHERIT,
+                comfortLow = 0.4,
+                comfortHigh = 0.6,
+                useComfortZone = true,
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+        val withoutComfort = RebalanceStrategyService.runStrategyResultForTest(
+            portfolio,
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.INHERIT,
+                comfortLow = 0.4,
+                comfortHigh = 0.6,
+                useComfortZone = false,
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.4, withComfort.marginPoints!![2].value, label = "with comfort Feb 1 margin")
+        assertApprox(0.5, withoutComfort.marginPoints!![2].value, label = "without comfort Feb 1 margin")
+        withoutComfort.marginPoints!!.forEachIndexed { i, p ->
+            if (i >= 2) assertApprox(0.5, p.value, label = "without comfort margin[$i]")
+        }
+    }
+
+    @Test
+    fun actualBacktestEqualsRebalanceStrategyWithInheritedRebalanceAndMarginRestores() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-backtest-rebalance-test")
+        AppDirs.dataDir = tempDataDir
+        try {
+            val dates = days(LocalDate.of(2024, 1, 29), 12)
+            val tickerDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
+            val today = LocalDate.now()
+            val aValues = listOf(10_000.0, 8_000.0, 7_000.0, 7_000.0, 10_000.0, 12_000.0, 11_000.0, 9_000.0, 9_500.0, 11_000.0, 10_500.0, 10_800.0)
+            val bValues = listOf(10_000.0, 10_500.0, 10_200.0, 10_200.0, 10_000.0, 9_700.0, 10_300.0, 10_700.0, 10_200.0, 9_900.0, 10_100.0, 10_000.0)
+            val seriesA = dates.zip(aValues).toMap() + (today to aValues.last())
+            val seriesB = dates.zip(bValues).toMap() + (today to bValues.last())
+            BacktestService.writeSimCsv(tickerDir.resolve("BTSTA-$today.csv"), seriesA)
+            BacktestService.writeSimCsv(tickerDir.resolve("BTSTB-$today.csv"), seriesB)
+
+            val marginConfig = MarginConfig(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                marginDeviationUpper = 0.1,
+                marginDeviationLower = 0.1,
+                upperRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+                lowerRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+            )
+            val portfolio = PortfolioConfig(
+                label = "actual",
+                tickers = listOf(TickerWeight("BTSTA", 0.6), TickerWeight("BTSTB", 0.4)),
+                rebalanceStrategy = RebalanceStrategy.MONTHLY,
+                marginStrategies = listOf(marginConfig),
+                includeNoMargin = false,
+            )
+            val strategy = RebalStrategyConfig(
+                label = "strategy",
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.INHERIT,
+                cashflowImmediateInvestPct = 1.0,
+                cashflowScaling = CashflowScaling.NO_SCALING,
+                deviationMode = DeviationMode.ABSOLUTE,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.6,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                buyOnLowMargin = MarginTriggerAction(
+                    deviationPct = 0.4,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                buyTheDip = null,
+                sellOnSurge = null,
+                useComfortZone = false,
+                comfortZoneLow = 0.4,
+                comfortZoneHigh = 0.6,
+            )
+
+            val backtestCurve = BacktestService.runMulti(
+                MultiBacktestRequest(
+                    fromDate = dates.first().toString(),
+                    toDate = dates.last().toString(),
+                    portfolios = listOf(portfolio),
+                    cashflow = null,
+                    startingBalance = 10_000.0,
+                )
+            ).portfolios.single().curves.single()
+
+            val strategyCurve = RebalanceStrategyService.run(
+                RebalanceStrategyRequest(
+                    fromDate = dates.first().toString(),
+                    toDate = dates.last().toString(),
+                    portfolio = portfolio,
+                    cashflow = null,
+                    strategies = listOf(strategy),
+                    startingBalance = 10_000.0,
+                )
+            ).portfolios.last().curves.single()
+
+            assertTrue(backtestCurve.points.size == strategyCurve.points.size, "Equity point counts differ")
+            assertTrue(backtestCurve.marginPoints!!.size == strategyCurve.marginPoints!!.size, "Margin point counts differ")
+            backtestCurve.points.zip(strategyCurve.points).forEachIndexed { i, (backtest, rebalStrategy) ->
+                assertTrue(backtest.date == rebalStrategy.date, "Equity dates differ at index $i")
+                assertApprox(backtest.value, rebalStrategy.value, eps = 1e-6, label = "equity[$i] ${backtest.date}")
+            }
+            backtestCurve.marginPoints!!.zip(strategyCurve.marginPoints!!).forEachIndexed { i, (backtest, rebalStrategy) ->
+                assertTrue(backtest.date == rebalStrategy.date, "Margin dates differ at index $i")
+                assertApprox(backtest.value, rebalStrategy.value, eps = 1e-6, label = "margin[$i] ${backtest.date}")
+            }
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun actualBacktestEqualsRebalanceStrategyForKmlmVtLongPeriodProfile() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-kmlm-vt-long-period-test")
+        AppDirs.dataDir = tempDataDir
+        try {
+            val fromDate = "1992-01-02"
+            val toDate = "2026-03-02"
+            val marginConfig = MarginConfig(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                marginDeviationUpper = 0.1,
+                marginDeviationLower = 0.1,
+                upperRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+                lowerRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+            )
+            val portfolio = PortfolioConfig(
+                label = "40% KMLM / 60% VT",
+                tickers = listOf(TickerWeight("KMLM", 0.4), TickerWeight("VT", 0.6)),
+                rebalanceStrategy = RebalanceStrategy.MONTHLY,
+                marginStrategies = listOf(marginConfig),
+                includeNoMargin = false,
+            )
+            val strategy = RebalStrategyConfig(
+                label = "strategy",
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.INHERIT,
+                cashflowImmediateInvestPct = 1.0,
+                cashflowScaling = CashflowScaling.NO_SCALING,
+                deviationMode = DeviationMode.ABSOLUTE,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.6,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                buyOnLowMargin = MarginTriggerAction(
+                    deviationPct = 0.4,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                buyTheDip = null,
+                sellOnSurge = null,
+                useComfortZone = false,
+                comfortZoneLow = 0.4,
+                comfortZoneHigh = 0.6,
+            )
+
+            val backtestCurve = BacktestService.runMulti(
+                MultiBacktestRequest(
+                    fromDate = fromDate,
+                    toDate = toDate,
+                    portfolios = listOf(portfolio),
+                    cashflow = null,
+                    startingBalance = 10_000.0,
+                )
+            ).portfolios.single().curves.single()
+
+            val strategyCurve = RebalanceStrategyService.run(
+                RebalanceStrategyRequest(
+                    fromDate = fromDate,
+                    toDate = toDate,
+                    portfolio = portfolio,
+                    cashflow = null,
+                    strategies = listOf(strategy),
+                    startingBalance = 10_000.0,
+                )
+            ).portfolios.last().curves.single()
+
+            assertTrue(backtestCurve.points.size == strategyCurve.points.size, "Equity point counts differ")
+            assertTrue(backtestCurve.marginPoints!!.size == strategyCurve.marginPoints!!.size, "Margin point counts differ")
+            assertTrue(backtestCurve.points.size > 8_000, "Expected a long overlapping history")
+            backtestCurve.points.zip(strategyCurve.points).forEachIndexed { i, (backtest, rebalStrategy) ->
+                assertTrue(backtest.date == rebalStrategy.date, "Equity dates differ at index $i")
+                assertApprox(backtest.value, rebalStrategy.value, eps = 1e-5, label = "equity[$i] ${backtest.date}")
+            }
+            backtestCurve.marginPoints!!.zip(strategyCurve.marginPoints!!).forEachIndexed { i, (backtest, rebalStrategy) ->
+                assertTrue(backtest.date == rebalStrategy.date, "Margin dates differ at index $i")
+                assertApprox(backtest.value, rebalStrategy.value, eps = 1e-8, label = "margin[$i] ${backtest.date}")
+            }
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
     }
 
     @Test

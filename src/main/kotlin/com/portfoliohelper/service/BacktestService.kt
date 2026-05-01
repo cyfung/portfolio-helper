@@ -985,21 +985,12 @@ object BacktestService {
         val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
         val returnRatios = buildReturnRatios(tickers, seriesMap, dates)
         val dailyLoanRates = buildDailyLoanRates(dates, effrx, dailySpread)
+        var previousMarginRatio = targetRatio
 
         for (i in 1 until dates.size) {
             val prevDate = dates[i - 1]
             val curDate = dates[i]
             val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
-
-            // Scheduled full asset rebalance (before today's return)
-            if (rebalanceDay) {
-                val currentEquity = holdings.values.sum() - borrowed
-                borrowed = currentEquity * targetRatio
-                val newTotalExposure = currentEquity + borrowed
-                for (ticker in tickers) {
-                    holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
-                }
-            }
 
             applyDailyReturns(tickers, holdings, returnRatios, i)
 
@@ -1025,14 +1016,20 @@ object BacktestService {
                     for (ticker in tickers)
                         holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
                 borrowed = newBorrowed
+            } else if (rebalanceDay) {
+                // Scheduled full asset rebalance at today's close.
+                borrowed = equity * targetRatio
+                val newTotalExposure = equity + borrowed
+                for (ticker in tickers) {
+                    holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
+                }
             } else {
-                // Margin ratio deviation check
-                val currentMarginRatio = if (equity != 0.0) borrowed / equity else targetRatio
-                val upperBreach = currentMarginRatio > upperThreshold
-                val lowerBreach = currentMarginRatio < lowerThreshold
+                // Margin deviation actions execute on the next trading day using yesterday's margin ratio.
+                val upperBreach = previousMarginRatio > upperThreshold
+                val lowerBreach = previousMarginRatio < lowerThreshold
                 val deviationBreach = upperBreach || lowerBreach
 
-                if (deviationBreach && !rebalanceDay) {
+                if (deviationBreach) {
                     if (upperBreach) upperTriggers++ else lowerTriggers++
                 }
 
@@ -1085,7 +1082,8 @@ object BacktestService {
 
             val endEquity = holdings.values.sum() - borrowed
             result.add(endEquity)
-            marginUtilization.add(if (endEquity > 0.0) borrowed.coerceAtLeast(0.0) / endEquity else 0.0)
+            previousMarginRatio = if (endEquity > 0.0) borrowed.coerceAtLeast(0.0) / endEquity else 0.0
+            marginUtilization.add(previousMarginRatio)
         }
         return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers)
     }
