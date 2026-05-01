@@ -320,10 +320,7 @@ private fun JsonArray.parseCashEntries() = mapNotNull { el ->
 }
 
 @Serializable
-private data class SavedBacktestPortfolio(val name: String, val config: JsonElement)
-
-@Serializable
-private data class SavedRebalanceStrategy(val name: String, val config: JsonElement)
+private data class SavedJsonConfig(val name: String, val config: JsonElement)
 
 @Serializable
 private data class TwsPositionItem(val symbol: String, val qty: Double)
@@ -343,6 +340,65 @@ private data class PortfolioOptionDto(val slug: String, val name: String, val se
 
 @Serializable
 private data class TickerConfigDto(val symbol: String, val letf: String, val groups: String)
+
+private fun JsonObject.parseCashflowConfig(): CashflowConfig? =
+    (this["cashflow"] as? JsonObject)?.let { cf ->
+        CashflowConfig(
+            amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
+            frequency = runCatching {
+                CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
+            }.getOrDefault(CashflowFrequency.NONE)
+        )
+    }
+
+private fun listSavedJsonConfigs(
+    table: Table,
+    nameColumn: Column<String>,
+    configColumn: Column<String>,
+    createdAtColumn: Column<Long>,
+): List<SavedJsonConfig> = transaction {
+    table.selectAll()
+        .orderBy(createdAtColumn)
+        .map {
+            SavedJsonConfig(
+                name = it[nameColumn],
+                config = Json.parseToJsonElement(it[configColumn])
+            )
+        }
+}
+
+private fun deleteSavedJsonConfig(
+    table: Table,
+    nameColumn: Column<String>,
+    name: String,
+) = transaction {
+    table.deleteWhere { nameColumn eq name }
+}
+
+private fun createSavedJsonConfig(
+    table: Table,
+    nameColumn: Column<String>,
+    configColumn: Column<String>,
+    createdAtColumn: Column<Long>,
+    name: String,
+    config: JsonElement,
+): SavedJsonConfig = transaction {
+    val takenNames = table.selectAll()
+        .map { it[nameColumn] }
+        .toSet()
+    var finalName = name
+    var counter = 2
+    while (finalName in takenNames) {
+        finalName = "$name ($counter)"
+        counter++
+    }
+    table.insert {
+        it[nameColumn] = finalName
+        it[configColumn] = config.toString()
+        it[createdAtColumn] = System.currentTimeMillis()
+    }
+    SavedJsonConfig(finalName, config)
+}
 
 @Serializable
 private data class StockDto(
@@ -610,16 +666,12 @@ fun Application.configureRouting() {
         }
 
         get("/api/backtest/savedPortfolios") {
-            val rows = transaction {
-                SavedBacktestPortfoliosTable.selectAll()
-                    .orderBy(SavedBacktestPortfoliosTable.createdAt)
-                    .map {
-                        SavedBacktestPortfolio(
-                            name = it[SavedBacktestPortfoliosTable.name],
-                            config = Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config])
-                        )
-                    }
-            }
+            val rows = listSavedJsonConfigs(
+                SavedBacktestPortfoliosTable,
+                SavedBacktestPortfoliosTable.name,
+                SavedBacktestPortfoliosTable.config,
+                SavedBacktestPortfoliosTable.createdAt,
+            )
             call.respondText(appJson.encodeToString(rows), ContentType.Application.Json)
         }
 
@@ -627,7 +679,7 @@ fun Application.configureRouting() {
             val name = call.request.queryParameters["name"] ?: return@delete call.respond(
                 HttpStatusCode.BadRequest
             )
-            transaction { SavedBacktestPortfoliosTable.deleteWhere { SavedBacktestPortfoliosTable.name eq name } }
+            deleteSavedJsonConfig(SavedBacktestPortfoliosTable, SavedBacktestPortfoliosTable.name, name)
             call.respondOk()
         }
 
@@ -638,21 +690,14 @@ fun Application.configureRouting() {
                 HttpStatusCode.BadRequest
             )
             val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val saved = transaction {
-                val takenNames = SavedBacktestPortfoliosTable.selectAll()
-                    .map { it[SavedBacktestPortfoliosTable.name] }.toSet()
-                var finalName = name
-                var counter = 2
-                while (finalName in takenNames) {
-                    finalName = "$name ($counter)"; counter++
-                }
-                SavedBacktestPortfoliosTable.insert {
-                    it[SavedBacktestPortfoliosTable.name] = finalName
-                    it[SavedBacktestPortfoliosTable.config] = config.toString()
-                    it[SavedBacktestPortfoliosTable.createdAt] = System.currentTimeMillis()
-                }
-                SavedBacktestPortfolio(finalName, config)
-            }
+            val saved = createSavedJsonConfig(
+                SavedBacktestPortfoliosTable,
+                SavedBacktestPortfoliosTable.name,
+                SavedBacktestPortfoliosTable.config,
+                SavedBacktestPortfoliosTable.createdAt,
+                name,
+                config,
+            )
             call.respondText(appJson.encodeToString(saved), ContentType.Application.Json)
         }
 
@@ -671,14 +716,7 @@ fun Application.configureRouting() {
 
                 val portfolios = parsePortfolioConfigs(json)
 
-                val cashflow = (json["cashflow"] as? JsonObject)?.let { cf ->
-                    CashflowConfig(
-                        amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
-                        frequency = runCatching {
-                            CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
-                        }.getOrDefault(CashflowFrequency.NONE)
-                    )
-                }
+                val cashflow = json.parseCashflowConfig()
 
                 val result =
                     BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios, cashflow, startingBalance))
@@ -694,22 +732,18 @@ fun Application.configureRouting() {
         }
 
         get("/api/rebalance-strategy/savedStrategies") {
-            val rows = transaction {
-                SavedRebalanceStrategiesTable.selectAll()
-                    .orderBy(SavedRebalanceStrategiesTable.createdAt)
-                    .map {
-                        SavedRebalanceStrategy(
-                            name = it[SavedRebalanceStrategiesTable.name],
-                            config = Json.parseToJsonElement(it[SavedRebalanceStrategiesTable.config])
-                        )
-                    }
-            }
+            val rows = listSavedJsonConfigs(
+                SavedRebalanceStrategiesTable,
+                SavedRebalanceStrategiesTable.name,
+                SavedRebalanceStrategiesTable.config,
+                SavedRebalanceStrategiesTable.createdAt,
+            )
             call.respondText(appJson.encodeToString(rows), ContentType.Application.Json)
         }
 
         delete("/api/rebalance-strategy/savedStrategies") {
             val name = call.request.queryParameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
-            transaction { SavedRebalanceStrategiesTable.deleteWhere { SavedRebalanceStrategiesTable.name eq name } }
+            deleteSavedJsonConfig(SavedRebalanceStrategiesTable, SavedRebalanceStrategiesTable.name, name)
             call.respondOk()
         }
 
@@ -718,21 +752,14 @@ fun Application.configureRouting() {
             val entry = Json.parseToJsonElement(body).jsonObject
             val name = entry["name"]?.jsonPrimitive?.contentOrNull ?: return@post call.respond(HttpStatusCode.BadRequest)
             val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val saved = transaction {
-                val takenNames = SavedRebalanceStrategiesTable.selectAll()
-                    .map { it[SavedRebalanceStrategiesTable.name] }.toSet()
-                var finalName = name
-                var counter = 2
-                while (finalName in takenNames) {
-                    finalName = "$name ($counter)"; counter++
-                }
-                SavedRebalanceStrategiesTable.insert {
-                    it[SavedRebalanceStrategiesTable.name] = finalName
-                    it[SavedRebalanceStrategiesTable.config] = config.toString()
-                    it[SavedRebalanceStrategiesTable.createdAt] = System.currentTimeMillis()
-                }
-                SavedRebalanceStrategy(finalName, config)
-            }
+            val saved = createSavedJsonConfig(
+                SavedRebalanceStrategiesTable,
+                SavedRebalanceStrategiesTable.name,
+                SavedRebalanceStrategiesTable.config,
+                SavedRebalanceStrategiesTable.createdAt,
+                name,
+                config,
+            )
             call.respondText(appJson.encodeToString(saved), ContentType.Application.Json)
         }
 
@@ -750,14 +777,7 @@ fun Application.configureRouting() {
                 val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
                     ?: throw IllegalArgumentException("Missing portfolio")
 
-                val cashflow = (json["cashflow"] as? JsonObject)?.let { cf ->
-                    CashflowConfig(
-                        amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
-                        frequency = runCatching {
-                            CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
-                        }.getOrDefault(CashflowFrequency.NONE)
-                    )
-                }
+                val cashflow = json.parseCashflowConfig()
 
                 val strategies = (json["strategies"] as? JsonArray)?.map { el ->
                     parseRebalStrategyConfig(el.jsonObject)
@@ -799,14 +819,7 @@ fun Application.configureRouting() {
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
-                val cashflow = (json["cashflow"] as? JsonObject)?.let { cf ->
-                    CashflowConfig(
-                        amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
-                        frequency = runCatching {
-                            CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
-                        }.getOrDefault(CashflowFrequency.NONE)
-                    )
-                }
+                val cashflow = json.parseCashflowConfig()
 
                 val portfolios = parsePortfolioConfigs(json)
 

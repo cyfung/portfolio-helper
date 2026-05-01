@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
+import CashflowControls from '@/components/backtest/CashflowControls'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
@@ -15,7 +16,8 @@ import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
-  configToBlockState, PALETTE, CASHFLOW_FREQUENCY_OPTIONS,
+  configToBlockState, PALETTE, cashflowStateFromSettings,
+  cashflowToPayload, startingBalanceToPayload,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
@@ -206,9 +208,10 @@ export default function BacktestPage() {
         if (!req.portfolios) return
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate)   setToDate(req.toDate)
-        if (req.startingBalance != null) setStartingBalance(String(req.startingBalance))
-        if (req.cashflow?.amount != null) setCashflowAmount(String(req.cashflow.amount))
-        if (req.cashflow?.frequency) setCashflowFrequency(req.cashflow.frequency)
+        const cashflowState = cashflowStateFromSettings(req)
+        if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
+        if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
+        if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
         setBlocks(prev => {
           const next = [...prev]
           req.portfolios.forEach((p: any, i: number) => {
@@ -438,11 +441,9 @@ export default function BacktestPage() {
           body: JSON.stringify({
             fromDate: fromDate || null,
             toDate: toDate || null,
-            startingBalance: parseFloat(startingBalance) || 10000,
+            startingBalance: startingBalanceToPayload(startingBalance),
             portfolios,
-            cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
-              ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
-              : null,
+            cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
           }),
         }),
         realSlug
@@ -487,11 +488,9 @@ export default function BacktestPage() {
     const code = await compressToCode({
       fromDate: fromDate || null,
       toDate: toDate || null,
-      startingBalance: parseFloat(startingBalance) || 10000,
+      startingBalance: startingBalanceToPayload(startingBalance),
       portfolios,
-      cashflow: cashflowAmount && cashflowFrequency !== 'NONE'
-        ? { amount: parseFloat(cashflowAmount), frequency: cashflowFrequency }
-        : null,
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     })
     setImportCode(code)
     try { await navigator.clipboard.writeText(code) } catch (_) {}
@@ -503,9 +502,10 @@ export default function BacktestPage() {
       const req: any = await decompressFromCode(importCode.trim())
       if (req.fromDate) setFromDate(req.fromDate)
       if (req.toDate)   setToDate(req.toDate)
-      if (req.startingBalance != null) setStartingBalance(String(req.startingBalance))
-      if (req.cashflow?.amount != null) setCashflowAmount(String(req.cashflow.amount))
-      if (req.cashflow?.frequency) setCashflowFrequency(req.cashflow.frequency)
+      const cashflowState = cashflowStateFromSettings(req)
+      if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
+      if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
+      if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
       if (req.portfolios) {
         setBlocks(prev => {
           const next = [...prev]
@@ -648,28 +648,15 @@ export default function BacktestPage() {
           </div>
         </div>
 
-        <div className="backtest-section backtest-cashflow-row">
-          <div>
-            <label htmlFor="starting-balance">Starting Balance</label>
-            <input
-              type="number" id="starting-balance" min="0" step="100"
-              value={startingBalance} onChange={e => setStartingBalance(e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="cashflow-amount">Cashflow Amount</label>
-            <input
-              type="number" id="cashflow-amount" placeholder="e.g. 1000" min="0" step="100"
-              value={cashflowAmount} onChange={e => setCashflowAmount(e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="cashflow-frequency">Cashflow Frequency</label>
-            <select id="cashflow-frequency" value={cashflowFrequency} onChange={e => setCashflowFrequency(e.target.value)}>
-              {CASHFLOW_FREQUENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-        </div>
+        <CashflowControls
+          idPrefix="backtest"
+          startingBalance={startingBalance}
+          cashflowAmount={cashflowAmount}
+          cashflowFrequency={cashflowFrequency}
+          onStartingBalanceChange={setStartingBalance}
+          onCashflowAmountChange={setCashflowAmount}
+          onCashflowFrequencyChange={setCashflowFrequency}
+        />
 
         {realPortfolios.length > 0 && (
           <div className="backtest-section" style={{ marginTop: '0.5rem' }}>

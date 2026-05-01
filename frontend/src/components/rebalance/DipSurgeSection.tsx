@@ -5,7 +5,7 @@ import {
   PRICE_MOVE_TRIGGER_OPTIONS, EXECUTION_METHOD_OPTIONS, DIP_SURGE_SCOPE_OPTIONS,
   emptyTrigger,
 } from '@/types/rebalanceStrategy'
-import { MARGIN_MODE_OPTIONS, newId } from '@/types/backtest'
+import { REBALANCE_MARGIN_MODE_OPTIONS, newId } from '@/types/backtest'
 
 interface Props {
   direction: 'buy' | 'sell'
@@ -86,7 +86,7 @@ export default function DipSurgeSection({ direction, value, onChange, marginPoin
             <div className="strategy-row">
               <label>Allocation Strategy</label>
               <select value={value.allocStrategy} onChange={e => update({ allocStrategy: e.target.value })}>
-                {MARGIN_MODE_OPTIONS.filter(o => o.value !== 'DAILY').map(o => (
+                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>

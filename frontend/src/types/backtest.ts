@@ -63,6 +63,37 @@ export const MARGIN_MODE_OPTIONS = [
 
 // ── ID generation ─────────────────────────────────────────────────────────────
 
+export const REBALANCE_MARGIN_MODE_OPTIONS = MARGIN_MODE_OPTIONS.filter(o => o.value !== 'DAILY')
+
+export interface CashflowPayload {
+  amount: number
+  frequency: string
+}
+
+export interface CashflowFormState {
+  startingBalance: string
+  cashflowAmount: string
+  cashflowFrequency: string
+}
+
+export function startingBalanceToPayload(value: string): number {
+  return parseFloat(value) || 10000
+}
+
+export function cashflowToPayload(amount: string, frequency: string): CashflowPayload | null {
+  return amount && frequency !== 'NONE'
+    ? { amount: parseFloat(amount), frequency }
+    : null
+}
+
+export function cashflowStateFromSettings(req: any): Partial<CashflowFormState> {
+  return {
+    ...(req.startingBalance != null ? { startingBalance: String(req.startingBalance) } : {}),
+    ...(req.cashflow?.amount != null ? { cashflowAmount: String(req.cashflow.amount) } : {}),
+    ...(req.cashflow?.frequency ? { cashflowFrequency: req.cashflow.frequency } : {}),
+  }
+}
+
 let _nextId = 0
 export function newId(): string { return String(++_nextId) }
 

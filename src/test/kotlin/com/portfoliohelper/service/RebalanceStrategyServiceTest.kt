@@ -118,9 +118,11 @@ class RebalanceStrategyServiceTest {
         )
 
         result.points.forEachIndexed { i, p -> assertApprox(10_000.0, p.value, label = "equity[$i]") }
-        assertTrue(result.marginPoints != null, "marginPoints must be non-null when marginRatio=0.5")
+        val marginPoints = requireNotNull(result.marginPoints) {
+            "marginPoints must be non-null when marginRatio=0.5"
+        }
         // marginUtil = (-CB)/equity = 5_000/10_000 = 0.5 throughout (no price movement, no interest)
-        result.marginPoints!!.forEachIndexed { i, p -> assertApprox(0.5, p.value, label = "margin[$i]") }
+        marginPoints.forEachIndexed { i, p -> assertApprox(0.5, p.value, label = "margin[$i]") }
     }
 
     @Test
@@ -166,9 +168,11 @@ class RebalanceStrategyServiceTest {
             emptyMap(),
         )
 
-        assertApprox(0.4, withComfort.marginPoints!![2].value, label = "with comfort Feb 1 margin")
-        assertApprox(0.5, withoutComfort.marginPoints!![2].value, label = "without comfort Feb 1 margin")
-        withoutComfort.marginPoints!!.forEachIndexed { i, p ->
+        val withComfortMargins = requireNotNull(withComfort.marginPoints)
+        val withoutComfortMargins = requireNotNull(withoutComfort.marginPoints)
+        assertApprox(0.4, withComfortMargins[2].value, label = "with comfort Feb 1 margin")
+        assertApprox(0.5, withoutComfortMargins[2].value, label = "without comfort Feb 1 margin")
+        withoutComfortMargins.forEachIndexed { i, p ->
             if (i >= 2) assertApprox(0.5, p.value, label = "without comfort margin[$i]")
         }
     }
@@ -251,12 +255,14 @@ class RebalanceStrategyServiceTest {
             ).portfolios.last().curves.single()
 
             assertTrue(backtestCurve.points.size == strategyCurve.points.size, "Equity point counts differ")
-            assertTrue(backtestCurve.marginPoints!!.size == strategyCurve.marginPoints!!.size, "Margin point counts differ")
+            val backtestMargins = requireNotNull(backtestCurve.marginPoints)
+            val strategyMargins = requireNotNull(strategyCurve.marginPoints)
+            assertTrue(backtestMargins.size == strategyMargins.size, "Margin point counts differ")
             backtestCurve.points.zip(strategyCurve.points).forEachIndexed { i, (backtest, rebalStrategy) ->
                 assertTrue(backtest.date == rebalStrategy.date, "Equity dates differ at index $i")
                 assertApprox(backtest.value, rebalStrategy.value, eps = 1e-6, label = "equity[$i] ${backtest.date}")
             }
-            backtestCurve.marginPoints!!.zip(strategyCurve.marginPoints!!).forEachIndexed { i, (backtest, rebalStrategy) ->
+            backtestMargins.zip(strategyMargins).forEachIndexed { i, (backtest, rebalStrategy) ->
                 assertTrue(backtest.date == rebalStrategy.date, "Margin dates differ at index $i")
                 assertApprox(backtest.value, rebalStrategy.value, eps = 1e-6, label = "margin[$i] ${backtest.date}")
             }
@@ -336,13 +342,15 @@ class RebalanceStrategyServiceTest {
             ).portfolios.last().curves.single()
 
             assertTrue(backtestCurve.points.size == strategyCurve.points.size, "Equity point counts differ")
-            assertTrue(backtestCurve.marginPoints!!.size == strategyCurve.marginPoints!!.size, "Margin point counts differ")
+            val backtestMargins = requireNotNull(backtestCurve.marginPoints)
+            val strategyMargins = requireNotNull(strategyCurve.marginPoints)
+            assertTrue(backtestMargins.size == strategyMargins.size, "Margin point counts differ")
             assertTrue(backtestCurve.points.size > 8_000, "Expected a long overlapping history")
             backtestCurve.points.zip(strategyCurve.points).forEachIndexed { i, (backtest, rebalStrategy) ->
                 assertTrue(backtest.date == rebalStrategy.date, "Equity dates differ at index $i")
                 assertApprox(backtest.value, rebalStrategy.value, eps = 1e-5, label = "equity[$i] ${backtest.date}")
             }
-            backtestCurve.marginPoints!!.zip(strategyCurve.marginPoints!!).forEachIndexed { i, (backtest, rebalStrategy) ->
+            backtestMargins.zip(strategyMargins).forEachIndexed { i, (backtest, rebalStrategy) ->
                 assertTrue(backtest.date == rebalStrategy.date, "Margin dates differ at index $i")
                 assertApprox(backtest.value, rebalStrategy.value, eps = 1e-8, label = "margin[$i] ${backtest.date}")
             }
@@ -441,8 +449,8 @@ class RebalanceStrategyServiceTest {
         }
 
         result.points.forEachIndexed { i, p -> assertApprox(expEqs[i], p.value, label = "equity[$i]") }
-        assertTrue(result.marginPoints != null)
-        result.marginPoints!!.forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "margin[$i]") }
+        requireNotNull(result.marginPoints)
+            .forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "margin[$i]") }
     }
 
     @Test
@@ -488,8 +496,8 @@ class RebalanceStrategyServiceTest {
         }
 
         result.points.forEachIndexed { i, p -> assertApprox(expEqs[i], p.value, label = "equity[$i]") }
-        assertTrue(result.marginPoints != null)
-        result.marginPoints!!.forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "margin[$i]") }
+        requireNotNull(result.marginPoints)
+            .forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "margin[$i]") }
     }
 
     @Test
@@ -537,8 +545,8 @@ class RebalanceStrategyServiceTest {
                 null, series, dates, emptyMap()
             )
             r.points.forEachIndexed { i, p -> assertApprox(expEqs[i], p.value, label = "$scope equity[$i]") }
-            assertTrue(r.marginPoints != null)
-            r.marginPoints!!.forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "$scope margin[$i]") }
+            requireNotNull(r.marginPoints)
+                .forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "$scope margin[$i]") }
         }
     }
 
@@ -588,8 +596,8 @@ class RebalanceStrategyServiceTest {
                 null, series, dates, emptyMap()
             )
             r.points.forEachIndexed { i, p -> assertApprox(expEqs[i], p.value, label = "$scope equity[$i]") }
-            assertTrue(r.marginPoints != null)
-            r.marginPoints!!.forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "$scope margin[$i]") }
+            requireNotNull(r.marginPoints)
+                .forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "$scope margin[$i]") }
         }
     }
 }

@@ -4174,6 +4174,12 @@ a.loan-calc-link:hover {
 
 .strategy-section-title::-webkit-details-marker { display: none; }
 
+.strategy-subsection {
+    border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    margin-top: 0.5rem;
+    padding-top: 0.25rem;
+}
+
 .strategy-section-body {
     display: flex;
     flex-direction: column;

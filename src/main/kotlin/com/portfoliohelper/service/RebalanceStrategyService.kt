@@ -337,8 +337,7 @@ object RebalanceStrategyService {
       MarginRebalanceMode.DAILY -> {
         for (ticker in tickers) {
           val amount = delta * (targetWeights[ticker] ?: 0.0)
-          if (amount > 0) account.buy(ticker, amount)
-          else if (amount < 0) account.sell(ticker, -amount)
+          account.applyTradeDelta(ticker, amount)
         }
       }
 
@@ -347,8 +346,7 @@ object RebalanceStrategyService {
         if (total == 0.0) return
         for (ticker in tickers) {
           val amount = delta * (account.holding(ticker) / total)
-          if (amount > 0) account.buy(ticker, amount)
-          else if (amount < 0) account.sell(ticker, -amount)
+          account.applyTradeDelta(ticker, amount)
         }
       }
 
@@ -362,7 +360,7 @@ object RebalanceStrategyService {
         BacktestService.computeUndervalueFirst(tickers, temp, targetWeights, delta)
         for (ticker in tickers) {
           val diff = (temp[ticker] ?: 0.0) - account.holding(ticker)
-          if (diff > 0) account.buy(ticker, diff) else if (diff < 0) account.sell(ticker, -diff)
+          account.applyTradeDelta(ticker, diff)
         }
       }
 
@@ -371,7 +369,7 @@ object RebalanceStrategyService {
         BacktestService.computeWaterfall(tickers, temp, targetWeights, delta)
         for (ticker in tickers) {
           val diff = (temp[ticker] ?: 0.0) - account.holding(ticker)
-          if (diff > 0) account.buy(ticker, diff) else if (diff < 0) account.sell(ticker, -diff)
+          account.applyTradeDelta(ticker, diff)
         }
       }
     }
@@ -391,8 +389,7 @@ object RebalanceStrategyService {
       is DipSurgeKey.WholePortfolio ->
           applyAllocDelta(tickers, account, targetWeights, delta, allocStrategy)
       is DipSurgeKey.Stock ->
-          if (direction == Direction.BUY) account.buy(key.ticker, amount)
-          else account.sell(key.ticker, amount)
+          account.applyTradeDelta(key.ticker, delta)
     }
   }
 
@@ -407,11 +404,7 @@ object RebalanceStrategyService {
     for (ticker in tickers) {
       val target = targetTotal * (targetWeights[ticker] ?: 0.0)
       val diff = target - account.holding(ticker)
-      if (diff > 0) {
-        account.buy(ticker, diff)
-      } else if (diff < 0) {
-        account.sell(ticker, -diff)
-      }
+      account.applyTradeDelta(ticker, diff)
     }
   }
 
@@ -465,3 +458,8 @@ private data class DipSurgeResources(
     val allocStrategy: MarginRebalanceMode?,
     val limit: Double,
 )
+
+private fun PaperTradingPortfolio.applyTradeDelta(ticker: String, amount: Double) {
+  if (amount > 0.0) buy(ticker, amount)
+  else if (amount < 0.0) sell(ticker, -amount)
+}

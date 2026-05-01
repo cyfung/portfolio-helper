@@ -6,7 +6,7 @@ import {
   strategyStateToSavedConfig,
   savedConfigToStrategyState,
 } from '@/types/rebalanceStrategy'
-import { MARGIN_MODE_OPTIONS } from '@/types/backtest'
+import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
 import DipSurgeSection from './DipSurgeSection'
 
 interface Props {
@@ -374,7 +374,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
       </div>
 
-      <details open style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>Cashflow</summary>
         <div className="strategy-section-body">
           <div className="strategy-row">
@@ -396,7 +396,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
       </details>
 
-      <details open={s.buyLowEnabled} style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+      <details open={s.buyLowEnabled} className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           Buy on Low Margin
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
@@ -411,7 +411,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               <label>Alloc Strategy</label>
               <select value={s.buyLowAllocStrategy}
                 onChange={e => set({ buyLowAllocStrategy: e.target.value })}>
-                {MARGIN_MODE_OPTIONS.filter(o => o.value !== 'DAILY').map(o => (
+                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -429,7 +429,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         )}
       </details>
 
-      <details open={s.sellHighEnabled} style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+      <details open={s.sellHighEnabled} className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           Sell on High Margin
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
@@ -444,7 +444,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               <label>Alloc Strategy</label>
               <select value={s.sellHighAllocStrategy}
                 onChange={e => set({ sellHighAllocStrategy: e.target.value })}>
-                {MARGIN_MODE_OPTIONS.filter(o => o.value !== 'DAILY').map(o => (
+                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -462,7 +462,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         )}
       </details>
 
-      <div style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+      <div className="strategy-subsection">
         <DipSurgeSection
           direction="buy"
           value={s.buyTheDip}
@@ -470,7 +470,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           marginPoints={marginPoints}
         />
       </div>
-      <div style={{ borderTop: '1px solid color-mix(in srgb, currentColor 12%, transparent)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
+      <div className="strategy-subsection">
         <DipSurgeSection
           direction="sell"
           value={s.sellOnSurge}
