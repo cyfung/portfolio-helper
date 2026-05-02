@@ -12,6 +12,8 @@ enum class DipSurgeScope { INDIVIDUAL_STOCK, WHOLE_PORTFOLIO }
 
 enum class Direction { BUY, SELL }
 
+enum class MarginRebalanceTradeDirection { BOTH, BUY_ONLY, SELL_ONLY }
+
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 
 sealed class DipSurgeKey {
@@ -97,6 +99,7 @@ data class DipSurgeConfig(
     val triggers: List<PriceMoveTrigger>,
     val method: ExecutionMethod,
     val limit: Double,
+    val coolingOffDays: Int = 10,
 )
 
 // ── Top-level strategy config ─────────────────────────────────────────────────
@@ -107,6 +110,7 @@ data class RebalStrategyConfig(
     val marginSpread: Double,
     val rebalancePeriod: RebalancePeriodOverride,
     val rebalanceAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val marginRebalanceTradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
     val cashflowImmediateInvestPct: Double,   // 0.0–1.0; default 1.0
     val cashflowScaling: CashflowScaling,
     val cashflowScalingMargin: Double? = null,

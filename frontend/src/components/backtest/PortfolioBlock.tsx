@@ -262,7 +262,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">
           {local.tickers.map(t => (
-            <div key={t.id} className={`backtest-ticker-row${t.isPortfolioRef ? ' portfolio-ref-row' : ''}`}>
+            <div key={t.id} className={`backtest-ticker-row${showTickerConfig ? ' has-ticker-config' : ''}${t.isPortfolioRef ? ' portfolio-ref-row' : ''}`}>
               {t.isPortfolioRef ? (
                 <div className="ticker-input portfolio-ref-name" title="Saved portfolio reference">
                   <span className="portfolio-ref-badge">Portfolio</span>
@@ -287,7 +287,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 onBlur={commitBlur}
               />
               <span className="weight-unit">%</span>
-              {t.isPortfolioRef || !showTickerConfig ? (
+              {showTickerConfig && (t.isPortfolioRef ? (
                 <span />
               ) : (
                 <button
@@ -300,7 +300,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 >
                   <Settings size={14} />
                 </button>
-              )}
+              ))}
               <button className="remove-ticker-btn" type="button" title="Remove" onClick={() => removeTicker(t.id)}>
                 ✕
               </button>

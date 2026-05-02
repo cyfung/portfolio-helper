@@ -144,6 +144,7 @@ object RebalanceStrategyService {
           executorsByKey = keys.associateWith { method.newExecutor() },
           allocStrategy = allocStrategy,
           limit = limit,
+          cooldown = DipSurgeCooldown(coolingOffDays),
       )
     }
 
@@ -154,11 +155,13 @@ object RebalanceStrategyService {
     fun processConfig(
         res: DipSurgeResources,
         direction: Direction,
+        curIndex: Int,
         curDate: LocalDate,
         actionType: String,
     ) {
       for ((key, checkers) in res.checkersByKey) {
-        val triggered = checkers.any { it.check(direction) }
+        val rawTriggered = checkers.any { it.check(direction) }
+        val triggered = res.cooldown.shouldFire(key, curIndex, rawTriggered)
         val currentValue =
             when (key) {
               is DipSurgeKey.Stock -> seriesMap[key.ticker]!![curDate]!!
@@ -220,7 +223,15 @@ object RebalanceStrategyService {
         if (eq > 0) {
           val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
           val delta = targetTotal - account.grossStockValue()
-          applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+          val directionAllowed =
+              when (strategy.marginRebalanceTradeDirection) {
+                MarginRebalanceTradeDirection.BOTH -> true
+                MarginRebalanceTradeDirection.BUY_ONLY -> delta > 0.0
+                MarginRebalanceTradeDirection.SELL_ONLY -> delta < 0.0
+              }
+          if (directionAllowed) {
+            applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+          }
         }
       } else {
         // Step 5: Margin deviation triggers (sell on high / buy on low margin)
@@ -294,10 +305,10 @@ object RebalanceStrategyService {
       surgeResources?.let { advanceCheckers(it) }
 
       // Step 8: Buy-the-dip — check triggers + executor.advance
-      dipResources?.let { processConfig(it, Direction.BUY, curDate, "BUY_DIP") }
+      dipResources?.let { processConfig(it, Direction.BUY, i, curDate, "BUY_DIP") }
 
       // Step 9: Sell-on-surge — check triggers + executor.advance
-      surgeResources?.let { processConfig(it, Direction.SELL, curDate, "SELL_SURGE") }
+      surgeResources?.let { processConfig(it, Direction.SELL, i, curDate, "SELL_SURGE") }
 
       // Step 10: Record equity
       val equity = max(0.0, account.equity())
@@ -491,7 +502,21 @@ private data class DipSurgeResources(
     val executorsByKey: Map<DipSurgeKey, DipSurgeExecutor>,
     val allocStrategy: MarginRebalanceMode?,
     val limit: Double,
+    val cooldown: DipSurgeCooldown,
 )
+
+internal class DipSurgeCooldown(coolingOffDays: Int = 10) {
+  private val days = coolingOffDays.coerceAtLeast(0)
+  private val lastTriggerIndexByKey = mutableMapOf<DipSurgeKey, Int>()
+
+  fun shouldFire(key: DipSurgeKey, curIndex: Int, rawTriggered: Boolean): Boolean {
+    if (!rawTriggered) return false
+    val lastTriggerIndex = lastTriggerIndexByKey[key]
+    if (lastTriggerIndex != null && curIndex - lastTriggerIndex <= days) return false
+    lastTriggerIndexByKey[key] = curIndex
+    return true
+  }
+}
 
 private fun PaperTradingPortfolio.applyTradeDelta(ticker: String, amount: Double) {
   if (amount > 0.0) buy(ticker, amount)

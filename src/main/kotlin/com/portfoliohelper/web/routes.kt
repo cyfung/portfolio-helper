@@ -112,17 +112,6 @@ private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNul
     )
 }
 
-private data class TickerMetadata(val letf: String, val groups: String)
-
-private fun tickerMetadataBySymbol(): Map<String, TickerMetadata> = transaction {
-    StockTickersTable.selectAll().associate {
-        it[StockTickersTable.symbol].uppercase() to TickerMetadata(
-            letf = it[StockTickersTable.letf],
-            groups = it[StockTickersTable.groups]
-        )
-    }
-}
-
 private fun savedBacktestPortfolioConfigs(): Map<String, JsonObject> = transaction {
     SavedBacktestPortfoliosTable.selectAll().associate {
         it[SavedBacktestPortfoliosTable.name] to
@@ -138,7 +127,6 @@ private fun isPortfolioRef(obj: JsonObject): Boolean =
 private fun resolveTickerWeights(
     rows: JsonArray?,
     savedConfigs: Map<String, JsonObject>,
-    tickerMetadata: Map<String, TickerMetadata>,
     stack: List<String>
 ): List<TickerWeight> {
     val merged = linkedMapOf<String, Double>()
@@ -162,15 +150,11 @@ private fun resolveTickerWeights(
             if (refName in stack) {
                 throw IllegalArgumentException("Circular portfolio reference: ${(stack + refName).joinToString(" -> ")}")
             }
-            resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, tickerMetadata, stack + refName)
+            resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
                 .forEach { add(it.ticker, weight * it.weight / 100.0) }
         } else {
             val rawTicker = obj["ticker"]?.jsonPrimitive?.content ?: ""
-            val metadataLetf = tickerMetadata[rawTicker.trim().uppercase()]
-                ?.letf
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-            add(metadataLetf ?: rawTicker, weight)
+            add(rawTicker, weight)
         }
     }
 
@@ -179,8 +163,7 @@ private fun resolveTickerWeights(
 
 private fun parseSinglePortfolioConfig(
     pObj: JsonObject,
-    savedConfigs: Map<String, JsonObject> = savedBacktestPortfolioConfigs(),
-    tickerMetadata: Map<String, TickerMetadata> = tickerMetadataBySymbol()
+    savedConfigs: Map<String, JsonObject> = savedBacktestPortfolioConfigs()
 ): PortfolioConfig {
     val label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio"
     return PortfolioConfig(
@@ -188,7 +171,6 @@ private fun parseSinglePortfolioConfig(
         tickers = resolveTickerWeights(
             pObj["tickers"] as? JsonArray,
             savedConfigs,
-            tickerMetadata,
             listOf(label).filter { it.isNotBlank() }
         ),
         rebalanceStrategy = runCatching {
@@ -215,9 +197,8 @@ private fun parseSinglePortfolioConfig(
 
 private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> {
     val savedConfigs = savedBacktestPortfolioConfigs()
-    val tickerMetadata = tickerMetadataBySymbol()
     return (json["portfolios"] as? JsonArray)?.map { pel ->
-        parseSinglePortfolioConfig(pel.jsonObject, savedConfigs, tickerMetadata)
+        parseSinglePortfolioConfig(pel.jsonObject, savedConfigs)
     } ?: emptyList()
 }
 
@@ -248,7 +229,8 @@ private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig = DipSurgeConfi
     },
     triggers      = (obj["triggers"] as? JsonArray)?.map { parsePriceMoveTrigger(it.jsonObject) } ?: emptyList(),
     method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once,
-    limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15
+    limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15,
+    coolingOffDays = obj["coolingOffDays"]?.jsonPrimitive?.intOrNull ?: 10,
 )
 
 private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = MarginTriggerAction(
@@ -269,6 +251,9 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     rebalanceAllocStrategy     = obj["rebalanceAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
         runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
     } ?: MarginRebalanceMode.PROPORTIONAL,
+    marginRebalanceTradeDirection = runCatching {
+        MarginRebalanceTradeDirection.valueOf(obj["marginRebalanceTradeDirection"]?.jsonPrimitive?.content ?: "BOTH")
+    }.getOrDefault(MarginRebalanceTradeDirection.BOTH),
     cashflowImmediateInvestPct = obj["cashflowImmediateInvestPct"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
     cashflowScaling            = runCatching {
         CashflowScaling.valueOf(obj["cashflowScaling"]?.jsonPrimitive?.content ?: "SCALED_BY_TARGET_MARGIN")

@@ -1,17 +1,19 @@
 // ── DipSurgeSection.tsx — Reusable Buy the Dip / Sell on Surge section ────────
 
+import { useCallback, useEffect, useRef } from 'react'
 import {
   DipSurgeState, PriceMoveTriggerState, ExecutionMethodState,
   PRICE_MOVE_TRIGGER_OPTIONS, EXECUTION_METHOD_OPTIONS, DIP_SURGE_SCOPE_OPTIONS,
   emptyTrigger,
 } from '@/types/rebalanceStrategy'
-import { REBALANCE_MARGIN_MODE_OPTIONS, newId } from '@/types/backtest'
+import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
 
 interface Props {
   direction: 'buy' | 'sell'
   value: DipSurgeState | null
   onChange: (v: DipSurgeState | null) => void
   marginPoints?: string[]
+  sliderMax?: number
 }
 
 const triggerLabels: Record<string, (d: string) => string> = {
@@ -26,12 +28,83 @@ const methodLabels: Record<string, (d: string) => string> = {
   STEPPED:     d => `Averaging ${d === 'buy' ? 'Down' : 'Up'}`,
 }
 
-export default function DipSurgeSection({ direction, value, onChange, marginPoints = ['40', '45', '50', '55', '60'] }: Props) {
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v))
+}
+
+function marginValueFromLegacyPoint(points: string[], index: string | undefined) {
+  const pointIndex = parseInt(index ?? '', 10)
+  if (!Number.isFinite(pointIndex) || pointIndex === 2) return ''
+  return points[pointIndex] ?? ''
+}
+
+function MarginPercentInput({
+  value, placeholder, max, ariaLabel, onChange,
+}: {
+  value: string
+  placeholder: string
+  max: number
+  ariaLabel: string
+  onChange: (value: string) => void
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const parseBase = useCallback(() => {
+    const current = parseFloat(value)
+    if (Number.isFinite(current)) return current
+    const fallback = parseFloat(placeholder)
+    return Number.isFinite(fallback) ? fallback : 0
+  }, [placeholder, value])
+
+  const stepBy = useCallback((delta: number) => {
+    onChange(String(clamp(Math.round(parseBase() + delta), 0, Math.max(0, Math.floor(max)))))
+  }, [max, onChange, parseBase])
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      stepBy(e.deltaY < 0 ? 5 : -5)
+    }
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [stepBy])
+
+  return (
+    <div className="margin-point-endpoint margin-percent-input" ref={wrapRef}>
+      <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => stepBy(-1)}>-</button>
+      <input
+        className="margin-point-number-input"
+        type="number"
+        min="0"
+        max={max}
+        step="1"
+        value={value}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        onChange={e => onChange(e.target.value)}
+      />
+      <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => stepBy(1)}>+</button>
+    </div>
+  )
+}
+
+export default function DipSurgeSection({ direction, value, onChange, marginPoints = ['40', '45', '50', '55', '60'], sliderMax = 150 }: Props) {
   const title = direction === 'buy' ? 'Buy the Dip' : 'Sell on Surge'
   const enabled = value !== null
+  const midMarginPoint = marginPoints[2] ?? '50'
+  const limitMargin = value ? (value.limit || marginValueFromLegacyPoint(marginPoints, value.limitPointIndex)) : ''
 
   function enable() {
-    onChange({ scope: 'INDIVIDUAL_STOCK', allocStrategy: 'PROPORTIONAL', triggers: [], execution: { method: 'ONCE' }, limit: marginPoints[2] ?? '50', limitPointIndex: '2' })
+    onChange({
+      scope: 'INDIVIDUAL_STOCK',
+      allocStrategy: 'PROPORTIONAL',
+      triggers: [],
+      execution: { method: 'ONCE' },
+      limit: '',
+      limitPointIndex: '',
+      coolingOffDays: '10',
+    })
   }
 
   function update(patch: Partial<DipSurgeState>) {
@@ -96,12 +169,25 @@ export default function DipSurgeSection({ direction, value, onChange, marginPoin
           {/* Limit */}
           <div className="strategy-row">
             <label>{direction === 'buy' ? 'Max Margin (%)' : 'Min Margin (%)'}</label>
-            <select
-              value={value.limitPointIndex ?? '2'}
-              onChange={e => update({ limitPointIndex: e.target.value, limit: marginPoints[parseInt(e.target.value, 10)] ?? value.limit })}
-            >
-              {marginPoints.map((point, i) => <option key={i} value={i}>{point}%</option>)}
-            </select>
+            <MarginPercentInput
+              value={limitMargin}
+              placeholder={midMarginPoint}
+              max={sliderMax}
+              ariaLabel={`${title} margin limit`}
+              onChange={limit => update({ limit, limitPointIndex: '' })}
+            />
+          </div>
+
+          <div className="strategy-row">
+            <label>Cooling Off Days</label>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={value.coolingOffDays ?? '10'}
+              onChange={e => update({ coolingOffDays: e.target.value })}
+              style={{ width: '5rem' }}
+            />
           </div>
 
           {/* Triggers */}

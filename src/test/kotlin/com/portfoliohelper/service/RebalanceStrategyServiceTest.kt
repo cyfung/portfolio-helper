@@ -5,6 +5,8 @@ import java.time.LocalDate
 import java.nio.file.Files
 import kotlin.math.abs
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -58,12 +60,14 @@ class RebalanceStrategyServiceTest {
         sellOnSurge: DipSurgeConfig? = null,
         cashflowImmediateInvestPct: Double = 1.0,
         cashflowScaling: CashflowScaling = CashflowScaling.NO_SCALING,
-        useComfortZone: Boolean = true
+        useComfortZone: Boolean = true,
+        marginRebalanceTradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
     ) = RebalStrategyConfig(
         label = "test",
         marginRatio = marginRatio,
         marginSpread = marginSpread,
         rebalancePeriod = rebalancePeriod,
+        marginRebalanceTradeDirection = marginRebalanceTradeDirection,
         cashflowImmediateInvestPct = cashflowImmediateInvestPct,
         cashflowScaling = cashflowScaling,
         deviationMode = DeviationMode.ABSOLUTE,
@@ -77,6 +81,35 @@ class RebalanceStrategyServiceTest {
     )
 
     // ── Tests ─────────────────────────────────────────────────────────────────
+
+    @Test
+    fun dipSurgeConfig_defaultsCoolingOffToTenDays() {
+        val cfg = DipSurgeConfig(
+            scope = DipSurgeScope.INDIVIDUAL_STOCK,
+            allocStrategy = null,
+            triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
+            method = ExecutionMethod.Once,
+            limit = 0.5,
+        )
+
+        assertEquals(10, cfg.coolingOffDays)
+    }
+
+    @Test
+    fun dipSurgeCooldown_isPerKeyAndBlocksNextTenTradingDays() {
+        val cooldown = DipSurgeCooldown()
+        val aaa = DipSurgeKey.Stock("AAA")
+        val bbb = DipSurgeKey.Stock("BBB")
+
+        assertTrue(cooldown.shouldFire(aaa, 1, rawTriggered = true), "AAA first trigger should fire")
+        assertFalse(cooldown.shouldFire(aaa, 2, rawTriggered = true), "AAA next day should be blocked")
+        assertFalse(cooldown.shouldFire(aaa, 11, rawTriggered = true), "AAA tenth day after trigger should be blocked")
+        assertTrue(cooldown.shouldFire(aaa, 12, rawTriggered = true), "AAA should fire after ten full cooldown days")
+
+        assertTrue(cooldown.shouldFire(bbb, 2, rawTriggered = true), "BBB should have independent cooldown")
+        assertFalse(cooldown.shouldFire(bbb, 12, rawTriggered = true), "BBB should still block its own tenth day")
+        assertTrue(cooldown.shouldFire(bbb, 13, rawTriggered = true), "BBB should fire after its own cooldown")
+    }
 
     @Test
     fun flatCurve_noMargin_noRebalance() {
@@ -213,6 +246,75 @@ class RebalanceStrategyServiceTest {
         // normal rebalance should run, restoring both tickers to target weights
         // before AAA doubles again on Feb 2.
         assertApprox(30_625.0, result.points[2].value, label = "equity after normal-only rebalance")
+    }
+
+    @Test
+    fun marginRebalance_tradeDirectionCanLimitBuysOrSells() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 2, 2),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 2.0)
+        val falling = mapOf(dates[0] to 1.0, dates[1] to 0.5, dates[2] to 0.5)
+
+        val buyBlocked = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.SELL_ONLY,
+            ),
+            null,
+            mapOf("SPY" to rising),
+            dates,
+            emptyMap(),
+        )
+        val sellBlocked = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+            ),
+            null,
+            mapOf("SPY" to falling),
+            dates,
+            emptyMap(),
+        )
+        val buyAllowed = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+            ),
+            null,
+            mapOf("SPY" to rising),
+            dates,
+            emptyMap(),
+        )
+        val sellAllowed = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.SELL_ONLY,
+            ),
+            null,
+            mapOf("SPY" to falling),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.2, requireNotNull(buyBlocked.marginPoints)[1].value, label = "sell-only blocks scheduled buy")
+        assertApprox(2.0, requireNotNull(sellBlocked.marginPoints)[1].value, label = "buy-only blocks scheduled sell")
+        assertApprox(0.5, requireNotNull(buyAllowed.marginPoints)[1].value, label = "buy-only allows scheduled buy")
+        assertApprox(0.5, requireNotNull(sellAllowed.marginPoints)[1].value, label = "sell-only allows scheduled sell")
     }
 
     @Test
