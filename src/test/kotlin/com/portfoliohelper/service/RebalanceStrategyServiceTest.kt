@@ -178,6 +178,44 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun marginRebalance_doesNotRunWhenNormalRebalanceTriggersSameDay() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 2, 2),
+        )
+        val series = mapOf(
+            "AAA" to mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 4.0),
+            "BBB" to mapOf(dates[0] to 1.0, dates[1] to 1.0, dates[2] to 1.0),
+        )
+        val portfolio = PortfolioConfig(
+            "test",
+            listOf(TickerWeight("AAA", 0.5), TickerWeight("BBB", 0.5)),
+            RebalanceStrategy.MONTHLY,
+            emptyList(),
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            portfolio,
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+            ).copy(rebalanceAllocStrategy = MarginRebalanceMode.CURRENT_WEIGHT),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        // Feb 1 is both a normal rebalance day and a margin rebalance day. Only the
+        // normal rebalance should run, restoring both tickers to target weights
+        // before AAA doubles again on Feb 2.
+        assertApprox(30_625.0, result.points[2].value, label = "equity after normal-only rebalance")
+    }
+
+    @Test
     fun actualBacktestEqualsRebalanceStrategyWithInheritedRebalanceAndMarginRestores() {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-backtest-rebalance-test")
@@ -548,6 +586,35 @@ class RebalanceStrategyServiceTest {
             requireNotNull(r.marginPoints)
                 .forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "$scope margin[$i]") }
         }
+    }
+
+    @Test
+    fun buyTheDipActionPointRequiresActualPurchase() {
+        val dates = days(LocalDate.of(2024, 1, 2), 21)
+        val prices = vShapeCurve(dates)
+        val series = mapOf("SPY" to prices)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
+                    method = ExecutionMethod.Once,
+                    limit = 0.5,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        assertNull(result.actionPoints, "BD markers should not be emitted when the trigger fires but no purchase is made")
     }
 
     @Test

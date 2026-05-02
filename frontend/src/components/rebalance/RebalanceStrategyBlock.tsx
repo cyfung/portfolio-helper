@@ -357,9 +357,18 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             style={{ width: '5rem' }} />
         </div>
         <div className="strategy-row">
-          <label>Rebalance Period</label>
+          <label>Margin Rebalance</label>
           <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
             {REBALANCE_PERIOD_OVERRIDE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="strategy-row">
+          <label>Alloc Strategy</label>
+          <select value={s.rebalanceAllocStrategy ?? 'PROPORTIONAL'}
+            onChange={e => set({ rebalanceAllocStrategy: e.target.value })}>
+            {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>

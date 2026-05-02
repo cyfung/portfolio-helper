@@ -204,6 +204,7 @@ export interface BacktestCurve {
   points: { date: string; value: number }[]
   stats: BacktestCurveStats
   marginPoints?: { date: string; value: number }[]
+  actionPoints?: { date: string; type: 'SELL_HIGH' | 'BUY_LOW' | 'BUY_DIP' | 'SELL_SURGE' }[]
 }
 
 export interface BacktestPortfolioResult {

@@ -58,6 +58,9 @@ data class MultiBacktestRequest(
 data class DataPoint(val date: String, val value: Double)
 
 @Serializable
+data class ActionPoint(val date: String, val type: String)
+
+@Serializable
 data class BacktestStats(
     val cagr: Double,
     val maxDrawdown: Double,
@@ -76,7 +79,8 @@ data class CurveResult(
     val label: String,
     val points: List<DataPoint>,
     val stats: BacktestStats,
-    val marginPoints: List<DataPoint>? = null
+    val marginPoints: List<DataPoint>? = null,
+    val actionPoints: List<ActionPoint>? = null
 )
 
 @Serializable

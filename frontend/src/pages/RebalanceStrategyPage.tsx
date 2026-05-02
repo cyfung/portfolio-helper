@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Brush,
+  Legend, ResponsiveContainer, Brush, ReferenceDot,
 } from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
@@ -63,6 +63,13 @@ function makeUniqueStrategyLabels(strategies: RebalStrategyState[], portfolioLab
     taken.add(labelKey(label))
     return label === strategy.label ? strategy : { ...strategy, label }
   })
+}
+
+const ACTION_MARKERS: Record<string, { label: string; short: string; color: string }> = {
+  SELL_HIGH:  { label: 'Sell high',  short: 'SH', color: '#d94841' },
+  BUY_LOW:    { label: 'Buy low',    short: 'BL', color: '#2f9e44' },
+  BUY_DIP:    { label: 'Buy dip',    short: 'BD', color: '#1971c2' },
+  SELL_SURGE: { label: 'Sell surge', short: 'SS', color: '#e67700' },
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -230,6 +237,18 @@ export default function RebalanceStrategyPage() {
   const anyChecked = selected.size > 0
   const showLine   = (key: string) => selected.size === 0 || selected.has(key)
 
+  const selectedStrategyCurve = useMemo(() => {
+    if (!results || selected.size !== 1) return null
+    const key = [...selected][0]
+    const [piText, ciText] = key.split('-')
+    const pi = parseInt(piText, 10)
+    const ci = parseInt(ciText, 10)
+    if (!Number.isFinite(pi) || !Number.isFinite(ci) || pi === 0) return null
+    const curve = results.portfolios[pi]?.curves[ci]
+    if (!curve?.actionPoints?.length) return null
+    return { dataKey: `p${pi}-c${ci}`, curve }
+  }, [results, selected])
+
   function toggleCurve(key: string, checked: boolean) {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
   }
@@ -253,6 +272,36 @@ export default function RebalanceStrategyPage() {
   const commonLineProps = {
     type: 'monotone' as const, dot: false as const,
     activeDot: { r: 4 }, connectNulls: false, isAnimationActive: false,
+  }
+
+  const renderActionMarkers = (rows: Record<string, any>[]) => {
+    if (!selectedStrategyCurve) return null
+    const seen = new Set<string>()
+    return selectedStrategyCurve.curve.actionPoints?.map((point, i) => {
+      const marker = ACTION_MARKERS[point.type]
+      if (!marker) return null
+      const row = rows.find(r => r.x === point.date)
+      const y = row?.[selectedStrategyCurve.dataKey]
+      if (typeof y !== 'number' || !Number.isFinite(y)) return null
+
+      const duplicateKey = `${point.date}-${point.type}`
+      if (seen.has(duplicateKey)) return null
+      seen.add(duplicateKey)
+
+      return (
+        <ReferenceDot
+          key={`${duplicateKey}-${i}`}
+          x={point.date}
+          y={y}
+          r={5}
+          fill={marker.color}
+          stroke={theme.isDark ? '#111' : '#fff'}
+          strokeWidth={2}
+          ifOverflow="extendDomain"
+          label={{ value: marker.short, position: 'top', fill: marker.color, fontSize: 10 }}
+        />
+      )
+    })
   }
 
   const renderLegend = (props: any) => {
@@ -403,6 +452,7 @@ export default function RebalanceStrategyPage() {
                   <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                 ))}
+                {renderActionMarkers(chartData.mainData.rows)}
                 <Brush dataKey="x" height={26} stroke={gridColor}
                   fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
               </LineChart>
@@ -426,6 +476,7 @@ export default function RebalanceStrategyPage() {
                   <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
+                {renderActionMarkers(chartData.ddData.rows)}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -447,6 +498,7 @@ export default function RebalanceStrategyPage() {
                   <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
+                {renderActionMarkers(chartData.rtrData.rows)}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -470,6 +522,7 @@ export default function RebalanceStrategyPage() {
                       <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                         stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                     ))}
+                    {renderActionMarkers(chartData.marginData.rows)}
                   </LineChart>
                 </ResponsiveContainer>
               </div>

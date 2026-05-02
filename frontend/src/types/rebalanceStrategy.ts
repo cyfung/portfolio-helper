@@ -30,7 +30,8 @@ export interface RebalStrategyState {
   marginRatio: string
   marginSpread: string
   marginPoints: string[]
-  rebalancePeriod: string              // 'INHERIT' | 'NONE' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  rebalancePeriod: string              // 'NONE' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  rebalanceAllocStrategy: string
   cashflowImmediateInvestPct: string   // default '100'
   cashflowScaling: string              // CashflowScaling value
   cashflowScalingPointIndex: string
@@ -51,7 +52,6 @@ export interface RebalStrategyState {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const REBALANCE_PERIOD_OVERRIDE_OPTIONS = [
-  { value: 'INHERIT',   label: 'Inherit' },
   { value: 'NONE',      label: 'None' },
   { value: 'MONTHLY',   label: 'Monthly' },
   { value: 'QUARTERLY', label: 'Quarterly' },
@@ -100,7 +100,8 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     marginRatio: '50',
     marginSpread: '1.5',
     marginPoints: ['40', '45', '50', '55', '60'],
-    rebalancePeriod: 'INHERIT',
+    rebalancePeriod: 'NONE',
+    rebalanceAllocStrategy: 'PROPORTIONAL',
     cashflowImmediateInvestPct: '100',
     cashflowScaling: 'SCALED_BY_TARGET_MARGIN',
     cashflowScalingPointIndex: '3',
@@ -165,7 +166,13 @@ export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategy
 }
 
 export function savedConfigToStrategyState(config: any, name: string): RebalStrategyState {
-  return { ...config, label: name, useComfortZone: config.useComfortZone ?? true }
+  return {
+    ...config,
+    label: name,
+    rebalancePeriod: config.rebalancePeriod === 'INHERIT' ? 'NONE' : (config.rebalancePeriod ?? 'NONE'),
+    rebalanceAllocStrategy: config.rebalanceAllocStrategy ?? 'PROPORTIONAL',
+    useComfortZone: config.useComfortZone ?? true,
+  }
 }
 
 export function strategyStateToAPI(s: RebalStrategyState): object {
@@ -185,7 +192,8 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     label: s.label.trim() || 'Strategy',
     marginRatio: margin / 100,
     marginSpread: pct(s.marginSpread, 1.5),
-    rebalancePeriod: s.rebalancePeriod || 'INHERIT',
+    rebalancePeriod: s.rebalancePeriod === 'INHERIT' ? 'NONE' : (s.rebalancePeriod || 'NONE'),
+    rebalanceAllocStrategy: s.rebalanceAllocStrategy || 'PROPORTIONAL',
     cashflowImmediateInvestPct: pct(s.cashflowImmediateInvestPct, 100),
     cashflowScaling: s.cashflowScaling || 'SCALED_BY_TARGET_MARGIN',
     cashflowScalingMargin,

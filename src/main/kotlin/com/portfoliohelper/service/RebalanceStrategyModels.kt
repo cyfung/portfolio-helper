@@ -106,6 +106,7 @@ data class RebalStrategyConfig(
     val marginRatio: Double,
     val marginSpread: Double,
     val rebalancePeriod: RebalancePeriodOverride,
+    val rebalanceAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
     val cashflowImmediateInvestPct: Double,   // 0.0–1.0; default 1.0
     val cashflowScaling: CashflowScaling,
     val cashflowScalingMargin: Double? = null,

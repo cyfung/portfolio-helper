@@ -118,8 +118,8 @@ object RebalanceStrategyService {
       startingBalance: Double = 10_000.0,
   ): CurveResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
-    val effectiveRebalance =
-        strategy.rebalancePeriod.toRebalanceStrategy(portfolio.rebalanceStrategy)
+    val normalRebalance = portfolio.rebalanceStrategy
+    val marginRebalance = strategy.rebalancePeriod.toMarginRebalanceStrategy()
     val marginTarget = strategy.marginRatio
     val comfortLowBound = strategy.comfortZoneLow
     val comfortHighBound = strategy.comfortZoneHigh
@@ -132,6 +132,7 @@ object RebalanceStrategyService {
 
     val values = mutableListOf(startingBalance)
     val marginUtils = mutableListOf(marginTarget)
+    val actionPoints = mutableListOf<ActionPoint>()
 
     // ── Pre-loop: build trigger checkers and executors ────────────────────
     fun DipSurgeConfig.buildResources(): DipSurgeResources {
@@ -150,7 +151,12 @@ object RebalanceStrategyService {
     val surgeResources = strategy.sellOnSurge?.buildResources()
 
     // ── Per-day helper: check triggers and drive executors for one config ─
-    fun processConfig(res: DipSurgeResources, direction: Direction, curDate: LocalDate) {
+    fun processConfig(
+        res: DipSurgeResources,
+        direction: Direction,
+        curDate: LocalDate,
+        actionType: String,
+    ) {
       for ((key, checkers) in res.checkersByKey) {
         val triggered = checkers.any { it.check(direction) }
         val currentValue =
@@ -163,7 +169,13 @@ object RebalanceStrategyService {
             currentValue,
             eligible = { computeEligible(key, account, targetWeights, direction, res.limit) },
         ) { amount ->
-          applyDipSurge(key, tickers, account, targetWeights, amount, direction, res.allocStrategy)
+          if (amount > 0.0) {
+            val grossBefore = account.grossStockValue()
+            applyDipSurge(key, tickers, account, targetWeights, amount, direction, res.allocStrategy)
+            if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
+              actionPoints.add(ActionPoint(curDate.toString(), actionType))
+            }
+          }
         }
       }
     }
@@ -181,26 +193,37 @@ object RebalanceStrategyService {
       // Step 2: Accrue margin interest on debt
       account.accrueMarginInterest(dailyLoanRates[i])
 
-      // Step 3: Periodic rebalance — if triggered, skip Step 4
-      if (shouldRebalance(effectiveRebalance, prevDate, curDate)) {
+      fun effectiveMarginForRebalance(): Double {
+        if (!strategy.useComfortZone) return marginTarget
+        val currentRatio = account.currentMarginRatio()
+        return when {
+          currentRatio > comfortHighBound -> comfortHighBound
+          currentRatio < comfortLowBound -> comfortLowBound
+          else -> currentRatio
+        }
+      }
+
+      val normalRebalanceDay = shouldRebalance(normalRebalance, prevDate, curDate)
+      val marginRebalanceDay =
+          !normalRebalanceDay && shouldRebalance(marginRebalance, prevDate, curDate)
+
+      // Step 3: Normal portfolio rebalance first.
+      if (normalRebalanceDay) {
         val eq = account.equity()
         if (eq > 0) {
-          val currentRatio = account.currentMarginRatio()
-          val effectiveMargin =
-              if (strategy.useComfortZone) {
-                when {
-                  currentRatio > comfortHighBound -> comfortHighBound
-                  currentRatio < comfortLowBound -> comfortLowBound
-                  else -> currentRatio
-                }
-              } else {
-                marginTarget
-              }
-          val targetTotal = eq * (1.0 + effectiveMargin)
+          val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)
         }
+      } else if (marginRebalanceDay) {
+        // Step 4: Scheduled margin rebalance only runs on days without normal rebalance.
+        val eq = account.equity()
+        if (eq > 0) {
+          val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
+          val delta = targetTotal - account.grossStockValue()
+          applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+        }
       } else {
-        // Step 4: Margin deviation triggers (sell on high / buy on low margin)
+        // Step 5: Margin deviation triggers (sell on high / buy on low margin)
         if (equityBefore > 0) {
           val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
 
@@ -211,7 +234,11 @@ object RebalanceStrategyService {
                   val targetCashBalance = -account.equity() * cfg.targetMargin
                   if (account.cashBalance() < targetCashBalance) {
                     val excess = targetCashBalance - account.cashBalance()
+                    val grossBefore = account.grossStockValue()
                     applyAllocDelta(tickers, account, targetWeights, -excess, cfg.allocStrategy)
+                    if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.SELL)) {
+                      actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
+                    }
                   }
                 }
               }
@@ -223,14 +250,18 @@ object RebalanceStrategyService {
                   val targetCashBalance = -account.equity() * cfg.targetMargin
                   if (account.cashBalance() > targetCashBalance) {
                     val deficit = account.cashBalance() - targetCashBalance
+                    val grossBefore = account.grossStockValue()
                     applyAllocDelta(tickers, account, targetWeights, deficit, cfg.allocStrategy)
+                    if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.BUY)) {
+                      actionPoints.add(ActionPoint(curDate.toString(), "BUY_LOW"))
+                    }
                   }
                 }
               }
         }
       }
 
-      // Step 5: Cashflow injection (if due)
+      // Step 6: Cashflow injection (if due)
       if (cashflow != null && isCashflowDate(cashflow.frequency, curDate)) {
         val raw = cashflow.amount
         val currentMarginRatio =
@@ -247,7 +278,7 @@ object RebalanceStrategyService {
         for (ticker in tickers) account.buy(ticker, totalInvest * (targetWeights[ticker] ?: 0.0))
       }
 
-      // Step 6: Advance all trigger checkers with today's values
+      // Step 7: Advance all trigger checkers with today's values
       val portfolioGrossValue = account.grossStockValue()
       fun advanceCheckers(res: DipSurgeResources) {
         for ((key, checkers) in res.checkersByKey) {
@@ -262,13 +293,13 @@ object RebalanceStrategyService {
       dipResources?.let { advanceCheckers(it) }
       surgeResources?.let { advanceCheckers(it) }
 
-      // Step 7: Buy-the-dip — check triggers + executor.advance
-      dipResources?.let { processConfig(it, Direction.BUY, curDate) }
+      // Step 8: Buy-the-dip — check triggers + executor.advance
+      dipResources?.let { processConfig(it, Direction.BUY, curDate, "BUY_DIP") }
 
-      // Step 8: Sell-on-surge — check triggers + executor.advance
-      surgeResources?.let { processConfig(it, Direction.SELL, curDate) }
+      // Step 9: Sell-on-surge — check triggers + executor.advance
+      surgeResources?.let { processConfig(it, Direction.SELL, curDate, "SELL_SURGE") }
 
-      // Step 9: Record equity
+      // Step 10: Record equity
       val equity = max(0.0, account.equity())
       marginUtils.add(
           if (equity > 0.0) (-account.cashBalance()).coerceAtLeast(0.0) / equity else 0.0
@@ -281,7 +312,7 @@ object RebalanceStrategyService {
         if (marginTarget > 0.0) dates.mapIndexed { i, d -> DataPoint(d.toString(), marginUtils[i]) }
         else null
     val stats = BacktestService.computeBacktestStats(values, dates, effrx)
-    return CurveResult(strategy.label, points, stats, marginPoints)
+    return CurveResult(strategy.label, points, stats, marginPoints, actionPoints.takeIf { it.isNotEmpty() })
   }
 
   // ── Eligible amount calculation ───────────────────────────────────────────
@@ -439,11 +470,14 @@ object RebalanceStrategyService {
 
 // ── Extension / helpers ───────────────────────────────────────────────────────
 
-private fun RebalancePeriodOverride.toRebalanceStrategy(
-    inherit: RebalanceStrategy
-): RebalanceStrategy =
+private fun tradeMovedGrossInDirection(before: Double, after: Double, direction: Direction): Boolean {
+  val epsilon = 1e-9
+  return if (direction == Direction.BUY) after > before + epsilon else after < before - epsilon
+}
+
+private fun RebalancePeriodOverride.toMarginRebalanceStrategy(): RebalanceStrategy =
     when (this) {
-      RebalancePeriodOverride.INHERIT -> inherit
+      RebalancePeriodOverride.INHERIT -> RebalanceStrategy.NONE
       RebalancePeriodOverride.NONE -> RebalanceStrategy.NONE
       RebalancePeriodOverride.MONTHLY -> RebalanceStrategy.MONTHLY
       RebalancePeriodOverride.QUARTERLY -> RebalanceStrategy.QUARTERLY

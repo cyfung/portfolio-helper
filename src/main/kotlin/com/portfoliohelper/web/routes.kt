@@ -264,8 +264,11 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     marginRatio                = obj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
     marginSpread               = obj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
     rebalancePeriod            = runCatching {
-        RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "INHERIT")
-    }.getOrDefault(RebalancePeriodOverride.INHERIT),
+        RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "NONE")
+    }.getOrDefault(RebalancePeriodOverride.NONE),
+    rebalanceAllocStrategy     = obj["rebalanceAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+    } ?: MarginRebalanceMode.PROPORTIONAL,
     cashflowImmediateInvestPct = obj["cashflowImmediateInvestPct"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
     cashflowScaling            = runCatching {
         CashflowScaling.valueOf(obj["cashflowScaling"]?.jsonPrimitive?.content ?: "SCALED_BY_TARGET_MARGIN")
