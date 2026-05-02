@@ -431,7 +431,9 @@ private data class AppConfigDto(
     val autoUpdate: Boolean,
     val privacyScalePct: String,
     val privacyScaleEnabled: Boolean,
-    val rebalanceSliderMax: Int
+    val rebalanceSliderMax: Int,
+    val smaDays1: Int,
+    val smaDays2: Int
 )
 
 @Serializable
@@ -584,7 +586,9 @@ fun Application.configureRouting() {
                     autoUpdate = AppConfig.autoUpdate,
                     privacyScalePct = AppConfig.get(AppConfig.KEY_PRIVACY_SCALE_PCT),
                     privacyScaleEnabled = AppConfig.privacyScaleEnabled,
-                    rebalanceSliderMax = AppConfig.rebalanceSliderMax
+                    rebalanceSliderMax = AppConfig.rebalanceSliderMax,
+                    smaDays1 = AppConfig.smaDays1,
+                    smaDays2 = AppConfig.smaDays2
                 )
             )
 

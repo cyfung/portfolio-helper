@@ -29,6 +29,8 @@ export default function StockTable() {
     showStockDisplayCurrency, groupViewActive,
     appConfig, stockGroupBy,
   } = usePortfolioStore()
+  const smaDays1 = appConfig?.smaDays1 ?? 50
+  const smaDays2 = appConfig?.smaDays2 ?? 200
 
   const sortedCcys = useMemo(() => buildSortedCcys(
     appConfig?.displayCurrencies ?? [],
@@ -163,6 +165,8 @@ export default function StockTable() {
               EST{' '}
               <span className="col-info-hint" title="Hover a cell to see price targets">ⓘ</span>
             </th>
+            <th className="col-num col-market-data col-moreinfo">{smaDays1}D SMA</th>
+            <th className="col-num col-market-data col-moreinfo">{smaDays2}D SMA</th>
             <th className="col-num col-market-data col-moreinfo">Last</th>
             <th className="col-num col-market-data">Mark</th>
             <th className="col-num col-market-data">CHG</th>
@@ -183,7 +187,7 @@ export default function StockTable() {
             <Fragment key={key ?? '__all'}>
               {key !== null && (
                 <tr className="stock-group-header">
-                  <td colSpan={15}>
+                  <td colSpan={17}>
                     {stockGroupBy === 'ccy'
                       ? <span className={`ccy-pill ccy-color-${getCcyClass(key, sortedCcys)}`}>{key}</span>
                       : key}
@@ -201,6 +205,8 @@ export default function StockTable() {
             const closePrice = live?.closePrice ?? null
             const navPrice = live?.lastNav ?? null
             const estPrice = live?.estPriceNative ?? null
+            const sma1 = live?.sma1 ?? null
+            const sma2 = live?.sma2 ?? null
             const posVal = live?.positionValueUsd ?? null
             const dayCh = live?.dayChangeNative ?? null
             const stockCcy = live?.currency ?? null
@@ -335,6 +341,14 @@ export default function StockTable() {
                   data-est-val={estPrice ?? undefined}
                 >
                   {estPrice !== null && !isAfterHours ? formatCurrency(estPrice) : '—'}
+                </td>
+
+                {/* SMA */}
+                <td className="col-market-data price col-moreinfo" id={`sma1-${sym}`}>
+                  {sma1 !== null ? formatCurrency(sma1) : '—'}
+                </td>
+                <td className="col-market-data price col-moreinfo" id={`sma2-${sym}`}>
+                  {sma2 !== null ? formatCurrency(sma2) : '—'}
                 </td>
 
                 {/* Last (close) */}

@@ -268,7 +268,7 @@ export default function PortfolioViewer() {
             className={`more-info-toggle${moreInfoVisible ? ' active' : ''}`}
             id="more-info-toggle"
             type="button"
-            title="Show/Hide Last NAV, Last, and Mkt Val columns"
+            title="Show/Hide Last NAV, SMA, Last, and Mkt Val columns"
             onClick={() => setMoreInfoVisible(!moreInfoVisible)}
           >
             <span className="toggle-label">More Info</span>
