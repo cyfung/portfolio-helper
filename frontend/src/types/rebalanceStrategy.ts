@@ -33,7 +33,7 @@ export interface RebalStrategyState {
   marginRatio: string
   marginSpread: string
   marginPoints: string[]
-  rebalancePeriod: string              // 'NONE' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  rebalancePeriod: string
   rebalanceAllocStrategy: string
   marginRebalanceTradeDirection: MarginRebalanceTradeDirection
   cashflowImmediateInvestPct: string   // default '100'
@@ -59,10 +59,14 @@ export interface RebalStrategyState {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const REBALANCE_PERIOD_OVERRIDE_OPTIONS = [
-  { value: 'NONE',      label: 'None' },
-  { value: 'MONTHLY',   label: 'Monthly' },
-  { value: 'QUARTERLY', label: 'Quarterly' },
-  { value: 'YEARLY',    label: 'Yearly' },
+  { value: 'NONE',           label: 'None' },
+  { value: 'BI_WEEKLY',      label: 'Bi-weekly' },
+  { value: 'MONTHLY',        label: 'Monthly' },
+  { value: 'BI_MONTHLY',     label: 'Bi-monthly' },
+  { value: 'QUARTERLY',      label: 'Quarterly' },
+  { value: 'EVERY_4_MONTHS', label: 'Every 4 Months' },
+  { value: 'HALF_YEARLY',    label: 'Every Half Year' },
+  { value: 'YEARLY',         label: 'Yearly' },
 ]
 
 export const CASHFLOW_SCALING_OPTIONS = [

@@ -318,6 +318,34 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun marginRebalance_supportsAdditionalPeriodBoundaries() {
+        fun assertRebalancesAt(period: RebalancePeriodOverride, prev: LocalDate, cur: LocalDate) {
+            val dates = listOf(prev, cur)
+            val series = mapOf("SPY" to mapOf(prev to 1.0, cur to 2.0))
+
+            val result = RebalanceStrategyService.runStrategyResultForTest(
+                singleStockPortfolio(),
+                strategy(
+                    marginRatio = 0.5,
+                    rebalancePeriod = period,
+                    useComfortZone = false,
+                ),
+                null,
+                series,
+                dates,
+                emptyMap(),
+            )
+
+            assertApprox(0.5, requireNotNull(result.marginPoints)[1].value, label = "$period margin")
+        }
+
+        assertRebalancesAt(RebalancePeriodOverride.BI_WEEKLY, LocalDate.of(2024, 1, 7), LocalDate.of(2024, 1, 8))
+        assertRebalancesAt(RebalancePeriodOverride.BI_MONTHLY, LocalDate.of(2024, 2, 29), LocalDate.of(2024, 3, 1))
+        assertRebalancesAt(RebalancePeriodOverride.EVERY_4_MONTHS, LocalDate.of(2024, 4, 30), LocalDate.of(2024, 5, 1))
+        assertRebalancesAt(RebalancePeriodOverride.HALF_YEARLY, LocalDate.of(2024, 6, 30), LocalDate.of(2024, 7, 1))
+    }
+
+    @Test
     fun actualBacktestEqualsRebalanceStrategyWithInheritedRebalanceAndMarginRestores() {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-backtest-rebalance-test")
@@ -717,6 +745,49 @@ class RebalanceStrategyServiceTest {
         )
 
         assertNull(result.actionPoints, "BD markers should not be emitted when the trigger fires but no purchase is made")
+    }
+
+    @Test
+    fun buyTheDipCooldownCanBeConsumedBeforeSellHighMakesBuyingEligible() {
+        val dates = days(LocalDate.of(2024, 1, 2), 16)
+        val values = listOf(
+            1.00, 0.95, 0.90, 0.85, 0.84, 0.83, 0.82, 0.81,
+            0.80, 0.79, 0.78, 0.77, 0.76, 0.75, 0.74, 0.73,
+        )
+        val series = mapOf("SPY" to dates.zip(values).toMap())
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.85,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 1.0,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.75,
+                ),
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.VsRunningAvg(nDays = 1, pct = 0.0)),
+                    method = ExecutionMethod.Once,
+                    limit = 0.85,
+                    coolingOffDays = 10,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val actions = result.actionPoints.orEmpty()
+        assertTrue(actions.any { it.date == dates[3].toString() && it.type == "SELL_HIGH" })
+        assertFalse(
+            actions.any { it.date == dates[3].toString() && it.type == "BUY_DIP" },
+            "BD is blocked on the SH day because the previous zero-eligible dip trigger consumed cooldown",
+        )
     }
 
     @Test

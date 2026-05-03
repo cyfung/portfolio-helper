@@ -815,8 +815,21 @@ object BacktestService {
         )
                 || curDate.year != prevDate.year
 
+        RebalanceStrategy.BI_WEEKLY ->
+            java.time.temporal.ChronoUnit.WEEKS.between(LocalDate.of(1970, 1, 5), curDate) / 2 !=
+                    java.time.temporal.ChronoUnit.WEEKS.between(LocalDate.of(1970, 1, 5), prevDate) / 2
+
         RebalanceStrategy.MONTHLY -> curDate.month != prevDate.month
+        RebalanceStrategy.BI_MONTHLY -> curDate.year * 12 + (curDate.monthValue - 1) / 2 !=
+                prevDate.year * 12 + (prevDate.monthValue - 1) / 2
+
         RebalanceStrategy.QUARTERLY -> ((curDate.monthValue - 1) / 3) != ((prevDate.monthValue - 1) / 3)
+        RebalanceStrategy.EVERY_4_MONTHS -> curDate.year * 12 + (curDate.monthValue - 1) / 4 !=
+                prevDate.year * 12 + (prevDate.monthValue - 1) / 4
+
+        RebalanceStrategy.HALF_YEARLY -> curDate.year * 12 + (curDate.monthValue - 1) / 6 !=
+                prevDate.year * 12 + (prevDate.monthValue - 1) / 6
+
         RebalanceStrategy.YEARLY -> curDate.year != prevDate.year
     }
 

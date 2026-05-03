@@ -4,7 +4,18 @@ import kotlinx.serialization.Serializable
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
-enum class RebalanceStrategy { NONE, DAILY, WEEKLY, MONTHLY, QUARTERLY, YEARLY }
+enum class RebalanceStrategy {
+    NONE,
+    DAILY,
+    WEEKLY,
+    BI_WEEKLY,
+    MONTHLY,
+    BI_MONTHLY,
+    QUARTERLY,
+    EVERY_4_MONTHS,
+    HALF_YEARLY,
+    YEARLY
+}
 
 enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY, WATERFALL, DAILY }
 

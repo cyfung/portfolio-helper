@@ -4,7 +4,17 @@ package com.portfoliohelper.service
 
 enum class DeviationMode { ABSOLUTE, RELATIVE }
 
-enum class RebalancePeriodOverride { INHERIT, NONE, MONTHLY, QUARTERLY, YEARLY }
+enum class RebalancePeriodOverride {
+    INHERIT,
+    NONE,
+    BI_WEEKLY,
+    MONTHLY,
+    BI_MONTHLY,
+    QUARTERLY,
+    EVERY_4_MONTHS,
+    HALF_YEARLY,
+    YEARLY
+}
 
 enum class CashflowScaling { SCALED_BY_TARGET_MARGIN, SCALED_BY_CURRENT_MARGIN, NO_SCALING }
 

@@ -1,6 +1,7 @@
 package com.portfoliohelper.service
 
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.time.temporal.IsoFields
 import kotlin.math.max
 
@@ -472,8 +473,12 @@ object RebalanceStrategyService {
             cur.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR) !=
                 prev.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR) || cur.year != prev.year
 
+        RebalanceStrategy.BI_WEEKLY -> biWeeklyBucket(cur) != biWeeklyBucket(prev)
         RebalanceStrategy.MONTHLY -> cur.month != prev.month
+        RebalanceStrategy.BI_MONTHLY -> monthBucket(cur, 2) != monthBucket(prev, 2)
         RebalanceStrategy.QUARTERLY -> (cur.monthValue - 1) / 3 != (prev.monthValue - 1) / 3
+        RebalanceStrategy.EVERY_4_MONTHS -> monthBucket(cur, 4) != monthBucket(prev, 4)
+        RebalanceStrategy.HALF_YEARLY -> monthBucket(cur, 6) != monthBucket(prev, 6)
 
         RebalanceStrategy.YEARLY -> cur.year != prev.year
       }
@@ -490,10 +495,20 @@ private fun RebalancePeriodOverride.toMarginRebalanceStrategy(): RebalanceStrate
     when (this) {
       RebalancePeriodOverride.INHERIT -> RebalanceStrategy.NONE
       RebalancePeriodOverride.NONE -> RebalanceStrategy.NONE
+      RebalancePeriodOverride.BI_WEEKLY -> RebalanceStrategy.BI_WEEKLY
       RebalancePeriodOverride.MONTHLY -> RebalanceStrategy.MONTHLY
+      RebalancePeriodOverride.BI_MONTHLY -> RebalanceStrategy.BI_MONTHLY
       RebalancePeriodOverride.QUARTERLY -> RebalanceStrategy.QUARTERLY
+      RebalancePeriodOverride.EVERY_4_MONTHS -> RebalanceStrategy.EVERY_4_MONTHS
+      RebalancePeriodOverride.HALF_YEARLY -> RebalanceStrategy.HALF_YEARLY
       RebalancePeriodOverride.YEARLY -> RebalanceStrategy.YEARLY
     }
+
+private fun biWeeklyBucket(date: LocalDate): Long =
+    ChronoUnit.WEEKS.between(LocalDate.of(1970, 1, 5), date) / 2
+
+private fun monthBucket(date: LocalDate, monthsPerBucket: Int): Int =
+    date.year * 12 + (date.monthValue - 1) / monthsPerBucket
 
 // ── Pre-loop resources ────────────────────────────────────────────────────────
 

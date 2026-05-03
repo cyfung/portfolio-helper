@@ -453,8 +453,12 @@ object MonteCarloService {
             RebalanceStrategy.NONE -> false
             RebalanceStrategy.DAILY -> true
             RebalanceStrategy.WEEKLY -> count % 5 == 0
+            RebalanceStrategy.BI_WEEKLY -> count % 10 == 0
             RebalanceStrategy.MONTHLY -> count % 21 == 0
+            RebalanceStrategy.BI_MONTHLY -> count % 42 == 0
             RebalanceStrategy.QUARTERLY -> count % 63 == 0
+            RebalanceStrategy.EVERY_4_MONTHS -> count % 84 == 0
+            RebalanceStrategy.HALF_YEARLY -> count % 126 == 0
             RebalanceStrategy.YEARLY -> count % 252 == 0
         }
 
