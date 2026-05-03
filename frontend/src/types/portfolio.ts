@@ -45,9 +45,6 @@ export interface AppConfig {
   autoUpdate: boolean
   privacyScalePct: string
   privacyScaleEnabled: boolean
-  rebalanceSliderMax: number
-  smaDays1: number
-  smaDays2: number
 }
 
 export interface PortfolioData {
@@ -80,8 +77,6 @@ export interface StockDisplayItem {
   tradingPeriodEndMs: number | null
   estPriceNative: number | null
   lastNav: number | null
-  sma1: number | null
-  sma2: number | null
 }
 
 export interface StockDisplayEvent {
@@ -185,8 +180,6 @@ export interface StockDisplayState {
   closePrice: number | null
   lastNav: number | null
   estPriceNative: number | null
-  sma1: number | null
-  sma2: number | null
   dayChangeNative: number | null
   dayChangePct: number | null
   positionValueUsd: number | null

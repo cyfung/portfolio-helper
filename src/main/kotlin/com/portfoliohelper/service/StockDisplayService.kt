@@ -28,8 +28,6 @@ data class StockDisplay(
     val targetWeightPct: Double?,
     val estPriceNative: Double?,     // LETF estimated per-share price (native ccy); null if N/A or stale
     val lastNav: Double?,
-    val sma1: Double?,
-    val sma2: Double?,
     val isMarketClosed: Boolean,
     val tradingPeriodEnd: Long?,
     val localDate: String?
@@ -80,8 +78,6 @@ class StockDisplayService(
             val dayChangeNative: Double?,
             val dayChangePct: Double?,
             val estPriceNative: Double?,
-            val sma1: Double?,
-            val sma2: Double?,
             val isMarketClosed: Boolean,
             val tradingPeriodEnd: Long?,
             val localDate: String?,
@@ -122,8 +118,6 @@ class StockDisplayService(
                 positionChangeUsd = positionChangeUsd,
                 dayChangeNative = dayChangeNative, dayChangePct = dayChangePct,
                 estPriceNative = estPriceNative,
-                sma1 = quote?.sma1,
-                sma2 = quote?.sma2,
                 isMarketClosed = quote?.isMarketClosed ?: false,
                 tradingPeriodEnd = quote?.tradingPeriodEnd,
                 localDate = localDate,
@@ -158,8 +152,6 @@ class StockDisplayService(
                 targetWeightPct = w.targetWeightPct,
                 estPriceNative = w.estPriceNative,
                 lastNav = NavService.getNav(w.symbol),
-                sma1 = w.sma1,
-                sma2 = w.sma2,
                 isMarketClosed = w.isMarketClosed,
                 tradingPeriodEnd = w.tradingPeriodEnd,
                 localDate = w.localDate

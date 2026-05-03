@@ -37,13 +37,7 @@ data class YahooTradingPeriod(
 )
 
 @Serializable
-data class YahooIndicators(
-    @SerialName("quote") val quote: List<YahooQuoteSeries>? = null,
-    @SerialName("adjclose") val adjClose: List<YahooAdjClose>? = null
-)
-
-@Serializable
-data class YahooQuoteSeries(val close: List<Double?>? = null)
+data class YahooIndicators(@SerialName("adjclose") val adjClose: List<YahooAdjClose>? = null)
 
 @Serializable
 data class YahooAdjClose(@SerialName("adjclose") val adjClose: List<Double?>? = null)

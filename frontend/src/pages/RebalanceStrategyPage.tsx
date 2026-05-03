@@ -84,7 +84,6 @@ export default function RebalanceStrategyPage() {
   const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
-  const [rebalanceSliderMax, setRebalanceSliderMax] = useState(150)
   const [running, setRunning]     = useState(false)
   const [error, setError]         = useState('')
   const [results, setResults]     = useState<BacktestResults | null>(null)
@@ -119,14 +118,6 @@ export default function RebalanceStrategyPage() {
         if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
         if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
         if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
-      })
-      .catch(() => {})
-
-    fetch('/api/admin/config-values')
-      .then(r => r.json())
-      .then((data: any) => {
-        const max = parseInt(data.rebalanceSliderMax ?? '', 10)
-        if (Number.isFinite(max) && max > 0) setRebalanceSliderMax(max)
       })
       .catch(() => {})
   }, [])
@@ -368,7 +359,6 @@ export default function RebalanceStrategyPage() {
               idx={i}
               value={s}
               onChange={strategyHandlers[i]}
-              sliderMax={rebalanceSliderMax}
               onSavedRefresh={refreshSavedStrategies}
             />
           ))}

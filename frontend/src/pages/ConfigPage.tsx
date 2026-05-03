@@ -22,9 +22,6 @@ interface ConfigValues {
   dividendSafeLagDays?: string
   updateCheckInterval?: string
   autoUpdate?: string
-  rebalanceSliderMax?: string
-  smaDays1?: string
-  smaDays2?: string
   _version?: string
   _latestVersion?: string
   _hasUpdate?: string
@@ -428,11 +425,9 @@ export default function ConfigPage() {
   // ── Restore defaults ──────────────────────────────────────────────────────
 
   const GLOBAL_DEFAULTS: Record<string, string> = {
-    openBrowser: 'true', dataDir: '', navUpdateInterval: '',
+    openBrowser: 'true', navUpdateInterval: '',
     exchangeSuffixes: 'SBF=.PA,LSEETF=.L', twsHost: '127.0.0.1', twsPort: '7496',
     ibkrRateInterval: '3600', autoUpdate: 'true', updateCheckInterval: '86400',
-    rebalanceSliderMax: '150',
-    smaDays1: '50', smaDays2: '200',
   }
 
   async function handleRestoreDefaults() {
@@ -597,32 +592,6 @@ export default function ConfigPage() {
             />
           </ConfigField>
 
-          <ConfigField label="Rebalance Slider Max" description="Maximum value for the five-point margin slider. Default: 150." inputId="rebalance-slider-max">
-            <input
-              type="number" id="rebalance-slider-max" placeholder="150"
-              defaultValue={cfg.rebalanceSliderMax ?? ''}
-              min={1} step={1}
-              onChange={e => saveField('rebalanceSliderMax', e.target.value)}
-            />
-          </ConfigField>
-
-          <ConfigField label="SMA Column 1 Days" description="Trading-day window for the first SMA column in the portfolio table. Default: 50." inputId="sma-days-1">
-            <input
-              type="number" id="sma-days-1" placeholder="50"
-              defaultValue={cfg.smaDays1 ?? ''}
-              min={1} step={1}
-              onChange={e => saveField('smaDays1', e.target.value)}
-            />
-          </ConfigField>
-
-          <ConfigField label="SMA Column 2 Days" description="Trading-day window for the second SMA column in the portfolio table. Default: 200." inputId="sma-days-2">
-            <input
-              type="number" id="sma-days-2" placeholder="200"
-              defaultValue={cfg.smaDays2 ?? ''}
-              min={1} step={1}
-              onChange={e => saveField('smaDays2', e.target.value)}
-            />
-          </ConfigField>
         </ConfigSection>
 
         {/* ── Portfolio and IB TWS Settings ───────────────────────────── */}

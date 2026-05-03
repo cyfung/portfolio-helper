@@ -11,9 +11,7 @@ data class YahooQuote(
     val tradingPeriodEnd: Long? = null,      // Regular session end (Unix seconds)
     val gmtoffset: Int? = null,              // UTC offset in seconds for the exchange's local timezone
     val isMarketClosed: Boolean = false,     // Whether market is currently closed
-    val currency: String? = null,            // Trading currency (e.g. "USD", "HKD")
-    val sma1: Double? = null,
-    val sma2: Double? = null
+    val currency: String? = null             // Trading currency (e.g. "USD", "HKD")
 )
 
 class YahooFinanceException(message: String, cause: Throwable? = null) : Exception(message, cause)
