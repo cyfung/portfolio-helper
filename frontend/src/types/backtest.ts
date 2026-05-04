@@ -46,10 +46,16 @@ export const CASHFLOW_FREQUENCY_OPTIONS = [
 ]
 
 export const REBALANCE_OPTIONS = [
-  { value: 'NONE', label: 'None' },
-  { value: 'MONTHLY', label: 'Monthly' },
-  { value: 'QUARTERLY', label: 'Quarterly' },
-  { value: 'YEARLY', label: 'Yearly' },
+  { value: 'NONE',           label: 'None' },
+  { value: 'DAILY',          label: 'Daily' },
+  { value: 'WEEKLY',         label: 'Weekly' },
+  { value: 'BI_WEEKLY',      label: 'Bi-weekly' },
+  { value: 'MONTHLY',        label: 'Monthly' },
+  { value: 'BI_MONTHLY',     label: 'Bi-monthly' },
+  { value: 'QUARTERLY',      label: 'Quarterly' },
+  { value: 'EVERY_4_MONTHS', label: 'Every 4 Months' },
+  { value: 'HALF_YEARLY',    label: 'Every Half Year' },
+  { value: 'YEARLY',         label: 'Yearly' },
 ]
 
 export const MARGIN_MODE_OPTIONS = [

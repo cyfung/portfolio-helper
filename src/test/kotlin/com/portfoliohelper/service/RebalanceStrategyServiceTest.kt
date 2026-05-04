@@ -318,6 +318,70 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun marginRebalance_buyOnlyStillAllowsSellOnHighMarginTrigger() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val falling = mapOf(dates[0] to 1.0, dates[1] to 0.5, dates[2] to 0.5)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.7,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+            ),
+            null,
+            mapOf("SPY" to falling),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.5, requireNotNull(result.marginPoints)[2].value, label = "sell high restores margin")
+        assertTrue(result.actionPoints?.any { it.date == "2024-02-01" && it.type == "SELL_HIGH" } == true)
+    }
+
+    @Test
+    fun marginRebalance_sellOnlyStillAllowsBuyOnLowMarginTrigger() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 2.0)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.SELL_ONLY,
+                buyOnLowMargin = MarginTriggerAction(
+                    deviationPct = 0.3,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+            ),
+            null,
+            mapOf("SPY" to rising),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.5, requireNotNull(result.marginPoints)[2].value, label = "buy low restores margin")
+        assertTrue(result.actionPoints?.any { it.date == "2024-02-01" && it.type == "BUY_LOW" } == true)
+    }
+
+    @Test
     fun marginRebalance_supportsAdditionalPeriodBoundaries() {
         fun assertRebalancesAt(period: RebalancePeriodOverride, prev: LocalDate, cur: LocalDate) {
             val dates = listOf(prev, cur)

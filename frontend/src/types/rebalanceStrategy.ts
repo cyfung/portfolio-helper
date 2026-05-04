@@ -60,6 +60,8 @@ export interface RebalStrategyState {
 
 export const REBALANCE_PERIOD_OVERRIDE_OPTIONS = [
   { value: 'NONE',           label: 'None' },
+  { value: 'DAILY',          label: 'Daily' },
+  { value: 'WEEKLY',         label: 'Weekly' },
   { value: 'BI_WEEKLY',      label: 'Bi-weekly' },
   { value: 'MONTHLY',        label: 'Monthly' },
   { value: 'BI_MONTHLY',     label: 'Bi-monthly' },

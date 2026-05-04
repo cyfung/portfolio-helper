@@ -218,24 +218,28 @@ object RebalanceStrategyService {
           val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)
         }
-      } else if (marginRebalanceDay) {
-        // Step 4: Scheduled margin rebalance only runs on days without normal rebalance.
-        val eq = account.equity()
-        if (eq > 0) {
-          val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
-          val delta = targetTotal - account.grossStockValue()
-          val directionAllowed =
-              when (strategy.marginRebalanceTradeDirection) {
-                MarginRebalanceTradeDirection.BOTH -> true
-                MarginRebalanceTradeDirection.BUY_ONLY -> delta > 0.0
-                MarginRebalanceTradeDirection.SELL_ONLY -> delta < 0.0
-              }
-          if (directionAllowed) {
-            applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+      } else {
+        if (marginRebalanceDay) {
+          // Step 4: Scheduled margin rebalance only runs on days without normal rebalance.
+          val eq = account.equity()
+          if (eq > 0) {
+            val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
+            val delta = targetTotal - account.grossStockValue()
+            val directionAllowed =
+                when (strategy.marginRebalanceTradeDirection) {
+                  MarginRebalanceTradeDirection.BOTH -> true
+                  MarginRebalanceTradeDirection.BUY_ONLY -> delta > 0.0
+                  MarginRebalanceTradeDirection.SELL_ONLY -> delta < 0.0
+                }
+            if (directionAllowed) {
+              applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+            }
           }
         }
-      } else {
-        // Step 5: Margin deviation triggers (sell on high / buy on low margin)
+
+        // Step 5: Margin deviation triggers (sell on high / buy on low margin).
+        // These explicit trigger sections are independent of the scheduled margin
+        // rebalance trade-direction filter above.
         if (equityBefore > 0) {
           val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
 
@@ -495,6 +499,8 @@ private fun RebalancePeriodOverride.toMarginRebalanceStrategy(): RebalanceStrate
     when (this) {
       RebalancePeriodOverride.INHERIT -> RebalanceStrategy.NONE
       RebalancePeriodOverride.NONE -> RebalanceStrategy.NONE
+      RebalancePeriodOverride.DAILY -> RebalanceStrategy.DAILY
+      RebalancePeriodOverride.WEEKLY -> RebalanceStrategy.WEEKLY
       RebalancePeriodOverride.BI_WEEKLY -> RebalanceStrategy.BI_WEEKLY
       RebalancePeriodOverride.MONTHLY -> RebalanceStrategy.MONTHLY
       RebalancePeriodOverride.BI_MONTHLY -> RebalanceStrategy.BI_MONTHLY

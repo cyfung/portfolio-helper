@@ -7,6 +7,8 @@ enum class DeviationMode { ABSOLUTE, RELATIVE }
 enum class RebalancePeriodOverride {
     INHERIT,
     NONE,
+    DAILY,
+    WEEKLY,
     BI_WEEKLY,
     MONTHLY,
     BI_MONTHLY,
