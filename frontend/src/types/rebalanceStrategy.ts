@@ -26,6 +26,11 @@ export interface DipSurgeState {
   coolingOffDays?: string
 }
 
+export interface DipSurgeScopeState {
+  wholePortfolio: DipSurgeState | null
+  individualStock: DipSurgeState | null
+}
+
 export type MarginRebalanceTradeDirection = 'BOTH' | 'BUY_ONLY' | 'SELL_ONLY'
 
 export interface RebalStrategyState {
@@ -49,11 +54,13 @@ export interface RebalStrategyState {
   buyLowAllocStrategy: string
   buyLowRestorePointIndex: string      // index into marginPoints[] for restore target; default '2'
   buyLowRestoreMargin: string
-  buyTheDip: DipSurgeState | null
-  sellOnSurge: DipSurgeState | null
+  buyTheDip: DipSurgeScopeState
+  sellOnSurge: DipSurgeScopeState
   useComfortZone: boolean
   comfortZoneLow: string
   comfortZoneHigh: string
+  buyCooldownAfterSellHighDays: string
+  sellCooldownAfterBuyLowDays: string
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -89,7 +96,7 @@ export const DIP_SURGE_SCOPE_OPTIONS = [
 ]
 
 export const PRICE_MOVE_TRIGGER_OPTIONS = [
-  { value: 'VS_N_DAYS_AGO',  label: 'Drop vs N days ago' },
+  { value: 'VS_N_DAYS_AGO',  label: 'Drop vs N-day high' },
   { value: 'VS_RUNNING_AVG', label: 'Drop vs running avg (N days)' },
   { value: 'PEAK_DEVIATION', label: 'Drawdown from peak' },
 ]
@@ -102,9 +109,9 @@ export const EXECUTION_METHOD_OPTIONS = [
 
 // ── Factories ─────────────────────────────────────────────────────────────────
 
-function emptyDipSurge(): DipSurgeState {
+export function emptyDipSurge(scope: DipSurgeState['scope'] = 'INDIVIDUAL_STOCK'): DipSurgeState {
   return {
-    scope: 'INDIVIDUAL_STOCK',
+    scope,
     allocStrategy: 'PROPORTIONAL',
     triggers: [],
     execution: { method: 'ONCE' },
@@ -112,6 +119,10 @@ function emptyDipSurge(): DipSurgeState {
     limitPointIndex: '',
     coolingOffDays: '10',
   }
+}
+
+function emptyDipSurgeScopes(): DipSurgeScopeState {
+  return { wholePortfolio: null, individualStock: null }
 }
 
 export function emptyStrategy(idx: number): RebalStrategyState {
@@ -136,11 +147,13 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     buyLowAllocStrategy: 'PROPORTIONAL',
     buyLowRestorePointIndex: '2',
     buyLowRestoreMargin: '',
-    buyTheDip: null,
-    sellOnSurge: null,
+    buyTheDip: emptyDipSurgeScopes(),
+    sellOnSurge: emptyDipSurgeScopes(),
     useComfortZone: true,
     comfortZoneLow: '0',
     comfortZoneHigh: '0',
+    buyCooldownAfterSellHighDays: '10',
+    sellCooldownAfterBuyLowDays: '10',
   }
 }
 
@@ -188,6 +201,29 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   }
 }
 
+function serializeDipSurgeScopes(d: DipSurgeScopeState | DipSurgeState | null | undefined, marginPoints: number[]): object[] {
+  const scopes = normalizeDipSurgeScopes(d)
+  return [scopes.wholePortfolio, scopes.individualStock]
+    .filter((v): v is DipSurgeState => v !== null)
+    .map(v => serializeDipSurge(v, marginPoints))
+}
+
+function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
+  const scopes = emptyDipSurgeScopes()
+  if (configValue && !Array.isArray(configValue) && ('wholePortfolio' in configValue || 'individualStock' in configValue)) {
+    scopes.wholePortfolio = configValue.wholePortfolio ? { ...configValue.wholePortfolio, scope: 'WHOLE_PORTFOLIO' } : null
+    scopes.individualStock = configValue.individualStock ? { ...configValue.individualStock, scope: 'INDIVIDUAL_STOCK' } : null
+    return scopes
+  }
+  const items = Array.isArray(configValue) ? configValue : (configValue ? [configValue] : [])
+  for (const item of items) {
+    if (!item) continue
+    if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'WHOLE_PORTFOLIO') scopes.wholePortfolio = { ...item, scope: 'WHOLE_PORTFOLIO' }
+    else scopes.individualStock = { ...item, scope: 'INDIVIDUAL_STOCK' }
+  }
+  return scopes
+}
+
 export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategyState {
   return { ...s }
 }
@@ -200,6 +236,10 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
     rebalanceAllocStrategy: config.rebalanceAllocStrategy ?? 'PROPORTIONAL',
     marginRebalanceTradeDirection: config.marginRebalanceTradeDirection ?? 'BOTH',
     useComfortZone: config.useComfortZone ?? true,
+    buyTheDip: normalizeDipSurgeScopes(config.buyTheDip),
+    sellOnSurge: normalizeDipSurgeScopes(config.sellOnSurge),
+    buyCooldownAfterSellHighDays: config.buyCooldownAfterSellHighDays ?? '10',
+    sellCooldownAfterBuyLowDays: config.sellCooldownAfterBuyLowDays ?? '10',
   }
 }
 
@@ -218,6 +258,8 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
   }
   const cashflowIdx = parseInt(s.cashflowScalingPointIndex, 10)
   const cashflowScalingMargin = customOrPointPct(s.cashflowScalingMargin, cashflowIdx <= 0 ? '' : s.cashflowScalingPointIndex, 1)
+  const buyCooldownAfterSellHighDays = parseInt(s.buyCooldownAfterSellHighDays ?? '', 10)
+  const sellCooldownAfterBuyLowDays = parseInt(s.sellCooldownAfterBuyLowDays ?? '', 10)
 
   return {
     label: s.label.trim() || 'Strategy',
@@ -236,10 +278,12 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     buyOnLowMargin: s.buyLowEnabled
       ? { deviationPct: low / 100, allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL', targetMargin: customOrPointPct(s.buyLowRestoreMargin, s.buyLowRestorePointIndex) }
       : null,
-    buyTheDip: s.buyTheDip ? serializeDipSurge(s.buyTheDip, points) : null,
-    sellOnSurge: s.sellOnSurge ? serializeDipSurge(s.sellOnSurge, points) : null,
+    buyTheDip: serializeDipSurgeScopes(s.buyTheDip, points),
+    sellOnSurge: serializeDipSurgeScopes(s.sellOnSurge, points),
     useComfortZone: s.useComfortZone ?? true,
     comfortZoneLow:  low / 100,
     comfortZoneHigh: high / 100,
+    buyCooldownAfterSellHighDays: Number.isFinite(buyCooldownAfterSellHighDays) ? Math.max(0, buyCooldownAfterSellHighDays) : 10,
+    sellCooldownAfterBuyLowDays: Number.isFinite(sellCooldownAfterBuyLowDays) ? Math.max(0, sellCooldownAfterBuyLowDays) : 10,
   }
 }

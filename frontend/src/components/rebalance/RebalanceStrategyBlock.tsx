@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, us
 import {
   RebalStrategyState,
   DipSurgeState,
+  DipSurgeScopeState,
   REBALANCE_PERIOD_OVERRIDE_OPTIONS,
   MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS,
   strategyStateToSavedConfig,
@@ -52,6 +53,23 @@ function normalizeMarginPoints(points: string[] | undefined, max: number) {
   }
 
   return values
+}
+
+function adjustMarginPoint(points: number[], index: number, value: number, max: number) {
+  const sliderMax = Math.max(4, Math.floor(max))
+  const next = [...points]
+  const target = clamp(Math.round(value), index, sliderMax - (next.length - 1 - index))
+
+  next[index] = target
+
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (next[i] >= next[i + 1]) next[i] = next[i + 1] - 1
+  }
+  for (let i = index + 1; i < next.length; i += 1) {
+    if (next[i] <= next[i - 1]) next[i] = next[i - 1] + 1
+  }
+
+  return next.map(v => clamp(v, 0, sliderMax))
 }
 
 function samePoints(a: string[], b: string[]) {
@@ -154,17 +172,7 @@ const MarginPointSlider = React.memo(function MarginPointSlider({
   }
 
   function updatePoint(i: number, value: number) {
-    const next = [...safePoints]
-
-    if (i === 0) {
-      next[0] = clamp(value, 0, next[1] - 1)
-    } else if (i === 4) {
-      next[4] = clamp(value, next[3] + 1, Math.max(4, Math.floor(max)))
-    } else {
-      next[i] = clamp(value, next[i - 1] + 1, next[i + 1] - 1)
-    }
-
-    emit(next)
+    emit(adjustMarginPoint(safePoints, i, value, max))
   }
 
   function scheduleIdleCommit() {
@@ -355,6 +363,14 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
+  const updateDipSurgeScope = useCallback((
+    key: 'buyTheDip' | 'sellOnSurge',
+    scope: keyof DipSurgeScopeState,
+    value: DipSurgeState | null,
+  ) => {
+    set({ [key]: { ...localRef.current[key], [scope]: value } } as Partial<RebalStrategyState>)
+  }, [set])
+
   async function handleSave(overwrite: boolean) {
     commit()
     const current = localRef.current
@@ -470,6 +486,20 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             ))}
           </select>
         </div>
+        <div className="strategy-row">
+          <label>Buy Cooldown After SH</label>
+          <input className="no-spinner" type="number" min="0" step="1" value={s.buyCooldownAfterSellHighDays ?? '10'}
+            onChange={e => set({ buyCooldownAfterSellHighDays: e.target.value })}
+            onBlur={() => commit()}
+            style={{ width: '5rem' }} />
+        </div>
+        <div className="strategy-row">
+          <label>Sell Cooldown After BL</label>
+          <input className="no-spinner" type="number" min="0" step="1" value={s.sellCooldownAfterBuyLowDays ?? '10'}
+            onChange={e => set({ sellCooldownAfterBuyLowDays: e.target.value })}
+            onBlur={() => commit()}
+            style={{ width: '5rem' }} />
+        </div>
         </div>
       </details>
 
@@ -570,8 +600,19 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       <div className="strategy-subsection">
         <DipSurgeSection
           direction="buy"
-          value={s.buyTheDip}
-          onChange={(v: DipSurgeState | null) => set({ buyTheDip: v })}
+          title="Buy the Dip - Whole Portfolio"
+          scope="WHOLE_PORTFOLIO"
+          value={s.buyTheDip.wholePortfolio}
+          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'wholePortfolio', v)}
+          marginPoints={marginPoints}
+          sliderMax={sliderMax}
+        />
+        <DipSurgeSection
+          direction="buy"
+          title="Buy the Dip - Individual Stocks"
+          scope="INDIVIDUAL_STOCK"
+          value={s.buyTheDip.individualStock}
+          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'individualStock', v)}
           marginPoints={marginPoints}
           sliderMax={sliderMax}
         />
@@ -579,8 +620,19 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       <div className="strategy-subsection">
         <DipSurgeSection
           direction="sell"
-          value={s.sellOnSurge}
-          onChange={(v: DipSurgeState | null) => set({ sellOnSurge: v })}
+          title="Sell on Surge - Whole Portfolio"
+          scope="WHOLE_PORTFOLIO"
+          value={s.sellOnSurge.wholePortfolio}
+          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'wholePortfolio', v)}
+          marginPoints={marginPoints}
+          sliderMax={sliderMax}
+        />
+        <DipSurgeSection
+          direction="sell"
+          title="Sell on Surge - Individual Stocks"
+          scope="INDIVIDUAL_STOCK"
+          value={s.sellOnSurge.individualStock}
+          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'individualStock', v)}
           marginPoints={marginPoints}
           sliderMax={sliderMax}
         />

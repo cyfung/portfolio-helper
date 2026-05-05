@@ -25,7 +25,7 @@ import {
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import {
-  RebalStrategyState, emptyStrategy, strategyStateToAPI,
+  RebalStrategyState, emptyStrategy, strategyStateToAPI, savedConfigToStrategyState,
 } from '@/types/rebalanceStrategy'
 import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -203,7 +203,9 @@ export default function RebalanceStrategyPage() {
       if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
       if (req.portfolioState) setPortfolio(req.portfolioState)
       else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, req.portfolio.label || ''))
-      if (Array.isArray(req.strategies)) setStrategies(req.strategies.slice(0, 2))
+      if (Array.isArray(req.strategies)) {
+        setStrategies(req.strategies.slice(0, 2).map((s: any, i: number) => savedConfigToStrategyState(s, s.label || `Strategy ${i + 1}`)))
+      }
       setConfigError('')
     } catch (_) {
       setConfigError('Invalid config code.')

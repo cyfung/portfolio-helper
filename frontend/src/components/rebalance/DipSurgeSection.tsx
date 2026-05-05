@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import {
   DipSurgeState, PriceMoveTriggerState, ExecutionMethodState,
   PRICE_MOVE_TRIGGER_OPTIONS, EXECUTION_METHOD_OPTIONS, DIP_SURGE_SCOPE_OPTIONS,
-  emptyTrigger,
+  emptyTrigger, emptyDipSurge,
 } from '@/types/rebalanceStrategy'
 import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
 
@@ -14,10 +14,12 @@ interface Props {
   onChange: (v: DipSurgeState | null) => void
   marginPoints?: string[]
   sliderMax?: number
+  scope?: 'INDIVIDUAL_STOCK' | 'WHOLE_PORTFOLIO'
+  title?: string
 }
 
 const triggerLabels: Record<string, (d: string) => string> = {
-  VS_N_DAYS_AGO:  d => `${d === 'buy' ? 'Drop' : 'Rise'} vs N days ago by X%`,
+  VS_N_DAYS_AGO:  d => d === 'buy' ? 'Drop vs N-day high by X%' : 'Rise vs N-day low by X%',
   VS_RUNNING_AVG: d => `${d === 'buy' ? 'Drop' : 'Rise'} vs running avg (N days) by X%`,
   PEAK_DEVIATION: d => d === 'buy' ? 'Drawdown by X%' : 'Surge from trough by X%',
 }
@@ -89,22 +91,21 @@ function MarginPercentInput({
   )
 }
 
-export default function DipSurgeSection({ direction, value, onChange, marginPoints = ['40', '45', '50', '55', '60'], sliderMax = 150 }: Props) {
-  const title = direction === 'buy' ? 'Buy the Dip' : 'Sell on Surge'
+export default function DipSurgeSection({
+  direction,
+  value,
+  onChange,
+  marginPoints = ['40', '45', '50', '55', '60'],
+  sliderMax = 150,
+  scope,
+  title = direction === 'buy' ? 'Buy the Dip' : 'Sell on Surge',
+}: Props) {
   const enabled = value !== null
   const midMarginPoint = marginPoints[2] ?? '50'
   const limitMargin = value ? (value.limit || marginValueFromLegacyPoint(marginPoints, value.limitPointIndex)) : ''
 
   function enable() {
-    onChange({
-      scope: 'INDIVIDUAL_STOCK',
-      allocStrategy: 'PROPORTIONAL',
-      triggers: [],
-      execution: { method: 'ONCE' },
-      limit: '',
-      limitPointIndex: '',
-      coolingOffDays: '10',
-    })
+    onChange(emptyDipSurge(scope ?? 'INDIVIDUAL_STOCK'))
   }
 
   function update(patch: Partial<DipSurgeState>) {
@@ -147,13 +148,14 @@ export default function DipSurgeSection({ direction, value, onChange, marginPoin
 
       {enabled && value && (
         <div className="strategy-section-body">
-          {/* Scope */}
-          <div className="strategy-row">
-            <label>Scope</label>
-            <select value={value.scope} onChange={e => update({ scope: e.target.value })}>
-              {DIP_SURGE_SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
+          {!scope && (
+            <div className="strategy-row">
+              <label>Scope</label>
+              <select value={value.scope} onChange={e => update({ scope: e.target.value })}>
+                {DIP_SURGE_SCOPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          )}
 
           {value.scope === 'WHOLE_PORTFOLIO' && (
             <div className="strategy-row">

@@ -233,6 +233,13 @@ private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig = DipSurgeConfi
     coolingOffDays = obj["coolingOffDays"]?.jsonPrimitive?.intOrNull ?: 10,
 )
 
+private fun parseDipSurgeConfigs(el: JsonElement?): List<DipSurgeConfig> =
+    when (el) {
+        is JsonArray -> el.map { parseDipSurgeConfig(it.jsonObject) }
+        is JsonObject -> listOf(parseDipSurgeConfig(el))
+        else -> emptyList()
+    }
+
 private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = MarginTriggerAction(
     deviationPct  = obj["deviationPct"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
@@ -264,11 +271,15 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     }.getOrDefault(DeviationMode.ABSOLUTE),
     sellOnHighMargin           = (obj["sellOnHighMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
     buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
-    buyTheDip                  = (obj["buyTheDip"] as? JsonObject)?.let { parseDipSurgeConfig(it) },
-    sellOnSurge                = (obj["sellOnSurge"] as? JsonObject)?.let { parseDipSurgeConfig(it) },
+    buyTheDip                  = null,
+    sellOnSurge                = null,
+    buyTheDipConfigs           = parseDipSurgeConfigs(obj["buyTheDip"]),
+    sellOnSurgeConfigs         = parseDipSurgeConfigs(obj["sellOnSurge"]),
     useComfortZone             = obj["useComfortZone"]?.jsonPrimitive?.booleanOrNull ?: true,
     comfortZoneLow              = obj["comfortZoneLow"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     comfortZoneHigh             = obj["comfortZoneHigh"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+    buyCooldownAfterSellHighDays = obj["buyCooldownAfterSellHighDays"]?.jsonPrimitive?.intOrNull ?: 10,
+    sellCooldownAfterBuyLowDays = obj["sellCooldownAfterBuyLowDays"]?.jsonPrimitive?.intOrNull ?: 10,
 )
 
 private suspend fun ApplicationCall.respondOk() =

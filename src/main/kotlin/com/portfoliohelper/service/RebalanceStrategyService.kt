@@ -124,6 +124,11 @@ object RebalanceStrategyService {
     val marginTarget = strategy.marginRatio
     val comfortLowBound = strategy.comfortZoneLow
     val comfortHighBound = strategy.comfortZoneHigh
+    val globalCooldown =
+        ReverseDirectionCooldown(
+            strategy.buyCooldownAfterSellHighDays,
+            strategy.sellCooldownAfterBuyLowDays,
+        )
 
     val account = PaperTradingPortfolio(tickers, targetWeights, startingBalance, marginTarget)
 
@@ -149,8 +154,10 @@ object RebalanceStrategyService {
       )
     }
 
-    val dipResources = strategy.buyTheDip?.buildResources()
-    val surgeResources = strategy.sellOnSurge?.buildResources()
+    val dipResources = (listOfNotNull(strategy.buyTheDip) + strategy.buyTheDipConfigs)
+        .map { it.buildResources() }
+    val surgeResources = (listOfNotNull(strategy.sellOnSurge) + strategy.sellOnSurgeConfigs)
+        .map { it.buildResources() }
 
     // ── Per-day helper: check triggers and drive executors for one config ─
     fun processConfig(
@@ -160,6 +167,7 @@ object RebalanceStrategyService {
         curDate: LocalDate,
         actionType: String,
     ) {
+      if (globalCooldown.isBlocked(direction, curIndex)) return
       for ((key, checkers) in res.checkersByKey) {
         val rawTriggered = checkers.any { it.check(direction) }
         val triggered = res.cooldown.shouldFire(key, curIndex, rawTriggered)
@@ -177,6 +185,7 @@ object RebalanceStrategyService {
             val grossBefore = account.grossStockValue()
             applyDipSurge(key, tickers, account, targetWeights, amount, direction, res.allocStrategy)
             if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
+              res.cooldown.recordFire(key, curIndex)
               actionPoints.add(ActionPoint(curDate.toString(), actionType))
             }
           }
@@ -232,7 +241,11 @@ object RebalanceStrategyService {
                   MarginRebalanceTradeDirection.SELL_ONLY -> delta < 0.0
                 }
             if (directionAllowed) {
-              applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+              val direction =
+                  if (delta > 0.0) Direction.BUY else if (delta < 0.0) Direction.SELL else null
+              if (direction == null || !globalCooldown.isBlocked(direction, i)) {
+                applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+              }
             }
           }
         }
@@ -246,13 +259,14 @@ object RebalanceStrategyService {
           strategy.sellOnHighMargin
               ?.takeIf { it.deviationPct > 0 }
               ?.let { cfg ->
-                if (currentRatio > cfg.deviationPct) {
+                if (!globalCooldown.isBlocked(Direction.SELL, i) && currentRatio > cfg.deviationPct) {
                   val targetCashBalance = -account.equity() * cfg.targetMargin
                   if (account.cashBalance() < targetCashBalance) {
                     val excess = targetCashBalance - account.cashBalance()
                     val grossBefore = account.grossStockValue()
                     applyAllocDelta(tickers, account, targetWeights, -excess, cfg.allocStrategy)
                     if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.SELL)) {
+                      globalCooldown.recordSellHigh(i)
                       actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
                     }
                   }
@@ -262,13 +276,14 @@ object RebalanceStrategyService {
           strategy.buyOnLowMargin
               ?.takeIf { it.deviationPct > 0 }
               ?.let { cfg ->
-                if (currentRatio < cfg.deviationPct) {
+                if (!globalCooldown.isBlocked(Direction.BUY, i) && currentRatio < cfg.deviationPct) {
                   val targetCashBalance = -account.equity() * cfg.targetMargin
                   if (account.cashBalance() > targetCashBalance) {
                     val deficit = account.cashBalance() - targetCashBalance
                     val grossBefore = account.grossStockValue()
                     applyAllocDelta(tickers, account, targetWeights, deficit, cfg.allocStrategy)
                     if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.BUY)) {
+                      globalCooldown.recordBuyLow(i)
                       actionPoints.add(ActionPoint(curDate.toString(), "BUY_LOW"))
                     }
                   }
@@ -306,14 +321,14 @@ object RebalanceStrategyService {
           checkers.forEach { it.advance(v) }
         }
       }
-      dipResources?.let { advanceCheckers(it) }
-      surgeResources?.let { advanceCheckers(it) }
+      dipResources.forEach { advanceCheckers(it) }
+      surgeResources.forEach { advanceCheckers(it) }
 
       // Step 8: Buy-the-dip — check triggers + executor.advance
-      dipResources?.let { processConfig(it, Direction.BUY, i, curDate, "BUY_DIP") }
+      dipResources.forEach { processConfig(it, Direction.BUY, i, curDate, "BUY_DIP") }
 
       // Step 9: Sell-on-surge — check triggers + executor.advance
-      surgeResources?.let { processConfig(it, Direction.SELL, i, curDate, "SELL_SURGE") }
+      surgeResources.forEach { processConfig(it, Direction.SELL, i, curDate, "SELL_SURGE") }
 
       // Step 10: Record equity
       val equity = max(0.0, account.equity())
@@ -534,9 +549,36 @@ internal class DipSurgeCooldown(coolingOffDays: Int = 10) {
     if (!rawTriggered) return false
     val lastTriggerIndex = lastTriggerIndexByKey[key]
     if (lastTriggerIndex != null && curIndex - lastTriggerIndex <= days) return false
-    lastTriggerIndexByKey[key] = curIndex
     return true
   }
+
+  fun recordFire(key: DipSurgeKey, curIndex: Int) {
+    lastTriggerIndexByKey[key] = curIndex
+  }
+}
+
+private class ReverseDirectionCooldown(
+    buyCooldownAfterSellHighDays: Int,
+    sellCooldownAfterBuyLowDays: Int,
+) {
+  private val buyDays = buyCooldownAfterSellHighDays.coerceAtLeast(0)
+  private val sellDays = sellCooldownAfterBuyLowDays.coerceAtLeast(0)
+  private var lastSellHighIndex: Int? = null
+  private var lastBuyLowIndex: Int? = null
+
+  fun recordSellHigh(curIndex: Int) {
+    lastSellHighIndex = curIndex
+  }
+
+  fun recordBuyLow(curIndex: Int) {
+    lastBuyLowIndex = curIndex
+  }
+
+  fun isBlocked(direction: Direction, curIndex: Int): Boolean =
+      when (direction) {
+        Direction.BUY -> buyDays > 0 && lastSellHighIndex?.let { curIndex - it <= buyDays } == true
+        Direction.SELL -> sellDays > 0 && lastBuyLowIndex?.let { curIndex - it <= sellDays } == true
+      }
 }
 
 private fun PaperTradingPortfolio.applyTradeDelta(ticker: String, amount: Double) {

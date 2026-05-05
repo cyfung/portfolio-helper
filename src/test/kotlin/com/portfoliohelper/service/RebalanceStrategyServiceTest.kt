@@ -62,6 +62,8 @@ class RebalanceStrategyServiceTest {
         cashflowScaling: CashflowScaling = CashflowScaling.NO_SCALING,
         useComfortZone: Boolean = true,
         marginRebalanceTradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
+        buyCooldownAfterSellHighDays: Int = 0,
+        sellCooldownAfterBuyLowDays: Int = 0,
     ) = RebalStrategyConfig(
         label = "test",
         marginRatio = marginRatio,
@@ -77,7 +79,9 @@ class RebalanceStrategyServiceTest {
         sellOnSurge = sellOnSurge,
         useComfortZone = useComfortZone,
         comfortZoneLow = comfortLow,
-        comfortZoneHigh = comfortHigh
+        comfortZoneHigh = comfortHigh,
+        buyCooldownAfterSellHighDays = buyCooldownAfterSellHighDays,
+        sellCooldownAfterBuyLowDays = sellCooldownAfterBuyLowDays,
     )
 
     // ── Tests ─────────────────────────────────────────────────────────────────
@@ -102,13 +106,34 @@ class RebalanceStrategyServiceTest {
         val bbb = DipSurgeKey.Stock("BBB")
 
         assertTrue(cooldown.shouldFire(aaa, 1, rawTriggered = true), "AAA first trigger should fire")
+        cooldown.recordFire(aaa, 1)
         assertFalse(cooldown.shouldFire(aaa, 2, rawTriggered = true), "AAA next day should be blocked")
         assertFalse(cooldown.shouldFire(aaa, 11, rawTriggered = true), "AAA tenth day after trigger should be blocked")
         assertTrue(cooldown.shouldFire(aaa, 12, rawTriggered = true), "AAA should fire after ten full cooldown days")
+        cooldown.recordFire(aaa, 12)
 
         assertTrue(cooldown.shouldFire(bbb, 2, rawTriggered = true), "BBB should have independent cooldown")
+        cooldown.recordFire(bbb, 2)
         assertFalse(cooldown.shouldFire(bbb, 12, rawTriggered = true), "BBB should still block its own tenth day")
         assertTrue(cooldown.shouldFire(bbb, 13, rawTriggered = true), "BBB should fire after its own cooldown")
+    }
+
+    @Test
+    fun vsNDaysAgoTriggerUsesRollingExtreme() {
+        val checker = PriceMoveTrigger.VsNDaysAgo(nDays = 3, pct = 0.1).buildChecker(DipSurgeKey.Stock("SPY"))
+
+        checker.advance(100.0)
+        assertFalse(checker.check(Direction.BUY))
+        checker.advance(90.0)
+        assertFalse(checker.check(Direction.BUY))
+        checker.advance(89.0)
+        assertTrue(checker.check(Direction.BUY), "BD should compare against the highest price in the N-day window")
+
+        val sellChecker = PriceMoveTrigger.VsNDaysAgo(nDays = 3, pct = 0.1).buildChecker(DipSurgeKey.Stock("SPY"))
+        sellChecker.advance(100.0)
+        sellChecker.advance(110.0)
+        sellChecker.advance(112.0)
+        assertTrue(sellChecker.check(Direction.SELL), "SS should compare against the lowest price in the N-day window")
     }
 
     @Test
@@ -463,6 +488,8 @@ class RebalanceStrategyServiceTest {
                 useComfortZone = false,
                 comfortZoneLow = 0.4,
                 comfortZoneHigh = 0.6,
+                buyCooldownAfterSellHighDays = 0,
+                sellCooldownAfterBuyLowDays = 0,
             )
 
             val backtestCurve = BacktestService.runMulti(
@@ -550,6 +577,8 @@ class RebalanceStrategyServiceTest {
                 useComfortZone = false,
                 comfortZoneLow = 0.4,
                 comfortZoneHigh = 0.6,
+                buyCooldownAfterSellHighDays = 0,
+                sellCooldownAfterBuyLowDays = 0,
             )
 
             val backtestCurve = BacktestService.runMulti(
@@ -812,7 +841,7 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
-    fun buyTheDipCooldownCanBeConsumedBeforeSellHighMakesBuyingEligible() {
+    fun buyTheDipCooldownStartsOnlyAfterActualPurchase() {
         val dates = days(LocalDate.of(2024, 1, 2), 16)
         val values = listOf(
             1.00, 0.95, 0.90, 0.85, 0.84, 0.83, 0.82, 0.81,
@@ -848,10 +877,133 @@ class RebalanceStrategyServiceTest {
 
         val actions = result.actionPoints.orEmpty()
         assertTrue(actions.any { it.date == dates[3].toString() && it.type == "SELL_HIGH" })
-        assertFalse(
+        assertTrue(
             actions.any { it.date == dates[3].toString() && it.type == "BUY_DIP" },
-            "BD is blocked on the SH day because the previous zero-eligible dip trigger consumed cooldown",
+            "BD should run on the SH day because previous zero-eligible dip triggers do not start cooldown",
         )
+    }
+
+    @Test
+    fun sellHighStartsGlobalBuyCooldownForBuyLowAndBuyTheDip() {
+        val dates = days(LocalDate.of(2024, 1, 2), 16)
+        val values = listOf(
+            1.00, 0.95, 0.90, 0.85, 0.84, 0.83, 0.82, 0.81,
+            0.80, 0.79, 0.78, 0.77, 0.76, 0.75, 0.74, 0.73,
+        )
+        val series = mapOf("SPY" to dates.zip(values).toMap())
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.85,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 1.0,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.75,
+                ),
+                buyOnLowMargin = MarginTriggerAction(
+                    deviationPct = 0.8,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.85,
+                ),
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.VsRunningAvg(nDays = 1, pct = 0.0)),
+                    method = ExecutionMethod.Once,
+                    limit = 0.85,
+                    coolingOffDays = 10,
+                ),
+                buyCooldownAfterSellHighDays = 10,
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val actions = result.actionPoints.orEmpty()
+        assertTrue(actions.any { it.date == dates[3].toString() && it.type == "SELL_HIGH" })
+        assertFalse(actions.any { it.type == "BUY_DIP" }, "SH should block BD during the global buy cooldown")
+        assertFalse(actions.any { it.type == "BUY_LOW" }, "SH should block BL during the global buy cooldown")
+    }
+
+    @Test
+    fun sellHighBlocksBuyDirectionMarginRebalanceDuringGlobalCooldown() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val prices = mapOf(dates[0] to 1.0, dates[1] to 0.5, dates[2] to 1.0)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.85,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.8,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                buyCooldownAfterSellHighDays = 10,
+            ),
+            null,
+            mapOf("SPY" to prices),
+            dates,
+            emptyMap(),
+        )
+
+        assertTrue(result.actionPoints?.any { it.date == "2024-01-31" && it.type == "SELL_HIGH" } == true)
+        assertApprox(0.2, requireNotNull(result.marginPoints)[2].value, label = "monthly buy rebalance blocked after SH")
+    }
+
+    @Test
+    fun buyLowBlocksSellDirectionMarginRebalanceAndSellOnSurgeDuringGlobalCooldown() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val prices = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 1.0)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.15,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                buyOnLowMargin = MarginTriggerAction(
+                    deviationPct = 0.2,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                sellOnSurge = DipSurgeConfig(
+                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
+                    method = ExecutionMethod.Once,
+                    limit = 0.15,
+                    coolingOffDays = 10,
+                ),
+                sellCooldownAfterBuyLowDays = 10,
+            ),
+            null,
+            mapOf("SPY" to prices),
+            dates,
+            emptyMap(),
+        )
+
+        val actions = result.actionPoints.orEmpty()
+        assertTrue(actions.any { it.date == "2024-01-31" && it.type == "BUY_LOW" })
+        assertFalse(actions.any { it.type == "SELL_SURGE" }, "BL should block SS during the global sell cooldown")
+        assertApprox(2.0, requireNotNull(result.marginPoints)[2].value, label = "monthly sell rebalance blocked after BL")
     }
 
     @Test

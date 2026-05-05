@@ -134,9 +134,13 @@ data class RebalStrategyConfig(
     // Sections 5 & 6
     val buyTheDip: DipSurgeConfig?,
     val sellOnSurge: DipSurgeConfig?,
+    val buyTheDipConfigs: List<DipSurgeConfig> = emptyList(),
+    val sellOnSurgeConfigs: List<DipSurgeConfig> = emptyList(),
     val useComfortZone: Boolean = true,
     val comfortZoneLow: Double = 0.0,
-    val comfortZoneHigh: Double = 0.0
+    val comfortZoneHigh: Double = 0.0,
+    val buyCooldownAfterSellHighDays: Int = 10,
+    val sellCooldownAfterBuyLowDays: Int = 10,
 )
 
 data class RebalanceStrategyRequest(
@@ -158,16 +162,19 @@ private class VsNDaysAgoChecker(
 
     override fun advance(value: Double) {
         window.addLast(value)
-        if (window.size > nDays + 1) window.removeFirst()
+        if (window.size > nDays) window.removeFirst()
     }
 
     override fun check(direction: Direction): Boolean {
-        if (window.size < nDays + 1) return false
-        val past = window.first()
+        if (window.size < nDays) return false
         val cur = window.last()
-        if (past <= 0) return false
-        val move = (cur - past) / past
-        return if (direction == Direction.BUY) move < -pct else move > pct
+        return if (direction == Direction.BUY) {
+            val high = window.maxOrNull() ?: return false
+            high > 0 && (high - cur) / high > pct
+        } else {
+            val low = window.minOrNull() ?: return false
+            low > 0 && (cur - low) / low > pct
+        }
     }
 }
 
