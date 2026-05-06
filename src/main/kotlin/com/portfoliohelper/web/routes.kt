@@ -252,6 +252,13 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     label                      = obj["label"]?.jsonPrimitive?.contentOrNull ?: "Strategy",
     marginRatio                = obj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
     marginSpread               = obj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
+    portfolioRebalancePeriod   = runCatching {
+        RebalancePeriodOverride.valueOf(obj["portfolioRebalancePeriod"]?.jsonPrimitive?.content ?: "INHERIT")
+    }.getOrDefault(RebalancePeriodOverride.INHERIT),
+    portfolioRebalanceUseComfortZone = obj["portfolioRebalanceUseComfortZone"]?.jsonPrimitive?.booleanOrNull
+        ?: obj["useComfortZone"]?.jsonPrimitive?.booleanOrNull
+        ?: true,
+    marginRebalanceEnabled     = obj["marginRebalanceEnabled"]?.jsonPrimitive?.booleanOrNull ?: true,
     rebalancePeriod            = runCatching {
         RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "NONE")
     }.getOrDefault(RebalancePeriodOverride.NONE),
@@ -261,6 +268,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     marginRebalanceTradeDirection = runCatching {
         MarginRebalanceTradeDirection.valueOf(obj["marginRebalanceTradeDirection"]?.jsonPrimitive?.content ?: "BOTH")
     }.getOrDefault(MarginRebalanceTradeDirection.BOTH),
+    marginRebalanceRestoreMargin = obj["marginRebalanceRestoreMargin"]?.jsonPrimitive?.doubleOrNull,
     cashflowImmediateInvestPct = obj["cashflowImmediateInvestPct"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
     cashflowScaling            = runCatching {
         CashflowScaling.valueOf(obj["cashflowScaling"]?.jsonPrimitive?.content ?: "SCALED_BY_TARGET_MARGIN")
@@ -784,6 +792,62 @@ fun Application.configureRouting() {
                     RebalanceStrategyRequest(fromDate, toDate, portfolio, cashflow, strategies, startingBalance)
                 )
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
+        post("/api/rebalance-strategy/score-batch") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+
+                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
+
+                val savedConfigs = savedBacktestPortfolioConfigs()
+                val portfolios = when (val portfolioElement = json["portfolios"]) {
+                    is JsonArray -> portfolioElement.map { parseSinglePortfolioConfig(it.jsonObject, savedConfigs) }
+                    else -> listOfNotNull((json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it, savedConfigs) })
+                }
+                if (portfolios.isEmpty()) throw IllegalArgumentException("Missing portfolios")
+
+                val cashflow = json.parseCashflowConfig()
+
+                val strategies = (json["strategies"] as? JsonArray)?.map { el ->
+                    parseRebalStrategyConfig(el.jsonObject)
+                } ?: emptyList()
+                if (strategies.isEmpty()) throw IllegalArgumentException("Missing strategies")
+
+                val metric = runCatching {
+                    RebalanceOptimizationMetric.valueOf(
+                        json["metric"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "CAGR"
+                    )
+                }.getOrDefault(RebalanceOptimizationMetric.CAGR)
+                val portfolioRebalanceStrategies =
+                    (json["portfolioRebalanceStrategies"] as? JsonArray)?.map { el ->
+                        runCatching { RebalanceStrategy.valueOf(el.jsonPrimitive.content) }
+                            .getOrDefault(portfolios.first().rebalanceStrategy)
+                    } ?: emptyList()
+
+                val scores = RebalanceStrategyService.scoreBatch(
+                    RebalanceStrategyScoreBatchRequest(
+                        fromDate,
+                        toDate,
+                        portfolios,
+                        cashflow,
+                        strategies,
+                        portfolioRebalanceStrategies,
+                        startingBalance,
+                        metric,
+                    )
+                )
+                call.respondText(appJson.encodeToString(scores), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondText(
                     "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",

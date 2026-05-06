@@ -68,9 +68,10 @@ object RebalanceStrategyService {
         )
     val strategyResults =
         request.strategies.map { strategy ->
+          val strategyPortfolio = strategy.portfolioWithRebalanceOverride(request.portfolio)
           val curve =
               runStrategy(
-                  request.portfolio,
+                  strategyPortfolio,
                   strategy,
                   request.cashflow,
                   seriesMap,
@@ -81,6 +82,108 @@ object RebalanceStrategyService {
           PortfolioResult(strategy.label, listOf(curve))
         }
     return MultiBacktestResult(baseResult.portfolios + strategyResults)
+  }
+
+  fun scoreBatch(request: RebalanceStrategyScoreBatchRequest): List<Double> {
+    val portfolios = request.portfolios.takeIf { it.isNotEmpty() }
+        ?: throw IllegalArgumentException("Missing portfolios")
+    val contexts = portfolios.map { portfolio ->
+      portfolio to prepareRunContext(
+          request.fromDate,
+          request.toDate,
+          portfolio,
+      )
+    }
+
+    return request.strategies.indices
+        .toList()
+        .parallelStream()
+        .map { strategyIndex ->
+          val strategy = request.strategies[strategyIndex]
+          val candidateRebalance = request.portfolioRebalanceStrategies.getOrNull(strategyIndex)
+          val scores = contexts.map { (portfolio, context) ->
+            val candidatePortfolio =
+                candidateRebalance?.let { portfolio.copy(rebalanceStrategy = it) }
+                    ?: strategy.portfolioWithRebalanceOverride(portfolio)
+            val stats = runStrategy(
+                  candidatePortfolio,
+                  strategy,
+                  request.cashflow,
+                  context.seriesMap,
+                  context.dates,
+                  context.effrx,
+                  request.startingBalance,
+            ).stats
+            when (request.metric) {
+              RebalanceOptimizationMetric.CAGR -> stats.cagr
+              RebalanceOptimizationMetric.SHARPE -> stats.sharpe
+              RebalanceOptimizationMetric.UPI -> stats.upi
+            }
+          }
+          if (scores.isEmpty()) Double.NEGATIVE_INFINITY else scores.average()
+        }
+        .toList()
+  }
+
+  private data class RunContext(
+      val seriesMap: Map<String, Map<LocalDate, Double>>,
+      val dates: List<LocalDate>,
+      val effrx: Map<LocalDate, Double>,
+  )
+
+  private fun prepareRunContext(
+      fromDateText: String?,
+      toDateText: String?,
+      portfolio: PortfolioConfig,
+  ): RunContext {
+    val fromDate = fromDateText?.let { LocalDate.parse(it) }
+    val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()
+    val effrx = BacktestService.loadEffrxSeries()
+    val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
+
+    val letfDefs = mutableMapOf<String, LETFDefinition>()
+    for (tw in portfolio.tickers) {
+      BacktestService.parseLETFDefinition(tw.ticker)?.let { letfDefs.putIfAbsent(tw.ticker, it) }
+    }
+    val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
+    fun cachedLoad(ticker: String) =
+        seriesCache.getOrPut(ticker) { BacktestService.loadNormalizedSeries(ticker, neededFrom) }
+
+    for (comp in letfDefs.values.flatMap { it.components }) cachedLoad(comp.ticker)
+
+    val letfComponentSeries =
+        letfDefs.values.flatMap { it.components }.mapNotNull { seriesCache[it.ticker] }
+    val letfDates =
+        if (letfComponentSeries.isNotEmpty())
+            BacktestService.intersectDates(letfComponentSeries, fromDate, toDate)
+        else emptyList()
+    if (letfDates.size >= 2) {
+      for ((letfString, def) in letfDefs) {
+        if (letfString !in seriesCache) {
+          val componentSeries = def.components.associate { it.ticker to seriesCache[it.ticker]!! }
+          seriesCache[letfString] =
+              BacktestService.computeLetfSeries(
+                  def,
+                  componentSeries,
+                  letfDates,
+                  effrx,
+                  def.rebalanceStrategy,
+              )
+        }
+      }
+    }
+    for (tw in portfolio.tickers) {
+      if (BacktestService.parseLETFDefinition(tw.ticker) == null) cachedLoad(tw.ticker)
+    }
+
+    val seriesMap: Map<String, Map<LocalDate, Double>> =
+        portfolio.tickers.associate { tw ->
+          tw.ticker to (seriesCache[tw.ticker] ?: error("Series for '${tw.ticker}' not found"))
+        }
+    val dates = BacktestService.intersectDates(seriesMap.values.toList(), fromDate, toDate)
+    if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
+
+    return RunContext(seriesMap, dates, effrx)
   }
 
   internal fun runStrategyForTest(
@@ -120,7 +223,9 @@ object RebalanceStrategyService {
   ): CurveResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
-    val marginRebalance = strategy.rebalancePeriod.toMarginRebalanceStrategy()
+    val marginRebalance =
+        if (strategy.marginRebalanceEnabled) strategy.rebalancePeriod.toMarginRebalanceStrategy()
+        else RebalanceStrategy.NONE
     val marginTarget = strategy.marginRatio
     val comfortLowBound = strategy.comfortZoneLow
     val comfortHighBound = strategy.comfortZoneHigh
@@ -206,8 +311,8 @@ object RebalanceStrategyService {
       // Step 2: Accrue margin interest on debt
       account.accrueMarginInterest(dailyLoanRates[i])
 
-      fun effectiveMarginForRebalance(): Double {
-        if (!strategy.useComfortZone) return marginTarget
+      fun comfortZoneMargin(useComfortZone: Boolean): Double {
+        if (!useComfortZone) return marginTarget
         val currentRatio = account.currentMarginRatio()
         return when {
           currentRatio > comfortHighBound -> comfortHighBound
@@ -224,7 +329,7 @@ object RebalanceStrategyService {
       if (normalRebalanceDay) {
         val eq = account.equity()
         if (eq > 0) {
-          val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
+          val targetTotal = eq * (1.0 + comfortZoneMargin(strategy.portfolioRebalanceUseComfortZone))
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)
         }
       } else {
@@ -232,7 +337,12 @@ object RebalanceStrategyService {
           // Step 4: Scheduled margin rebalance only runs on days without normal rebalance.
           val eq = account.equity()
           if (eq > 0) {
-            val targetTotal = eq * (1.0 + effectiveMarginForRebalance())
+            val targetMargin =
+                if (strategy.marginRebalanceTradeDirection == MarginRebalanceTradeDirection.BOTH)
+                  comfortZoneMargin(strategy.useComfortZone)
+                else
+                  strategy.marginRebalanceRestoreMargin ?: marginTarget
+            val targetTotal = eq * (1.0 + targetMargin)
             val delta = targetTotal - account.grossStockValue()
             val directionAllowed =
                 when (strategy.marginRebalanceTradeDirection) {
@@ -524,6 +634,26 @@ private fun RebalancePeriodOverride.toMarginRebalanceStrategy(): RebalanceStrate
       RebalancePeriodOverride.HALF_YEARLY -> RebalanceStrategy.HALF_YEARLY
       RebalancePeriodOverride.YEARLY -> RebalanceStrategy.YEARLY
     }
+
+private fun RebalancePeriodOverride.toPortfolioRebalanceStrategy(base: RebalanceStrategy): RebalanceStrategy =
+    when (this) {
+      RebalancePeriodOverride.INHERIT -> base
+      RebalancePeriodOverride.NONE -> RebalanceStrategy.NONE
+      RebalancePeriodOverride.DAILY -> RebalanceStrategy.DAILY
+      RebalancePeriodOverride.WEEKLY -> RebalanceStrategy.WEEKLY
+      RebalancePeriodOverride.BI_WEEKLY -> RebalanceStrategy.BI_WEEKLY
+      RebalancePeriodOverride.MONTHLY -> RebalanceStrategy.MONTHLY
+      RebalancePeriodOverride.BI_MONTHLY -> RebalanceStrategy.BI_MONTHLY
+      RebalancePeriodOverride.QUARTERLY -> RebalanceStrategy.QUARTERLY
+      RebalancePeriodOverride.EVERY_4_MONTHS -> RebalanceStrategy.EVERY_4_MONTHS
+      RebalancePeriodOverride.HALF_YEARLY -> RebalanceStrategy.HALF_YEARLY
+      RebalancePeriodOverride.YEARLY -> RebalanceStrategy.YEARLY
+    }
+
+private fun RebalStrategyConfig.portfolioWithRebalanceOverride(portfolio: PortfolioConfig): PortfolioConfig {
+  val effective = portfolioRebalancePeriod.toPortfolioRebalanceStrategy(portfolio.rebalanceStrategy)
+  return if (effective == portfolio.rebalanceStrategy) portfolio else portfolio.copy(rebalanceStrategy = effective)
+}
 
 private fun biWeeklyBucket(date: LocalDate): Long =
     ChronoUnit.WEEKS.between(LocalDate.of(1970, 1, 5), date) / 2

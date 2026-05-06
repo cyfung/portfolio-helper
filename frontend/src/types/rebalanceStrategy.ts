@@ -38,9 +38,13 @@ export interface RebalStrategyState {
   marginRatio: string
   marginSpread: string
   marginPoints: string[]
+  portfolioRebalancePeriod: string
+  portfolioRebalanceUseComfortZone: boolean
+  marginRebalanceEnabled: boolean
   rebalancePeriod: string
   rebalanceAllocStrategy: string
   marginRebalanceTradeDirection: MarginRebalanceTradeDirection
+  marginRebalanceRestoreMargin: string
   cashflowImmediateInvestPct: string   // default '100'
   cashflowScaling: string              // CashflowScaling value
   cashflowScalingPointIndex: string
@@ -66,6 +70,7 @@ export interface RebalStrategyState {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const REBALANCE_PERIOD_OVERRIDE_OPTIONS = [
+  { value: 'INHERIT',        label: 'Inherit' },
   { value: 'NONE',           label: 'None' },
   { value: 'DAILY',          label: 'Daily' },
   { value: 'WEEKLY',         label: 'Weekly' },
@@ -131,9 +136,13 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     marginRatio: '50',
     marginSpread: '1.5',
     marginPoints: ['40', '45', '50', '55', '60'],
+    portfolioRebalancePeriod: 'INHERIT',
+    portfolioRebalanceUseComfortZone: true,
+    marginRebalanceEnabled: true,
     rebalancePeriod: 'NONE',
     rebalanceAllocStrategy: 'PROPORTIONAL',
     marginRebalanceTradeDirection: 'BOTH',
+    marginRebalanceRestoreMargin: '',
     cashflowImmediateInvestPct: '100',
     cashflowScaling: 'SCALED_BY_TARGET_MARGIN',
     cashflowScalingPointIndex: '3',
@@ -232,9 +241,13 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
   return {
     ...config,
     label: name,
+    portfolioRebalancePeriod: config.portfolioRebalancePeriod ?? 'INHERIT',
+    portfolioRebalanceUseComfortZone: config.portfolioRebalanceUseComfortZone ?? config.useComfortZone ?? true,
+    marginRebalanceEnabled: config.marginRebalanceEnabled ?? true,
     rebalancePeriod: config.rebalancePeriod === 'INHERIT' ? 'NONE' : (config.rebalancePeriod ?? 'NONE'),
     rebalanceAllocStrategy: config.rebalanceAllocStrategy ?? 'PROPORTIONAL',
     marginRebalanceTradeDirection: config.marginRebalanceTradeDirection ?? 'BOTH',
+    marginRebalanceRestoreMargin: config.marginRebalanceRestoreMargin ?? '',
     useComfortZone: config.useComfortZone ?? true,
     buyTheDip: normalizeDipSurgeScopes(config.buyTheDip),
     sellOnSurge: normalizeDipSurgeScopes(config.sellOnSurge),
@@ -265,9 +278,15 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     label: s.label.trim() || 'Strategy',
     marginRatio: margin / 100,
     marginSpread: pct(s.marginSpread, 1.5),
-    rebalancePeriod: s.rebalancePeriod === 'INHERIT' ? 'NONE' : (s.rebalancePeriod || 'NONE'),
+    portfolioRebalancePeriod: s.portfolioRebalancePeriod || 'INHERIT',
+    portfolioRebalanceUseComfortZone: s.portfolioRebalanceUseComfortZone ?? true,
+    marginRebalanceEnabled: s.marginRebalanceEnabled ?? true,
+    rebalancePeriod: (s.marginRebalanceEnabled ?? true)
+      ? (s.rebalancePeriod === 'INHERIT' ? 'NONE' : (s.rebalancePeriod || 'NONE'))
+      : 'NONE',
     rebalanceAllocStrategy: s.rebalanceAllocStrategy || 'PROPORTIONAL',
     marginRebalanceTradeDirection: s.marginRebalanceTradeDirection || 'BOTH',
+    marginRebalanceRestoreMargin: customOrPointPct(s.marginRebalanceRestoreMargin, undefined),
     cashflowImmediateInvestPct: pct(s.cashflowImmediateInvestPct, 100),
     cashflowScaling: s.cashflowScaling || 'SCALED_BY_TARGET_MARGIN',
     cashflowScalingMargin,

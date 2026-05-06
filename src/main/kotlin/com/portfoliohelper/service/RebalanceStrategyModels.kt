@@ -120,9 +120,13 @@ data class RebalStrategyConfig(
     val label: String,
     val marginRatio: Double,
     val marginSpread: Double,
+    val portfolioRebalancePeriod: RebalancePeriodOverride = RebalancePeriodOverride.INHERIT,
+    val portfolioRebalanceUseComfortZone: Boolean = true,
+    val marginRebalanceEnabled: Boolean = true,
     val rebalancePeriod: RebalancePeriodOverride,
     val rebalanceAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
     val marginRebalanceTradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
+    val marginRebalanceRestoreMargin: Double? = null,
     val cashflowImmediateInvestPct: Double,   // 0.0–1.0; default 1.0
     val cashflowScaling: CashflowScaling,
     val cashflowScalingMargin: Double? = null,
@@ -150,6 +154,19 @@ data class RebalanceStrategyRequest(
     val cashflow: CashflowConfig?,
     val strategies: List<RebalStrategyConfig>,  // exactly 2
     val startingBalance: Double = 10_000.0
+)
+
+enum class RebalanceOptimizationMetric { CAGR, SHARPE, UPI }
+
+data class RebalanceStrategyScoreBatchRequest(
+    val fromDate: String?,
+    val toDate: String?,
+    val portfolios: List<PortfolioConfig>,
+    val cashflow: CashflowConfig?,
+    val strategies: List<RebalStrategyConfig>,
+    val portfolioRebalanceStrategies: List<RebalanceStrategy> = emptyList(),
+    val startingBalance: Double = 10_000.0,
+    val metric: RebalanceOptimizationMetric = RebalanceOptimizationMetric.CAGR,
 )
 
 // ── TriggerChecker implementations ───────────────────────────────────────────

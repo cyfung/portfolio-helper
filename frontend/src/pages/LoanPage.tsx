@@ -158,6 +158,7 @@ interface LoanResults {
   payment: number
   totalPayments: number
   totalInterest: number
+  existingPaymentsAvoided?: number
 }
 
 export default function LoanPage() {
@@ -326,6 +327,7 @@ export default function LoanPage() {
     const newPay = resolved.pay
 
     const totalReceived = la
+    const existingScheduledPayments = existPay * P
 
     const lrd  = override?.loanReceiveDate        ?? loanReceiveDate
     const nepd = override?.nextExistingPaymentDate ?? nextExistingPaymentDate
@@ -361,8 +363,16 @@ export default function LoanPage() {
         const per = parseInt(row.period, 10)
         if (!isNaN(amt) && !isNaN(per) && per >= 1) {
           const t = (existFirstMs + (per - 1) * existPeriodDays * MS_PER_DAY - refMs) / (365.25 * MS_PER_DAY)
-          cfs.push({ amount: amt, t })
+          cfs.push({ amount: -amt, t })
         }
+      })
+
+      let existingCashflowAdjustments = 0
+      let newCashflowAdjustments = 0
+      activeExistCfRows.forEach(row => {
+        const amt = parseFloat(row.amount)
+        const per = parseInt(row.period, 10)
+        if (!isNaN(amt) && !isNaN(per) && per >= 1) existingCashflowAdjustments += amt
       })
 
       for (let i = 1; i <= np; i++) {
@@ -375,6 +385,7 @@ export default function LoanPage() {
         if (!isNaN(amt) && !isNaN(per) && per >= 1 && per <= np) {
           const t = (newFirstMs + (per - 1) * periodDays * MS_PER_DAY - refMs) / (365.25 * MS_PER_DAY)
           cfs.push({ amount: amt, t })
+          newCashflowAdjustments += amt
         }
       })
 
@@ -389,11 +400,11 @@ export default function LoanPage() {
       const apy          = annualRate
       const periodicRate = Math.pow(1 + apy, 1 / ppy) - 1
       const apr          = periodicRate * ppy
-      const flatRate     = (newPay * np - totalReceived) / (totalReceived * np)
-      const totalPayments = newPay * np
+      const totalPayments = newPay * np - existingScheduledPayments + existingCashflowAdjustments - newCashflowAdjustments
+      const flatRate     = (totalPayments - totalReceived) / (totalReceived * np)
       const totalInterest = totalPayments - totalReceived
 
-      setResults({ periodicRate, apr, apy, flatRate, payment: newPay, totalPayments, totalInterest })
+      setResults({ periodicRate, apr, apy, flatRate, payment: newPay, totalPayments, totalInterest, existingPaymentsAvoided: existingScheduledPayments })
     } else {
       // ── Integer-period path (k=0, payments assumed aligned) ────────────────
       const len = Math.max(P, np) + 1
@@ -405,12 +416,22 @@ export default function LoanPage() {
       activeExistCfRows.forEach(row => {
         const amt = parseFloat(row.amount)
         const per = parseInt(row.period, 10)
-        if (!isNaN(amt) && !isNaN(per) && per >= 0 && per < len) cashFlows[per] += amt
+        if (!isNaN(amt) && !isNaN(per) && per >= 0 && per < len) cashFlows[per] -= amt
+      })
+      let existingCashflowAdjustments = 0
+      let newCashflowAdjustments = 0
+      activeExistCfRows.forEach(row => {
+        const amt = parseFloat(row.amount)
+        const per = parseInt(row.period, 10)
+        if (!isNaN(amt) && !isNaN(per) && per >= 0 && per < len) existingCashflowAdjustments += amt
       })
       activeNewCfRows.forEach(row => {
         const amt = parseFloat(row.amount)
         const per = parseInt(row.period, 10)
-        if (!isNaN(amt) && !isNaN(per) && per >= 0 && per < len) cashFlows[per] += amt
+        if (!isNaN(amt) && !isNaN(per) && per >= 0 && per < len) {
+          cashFlows[per] += amt
+          newCashflowAdjustments += amt
+        }
       })
 
       const r = findIRR(cashFlows)
@@ -421,11 +442,11 @@ export default function LoanPage() {
 
       const apr       = r * ppy
       const apy       = Math.pow(1 + r, ppy) - 1
-      const flatRate  = (newPay * np - totalReceived) / (totalReceived * np)
-      const totalPayments = newPay * np
+      const totalPayments = newPay * np - existingScheduledPayments + existingCashflowAdjustments - newCashflowAdjustments
+      const flatRate  = (totalPayments - totalReceived) / (totalReceived * np)
       const totalInterest = totalPayments - totalReceived
 
-      setResults({ periodicRate: r, apr, apy, flatRate, payment: newPay, totalPayments, totalInterest })
+      setResults({ periodicRate: r, apr, apy, flatRate, payment: newPay, totalPayments, totalInterest, existingPaymentsAvoided: existingScheduledPayments })
     }
 
     if (save) saveHistory()
@@ -799,8 +820,11 @@ export default function LoanPage() {
             <div className="result-row"><span>Flat Rate</span><span>{fmtPct(results.flatRate)}</span></div>
             <div className="result-divider" />
             <div className="result-row"><span>Payment / Period</span><span>{fmtCur(results.payment)}</span></div>
-            <div className="result-row"><span>Total Payments</span><span>{fmtCur(results.totalPayments)}</span></div>
-            <div className="result-row"><span>Total Interest</span><span>{fmtCur(results.totalInterest)}</span></div>
+            {results.existingPaymentsAvoided !== undefined && (
+              <div className="result-row"><span>Existing Payments Avoided</span><span>{fmtCur(results.existingPaymentsAvoided)}</span></div>
+            )}
+            <div className="result-row"><span>{mode === 'update' ? 'Net Payments' : 'Total Payments'}</span><span>{fmtCur(results.totalPayments)}</span></div>
+            <div className="result-row"><span>{mode === 'update' ? 'Net Interest' : 'Total Interest'}</span><span>{fmtCur(results.totalInterest)}</span></div>
           </div>
         )}
       </div>

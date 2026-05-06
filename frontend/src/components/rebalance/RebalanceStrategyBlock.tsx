@@ -357,6 +357,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   }, [updateLocal])
   const marginPoints = draftMarginPoints
   const midMarginPoint = marginPoints[2] ?? DEFAULT_POINTS[2]
+  const marginRebalanceRestoreMargin = s.marginRebalanceRestoreMargin ?? midMarginPoint
   const cashflowScalingMargin = s.cashflowScalingMargin ?? marginValueFromLegacyPoint(marginPoints, s.cashflowScalingPointIndex, 1)
   const buyLowRestoreMargin = s.buyLowRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.buyLowRestorePointIndex)
   const sellHighRestoreMargin = s.sellHighRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.sellHighRestorePointIndex)
@@ -433,22 +434,14 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       </div>
 
       <details open className="strategy-subsection strategy-margin-section">
-        <summary className="strategy-section-title" onClick={keepSectionOpen}>Margin Rebalance</summary>
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>Margin</summary>
         <div className="strategy-section-body">
-          <div className="strategy-row">
-            <label>Use Comfort Zone</label>
-            <input
-              type="checkbox"
-              checked={s.useComfortZone ?? true}
-              onChange={e => set({ useComfortZone: e.target.checked })}
-            />
-          </div>
         <div className="strategy-row">
           <label>Margin Points %</label>
           <MarginPointSlider
             points={marginPoints}
             max={sliderMax}
-            showComfortPoints={s.useComfortZone ?? true}
+            showComfortPoints
             onChange={handleMarginChange}
             onCommit={commitMarginPoints}
           />
@@ -461,30 +454,20 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             style={{ width: '5rem' }} />
         </div>
         <div className="strategy-row">
-          <label>Margin Rebalance</label>
-          <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
+          <label>Rebalance Period</label>
+          <select value={s.portfolioRebalancePeriod ?? 'INHERIT'} onChange={e => set({ portfolioRebalancePeriod: e.target.value })}>
             {REBALANCE_PERIOD_OVERRIDE_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
         <div className="strategy-row">
-          <label>Trade Direction</label>
-          <select value={s.marginRebalanceTradeDirection ?? 'BOTH'}
-            onChange={e => set({ marginRebalanceTradeDirection: e.target.value as RebalStrategyState['marginRebalanceTradeDirection'] })}>
-            {MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="strategy-row">
-          <label>Alloc Strategy</label>
-          <select value={s.rebalanceAllocStrategy ?? 'PROPORTIONAL'}
-            onChange={e => set({ rebalanceAllocStrategy: e.target.value })}>
-            {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          <label>Use Comfort Zone</label>
+          <input
+            type="checkbox"
+            checked={s.portfolioRebalanceUseComfortZone ?? true}
+            onChange={e => set({ portfolioRebalanceUseComfortZone: e.target.checked })}
+          />
         </div>
         <div className="strategy-row">
           <label>Buy Cooldown After SH</label>
@@ -501,6 +484,69 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             style={{ width: '5rem' }} />
         </div>
         </div>
+      </details>
+
+      <details open={s.marginRebalanceEnabled ?? true} className="strategy-subsection">
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>
+          Margin Rebalance
+          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={s.marginRebalanceEnabled ?? true}
+              onChange={e => set({ marginRebalanceEnabled: e.target.checked })} />
+            {' '}Enable
+          </label>
+        </summary>
+        {(s.marginRebalanceEnabled ?? true) && (
+          <div className="strategy-section-body">
+            <div className="strategy-row">
+              <label>Margin Rebalance</label>
+              <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
+                {REBALANCE_PERIOD_OVERRIDE_OPTIONS.filter(o => o.value !== 'INHERIT').map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="strategy-row">
+              <label>Trade Direction</label>
+              <select value={s.marginRebalanceTradeDirection ?? 'BOTH'}
+                onChange={e => set({ marginRebalanceTradeDirection: e.target.value as RebalStrategyState['marginRebalanceTradeDirection'] })}>
+                {MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="strategy-row">
+              <label>Alloc Strategy</label>
+              <select value={s.rebalanceAllocStrategy ?? 'PROPORTIONAL'}
+                onChange={e => set({ rebalanceAllocStrategy: e.target.value })}>
+                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {(s.marginRebalanceTradeDirection ?? 'BOTH') === 'BOTH' ? (
+              <div className="strategy-row">
+                <label>Use Comfort Zone</label>
+                <input
+                  type="checkbox"
+                  checked={s.useComfortZone ?? true}
+                  onChange={e => set({ useComfortZone: e.target.checked })}
+                />
+              </div>
+            ) : (
+              <div className="strategy-row">
+                <label>Restore To</label>
+                <MarginPercentInput
+                  value={marginRebalanceRestoreMargin}
+                  placeholder={midMarginPoint}
+                  max={sliderMax}
+                  ariaLabel="Margin rebalance restore margin"
+                  onChange={value => set({ marginRebalanceRestoreMargin: value })}
+                  onCommit={() => commit()}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </details>
 
       <details open className="strategy-subsection">
