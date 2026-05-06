@@ -11,6 +11,7 @@ export default function PortfolioAnalystPage() {
   const navigate = useNavigate()
   const loadPortfolioData = usePortfolioStore(s => s.loadPortfolioData)
   const portfolioId = usePortfolioStore(s => s.portfolioId)
+  const allPortfolios = usePortfolioStore(s => s.allPortfolios)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,7 +55,11 @@ export default function PortfolioAnalystPage() {
     <div className="container">
       <div className="portfolio-header">
         <div className="header-title-group">
-          <PageNavTabs active="/analyst/" />
+          <PageNavTabs
+            active="/analyst/"
+            contextLabel={allPortfolios.find(p => p.slug === portfolioId)?.name}
+            contextChildren={<PortfolioTabs basePath="/analyst/" />}
+          />
         </div>
         <HeaderRight>
           <PrivacyToggleButton />
@@ -62,16 +67,6 @@ export default function PortfolioAnalystPage() {
           <ThemeToggle />
         </HeaderRight>
       </div>
-      <PortfolioTabs
-        basePath="/analyst/"
-        showControls={false}
-        onSaveToBacktest={() => {}}
-        onTwsSync={() => {}}
-        twsSyncing={false}
-        lastUpdateTime=""
-        sseDotClass=""
-        sseDotTitle=""
-      />
       <PerformanceChart portfolioSlug={portfolioId} />
     </div>
   )

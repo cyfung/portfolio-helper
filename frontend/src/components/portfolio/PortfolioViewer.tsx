@@ -228,89 +228,105 @@ export default function PortfolioViewer() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="portfolio-header">
         <div className="header-title-group">
-          <PageNavTabs active="/portfolio/" />
+          <PageNavTabs
+            active="/portfolio/"
+            contextLabel={allPortfolios.find(p => p.slug === portfolioId)?.name}
+            contextChildren={<PortfolioTabs basePath="/portfolio/" />}
+          />
         </div>
 
         <HeaderRight>
+          {/* Left group — view toggles */}
           <button
-            className="restore-backup-btn"
+            className="restore-backup-btn h-btn subtle"
             id="restore-backup-btn"
             type="button"
             title="Backup and restore portfolio"
             onClick={() => setBackupOpen(true)}
-          >
-            <span className="toggle-label">Backups</span>
-          </button>
+          >Backups</button>
 
           <button
-            className="save-btn"
-            id="save-btn"
-            type="button"
-            title="Save changes"
-            style={{ display: editModeActive ? 'inline-flex' : 'none' }}
-            onClick={() => setSaveKey(k => k + 1)}
-          >
-            <span className="toggle-label">Save</span>
-          </button>
-
-          <button
-            className={`edit-toggle${editModeActive ? ' active' : ''}`}
+            className={`edit-toggle h-btn subtle${editModeActive ? ' active-edit' : ''}`}
             id="edit-toggle"
             type="button"
             title="Edit Qty and Target Weight"
             aria-label="Toggle edit mode"
             onClick={() => setEditModeActive(!editModeActive)}
-          >
-            <span className="toggle-label">Edit</span>
-          </button>
+          >Edit</button>
+
+          {editModeActive && (
+            <button
+              className="save-btn h-btn primary"
+              id="save-btn"
+              type="button"
+              title="Save changes"
+              onClick={() => setSaveKey(k => k + 1)}
+            >
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <path d="M17 21v-8H7v8M7 3v5h8"/>
+              </svg>
+              Save
+            </button>
+          )}
 
           <button
-            className={`more-info-toggle${moreInfoVisible ? ' active' : ''}`}
+            className={`more-info-toggle h-btn subtle${moreInfoVisible ? ' active-edit' : ''}`}
             id="more-info-toggle"
             type="button"
             title="Show/Hide Last NAV, Last, and Mkt Val columns"
             onClick={() => setMoreInfoVisible(!moreInfoVisible)}
-          >
-            <span className="toggle-label">More Info</span>
-          </button>
+          >More Info</button>
 
           <button
-            className={`groups-toggle${groupViewActive ? ' active' : ''}`}
+            className={`groups-toggle h-btn subtle${groupViewActive ? ' active-edit' : ''}`}
             id="groups-toggle"
             type="button"
             title="Switch between stock view and group view"
             onClick={() => setGroupViewActive(!groupViewActive)}
-          >
-            <span className="toggle-label">Groups</span>
-          </button>
+          >Groups</button>
 
-          <button
-            className={`rebal-toggle${rebalVisible ? ' active' : ''}`}
-            id="rebal-toggle"
-            type="button"
-            title="Show/Hide Weight and Rebalancing columns"
-            aria-label="Toggle rebalancing columns"
-            onClick={() => setRebalVisible(!rebalVisible)}
-          >
-            <span className="toggle-label">Rebal</span>
-          </button>
+          {/* Right group — data actions */}
+          <div className="header-buttons-right">
+            <button
+              className="h-btn subtle"
+              id="tws-sync-btn"
+              type="button"
+              title="Sync Qty and Cash from Interactive Brokers TWS"
+              onClick={handleTwsSync}
+              disabled={twsSyncing}
+            >{twsSyncing ? 'Syncing…' : 'Sync TWS'}</button>
 
-          {renderCurrencyControl()}
+            <button
+              className="h-btn subtle"
+              id="save-to-backtest-btn"
+              type="button"
+              title="Save current portfolio as a backtest preset"
+              onClick={handleSaveToBacktest}
+            >Save to Backtest</button>
+
+            <span className="h-divider" />
+            <span className="header-timestamp">{lastUpdateTime}</span>
+            <span className={sseDotClass} title={sseDotTitle} />
+            <span className="h-divider" />
+
+            {renderCurrencyControl()}
+
+            <button
+              className={`rebal-toggle h-btn subtle${rebalVisible ? ' active-edit' : ''}`}
+              id="rebal-toggle"
+              type="button"
+              title="Show/Hide Weight and Rebalancing columns"
+              aria-label="Toggle rebalancing columns"
+              onClick={() => setRebalVisible(!rebalVisible)}
+            >Rebal</button>
+          </div>
+
           <PrivacyToggleButton />
           <ConfigButton />
           <ThemeToggle />
         </HeaderRight>
       </div>
-
-      {/* ── Portfolio tabs ────────────────────────────────────────────── */}
-      <PortfolioTabs
-        onSaveToBacktest={handleSaveToBacktest}
-        onTwsSync={handleTwsSync}
-        twsSyncing={twsSyncing}
-        lastUpdateTime={lastUpdateTime}
-        sseDotClass={sseDotClass}
-        sseDotTitle={sseDotTitle}
-      />
       <div className={`config-status config-status-${syncToast.type}${syncToast.msg ? ' visible' : ''}`}>
         {syncToast.msg}
       </div>

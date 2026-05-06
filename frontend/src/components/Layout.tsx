@@ -1,92 +1,153 @@
-// ── Layout.tsx — Shared header utilities (nav tabs, config button, theme toggle)
-// Each page renders its own .portfolio-header div to match the Kotlin renderers exactly.
-// This file exports helpers used by all pages.
+// ── Layout.tsx — V4 command-led header (nav breadcrumb, version chip, h-btn utilities)
 
-import { useEffect } from 'react'
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { showConfirm } from '@/components/ConfirmDialog'
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 
-// ── Page nav tabs (same as renderPageNavTabs in common.kt) ───────────────────
+// ── Section list (flattened — all pages as peers) ─────────────────────────────
 
 const STRATEGY_NAV_STORAGE_KEY = 'portfolio-helper-active-strategy-page'
 
-const STRATEGY_PAGES = [
-  { line1: 'Portfolio', line2: 'Builder', href: '/portfolio-builder' },
-  { line1: 'Portfolio', line2: 'Backtest', href: '/backtest' },
-  { line1: 'Monte Carlo', line2: 'Simulation', href: '/montecarlo' },
-  { line1: 'Rebalance', line2: 'Strategy', href: '/rebalance-strategy' },
-]
+const ALL_SECTIONS = [
+  { href: '/portfolio/', label: 'Portfolio Viewer',   icon: 'viewer',    group: null         },
+  { href: '/analyst/',  label: 'Portfolio Analyst',   icon: 'analyst',   group: null         },
+  { href: '/loan',      label: 'Loan Calculator',     icon: 'loan',      group: null         },
+  { href: '/portfolio-builder',   label: 'Portfolio Builder',   icon: 'builder',   group: 'strategy' },
+  { href: '/backtest',            label: 'Portfolio Backtest',  icon: 'backtest',  group: 'strategy' },
+  { href: '/montecarlo',          label: 'Monte Carlo',         icon: 'monte',     group: 'strategy' },
+  { href: '/rebalance-strategy',  label: 'Rebalance Strategy',  icon: 'rebalance', group: 'strategy' },
+] as const
 
-const NAV_PAGES = [
-  { line1: 'Portfolio', line2: 'Viewer',   href: '/portfolio/' },
-  { line1: 'Portfolio', line2: 'Analyst',  href: '/analyst/' },
-  { line1: 'Loan',      line2: 'Calculator', href: '/loan' },
-  { line1: 'Strategy', line2: 'Tools', href: '/backtest', children: STRATEGY_PAGES },
-]
+// ── Inline SVG helpers ────────────────────────────────────────────────────────
 
-export function PageNavTabs({ active }: { active: string }) {
-  const location = useLocation()
-
-  useEffect(() => {
-    const activeStrategyPage = STRATEGY_PAGES.find(page => page.href === location.pathname)
-    if (!activeStrategyPage) return
-    localStorage.setItem(STRATEGY_NAV_STORAGE_KEY, activeStrategyPage.href)
-  }, [location.pathname])
-
-  function getStrategyHref() {
-    const storedHref = localStorage.getItem(STRATEGY_NAV_STORAGE_KEY)
-    if (STRATEGY_PAGES.some(page => page.href === storedHref)) return storedHref
-    return STRATEGY_PAGES[0].href
+function SectionSvg({ name }: { name?: string }) {
+  const p = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (name) {
+    case 'viewer':    return <svg {...p}><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
+    case 'analyst':   return <svg {...p}><path d="M3 17l5-5 4 3 8-9"/><circle cx="20" cy="6" r="1.6"/></svg>
+    case 'loan':      return <svg {...p}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2"/></svg>
+    case 'builder':   return <svg {...p}><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-7h6v7"/></svg>
+    case 'backtest':  return <svg {...p}><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/><path d="M12 7v5l3 2"/></svg>
+    case 'monte':     return <svg {...p}><circle cx="6.5" cy="6.5" r="1.2" fill="currentColor"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="6.5" cy="17.5" r="1.2" fill="currentColor"/><circle cx="17.5" cy="17.5" r="1.2" fill="currentColor"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+    case 'rebalance': return <svg {...p}><path d="M3 7h13l-3-3M21 17H8l3 3"/></svg>
+    default:          return null
   }
+}
 
+function ChevronDown() {
   return (
-    <div className="page-nav-tabs">
-      {NAV_PAGES.map(page => {
-        const isStrategyGroup = page.children?.some(child => child.href === active || child.href === location.pathname)
-        const href = page.children ? getStrategyHref() : page.href
-        const isPortfolioRoute = location.pathname === '/portfolio/' || location.pathname.startsWith('/portfolio/')
-        const isActive = isStrategyGroup || page.href === active ||
-          (page.href === '/portfolio/' && isPortfolioRoute) ||
-          (page.href === '/analyst/' && location.pathname.startsWith('/analyst'))
-        return (
-          <div
-            key={page.href}
-            className={`page-nav-tab-wrapper${page.children ? ' has-subnav' : ''}`}
-          >
-            <Link
-              to={href}
-              className={`page-nav-tab${isActive ? ' active' : ''}`}
-            >
-              <span className="page-nav-tab-line1">{page.line1}</span>
-              <span className="page-nav-tab-line2">{page.line2}</span>
-            </Link>
-            {page.children && (
-              <div className="page-nav-submenu">
-                {page.children.map(child => {
-                  const isChildActive = child.href === active || child.href === location.pathname
-                  return (
-                    <Link
-                      key={child.href}
-                      to={child.href}
-                      className={`page-nav-submenu-item${isChildActive ? ' active' : ''}`}
-                    >
-                      <span>{child.line1}</span>
-                      <span>{child.line2}</span>
-                    </Link>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
+    <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9l6 6 6-6"/>
+    </svg>
   )
 }
 
-// ── Config gear button ────────────────────────────────────────────────────────
+// ── PageNavTabs — breadcrumb with section + context dropdowns ─────────────────
+
+interface PageNavTabsProps {
+  active: string
+  contextLabel?: string
+  contextChildren?: ReactNode
+}
+
+export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTabsProps) {
+  const location = useLocation()
+  const [secOpen, setSecOpen] = useState(false)
+  const [ctxOpen, setCtxOpen] = useState(false)
+  const secRef = useRef<HTMLDivElement>(null)
+  const ctxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const s = ALL_SECTIONS.find(s => s.group === 'strategy' && s.href === location.pathname)
+    if (s) localStorage.setItem(STRATEGY_NAV_STORAGE_KEY, s.href)
+  }, [location.pathname])
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (!secRef.current?.contains(e.target as Node)) setSecOpen(false)
+      if (!ctxRef.current?.contains(e.target as Node)) setCtxOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
+
+  function isActiveSection(href: string) {
+    const p = location.pathname
+    if (href === '/portfolio/') return p === '/portfolio/' || p.startsWith('/portfolio/')
+    if (href === '/analyst/')   return p.startsWith('/analyst')
+    return p === href
+  }
+
+  const activeSec =
+    ALL_SECTIONS.find(s => isActiveSection(s.href)) ??
+    ALL_SECTIONS.find(s => s.href === active) ??
+    ALL_SECTIONS[0]
+
+  return (
+    <nav className="page-nav-tabs">
+      <Link to="/portfolio/" className="h-logo">
+        <img src="/static/favicon.svg" alt="" className="h-logo-icon" />
+        <span className="header-brand-name">Portfolio Helper</span>
+      </Link>
+
+      <span className="v4-sep">/</span>
+
+      {/* Section dropdown */}
+      <div className="v4-crumb-wrap" ref={secRef}>
+        <button className="v4-crumb" onClick={() => { setSecOpen(v => !v); setCtxOpen(false) }}>
+          <SectionSvg name={activeSec.icon} />
+          <span>{activeSec.label}</span>
+          <ChevronDown />
+        </button>
+        {secOpen && (
+          <div className="v4-pop">
+            <div className="v4-pop-head">PORTFOLIO</div>
+            {ALL_SECTIONS.filter(s => !s.group).map(s => (
+              <Link key={s.href} to={s.href}
+                    className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
+                    onClick={() => setSecOpen(false)}>
+                <SectionSvg name={s.icon} />
+                <span>{s.label}</span>
+              </Link>
+            ))}
+            <div className="v4-pop-head">STRATEGY TOOLS</div>
+            {ALL_SECTIONS.filter(s => s.group === 'strategy').map(s => (
+              <Link key={s.href} to={s.href}
+                    className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
+                    onClick={() => setSecOpen(false)}>
+                <SectionSvg name={s.icon} />
+                <span>{s.label}</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Portfolio / page context dropdown */}
+      {contextLabel && (
+        <>
+          <span className="v4-sep">/</span>
+          <div className="v4-crumb-wrap" ref={ctxRef}>
+            <button className="v4-crumb pf" onClick={() => { setCtxOpen(v => !v); setSecOpen(false) }}>
+              <span>{contextLabel}</span>
+              <ChevronDown />
+            </button>
+            {ctxOpen && contextChildren && (
+              <div className="v4-pop">
+                <div className="v4-pop-head">PORTFOLIOS</div>
+                {contextChildren}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </nav>
+  )
+}
+
+// ── Config button ─────────────────────────────────────────────────────────────
 
 export function ConfigButton() {
   const location = useLocation()
@@ -106,20 +167,20 @@ export function ConfigButton() {
   return (
     <button
       type="button"
-      className={`config-button${isActive ? ' active' : ''}`}
+      className={`h-btn icon-only subtle${isActive ? ' active-edit' : ''}`}
       aria-label="App settings"
       title="App settings"
       onClick={handleClick}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
       </svg>
     </button>
   )
 }
 
-// ── Privacy scale toggle button ───────────────────────────────────────────────
+// ── Privacy scale toggle ──────────────────────────────────────────────────────
 
 export function PrivacyToggleButton() {
   const appConfig = usePortfolioStore(s => s.appConfig)
@@ -145,70 +206,81 @@ export function PrivacyToggleButton() {
   return (
     <button
       type="button"
-      className={`privacy-toggle${enabled ? ' active' : ''}`}
+      className={`h-btn icon-only subtle${enabled ? ' active-edit' : ''}`}
       aria-label={enabled ? 'Privacy scaling on' : 'Privacy scaling off'}
       title={enabled ? 'Privacy scaling on — click to disable' : 'Privacy scaling off — click to enable'}
       onClick={handleClick}
     >
       {enabled ? (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2.5 12S6.5 6 12 6s9.5 6 9.5 6-4 6-9.5 6S2.5 12 2.5 12z"/>
           <circle cx="12" cy="12" r="3"/>
         </svg>
       ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-          <line x1="1" y1="1" x2="23" y2="23"/>
+        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3l18 18"/>
+          <path d="M10.6 6.1A11 11 0 0 1 12 6c5.5 0 9.5 6 9.5 6a17 17 0 0 1-3.2 3.7M6.6 6.6A17 17 0 0 0 2.5 12s4 6 9.5 6a10 10 0 0 0 4.5-1.1"/>
+          <path d="M9.5 9.5a3.5 3.5 0 0 0 5 5"/>
         </svg>
       )}
     </button>
   )
 }
 
-// ── Theme toggle button ───────────────────────────────────────────────────────
+// ── Theme toggle ──────────────────────────────────────────────────────────────
 
 export function ThemeToggle() {
+  const [, tick] = useState(0)
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+
   function toggle() {
-    const current = document.documentElement.getAttribute('data-theme')
-    const next = current === 'dark' ? 'light' : 'dark'
+    const next = isDark ? 'light' : 'dark'
     document.documentElement.setAttribute('data-theme', next)
     localStorage.setItem('portfolio-helper-theme', next)
+    tick(n => n + 1)
   }
 
   return (
-    <button className="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme" onClick={toggle}>
-      <span className="icon-sun">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="5"/>
-          <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-          <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    <button className="h-btn icon-only subtle" id="theme-toggle" type="button" aria-label="Toggle theme" onClick={toggle}>
+      {isDark ? (
+        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
         </svg>
-      </span>
-      <span className="icon-moon">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      ) : (
+        <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
         </svg>
-      </span>
+      )}
     </button>
   )
 }
 
-// ── Header right (version badge + update indicators + buttons) ───────────────
+// ── Header right (version chip + utility buttons + action buttons) ────────────
 
 interface HeaderRightProps {
-  children: React.ReactNode
+  children: ReactNode
 }
 
 export function HeaderRight({ children }: HeaderRightProps) {
   const appConfig = usePortfolioStore(s => s.appConfig)
+  const [updOpen, setUpdOpen] = useState(false)
+
+  const childArray = Children.toArray(children)
+  const utilityControls = childArray.filter(child =>
+    isValidElement(child) &&
+    (child.type === PrivacyToggleButton || child.type === ConfigButton || child.type === ThemeToggle)
+  )
+  const actionControls = childArray.filter(child =>
+    !(isValidElement(child) &&
+      (child.type === PrivacyToggleButton || child.type === ConfigButton || child.type === ThemeToggle))
+  )
 
   if (!appConfig) {
     return (
       <div className="header-right">
-        <div className="header-buttons">{children}</div>
+        <div className="header-top-controls">{utilityControls}</div>
+        {actionControls.length > 0 && <div className="header-buttons">{actionControls}</div>}
       </div>
     )
   }
@@ -223,53 +295,56 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const showDownloadingTag = isDownloading
   const showReadyTag       = isReady
 
+  const hasAnyUpdate = showUpdateTag || showUpdateDot || showDownloadingTag || showReadyTag
+
   async function handleApplyUpdate() {
     showRestartOverlay()
-    try {
-      await fetch('/api/admin/apply-update', { method: 'POST' })
-    } catch (_) {}
+    try { await fetch('/api/admin/apply-update', { method: 'POST' }) } catch (_) {}
     setTimeout(attemptReconnect, 2000)
+  }
+
+  function updPopBody() {
+    if (showDownloadingTag) return `Downloading v${latestVersion}…`
+    if (showReadyTag)       return `Version ${latestVersion} is ready. Click to apply.`
+    return `Version ${latestVersion ?? ''} is available.`
+  }
+
+  function updPopTitle() {
+    if (showDownloadingTag) return 'Downloading update'
+    if (showReadyTag)       return 'Update ready'
+    return 'Update available'
   }
 
   return (
     <div className="header-right">
-      <div className="version-badge-wrapper">
-        <span className="version-badge">v{version}</span>
-        <Link
-          to="/config"
-          className="update-available-tag"
-          id="header-update-available"
-          title={latestVersion ? `Update available: v${latestVersion} — go to Settings` : 'Update available — go to Settings'}
-          hidden={!showUpdateTag}
-        >
-          Update Available
-        </Link>
+      <div className="header-top-controls">
         <span
-          className="update-dot"
-          id="header-update-dot"
-          title={latestVersion ? `Update available: v${latestVersion}` : 'Update available'}
-          hidden={!showUpdateDot}
-        />
-        <span
-          className="update-downloading-tag"
-          id="header-update-downloading"
-          title={latestVersion ? `Downloading v${latestVersion}…` : 'Downloading update…'}
-          hidden={!showDownloadingTag}
+          className={`h-version v4-version-btn${hasAnyUpdate ? ' has-update' : ''}`}
+          onClick={() => hasAnyUpdate && setUpdOpen(v => !v)}
+          title={hasAnyUpdate ? 'Update available — click for details' : `v${version}`}
         >
-          Downloading…
+          {hasAnyUpdate && <span className="dot" />}
+          v{version}
+          {updOpen && hasAnyUpdate && (
+            <div className="v4-upd-pop" onClick={e => e.stopPropagation()} onMouseLeave={() => setUpdOpen(false)}>
+              <div className="v4-upd-head">
+                <span className="dot" />
+                <span>{updPopTitle()}</span>
+              </div>
+              <div className="v4-upd-body">{updPopBody()}</div>
+              <div className="v4-upd-foot">
+                <button className="h-btn subtle" onClick={() => setUpdOpen(false)}>Later</button>
+                {showReadyTag
+                  ? <button className="h-btn primary" onClick={handleApplyUpdate}>Restart &amp; update</button>
+                  : <Link to="/config" className="h-btn primary" onClick={() => setUpdOpen(false)}>Go to Settings</Link>
+                }
+              </div>
+            </div>
+          )}
         </span>
-        <span
-          className="update-ready-tag"
-          id="header-update-ready"
-          title={`Update v${latestVersion} ready — click to apply`}
-          hidden={!showReadyTag}
-          onClick={handleApplyUpdate}
-          style={{ cursor: 'pointer' }}
-        >
-          Update Is Ready
-        </span>
+        {utilityControls}
       </div>
-      <div className="header-buttons">{children}</div>
+      {actionControls.length > 0 && <div className="header-buttons">{actionControls}</div>}
     </div>
   )
 }

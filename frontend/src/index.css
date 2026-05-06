@@ -169,12 +169,18 @@ body {
    Portfolio Header with Theme Toggle
    ============================================ */
 .portfolio-header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
     align-items: center;
+    column-gap: 1.5rem;
+    row-gap: 0.9rem;
     margin-bottom: var(--spacing-xl);
-    padding-bottom: var(--spacing-md);
-    border-bottom: 1px solid var(--color-border-subtle);
+    padding: 0.85rem 1.2rem 0.7rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-secondary);
+    box-shadow: inset 0 -1px 0 var(--color-border-medium);
 }
 
 h1 {
@@ -189,96 +195,72 @@ h1 {
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
+    min-width: 0;
 }
 
 /* ============================================
-   Page Navigation Tabs
+   V4 Breadcrumb Navigation
    ============================================ */
 .page-nav-tabs {
     display: flex;
     flex-direction: row;
-    gap: 2px;
-}
-
-.page-nav-tab-wrapper {
-    position: relative;
-}
-
-.page-nav-tab {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: var(--spacing-lg) var(--spacing-2xl);
-    text-decoration: none;
-    border-bottom: 2px solid transparent;
-    color: var(--color-text-secondary);
-    transition: color var(--transition-base), border-color var(--transition-base), background-color var(--transition-base);
-    line-height: 1.25;
-    border-radius: 4px 4px 0 0;
+    gap: 0.25rem;
+    min-width: 0;
+    overflow: visible;
 }
 
-.page-nav-tab-line1,
-.page-nav-tab-line2 {
-    font-size: var(--font-size-md);
-    font-weight: 600;
+/* Logo / brand */
+.h-logo {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--color-text-primary); font-weight: 600; font-size: 13px;
+    letter-spacing: -0.005em; text-decoration: none; white-space: nowrap; flex-shrink: 0;
+}
+.h-logo-icon {
+    width: 22px; height: 22px; border-radius: 5px; display: block; flex-shrink: 0;
+}
+.header-brand-name { overflow: hidden; text-overflow: ellipsis; }
+
+/* Breadcrumb separator */
+.v4-sep {
+    color: var(--color-text-tertiary); font-size: 13px;
+    padding: 0 2px; user-select: none; flex-shrink: 0;
 }
 
-.page-nav-tab.active {
+/* Breadcrumb item with dropdown */
+.v4-crumb-wrap { position: relative; flex-shrink: 0; }
+.v4-crumb {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 8px;
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: var(--color-text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 120ms, border-color 120ms;
+}
+.v4-crumb:hover { background: var(--color-bg-hover); border-color: var(--color-border-medium); }
+.v4-crumb.pf { color: var(--color-text-secondary); font-weight: 500; }
+
+/* Section / portfolio dropdown panel */
+.v4-pop {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 100;
+    background: var(--color-bg-elevated); border: 1px solid var(--color-border-medium);
+    border-radius: 10px; padding: 6px; box-shadow: var(--shadow-md);
+    min-width: 200px; max-height: 320px; overflow-y: auto;
+}
+.v4-pop-head {
+    font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-muted);
+    padding: 6px 8px 4px; user-select: none;
+}
+.v4-pop-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; background: transparent; border: 0; border-radius: 6px;
+    color: var(--color-text-primary); font: inherit; font-size: 12.5px;
+    text-align: left; width: 100%; cursor: pointer; text-decoration: none;
+    transition: background 100ms;
+}
+.v4-pop-item:hover { background: var(--color-bg-hover); }
+.v4-pop-item.active {
     color: var(--color-accent-primary);
-    border-bottom-color: var(--color-accent-primary);
-}
-
-.page-nav-tab:hover:not(.active) {
-    color: var(--color-text-primary);
-    background-color: var(--color-bg-hover);
-}
-
-.page-nav-submenu {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 20;
-    display: none;
-    min-width: 190px;
-    padding: var(--spacing-sm);
-    background-color: var(--color-bg-elevated);
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
-    box-shadow: var(--shadow-md);
-}
-
-.page-nav-tab-wrapper.has-subnav:hover .page-nav-submenu,
-.page-nav-tab-wrapper.has-subnav:focus-within .page-nav-submenu {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.page-nav-submenu-item {
-    display: flex;
-    flex-direction: column;
-    padding: var(--spacing-md) var(--spacing-xl);
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    border-radius: var(--radius-sm);
-    line-height: 1.25;
-    transition: color var(--transition-base), background-color var(--transition-base);
-}
-
-.page-nav-submenu-item span {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-}
-
-.page-nav-submenu-item.active {
-    color: var(--color-accent-primary);
-    background-color: var(--color-bg-hover);
-}
-
-.page-nav-submenu-item:hover:not(.active) {
-    color: var(--color-text-primary);
-    background-color: var(--color-bg-hover);
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, transparent);
 }
 
 .header-timestamp {
@@ -324,64 +306,40 @@ h1 {
    Header Right Group (version + buttons)
    ============================================ */
 .header-right {
+    display: contents;
+}
+
+.header-top-controls {
+    grid-column: 2;
+    grid-row: 1;
     display: flex;
-    flex-direction: column;
     align-items: flex-end;
-    gap: 4px;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    min-width: max-content;
 }
 
 .header-buttons {
+    grid-column: 1 / -1;
+    grid-row: 2;
     display: flex;
-    gap: var(--spacing-lg);
+    gap: 0.65rem;
     align-items: center;
+    justify-content: flex-start;
+    min-width: 0;
+    flex-wrap: wrap;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--color-border-subtle);
 }
 
-/* ============================================
-   Rebalancing Toggle Button
-   ============================================ */
-.rebal-toggle,
-.margin-rebal-toggle,
-.more-info-toggle,
-.groups-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-sm) var(--spacing-xl);
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+.header-buttons-right {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 0.65rem;
 }
 
-.rebal-toggle:hover,
-.margin-rebal-toggle:hover,
-.more-info-toggle:hover,
-.groups-toggle:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
-}
-
-.rebal-toggle.active,
-.margin-rebal-toggle.active,
-.more-info-toggle.active,
-.groups-toggle.active {
-    background-color: var(--color-accent-primary);
-    color: var(--color-text-inverse);
-    border-color: var(--color-accent-primary);
-}
-
-.rebal-toggle:focus,
-.margin-rebal-toggle:focus,
-.more-info-toggle:focus,
-.groups-toggle:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
+.h-divider {
+    width: 1px; height: 18px;
+    background: var(--color-border-medium); margin: 0 2px; flex-shrink: 0;
 }
 
 [data-theme="dark"] .rebal-toggle:focus,
@@ -398,7 +356,7 @@ h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--spacing-sm) var(--spacing-xl);
+    padding: var(--spacing-sm) var(--spacing-md);
     border: 1px solid color-mix(in srgb, var(--color-positive) 40%, transparent);
     border-radius: var(--radius-md);
     background-color: color-mix(in srgb, var(--color-positive) 15%, transparent);
@@ -407,8 +365,8 @@ h1 {
     transition: all var(--transition-fast);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .currency-toggle:hover {
@@ -470,242 +428,89 @@ h1 {
 }
 
 /* ============================================
-   Version Badge
+   Version chip
    ============================================ */
-.version-badge-wrapper {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+.h-version {
+    font-family: var(--font-family-mono), monospace;
+    font-size: 10.5px; color: var(--color-muted); letter-spacing: 0.02em;
+    padding: 4px 8px; border-radius: 6px; border: 1px solid transparent;
+    cursor: default; user-select: none; white-space: nowrap;
 }
-
-.version-badge {
-    font-size: var(--font-size-xs);
-    color: var(--color-muted);
-    opacity: 0.8;
-    letter-spacing: 0.02em;
-    user-select: none;
-    white-space: nowrap;
+.h-version.has-update { color: var(--color-warning); cursor: pointer; }
+.h-version.has-update:hover { border-color: var(--color-border-medium); background: var(--color-bg-hover); }
+.h-version .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    display: inline-block; margin-right: 5px; vertical-align: middle;
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 30%, transparent);
 }
-
-.update-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--color-accent-primary);
-    flex-shrink: 0;
-    cursor: default;
+.v4-version-btn { position: relative; }
+.v4-upd-pop {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 200;
+    width: 260px; padding: 12px;
+    background: var(--color-bg-elevated); border: 1px solid var(--color-border-medium);
+    border-radius: 10px; box-shadow: var(--shadow-md); cursor: default; text-align: left;
 }
-
-.update-available-tag {
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: #1e40af;
-    background: #dbeafe;
-    border-radius: 10px;
-    padding: 1px 7px;
-    cursor: pointer;
-    white-space: nowrap;
-    user-select: none;
-    transition: background 0.15s;
-    text-decoration: none;
+.v4-upd-head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px;
 }
-.update-available-tag:hover {
-    background: #bfdbfe;
-}
-[data-theme="dark"] .update-available-tag {
-    background: rgba(59, 130, 246, .18);
-    color: #93c5fd;
-}
-[data-theme="dark"] .update-available-tag:hover {
-    background: rgba(59, 130, 246, .3);
-}
-
-.update-downloading-tag {
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: #92400e;
-    background: #fef3c7;
-    border-radius: 10px;
-    padding: 1px 7px;
-    white-space: nowrap;
-    user-select: none;
-}
-[data-theme="dark"] .update-downloading-tag {
-    background: rgba(245, 158, 11, .18);
-    color: #fcd34d;
-}
-
-.update-ready-tag {
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: #065f46;
-    background: #d1fae5;
-    border-radius: 10px;
-    padding: 1px 7px;
-    cursor: pointer;
-    white-space: nowrap;
-    user-select: none;
-    transition: background 0.15s;
-}
-.update-ready-tag:hover {
-    background: #a7f3d0;
-}
-[data-theme="dark"] .update-ready-tag {
-    background: rgba(16, 185, 129, .18);
-    color: #34d399;
-}
-[data-theme="dark"] .update-ready-tag:hover {
-    background: rgba(16, 185, 129, .3);
-}
+.v4-upd-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-warning); display: inline-block; flex-shrink: 0; }
+.v4-upd-body { font-size: 12px; line-height: 1.5; color: var(--color-muted); margin-bottom: 12px; }
+.v4-upd-foot { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* ============================================
-   Theme Toggle Button
+   Shared header button (h-btn)
    ============================================ */
-.theme-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    padding: 0;
-    flex-shrink: 0;
+.h-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 10px;
+    background: transparent; border: 1px solid var(--color-border-medium); border-radius: 6px;
+    color: var(--color-text-secondary); font: inherit; font-size: 12.5px;
+    letter-spacing: 0.02em; cursor: pointer; white-space: nowrap; text-decoration: none;
+    text-transform: none;
+    transition: background 120ms, color 120ms, border-color 120ms;
 }
-
-.theme-toggle:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
-    transform: scale(1.05);
+.h-btn:hover { color: var(--color-text-primary); border-color: var(--color-border-strong); background: var(--color-bg-hover); }
+.h-btn.icon-only { width: 30px; padding: 0; justify-content: center; }
+.h-btn.primary { color: var(--color-text-inverse); background: var(--color-accent-primary); border-color: var(--color-accent-primary); }
+.h-btn.primary:hover { filter: brightness(1.08); }
+.h-btn.subtle { border-color: transparent; }
+.h-btn.subtle:hover { background: var(--color-bg-hover); border-color: var(--color-border-medium); }
+.h-btn.success {
+    color: var(--color-positive);
+    border-color: color-mix(in srgb, var(--color-positive) 40%, transparent);
+    background: color-mix(in srgb, var(--color-positive) 8%, transparent);
 }
-
-.theme-toggle:active {
-    transform: scale(0.95);
-}
-
-.theme-toggle:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
-}
-
-[data-theme="dark"] .theme-toggle:focus {
-    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
-}
-
-.theme-toggle svg {
-    width: 20px;
-    height: 20px;
-    stroke: var(--color-text-primary);
-    transition: stroke var(--transition-base);
-}
-
-/* Icon visibility based on theme */
-.theme-toggle .icon-sun {
-    display: none;
-}
-
-.theme-toggle .icon-moon {
-    display: block;
-}
-
-[data-theme="dark"] .theme-toggle .icon-sun {
-    display: block;
-}
-
-[data-theme="dark"] .theme-toggle .icon-moon {
-    display: none;
-}
-
-/* ============================================
-   Config Button
-   ============================================ */
-.config-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
-    text-decoration: none;
-    transition: all var(--transition-fast);
-    flex-shrink: 0;
-}
-
-.config-button:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
-}
-
-.config-button.active {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
+.h-btn.success:hover { background: color-mix(in srgb, var(--color-positive) 15%, transparent); }
+.h-btn.active-edit {
     color: var(--color-accent-primary);
+    border-color: color-mix(in srgb, var(--color-accent-primary) 50%, var(--color-border-medium));
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, transparent);
+}
+.h-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Currency controls in portfolio header */
+.portfolio-header .currency-toggle,
+.portfolio-header .currency-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 10px;
+    border: 1px solid color-mix(in srgb, var(--color-positive) 40%, transparent);
+    border-radius: 6px; cursor: pointer; white-space: nowrap;
+    background: color-mix(in srgb, var(--color-positive) 10%, transparent);
+    color: var(--color-positive); font: inherit; font-size: 12.5px;
+    text-transform: none; letter-spacing: 0;
+}
+.portfolio-header .currency-toggle:hover {
+    background: color-mix(in srgb, var(--color-positive) 18%, transparent);
+    border-color: color-mix(in srgb, var(--color-positive) 55%, transparent);
+}
+.portfolio-header .currency-select {
+    height: 30px; padding: 0 8px;
+    border: 1px solid var(--color-border-medium); border-radius: 6px;
+    background: var(--color-bg-primary); color: var(--color-text-primary);
+    font: inherit; font-size: 12.5px; cursor: pointer;
 }
 
-.config-button:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
-}
-
-[data-theme="dark"] .config-button:focus {
-    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
-}
-
-.config-button svg {
-    width: 20px;
-    height: 20px;
-}
-
-/* ============================================
-   Privacy Toggle Button
-   ============================================ */
-.privacy-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    flex-shrink: 0;
-}
-
-.privacy-toggle:hover {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
-}
-
-.privacy-toggle.active {
-    background-color: var(--color-bg-hover);
-    border-color: var(--color-accent-primary);
-    color: var(--color-accent-primary);
-}
-
-.privacy-toggle:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.3);
-}
-
-[data-theme="dark"] .privacy-toggle:focus {
-    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
-}
-
-.privacy-toggle svg {
-    width: 20px;
-    height: 20px;
-}
 
 /* ============================================
    Config Page
@@ -1930,7 +1735,36 @@ h1 {
     }
 
     .portfolio-header {
+        grid-template-columns: 1fr;
         margin-bottom: var(--spacing-lg);
+        padding: 0.75rem;
+    }
+
+    .header-title-group,
+    .header-top-controls,
+    .header-buttons {
+        grid-column: 1;
+    }
+
+    .header-top-controls {
+        grid-row: 2;
+        justify-content: flex-start;
+        min-width: 0;
+        flex-wrap: wrap;
+    }
+
+    .header-buttons {
+        grid-row: 3;
+        justify-content: flex-start;
+    }
+
+    .page-nav-tabs {
+        flex-wrap: wrap;
+        gap: 0.15rem;
+    }
+
+    .header-brand-name {
+        max-width: 10rem;
     }
 
     h1 {
@@ -1965,7 +1799,20 @@ h1 {
 
     .portfolio-header {
         margin-bottom: var(--spacing-lg);
-        padding-bottom: var(--spacing-md);
+        padding: 0.65rem;
+    }
+
+    .header-app-icon {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .header-brand {
+        font-size: var(--font-size-md);
+    }
+
+    .header-active-context {
+        font-size: var(--font-size-sm);
     }
 
     h1 {
@@ -1993,20 +1840,8 @@ h1 {
    Edit Mode Toggle Button
    ============================================ */
 .edit-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-sm) var(--spacing-xl);
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .edit-toggle:hover {
@@ -2071,20 +1906,8 @@ h1 {
 
 /* Save Button */
 .save-btn {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-sm) var(--spacing-xl);
-    border: 1px solid var(--color-positive);
-    border-radius: var(--radius-md);
-    background-color: var(--color-positive);
-    color: var(--color-text-inverse);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .save-btn:hover {
@@ -3061,20 +2884,8 @@ a.loan-calc-link:hover {
    Restore Backup Button
    ============================================ */
 .restore-backup-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-sm) var(--spacing-xl);
-    border: 1px solid var(--color-border-medium);
-    border-radius: var(--radius-md);
-    background-color: var(--color-bg-secondary);
-    color: var(--color-text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .restore-backup-btn:hover {
