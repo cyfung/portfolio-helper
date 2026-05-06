@@ -317,7 +317,7 @@ export default function BacktestPage() {
     if (shouldScaleToNav) {
       refStart = navStart
     } else if (firstOverlapLabelIdx >= 0 && mainData.datasets.length > 0) {
-      refStart = mainData.rows[firstOverlapLabelIdx][mainData.datasets[0].label] ?? backtestStart
+      refStart = mainData.rows[firstOverlapLabelIdx][mainData.datasets[0].dataKey] ?? backtestStart
     }
 
     // Normalisation bases: return series value at the first overlap date.

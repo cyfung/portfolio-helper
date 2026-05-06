@@ -71,6 +71,17 @@ object YahooHistoricalFetcher {
             resp.body!!.string()
         }
 
+        val prices = parseAdjustedCloseResponse(ticker, startDate, endDate, body)
+        logger.info("Fetched ${prices.size} trading days for $ticker")
+        return prices
+    }
+
+    internal fun parseAdjustedCloseResponse(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        body: String
+    ): Map<LocalDate, Double> {
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
             ?: error("No result in Yahoo response for $ticker")
@@ -85,7 +96,12 @@ object YahooHistoricalFetcher {
             if (date <= endDate) prices[date] = price
         }
 
-        logger.info("Fetched ${prices.size} trading days for $ticker")
+        val marketDate = result.meta?.currentTradingDate()
+        val marketPrice = result.meta?.regularMarketPrice
+        if (marketDate != null && marketPrice != null && marketDate in startDate..endDate) {
+            prices[marketDate] = marketPrice
+        }
+
         return prices
     }
 
@@ -121,6 +137,13 @@ object YahooHistoricalFetcher {
 
         logger.info("Fetched ${out.size} dividend events for $ticker")
         return out
+    }
+
+    private fun YahooMeta.currentTradingDate(): LocalDate? {
+        val regular = currentTradingPeriod?.regular ?: return null
+        val end = regular.end ?: return null
+        val offset = ZoneOffset.ofTotalSeconds(regular.gmtoffset ?: 0)
+        return Instant.ofEpochSecond(end).atOffset(offset).toLocalDate()
     }
 }
 

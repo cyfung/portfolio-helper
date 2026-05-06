@@ -48,6 +48,7 @@ type OptimizerTestPortfolio = {
 }
 
 type OptimizerLockKey =
+  | 'marginPoints'
   | 'rebalancePeriod'
   | 'marginRebalance'
   | 'cashflow'
@@ -61,16 +62,97 @@ type OptimizerLockKey =
 type OptimizerLockMode = 'none' | 'enabled' | 'config'
 type OptimizerLocks = Record<OptimizerLockKey, OptimizerLockMode>
 
-const OPTIMIZER_LOCK_LABELS: { key: OptimizerLockKey; label: string }[] = [
-  { key: 'rebalancePeriod', label: 'RP' },
-  { key: 'marginRebalance', label: 'MR' },
-  { key: 'cashflow', label: 'CF' },
-  { key: 'buyLow', label: 'BL' },
-  { key: 'sellHigh', label: 'SH' },
-  { key: 'buyDipWhole', label: 'BD-W' },
-  { key: 'buyDipIndividual', label: 'BD-I' },
-  { key: 'sellSurgeWhole', label: 'SS-W' },
-  { key: 'sellSurgeIndividual', label: 'SS-I' },
+const OPTIMIZER_LOCK_STORAGE_KEY = 'rebalanceStrategy.optimizerLocks.v1'
+const DEFAULT_OPTIMIZER_LOCKS: OptimizerLocks = {
+  marginPoints: 'none',
+  rebalancePeriod: 'none',
+  marginRebalance: 'none',
+  cashflow: 'none',
+  buyLow: 'none',
+  sellHigh: 'enabled',
+  buyDipWhole: 'none',
+  buyDipIndividual: 'none',
+  sellSurgeWhole: 'none',
+  sellSurgeIndividual: 'none',
+}
+
+const OPTIMIZER_LOCKS: {
+  key: OptimizerLockKey
+  label: string
+  name: string
+  enabledItems: string[]
+  configItems: string[]
+}[] = [
+  {
+    key: 'marginPoints',
+    label: 'MP',
+    name: 'Margin Points',
+    enabledItems: ['Low margin point', 'High margin point'],
+    configItems: ['Low margin point', 'Low comfort point', 'Target margin point', 'High comfort point', 'High margin point'],
+  },
+  {
+    key: 'rebalancePeriod',
+    label: 'RP',
+    name: 'Base Rebalance',
+    enabledItems: ['Base rebalance period'],
+    configItems: ['Base rebalance period', 'Base rebalance use comfort zone'],
+  },
+  {
+    key: 'marginRebalance',
+    label: 'MR',
+    name: 'Margin Rebalance',
+    enabledItems: ['Margin rebalance enabled'],
+    configItems: ['Margin rebalance enabled', 'Margin rebalance period', 'Trade direction', 'Alloc strategy', 'Restore to', 'Margin rebalance use comfort zone'],
+  },
+  {
+    key: 'cashflow',
+    label: 'CF',
+    name: 'Cashflow',
+    enabledItems: ['Cashflow immediate invest %'],
+    configItems: ['Cashflow immediate invest %', 'Cashflow scaling mode', 'Cashflow scaling margin'],
+  },
+  {
+    key: 'buyLow',
+    label: 'BL',
+    name: 'Buy Low',
+    enabledItems: ['Buy low enabled'],
+    configItems: ['Buy low enabled', 'Buy low alloc strategy', 'Buy low restore target'],
+  },
+  {
+    key: 'sellHigh',
+    label: 'SH',
+    name: 'Sell High',
+    enabledItems: ['Sell high enabled'],
+    configItems: ['Sell high enabled', 'Sell high alloc strategy', 'Sell high restore target'],
+  },
+  {
+    key: 'buyDipWhole',
+    label: 'BD-W',
+    name: 'Buy Dip Whole Portfolio',
+    enabledItems: ['Whole-portfolio buy dip enabled'],
+    configItems: ['Whole-portfolio buy dip config'],
+  },
+  {
+    key: 'buyDipIndividual',
+    label: 'BD-I',
+    name: 'Buy Dip Individual Stock',
+    enabledItems: ['Individual-stock buy dip enabled'],
+    configItems: ['Individual-stock buy dip config'],
+  },
+  {
+    key: 'sellSurgeWhole',
+    label: 'SS-W',
+    name: 'Sell Surge Whole Portfolio',
+    enabledItems: ['Whole-portfolio sell surge enabled'],
+    configItems: ['Whole-portfolio sell surge config'],
+  },
+  {
+    key: 'sellSurgeIndividual',
+    label: 'SS-I',
+    name: 'Sell Surge Individual Stock',
+    enabledItems: ['Individual-stock sell surge enabled'],
+    configItems: ['Individual-stock sell surge config'],
+  },
 ]
 
 type StrategyGenome = {
@@ -220,6 +302,43 @@ function lockModeLabel(mode: OptimizerLockMode) {
   return 'Unlocked'
 }
 
+function optimizerLockMeta(key: OptimizerLockKey) {
+  return OPTIMIZER_LOCKS.find(item => item.key === key)!
+}
+
+function optimizerLockItems(key: OptimizerLockKey, mode: OptimizerLockMode) {
+  const meta = optimizerLockMeta(key)
+  if (mode === 'enabled') return meta.enabledItems
+  if (mode === 'config') return meta.configItems
+  return []
+}
+
+function optimizerLockTitle(key: OptimizerLockKey, mode: OptimizerLockMode) {
+  const meta = optimizerLockMeta(key)
+  const nextMode = nextOptimizerLockMode(key, mode)
+  const current = optimizerLockItems(key, mode)
+  const next = optimizerLockItems(key, nextMode)
+  const currentText = current.length ? current.join(', ') : 'nothing'
+  const nextText = next.length ? next.join(', ') : 'nothing'
+  return `${meta.name}: ${lockModeLabel(mode)}. Currently locks ${currentText}. Click to switch to ${lockModeLabel(nextMode).toLowerCase()}, locking ${nextText}.`
+}
+
+function loadOptimizerLocks(): OptimizerLocks {
+  try {
+    const raw = window.localStorage.getItem(OPTIMIZER_LOCK_STORAGE_KEY)
+    if (!raw) return DEFAULT_OPTIMIZER_LOCKS
+    const parsed = JSON.parse(raw) as Partial<Record<OptimizerLockKey, OptimizerLockMode>>
+    return Object.fromEntries(
+      OPTIMIZER_LOCKS.map(({ key }) => {
+        const mode = parsed[key]
+        return [key, mode === 'enabled' || mode === 'config' || mode === 'none' ? mode : DEFAULT_OPTIMIZER_LOCKS[key]]
+      }),
+    ) as OptimizerLocks
+  } catch (_) {
+    return DEFAULT_OPTIMIZER_LOCKS
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function RebalanceStrategyPage() {
@@ -242,17 +361,7 @@ export default function RebalanceStrategyPage() {
   const [optimizerPopulation, setOptimizerPopulation] = useState(String(DEFAULT_OPTIMIZER_POPULATION))
   const [optimizerTestPortfolios, setOptimizerTestPortfolios] = useState<OptimizerTestPortfolio[]>([])
   const [optimizerPortfolioDragOver, setOptimizerPortfolioDragOver] = useState(false)
-  const [optimizerLocks, setOptimizerLocks] = useState<OptimizerLocks>({
-    rebalancePeriod: 'none',
-    marginRebalance: 'none',
-    cashflow: 'none',
-    buyLow: 'none',
-    sellHigh: 'enabled',
-    buyDipWhole: 'none',
-    buyDipIndividual: 'none',
-    sellSurgeWhole: 'none',
-    sellSurgeIndividual: 'none',
-  })
+  const [optimizerLocks, setOptimizerLocks] = useState<OptimizerLocks>(() => loadOptimizerLocks())
   const [optimizerProgress, setOptimizerProgress] = useState<OptimizerProgress>({
     running: false,
     completed: 0,
@@ -276,6 +385,12 @@ export default function RebalanceStrategyPage() {
 
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(OPTIMIZER_LOCK_STORAGE_KEY, JSON.stringify(optimizerLocks))
+    } catch (_) {}
+  }, [optimizerLocks])
 
   // Restore the shared backtest portfolio cache, but only load portfolio slot 0.
   useEffect(() => {
@@ -482,6 +597,10 @@ export default function RebalanceStrategyPage() {
 
   function applyEnabledLocks(genome: StrategyGenome, base: RebalStrategyState, baseGenome: StrategyGenome, locks: OptimizerLocks) {
     const next = { ...genome }
+    if (locks.marginPoints !== 'none') {
+      next.minMargin = baseGenome.minMargin
+      next.maxMargin = baseGenome.maxMargin
+    }
     if (locks.rebalancePeriod !== 'none') next.portfolioRebalance = baseGenome.portfolioRebalance
     if (locks.marginRebalance !== 'none') next.marginRebalanceEnabled = base.marginRebalanceEnabled ?? true
     if (locks.cashflow !== 'none') next.cashflowImmediateInvestPct = baseGenome.cashflowImmediateInvestPct
@@ -497,6 +616,12 @@ export default function RebalanceStrategyPage() {
   function applySectionConfigLocks(strategy: RebalStrategyState, base: RebalStrategyState, locks: OptimizerLocks): RebalStrategyState {
     return {
       ...strategy,
+      ...(locks.marginPoints === 'config' ? {
+        marginRatio: base.marginRatio,
+        marginPoints: base.marginPoints,
+        comfortZoneLow: base.comfortZoneLow,
+        comfortZoneHigh: base.comfortZoneHigh,
+      } : {}),
       ...(locks.rebalancePeriod === 'config' ? {
         portfolioRebalancePeriod: base.portfolioRebalancePeriod ?? 'INHERIT',
         portfolioRebalanceUseComfortZone: base.portfolioRebalanceUseComfortZone ?? true,
@@ -950,6 +1075,15 @@ export default function RebalanceStrategyPage() {
     ),
     [],
   )
+  const activeOptimizerLockDescriptions = useMemo(() => (
+    OPTIMIZER_LOCKS
+      .map(item => ({
+        ...item,
+        mode: optimizerLocks[item.key],
+        items: optimizerLockItems(item.key, optimizerLocks[item.key]),
+      }))
+      .filter(item => item.mode !== 'none')
+  ), [optimizerLocks])
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
   const refreshSavedStrategies = useCallback(() => savedStrategiesBarRef.current?.refresh(), [])
 
@@ -1097,7 +1231,7 @@ export default function RebalanceStrategyPage() {
             </button>
           </div>
           <div className="strategy-optimizer-locks" aria-label="Optimizer section locks">
-            {OPTIMIZER_LOCK_LABELS.map(item => {
+            {OPTIMIZER_LOCKS.map(item => {
               const mode = optimizerLocks[item.key]
               const Icon = mode === 'config' ? SlidersHorizontal : mode === 'enabled' ? Lock : Unlock
               return (
@@ -1106,8 +1240,8 @@ export default function RebalanceStrategyPage() {
                   type="button"
                   className={`strategy-optimizer-lock-btn ${mode}`}
                   disabled={optimizerProgress.running}
-                  title={`${lockModeLabel(mode)}: ${item.label}`}
-                  aria-label={`${item.label} optimizer lock: ${lockModeLabel(mode)}`}
+                  title={optimizerLockTitle(item.key, mode)}
+                  aria-label={`${item.name} optimizer lock: ${lockModeLabel(mode)}`}
                   onClick={() => setOptimizerLocks(prev => ({ ...prev, [item.key]: nextOptimizerLockMode(item.key, prev[item.key]) }))}
                 >
                   <Icon size={13} strokeWidth={2} />
@@ -1115,6 +1249,21 @@ export default function RebalanceStrategyPage() {
                 </button>
               )
             })}
+          </div>
+          <div className="strategy-optimizer-lock-description" aria-live="polite">
+            <span>Locked GA inputs</span>
+            {activeOptimizerLockDescriptions.length === 0 ? (
+              <p>No locks active.</p>
+            ) : (
+              <ul>
+                {activeOptimizerLockDescriptions.map(item => (
+                  <li key={item.key}>
+                    <strong>{item.label}</strong>
+                    <span>{lockModeLabel(item.mode)}: {item.items.join(', ')}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div
             className={`strategy-optimizer-dropzone${optimizerPortfolioDragOver ? ' drag-over' : ''}`}

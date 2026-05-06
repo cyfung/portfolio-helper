@@ -689,11 +689,16 @@ object BacktestService {
         from: LocalDate?,
         to: LocalDate
     ): List<LocalDate> {
-        var common: Set<LocalDate> = series.first().keys.toSet()
-        for (s in series.drop(1)) common = common intersect s.keys.toSet()
-        return common
-            .filter { d -> (from == null || d >= from) && d <= to }
+        val latestStart = series.mapNotNull { it.keys.minOrNull() }.maxOrNull()
+            ?: return emptyList()
+        val start = listOfNotNull(from, latestStart).maxOrNull() ?: latestStart
+        return series
+            .flatMap { it.keys }
+            .asSequence()
+            .filter { d -> d >= start && d <= to }
+            .distinct()
             .sorted()
+            .toList()
     }
 
     // ── Portfolio computation ─────────────────────────────────────────────────
@@ -778,15 +783,36 @@ object BacktestService {
         val n = dates.size
         return tickers.associateWith { ticker ->
             val s = seriesMap[ticker] ?: return@associateWith DoubleArray(n) { 1.0 }
+            val filled = forwardFillSeries(s, dates)
             DoubleArray(n) { i ->
                 if (i == 0) 1.0
                 else {
-                    val prev = s[dates[i - 1]] ?: 1.0
-                    val cur = s[dates[i]] ?: 1.0
+                    val prev = filled[dates[i - 1]] ?: 1.0
+                    val cur = filled[dates[i]] ?: prev
                     if (prev == 0.0) 1.0 else cur / prev
                 }
             }
         }
+    }
+
+    internal fun forwardFillSeries(
+        series: Map<LocalDate, Double>,
+        dates: List<LocalDate>
+    ): Map<LocalDate, Double> {
+        if (series.isEmpty() || dates.isEmpty()) return emptyMap()
+        val sortedEntries = series.entries.sortedBy { it.key }
+        val filled = LinkedHashMap<LocalDate, Double>(dates.size)
+        var idx = 0
+        var lastValue: Double? = null
+
+        for (date in dates) {
+            while (idx < sortedEntries.size && !sortedEntries[idx].key.isAfter(date)) {
+                lastValue = sortedEntries[idx].value
+                idx++
+            }
+            if (lastValue != null) filled[date] = lastValue
+        }
+        return filled
     }
 
     internal fun buildDailyLoanRates(
