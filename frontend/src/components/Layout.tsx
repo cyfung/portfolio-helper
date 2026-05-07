@@ -347,6 +347,18 @@ export function HeaderRight({ children }: HeaderRightProps) {
       })
       if (info.lastCheckError) {
         showUpdateToast(`Update check failed: ${info.lastCheckError}`, 'error')
+      } else if (info.hasUpdate && (info.isJpackageInstall ?? isJpackageInstall)) {
+        const phase = info.download?.phase ?? 'IDLE'
+        if (phase === 'READY') {
+          setUpdOpen(true)
+          showUpdateToast('Download complete. Restart to apply the update.', 'ok')
+        } else if (phase === 'DOWNLOADING') {
+          showUpdateToast(`Downloading update v${info.latestVersion}...`, 'ok')
+          pollDownloadState()
+        } else {
+          showUpdateToast(`Update available: v${info.latestVersion}. Starting download...`, 'warn')
+          handleDownloadUpdate()
+        }
       } else if (info.hasUpdate) {
         showUpdateToast(`Update available: v${info.latestVersion}`, 'warn')
       } else if (!info.hasUpdate) {
