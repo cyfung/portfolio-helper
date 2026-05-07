@@ -221,9 +221,7 @@ export default function PortfolioViewer() {
   const sseDotClass = `sse-dot${sseStatus === 'live' ? ' sse-dot--ok' : sseStatus === 'error' ? ' sse-dot--err' : ''}`
   const sseDotTitle = sseStatus === 'live' ? 'Live' : sseStatus === 'error' ? 'Disconnected' : 'Connecting…'
 
-  const lastUpdateTime = lastPortfolioTotals
-    ? new Date().toLocaleTimeString()
-    : new Date().toLocaleTimeString()
+  const lastUpdateTime = new Date().toLocaleTimeString(undefined, { hour12: false })
   const contentScalePct = Math.round(portfolioContentScale * 100)
   const contentScaleStyle = {
     '--portfolio-content-scale': String(portfolioContentScale),
@@ -321,11 +319,11 @@ export default function PortfolioViewer() {
             >Save to Backtest</button>
 
             <span className="h-divider" />
-            <div className="portfolio-content-scale-control" title="Scale portfolio contents">
-              <label htmlFor="portfolio-content-scale">Scale</label>
+            <div className="portfolio-content-scale-control" title="Zoom portfolio contents">
               <input
                 id="portfolio-content-scale"
                 type="range"
+                aria-label="Portfolio zoom"
                 min="70"
                 max="130"
                 step="5"
@@ -335,8 +333,8 @@ export default function PortfolioViewer() {
               <button
                 type="button"
                 className="portfolio-content-scale-value"
-                title="Reset content scale"
-                aria-label="Reset content scale"
+                title="Reset portfolio zoom"
+                aria-label="Reset portfolio zoom"
                 onClick={() => setPortfolioContentScale(1)}
               >
                 {contentScalePct}%
