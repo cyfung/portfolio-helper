@@ -1,6 +1,6 @@
 // ── Layout.tsx — V4 command-led header (nav breadcrumb, version chip, h-btn utilities)
 
-import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Children, isValidElement, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { showConfirm } from '@/components/ConfirmDialog'
@@ -264,7 +264,11 @@ interface HeaderRightProps {
 
 export function HeaderRight({ children }: HeaderRightProps) {
   const appConfig = usePortfolioStore(s => s.appConfig)
+  const updateAppConfig = usePortfolioStore(s => s.updateAppConfig)
   const [updOpen, setUpdOpen] = useState(false)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  const [updateToast, setUpdateToast] = useState({ msg: '', type: '' })
+  const updateToastTimer = useRef<number | null>(null)
 
   const childArray = Children.toArray(children)
   const isUtility = (child: ReturnType<typeof Children.toArray>[number]) =>
@@ -294,6 +298,58 @@ export function HeaderRight({ children }: HeaderRightProps) {
 
   const hasAnyUpdate = showUpdateTag || showUpdateDot || showDownloadingTag || showReadyTag
 
+  function showUpdateToast(msg: string, type: string) {
+    setUpdateToast({ msg, type })
+    if (updateToastTimer.current) clearTimeout(updateToastTimer.current)
+    updateToastTimer.current = window.setTimeout(
+      () => setUpdateToast({ msg: '', type: '' }),
+      type === 'ok' ? 2500 : 5000
+    )
+  }
+
+  async function handleCheckUpdate() {
+    if (isCheckingUpdate) return
+    setUpdOpen(false)
+    setIsCheckingUpdate(true)
+    showUpdateToast('Checking for updates...', 'ok')
+    try {
+      const r = await fetch('/api/admin/check-update', { method: 'POST' })
+      if (!r.ok) throw new Error(r.statusText || `HTTP ${r.status}`)
+      const info = await r.json()
+      updateAppConfig({
+        hasUpdate:     !!info.hasUpdate,
+        latestVersion: info.latestVersion ?? null,
+        downloadPhase: info.download?.phase ?? 'IDLE',
+        autoUpdate:    info.autoUpdate ?? autoUpdate,
+      })
+      if (info.lastCheckError) {
+        showUpdateToast(`Update check failed: ${info.lastCheckError}`, 'error')
+      } else if (info.hasUpdate) {
+        showUpdateToast(`Update available: v${info.latestVersion}`, 'warn')
+      } else if (!info.hasUpdate) {
+        showUpdateToast(`You are up to date on v${info.currentVersion ?? version}.`, 'ok')
+      }
+    } catch (err: any) {
+      showUpdateToast(`Update check failed: ${err?.message || 'Unable to check for updates.'}`, 'error')
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }
+
+  function handleVersionClick() {
+    if (hasAnyUpdate) {
+      setUpdOpen(v => !v)
+      return
+    }
+    handleCheckUpdate()
+  }
+
+  function handleVersionKeyDown(e: KeyboardEvent<HTMLSpanElement>) {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    handleVersionClick()
+  }
+
   async function handleApplyUpdate() {
     showRestartOverlay()
     try { await fetch('/api/admin/apply-update', { method: 'POST' }) } catch (_) {}
@@ -312,20 +368,30 @@ export function HeaderRight({ children }: HeaderRightProps) {
     return 'Update available'
   }
 
+  function versionTitle() {
+    if (isCheckingUpdate) return 'Checking for updates...'
+    if (hasAnyUpdate)     return 'Update available - click for details'
+    return 'Check for updates'
+  }
+
   return (
     <div className="header-right">
       <div className="header-top-controls">
         <span
-          className={`h-version v4-version-btn${hasAnyUpdate ? ' has-update' : ''}`}
-          onClick={() => hasAnyUpdate && setUpdOpen(v => !v)}
-          title={hasAnyUpdate ? 'Update available — click for details' : `v${version}`}
+          className={`h-version v4-version-btn${hasAnyUpdate ? ' has-update' : ''}${isCheckingUpdate ? ' is-checking' : ''}`}
+          onClick={handleVersionClick}
+          onKeyDown={handleVersionKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label={`Version ${version}. ${versionTitle()}`}
+          title={versionTitle()}
         >
-          {hasAnyUpdate && <span className="dot" />}
+          {(hasAnyUpdate || isCheckingUpdate) && <span className="dot" />}
           v{version}
           {updOpen && hasAnyUpdate && (
             <div className="v4-upd-pop" onClick={e => e.stopPropagation()} onMouseLeave={() => setUpdOpen(false)}>
               <div className="v4-upd-head">
-                <span className="dot" />
+                {(hasAnyUpdate || isCheckingUpdate) && <span className="dot" />}
                 <span>{updPopTitle()}</span>
               </div>
               <div className="v4-upd-body">{updPopBody()}</div>
@@ -339,6 +405,9 @@ export function HeaderRight({ children }: HeaderRightProps) {
             </div>
           )}
         </span>
+        <div className={`config-status config-status-${updateToast.type}${updateToast.msg ? ' visible' : ''}`}>
+          {updateToast.msg}
+        </div>
         {utilityControls}
       </div>
       {actionControls.length > 0 && <div className="header-buttons">{actionControls}</div>}

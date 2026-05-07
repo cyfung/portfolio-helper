@@ -472,10 +472,13 @@ h1 {
     font-family: var(--font-family-mono), monospace;
     font-size: 10.5px; color: var(--color-muted); letter-spacing: 0.02em;
     padding: 4px 8px; border-radius: 6px; border: 1px solid transparent;
-    cursor: default; user-select: none; white-space: nowrap;
+    cursor: pointer; user-select: none; white-space: nowrap;
 }
 .h-version.has-update { color: var(--color-warning); cursor: pointer; }
+.h-version:hover,
+.h-version:focus-visible { border-color: var(--color-border-medium); background: var(--color-bg-hover); outline: none; }
 .h-version.has-update:hover { border-color: var(--color-border-medium); background: var(--color-bg-hover); }
+.h-version.is-checking { color: var(--color-accent-primary); }
 .h-version .dot {
     width: 6px; height: 6px; border-radius: 50%; background: currentColor;
     display: inline-block; margin-right: 5px; vertical-align: middle;
@@ -487,13 +490,17 @@ h1 {
     width: 260px; padding: 12px;
     background: var(--color-bg-elevated); border: 1px solid var(--color-border-medium);
     border-radius: 10px; box-shadow: var(--shadow-md); cursor: default; text-align: left;
+    white-space: normal;
 }
 .v4-upd-head {
     display: flex; align-items: center; gap: 8px;
     font-size: 13px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px;
 }
 .v4-upd-head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-warning); display: inline-block; flex-shrink: 0; }
-.v4-upd-body { font-size: 12px; line-height: 1.5; color: var(--color-muted); margin-bottom: 12px; }
+.v4-upd-body {
+    font-size: 12px; line-height: 1.5; color: var(--color-muted); margin-bottom: 12px;
+    overflow-wrap: anywhere;
+}
 .v4-upd-foot { display: flex; justify-content: flex-end; gap: 6px; }
 
 /* ============================================

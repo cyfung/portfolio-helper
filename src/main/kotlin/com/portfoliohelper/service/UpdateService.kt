@@ -122,27 +122,37 @@ object UpdateService {
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "portfolio-helper/$APP_VERSION")
             .build()
-        withContext(Dispatchers.IO) {
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) error("GitHub API returned ${response.code}")
-                val text = response.body?.string() ?: error("Empty response")
-                val tagName = parseJsonString(text, "tag_name")
-                val latestVersion = tagName?.removePrefix("v")
-                val htmlUrl = parseJsonString(text, "html_url")
-                val jpackageAssetUrl = parseAssetsForJpackage(text)
-                val hasUpdate = latestVersion != null && isNewerVersion(latestVersion, APP_VERSION)
-                state.set(
-                    state.get().copy(
-                        latestVersion = latestVersion,
-                        releaseUrl = htmlUrl,
-                        jpackageAssetUrl = jpackageAssetUrl,
-                        hasUpdate = hasUpdate,
-                        lastCheckedMs = System.currentTimeMillis(),
-                        lastCheckError = null
+        try {
+            withContext(Dispatchers.IO) {
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) error("GitHub API returned ${response.code}")
+                    val text = response.body?.string() ?: error("Empty response")
+                    val tagName = parseJsonString(text, "tag_name")
+                    val latestVersion = tagName?.removePrefix("v")
+                    val htmlUrl = parseJsonString(text, "html_url")
+                    val jpackageAssetUrl = parseAssetsForJpackage(text)
+                    val hasUpdate = latestVersion != null && isNewerVersion(latestVersion, APP_VERSION)
+                    state.set(
+                        state.get().copy(
+                            latestVersion = latestVersion,
+                            releaseUrl = htmlUrl,
+                            jpackageAssetUrl = jpackageAssetUrl,
+                            hasUpdate = hasUpdate,
+                            lastCheckedMs = System.currentTimeMillis(),
+                            lastCheckError = null
+                        )
                     )
-                )
-                logger.info("Update check: currentVersion=$APP_VERSION, latestVersion=$latestVersion, hasUpdate=$hasUpdate")
+                    logger.info("Update check: currentVersion=$APP_VERSION, latestVersion=$latestVersion, hasUpdate=$hasUpdate")
+                }
             }
+        } catch (e: Exception) {
+            state.set(
+                state.get().copy(
+                    lastCheckedMs = System.currentTimeMillis(),
+                    lastCheckError = e.message ?: e::class.simpleName ?: "Unknown update check error"
+                )
+            )
+            throw e
         }
     }
 
