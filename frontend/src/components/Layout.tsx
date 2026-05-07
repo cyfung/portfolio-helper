@@ -95,33 +95,41 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
       <span className="v4-sep">/</span>
 
       {/* Section dropdown */}
-      <div className="v4-crumb-wrap" ref={secRef}>
-        <button className="v4-crumb" onClick={() => { setSecOpen(v => !v); setCtxOpen(false) }}>
+      <div
+        className="v4-crumb-wrap"
+        ref={secRef}
+        onMouseEnter={() => { setSecOpen(true); setCtxOpen(false) }}
+        onMouseLeave={() => setSecOpen(false)}
+      >
+        <button className="v4-crumb" type="button">
           <SectionSvg name={activeSec.icon} />
           <span>{activeSec.label}</span>
           <ChevronDown />
         </button>
         {secOpen && (
-          <div className="v4-pop">
-            <div className="v4-pop-head">PORTFOLIO</div>
-            {ALL_SECTIONS.filter(s => !s.group).map(s => (
-              <Link key={s.href} to={s.href}
-                    className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
-                    onClick={() => setSecOpen(false)}>
-                <SectionSvg name={s.icon} />
-                <span>{s.label}</span>
-              </Link>
-            ))}
-            <div className="v4-pop-head">STRATEGY TOOLS</div>
-            {ALL_SECTIONS.filter(s => s.group === 'strategy').map(s => (
-              <Link key={s.href} to={s.href}
-                    className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
-                    onClick={() => setSecOpen(false)}>
-                <SectionSvg name={s.icon} />
-                <span>{s.label}</span>
-              </Link>
-            ))}
-          </div>
+          <>
+            <div className="v4-pop-bridge" />
+            <div className="v4-pop">
+              <div className="v4-pop-head">PORTFOLIO</div>
+              {ALL_SECTIONS.filter(s => !s.group).map(s => (
+                <Link key={s.href} to={s.href}
+                      className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
+                      onClick={() => setSecOpen(false)}>
+                  <SectionSvg name={s.icon} />
+                  <span>{s.label}</span>
+                </Link>
+              ))}
+              <div className="v4-pop-head">STRATEGY TOOLS</div>
+              {ALL_SECTIONS.filter(s => s.group === 'strategy').map(s => (
+                <Link key={s.href} to={s.href}
+                      className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
+                      onClick={() => setSecOpen(false)}>
+                  <SectionSvg name={s.icon} />
+                  <span>{s.label}</span>
+                </Link>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -129,16 +137,24 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
       {contextLabel && (
         <>
           <span className="v4-sep">/</span>
-          <div className="v4-crumb-wrap" ref={ctxRef}>
-            <button className="v4-crumb pf" onClick={() => { setCtxOpen(v => !v); setSecOpen(false) }}>
+          <div
+            className="v4-crumb-wrap"
+            ref={ctxRef}
+            onMouseEnter={() => { setCtxOpen(true); setSecOpen(false) }}
+            onMouseLeave={() => setCtxOpen(false)}
+          >
+            <button className="v4-crumb pf" type="button">
               <span>{contextLabel}</span>
               <ChevronDown />
             </button>
             {ctxOpen && contextChildren && (
-              <div className="v4-pop">
-                <div className="v4-pop-head">PORTFOLIOS</div>
-                {contextChildren}
-              </div>
+              <>
+                <div className="v4-pop-bridge" />
+                <div className="v4-pop">
+                  <div className="v4-pop-head">PORTFOLIOS</div>
+                  {contextChildren}
+                </div>
+              </>
             )}
           </div>
         </>
@@ -297,6 +313,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const showReadyTag       = isReady
 
   const hasAnyUpdate = showUpdateTag || showUpdateDot || showDownloadingTag || showReadyTag
+  const showBlueVersionState = isCheckingUpdate || showDownloadingTag
 
   function showUpdateToast(msg: string, type: string) {
     setUpdateToast({ msg, type })
@@ -369,7 +386,8 @@ export function HeaderRight({ children }: HeaderRightProps) {
   }
 
   function versionTitle() {
-    if (isCheckingUpdate) return 'Checking for updates...'
+    if (isCheckingUpdate)    return 'Checking for updates...'
+    if (showDownloadingTag) return 'Downloading update in background'
     if (hasAnyUpdate)     return 'Update available - click for details'
     return 'Check for updates'
   }
@@ -378,7 +396,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
     <div className="header-right">
       <div className="header-top-controls">
         <span
-          className={`h-version v4-version-btn${hasAnyUpdate ? ' has-update' : ''}${isCheckingUpdate ? ' is-checking' : ''}`}
+          className={`h-version v4-version-btn${hasAnyUpdate && !showBlueVersionState ? ' has-update' : ''}${showBlueVersionState ? ' is-checking' : ''}`}
           onClick={handleVersionClick}
           onKeyDown={handleVersionKeyDown}
           role="button"
@@ -386,12 +404,12 @@ export function HeaderRight({ children }: HeaderRightProps) {
           aria-label={`Version ${version}. ${versionTitle()}`}
           title={versionTitle()}
         >
-          {(hasAnyUpdate || isCheckingUpdate) && <span className="dot" />}
+          {(hasAnyUpdate || showBlueVersionState) && <span className="dot" />}
           v{version}
           {updOpen && hasAnyUpdate && (
             <div className="v4-upd-pop" onClick={e => e.stopPropagation()} onMouseLeave={() => setUpdOpen(false)}>
               <div className="v4-upd-head">
-                {(hasAnyUpdate || isCheckingUpdate) && <span className="dot" />}
+                {(hasAnyUpdate || showBlueVersionState) && <span className="dot" />}
                 <span>{updPopTitle()}</span>
               </div>
               <div className="v4-upd-body">{updPopBody()}</div>
