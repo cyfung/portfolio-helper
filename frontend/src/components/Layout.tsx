@@ -267,14 +267,11 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const [updOpen, setUpdOpen] = useState(false)
 
   const childArray = Children.toArray(children)
-  const utilityControls = childArray.filter(child =>
+  const isUtility = (child: ReturnType<typeof Children.toArray>[number]) =>
     isValidElement(child) &&
     (child.type === PrivacyToggleButton || child.type === ConfigButton || child.type === ThemeToggle)
-  )
-  const actionControls = childArray.filter(child =>
-    !(isValidElement(child) &&
-      (child.type === PrivacyToggleButton || child.type === ConfigButton || child.type === ThemeToggle))
-  )
+  const utilityControls = childArray.filter(isUtility)
+  const actionControls = childArray.filter(child => !isUtility(child))
 
   if (!appConfig) {
     return (
