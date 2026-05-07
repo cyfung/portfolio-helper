@@ -1,5 +1,5 @@
 // ── PortfolioViewer.tsx — Port of PortfolioRenderer.kt body structure ─────────
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { StockData, CashData } from '@/types/portfolio'
@@ -43,9 +43,11 @@ export default function PortfolioViewer() {
     portfolioId, cash, sseStatus, lastPortfolioTotals,
     currentDisplayCurrency, moreInfoVisible, rebalVisible,
     groupViewActive, editModeActive, afterHoursGray,
+    portfolioContentScale,
     allPortfolios, appConfig, lastStockDisplay,
     rebalTargetUsd, marginTargetUsd, allocReduceMode,
     setMoreInfoVisible, setRebalVisible, setGroupViewActive, setEditModeActive,
+    setPortfolioContentScale,
   } = store
 
   const [backupOpen, setBackupOpen]           = useState(false)
@@ -222,6 +224,10 @@ export default function PortfolioViewer() {
   const lastUpdateTime = lastPortfolioTotals
     ? new Date().toLocaleTimeString()
     : new Date().toLocaleTimeString()
+  const contentScalePct = Math.round(portfolioContentScale * 100)
+  const contentScaleStyle = {
+    '--portfolio-content-scale': String(portfolioContentScale),
+  } as CSSProperties
 
   return (
     <div className={`container${afterHoursGray ? ' after-hours-gray' : ''}${moreInfoVisible ? ' more-info-visible' : ''}${rebalVisible ? ' rebalancing-visible' : ''}${editModeActive ? ' editing-active' : ''}`}>
@@ -286,6 +292,15 @@ export default function PortfolioViewer() {
             onClick={() => setGroupViewActive(!groupViewActive)}
           >Groups</button>
 
+          <button
+            className={`rebal-toggle h-btn subtle${rebalVisible ? ' active-edit' : ''}`}
+            id="rebal-toggle"
+            type="button"
+            title="Show/Hide Weight and Rebalancing columns"
+            aria-label="Toggle rebalancing columns"
+            onClick={() => setRebalVisible(!rebalVisible)}
+          >Rebal</button>
+
           {/* Right group — data actions */}
           <div className="header-buttons-right">
             <button
@@ -306,20 +321,34 @@ export default function PortfolioViewer() {
             >Save to Backtest</button>
 
             <span className="h-divider" />
+            <div className="portfolio-content-scale-control" title="Scale portfolio contents">
+              <label htmlFor="portfolio-content-scale">Scale</label>
+              <input
+                id="portfolio-content-scale"
+                type="range"
+                min="70"
+                max="130"
+                step="5"
+                value={contentScalePct}
+                onChange={e => setPortfolioContentScale(parseInt(e.target.value, 10) / 100)}
+              />
+              <button
+                type="button"
+                className="portfolio-content-scale-value"
+                title="Reset content scale"
+                aria-label="Reset content scale"
+                onClick={() => setPortfolioContentScale(1)}
+              >
+                {contentScalePct}%
+              </button>
+            </div>
+
+            <span className="h-divider" />
             <span className="header-timestamp">{lastUpdateTime}</span>
             <span className={sseDotClass} title={sseDotTitle} />
             <span className="h-divider" />
 
             {renderCurrencyControl()}
-
-            <button
-              className={`rebal-toggle h-btn subtle${rebalVisible ? ' active-edit' : ''}`}
-              id="rebal-toggle"
-              type="button"
-              title="Show/Hide Weight and Rebalancing columns"
-              aria-label="Toggle rebalancing columns"
-              onClick={() => setRebalVisible(!rebalVisible)}
-            >Rebal</button>
           </div>
 
           <PrivacyToggleButton />
@@ -332,7 +361,7 @@ export default function PortfolioViewer() {
       </div>
 
       {/* ── Main content ──────────────────────────────────────────────── */}
-      <div className="portfolio-tables-wrapper">
+      <div className="portfolio-tables-wrapper" style={contentScaleStyle}>
         <div className="summary-and-rates">
           <SummaryTable />
           <CashEditTable key={editResetKey} allPortfolios={allPortfolios} />

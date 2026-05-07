@@ -33,6 +33,7 @@ interface PortfolioState {
   editModeActive: boolean
   afterHoursGray: boolean
   showStockDisplayCurrency: boolean
+  portfolioContentScale: number
 
   // ── Rebal/alloc targets ────────────────────────────────────────────────────
   rebalTargetUsd: number | null
@@ -56,6 +57,7 @@ interface PortfolioState {
   setRebalVisible: (v: boolean) => void
   setGroupViewActive: (v: boolean) => void
   setEditModeActive: (v: boolean) => void
+  setPortfolioContentScale: (v: number) => void
   setRebalTargetUsd: (v: number | null) => void
   setMarginTargetPct: (v: number | null) => void
   setMarginTargetUsd: (v: number | null) => void
@@ -75,10 +77,22 @@ const LS_KEYS = {
   allocReduce: 'portfolio-helper-alloc-reduce-mode',
   theme: 'portfolio-helper-theme',
   stockGroupBy: 'portfolio-helper-stock-group-by',
+  contentScale: 'portfolio-helper-portfolio-content-scale',
 }
 
 function lsGet(key: string): string | null {
   return localStorage.getItem(key) ?? localStorage.getItem(key.replace('portfolio-helper-', 'ib-viewer-'))
+}
+
+function clampContentScale(value: number): number {
+  if (!Number.isFinite(value)) return 1
+  return Math.min(1.3, Math.max(0.7, value))
+}
+
+function readContentScale(): number {
+  const raw = lsGet(LS_KEYS.contentScale)
+  if (!raw) return 1
+  return clampContentScale(parseFloat(raw))
 }
 
 const DEFAULT_CONFIG: PortfolioConfig = {
@@ -117,6 +131,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   editModeActive: false,
   afterHoursGray: true,
   showStockDisplayCurrency: false,
+  portfolioContentScale: readContentScale(),
 
   rebalTargetUsd: null,
   marginTargetPct: null,
@@ -207,6 +222,11 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   setGroupViewActive: (v) => set({ groupViewActive: v }),
   setEditModeActive: (v) => set({ editModeActive: v }),
+  setPortfolioContentScale: (v) => {
+    const scale = clampContentScale(v)
+    localStorage.setItem(LS_KEYS.contentScale, String(scale))
+    set({ portfolioContentScale: scale })
+  },
 
   setRebalTargetUsd: (v) => set({ rebalTargetUsd: v, marginTargetPct: null, marginTargetUsd: null }),
   setMarginTargetPct: (v) => set({ marginTargetPct: v, rebalTargetUsd: null, marginTargetUsd: null }),
