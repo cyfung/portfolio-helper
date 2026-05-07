@@ -285,6 +285,12 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [updateToast, setUpdateToast] = useState({ msg: '', type: '' })
   const updateToastTimer = useRef<number | null>(null)
+  const downloadPollRef = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (updateToastTimer.current) clearTimeout(updateToastTimer.current)
+    if (downloadPollRef.current) clearInterval(downloadPollRef.current)
+  }, [])
 
   const childArray = Children.toArray(children)
   const isUtility = (child: ReturnType<typeof Children.toArray>[number]) =>
@@ -353,6 +359,58 @@ export function HeaderRight({ children }: HeaderRightProps) {
     }
   }
 
+  function pollDownloadState() {
+    if (downloadPollRef.current) return
+    downloadPollRef.current = window.setInterval(async () => {
+      try {
+        const r = await fetch('/api/admin/update-info')
+        if (!r.ok) return
+        const info = await r.json()
+        const phase = info.download?.phase ?? 'IDLE'
+        updateAppConfig({
+          hasUpdate:     !!info.hasUpdate,
+          latestVersion: info.latestVersion ?? null,
+          downloadPhase: phase,
+          autoUpdate:    info.autoUpdate ?? autoUpdate,
+        })
+        if (phase !== 'DOWNLOADING') {
+          clearInterval(downloadPollRef.current!)
+          downloadPollRef.current = null
+          if (phase === 'READY') {
+            setUpdOpen(true)
+            showUpdateToast('Download complete. Restart to apply the update.', 'ok')
+          } else if (info.lastCheckError) {
+            showUpdateToast(`Update download failed: ${info.lastCheckError}`, 'error')
+          }
+        }
+      } catch (_) {}
+    }, 1000)
+  }
+
+  async function handleDownloadUpdate() {
+    setUpdOpen(false)
+    showUpdateToast('Starting update download...', 'ok')
+    try {
+      const r = await fetch('/api/admin/download-update', { method: 'POST' })
+      if (r.status === 409) {
+        const body = await r.json().catch(() => ({}))
+        if (body.status === 'already-downloading') {
+          showUpdateToast('Update download already in progress.', 'warn')
+          updateAppConfig({ downloadPhase: 'DOWNLOADING' })
+          pollDownloadState()
+          return
+        }
+        showUpdateToast('This install type cannot patch itself. Open Settings for manual update options.', 'error')
+        return
+      }
+      if (!r.ok && r.status !== 202) throw new Error(r.statusText || `HTTP ${r.status}`)
+      updateAppConfig({ downloadPhase: 'DOWNLOADING' })
+      pollDownloadState()
+    } catch (err: any) {
+      showUpdateToast(`Update download failed: ${err?.message || 'Unable to start download.'}`, 'error')
+    }
+  }
+
   function handleVersionClick() {
     if (hasAnyUpdate) {
       setUpdOpen(v => !v)
@@ -371,6 +429,19 @@ export function HeaderRight({ children }: HeaderRightProps) {
     showRestartOverlay()
     try { await fetch('/api/admin/apply-update', { method: 'POST' }) } catch (_) {}
     setTimeout(attemptReconnect, 2000)
+  }
+
+  function renderUpdateAction() {
+    if (showReadyTag) {
+      return <button className="h-btn primary" onClick={handleApplyUpdate}>Restart &amp; update</button>
+    }
+    if (showDownloadingTag) {
+      return <button className="h-btn primary" disabled>Downloading...</button>
+    }
+    if (isJpackageInstall) {
+      return <button className="h-btn primary" onClick={handleDownloadUpdate}>Download update</button>
+    }
+    return <Link to="/config" className="h-btn primary" onClick={() => setUpdOpen(false)}>Go to Settings</Link>
   }
 
   function updPopBody() {
@@ -415,10 +486,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
               <div className="v4-upd-body">{updPopBody()}</div>
               <div className="v4-upd-foot">
                 <button className="h-btn subtle" onClick={() => setUpdOpen(false)}>Later</button>
-                {showReadyTag
-                  ? <button className="h-btn primary" onClick={handleApplyUpdate}>Restart &amp; update</button>
-                  : <Link to="/config" className="h-btn primary" onClick={() => setUpdOpen(false)}>Go to Settings</Link>
-                }
+                {renderUpdateAction()}
               </div>
             </div>
           )}
