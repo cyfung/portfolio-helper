@@ -412,6 +412,10 @@ export function HeaderRight({ children }: HeaderRightProps) {
   }
 
   function handleVersionClick() {
+    if (hasUpdate && isJpackageInstall && !isDownloading && !isReady) {
+      handleDownloadUpdate()
+      return
+    }
     if (hasAnyUpdate) {
       setUpdOpen(v => !v)
       return
@@ -438,10 +442,9 @@ export function HeaderRight({ children }: HeaderRightProps) {
     if (showDownloadingTag) {
       return <button className="h-btn primary" disabled>Downloading...</button>
     }
-    if (isJpackageInstall) {
-      return <button className="h-btn primary" onClick={handleDownloadUpdate}>Download update</button>
-    }
-    return <Link to="/config" className="h-btn primary" onClick={() => setUpdOpen(false)}>Go to Settings</Link>
+    return isJpackageInstall
+      ? null
+      : <Link to="/config" className="h-btn primary" onClick={() => setUpdOpen(false)}>Go to Settings</Link>
   }
 
   function updPopBody() {
@@ -459,6 +462,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
   function versionTitle() {
     if (isCheckingUpdate)    return 'Checking for updates...'
     if (showDownloadingTag) return 'Downloading update in background'
+    if (hasUpdate && isJpackageInstall && !isReady) return 'Update available - click to start update'
     if (hasAnyUpdate)     return 'Update available - click for details'
     return 'Check for updates'
   }
