@@ -189,9 +189,18 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
 
       setStockRows(rows => {
         const next = rows.map(r => ({ ...r }))
+        const importedSymbols = new Set(
+          rounded
+            .map(row => row.ticker.trim().toUpperCase())
+            .filter(Boolean)
+        )
         const rowBySymbol = new Map<string, number>()
         next.forEach((row, idx) => {
-          if (!row.deleted && row.symbol.trim()) rowBySymbol.set(row.symbol.trim().toUpperCase(), idx)
+          if (row.deleted) return
+          const symbol = row.symbol.trim().toUpperCase()
+          if (!symbol) return
+          rowBySymbol.set(symbol, idx)
+          if (!importedSymbols.has(symbol)) row.weight = 0
         })
 
         for (const row of rounded) {
