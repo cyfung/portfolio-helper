@@ -834,6 +834,17 @@ fun Application.configureRouting() {
                         runCatching { RebalanceStrategy.valueOf(el.jsonPrimitive.content) }
                             .getOrDefault(portfolios.first().rebalanceStrategy)
                     } ?: emptyList()
+                val blockedCrossValidation = (json["blockedCrossValidation"] as? JsonObject)?.let { cv ->
+                    BlockedCrossValidationConfig(
+                        blocks = cv["blocks"]?.jsonPrimitive?.intOrNull ?: 0,
+                        validationBlock = cv["validationBlock"]?.jsonPrimitive?.intOrNull ?: 0,
+                        mode = runCatching {
+                            BlockedCrossValidationScoreMode.valueOf(
+                                cv["mode"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "TRAINING"
+                            )
+                        }.getOrDefault(BlockedCrossValidationScoreMode.TRAINING),
+                    )
+                }
 
                 val scores = RebalanceStrategyService.scoreBatch(
                     RebalanceStrategyScoreBatchRequest(
@@ -845,6 +856,7 @@ fun Application.configureRouting() {
                         portfolioRebalanceStrategies,
                         startingBalance,
                         metric,
+                        blockedCrossValidation,
                     )
                 )
                 call.respondText(appJson.encodeToString(scores), ContentType.Application.Json)

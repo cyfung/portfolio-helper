@@ -158,6 +158,14 @@ data class RebalanceStrategyRequest(
 
 enum class RebalanceOptimizationMetric { CAGR, SHARPE, UPI }
 
+enum class BlockedCrossValidationScoreMode { TRAINING, VALIDATION }
+
+data class BlockedCrossValidationConfig(
+    val blocks: Int,
+    val validationBlock: Int,
+    val mode: BlockedCrossValidationScoreMode,
+)
+
 data class RebalanceStrategyScoreBatchRequest(
     val fromDate: String?,
     val toDate: String?,
@@ -167,6 +175,7 @@ data class RebalanceStrategyScoreBatchRequest(
     val portfolioRebalanceStrategies: List<RebalanceStrategy> = emptyList(),
     val startingBalance: Double = 10_000.0,
     val metric: RebalanceOptimizationMetric = RebalanceOptimizationMetric.CAGR,
+    val blockedCrossValidation: BlockedCrossValidationConfig? = null,
 )
 
 // ── TriggerChecker implementations ───────────────────────────────────────────

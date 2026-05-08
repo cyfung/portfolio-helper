@@ -105,7 +105,16 @@ object BacktestService {
                 val noMarginPoints =
                     globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
                 val noMarginStats = computeBacktestStats(noMarginValues, globalDates, effrxSeries)
-                curves.add(CurveResult("No Margin", noMarginPoints, noMarginStats))
+                val noMarginActionPoints =
+                    scheduledPortfolioRebalanceActionPoints(globalDates, pConfig.rebalanceStrategy)
+                curves.add(
+                    CurveResult(
+                        "No Margin",
+                        noMarginPoints,
+                        noMarginStats,
+                        actionPoints = noMarginActionPoints.takeIf { it.isNotEmpty() },
+                    )
+                )
             }
 
             fun modeAbbr(m: MarginRebalanceMode) = when (m) {
@@ -148,7 +157,13 @@ object BacktestService {
                 val lAbbr = modeAbbr(mc.lowerRebalanceMode)
                 val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
                 else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
-                CurveResult(label, marginValuePoints, marginStats, marginUtilPoints)
+                CurveResult(
+                    label,
+                    marginValuePoints,
+                    marginStats,
+                    marginUtilPoints,
+                    marginResult.actionPoints.takeIf { it.isNotEmpty() },
+                )
             }.toList()
 
             curves.addAll(marginCurves)
@@ -749,6 +764,14 @@ object BacktestService {
         return values
     }
 
+    private fun scheduledPortfolioRebalanceActionPoints(
+        dates: List<LocalDate>,
+        rebalanceStrategy: RebalanceStrategy
+    ): List<ActionPoint> =
+        (1 until dates.size)
+            .filter { i -> shouldRebalance(rebalanceStrategy, dates[i - 1], dates[i]) }
+            .map { i -> ActionPoint(dates[i].toString(), "PORTFOLIO_REBALANCE") }
+
     private fun applyDailyReturns(
         tickers: List<String>,
         holdings: MutableMap<String, Double>,
@@ -873,7 +896,8 @@ object BacktestService {
         val values: List<Double>,
         val marginUtilization: List<Double>,
         val upperTriggers: Int,   // ratio > target + deviation (market fell, forced to de-lever)
-        val lowerTriggers: Int    // ratio < target - deviation (market rose, forced to re-lever)
+        val lowerTriggers: Int,   // ratio < target - deviation (market rose, forced to re-lever)
+        val actionPoints: List<ActionPoint> = emptyList()
     )
 
     private fun applyMargin(
@@ -894,6 +918,7 @@ object BacktestService {
 
         val result = mutableListOf(equity)
         val marginUtilization = mutableListOf(marginTarget)
+        val actionPoints = mutableListOf<ActionPoint>()
         var upperTriggers = 0
         var lowerTriggers = 0
 
@@ -919,10 +944,17 @@ object BacktestService {
             val deviationBreach = upperBreach || lowerBreach
 
             if (deviationBreach && !rebalanceDay) {
-                if (upperBreach) upperTriggers++ else lowerTriggers++
+                if (upperBreach) {
+                    upperTriggers++
+                    actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
+                } else {
+                    lowerTriggers++
+                    actionPoints.add(ActionPoint(curDate.toString(), "BUY_LOW"))
+                }
             }
 
             if (rebalanceDay || deviationBreach) {
+                if (rebalanceDay) actionPoints.add(ActionPoint(curDate.toString(), "PORTFOLIO_REBALANCE"))
                 borrowed = equity * marginTarget
                 totalExposure = equity + borrowed
             }
@@ -930,7 +962,7 @@ object BacktestService {
             result.add(equity)
             marginUtilization.add(if (equity > 0.0) borrowed.coerceAtLeast(0.0) / equity else 0.0)
         }
-        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers)
+        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers, actionPoints)
     }
 
     fun computeWaterfall(
@@ -1016,6 +1048,7 @@ object BacktestService {
         val targetRatio = mc.marginRatio
         val result = mutableListOf(startEquity)
         val marginUtilization = mutableListOf(targetRatio)
+        val actionPoints = mutableListOf<ActionPoint>()
         var upperTriggers = 0
         var lowerTriggers = 0
 
@@ -1057,6 +1090,7 @@ object BacktestService {
                 borrowed = newBorrowed
             } else if (rebalanceDay) {
                 // Scheduled full asset rebalance at today's close.
+                actionPoints.add(ActionPoint(curDate.toString(), "PORTFOLIO_REBALANCE"))
                 borrowed = equity * targetRatio
                 val newTotalExposure = equity + borrowed
                 for (ticker in tickers) {
@@ -1069,7 +1103,13 @@ object BacktestService {
                 val deviationBreach = upperBreach || lowerBreach
 
                 if (deviationBreach) {
-                    if (upperBreach) upperTriggers++ else lowerTriggers++
+                    if (upperBreach) {
+                        upperTriggers++
+                        actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
+                    } else {
+                        lowerTriggers++
+                        actionPoints.add(ActionPoint(curDate.toString(), "BUY_LOW"))
+                    }
                 }
 
                 if (deviationBreach) {
@@ -1124,7 +1164,7 @@ object BacktestService {
             previousMarginRatio = if (endEquity > 0.0) borrowed.coerceAtLeast(0.0) / endEquity else 0.0
             marginUtilization.add(previousMarginRatio)
         }
-        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers)
+        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers, actionPoints)
     }
 
     fun computeUndervalueFirst(
@@ -1182,7 +1222,7 @@ object BacktestService {
         )
     }
 
-    private fun computeRfAnnualized(effrx: Map<LocalDate, Double>): Double {
+    internal fun computeRfAnnualized(effrx: Map<LocalDate, Double>): Double {
         if (effrx.size < 2) return 0.0
         val sorted = effrx.keys.sorted()
         val rfLogReturns = (1 until sorted.size).mapNotNull { i ->

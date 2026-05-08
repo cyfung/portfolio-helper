@@ -153,6 +153,17 @@ body {
     line-height: 1.4;
 }
 
+input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+
 /* ============================================
    Container
    ============================================ */
@@ -2004,13 +2015,6 @@ h1 {
     font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-md);
     text-align: right;
-    -moz-appearance: textfield;
-}
-
-.editing-active .edit-input::-webkit-outer-spin-button,
-.editing-active .edit-input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
 }
 
 .editing-active .edit-input:focus {
@@ -2419,21 +2423,6 @@ h1 {
     background: rgba(222, 53, 11, 0.08);
     border-radius: var(--radius-sm);
     border: 1px solid rgba(222, 53, 11, 0.2);
-}
-
-/* Hide number-input spinners on the loan page */
-.loan-card input[type="number"]::-webkit-inner-spin-button,
-.loan-card input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-.loan-card input[type="number"] {
-    -moz-appearance: textfield;
-}
-.cashflow-row input[type="number"]::-webkit-inner-spin-button,
-.cashflow-row input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
 }
 
 /* Mode toggle */
@@ -3594,6 +3583,31 @@ a.loan-calc-link:hover {
     opacity: 1;
 }
 
+.chart-action-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 1.7rem;
+    padding: 2px 8px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.chart-action-filter > span {
+    color: var(--color-text-tertiary);
+}
+
+.chart-action-filter label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    font-weight: var(--font-weight-semibold);
+}
+
 /* Error message */
 .backtest-error {
     color: var(--color-negative);
@@ -4210,13 +4224,6 @@ a.loan-calc-link:hover {
     color: var(--color-text-primary);
     font-size: var(--font-size-xs);
     font-family: var(--font-family-mono), monospace;
-    -moz-appearance: textfield;
-}
-
-.margin-point-number-input::-webkit-outer-spin-button,
-.margin-point-number-input::-webkit-inner-spin-button {
-    margin: 0;
-    -webkit-appearance: none;
 }
 
 .margin-point-number-input:focus {
@@ -4281,17 +4288,6 @@ a.loan-calc-link:hover {
     color: #fff;
 }
 
-input.no-spinner::-webkit-inner-spin-button,
-input.no-spinner::-webkit-outer-spin-button {
-    margin: 0;
-    -webkit-appearance: none;
-}
-
-input.no-spinner[type="number"] {
-    appearance: textfield;
-    -moz-appearance: textfield;
-}
-
 .strategy-row input[type="radio"] {
     accent-color: var(--color-accent-primary);
 }
@@ -4321,6 +4317,14 @@ input.no-spinner[type="number"] {
 .strategy-optimizer-controls label {
     color: var(--color-text-secondary);
     font-weight: var(--font-weight-medium);
+}
+
+.strategy-optimizer-toggle,
+.strategy-optimizer-cv-block,
+.strategy-optimizer-controls .strategy-optimizer-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
 }
 
 .strategy-optimizer-controls select {
@@ -4353,6 +4357,23 @@ input.no-spinner[type="number"] {
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.35rem;
+}
+
+.strategy-optimizer-cv-blocks {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.strategy-optimizer-cv-block {
+    min-height: 1.65rem;
+    padding: 0.2rem 0.45rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 5px;
+    background: var(--color-bg-primary);
 }
 
 .strategy-optimizer-lock-btn {

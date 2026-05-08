@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Brush,
+  Legend, ResponsiveContainer, Brush, ReferenceDot,
 } from 'recharts'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
@@ -37,6 +37,13 @@ interface SeriesStats {
   sharpe: number
   ulcerIndex: number
   upi: number
+}
+
+const ACTION_MARKERS: Record<string, { label: string; short: string; color: string; defaultVisible?: boolean }> = {
+  SELL_HIGH:           { label: 'Sell high',           short: 'SH', color: '#d94841' },
+  BUY_LOW:             { label: 'Buy low',             short: 'BL', color: '#2f9e44' },
+  PORTFOLIO_REBALANCE: { label: 'Portfolio rebalance', short: 'RB', color: '#7950f2', defaultVisible: false },
+  MARGIN_REBALANCE:    { label: 'Margin rebalance',    short: 'MR', color: '#0ca678', defaultVisible: false },
 }
 
 function computeSeriesStats(dates: string[], values: number[]): SeriesStats | null {
@@ -141,6 +148,9 @@ export default function BacktestPage() {
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [logScale, setLogScale]       = useState(false)
   const [scaleToNav, setScaleToNav]   = useState(true)
+  const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
+    () => new Set(Object.entries(ACTION_MARKERS).filter(([, marker]) => marker.defaultVisible !== false).map(([type]) => type)),
+  )
 
   // Real portfolio overlay
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
@@ -251,6 +261,18 @@ export default function BacktestPage() {
 
   // Empty selected = show all
   const showLine = (key: string) => selected.size === 0 || selected.has(key)
+
+  const selectedActionCurve = useMemo(() => {
+    if (!results || selected.size !== 1) return null
+    const key = [...selected][0]
+    const [piText, ciText] = key.split('-')
+    const pi = parseInt(piText, 10)
+    const ci = parseInt(ciText, 10)
+    if (!Number.isFinite(pi) || !Number.isFinite(ci)) return null
+    const curve = results.portfolios[pi]?.curves[ci]
+    if (!curve?.actionPoints?.length) return null
+    return { dataKey: `p${pi}-c${ci}`, curve }
+  }, [results, selected])
 
   const REAL_LABEL_KEY: Record<string, string> = {
     'Real – NAV':      'real-nav',
@@ -550,6 +572,14 @@ export default function BacktestPage() {
     setSelected(checked ? new Set(allKeys) : new Set())
   }
 
+  function toggleActionPointType(type: string, checked: boolean) {
+    setVisibleActionPointTypes(prev => {
+      const next = new Set(prev)
+      checked ? next.add(type) : next.delete(type)
+      return next
+    })
+  }
+
   const updateBlock = useCallback((i: number) =>
     (s: BlockState) => setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
     [],
@@ -572,6 +602,37 @@ export default function BacktestPage() {
     activeDot:         { r: 4 },
     connectNulls:      false,
     isAnimationActive: false,
+  }
+
+  const renderActionMarkers = (rows: Record<string, any>[], yAxisId?: string) => {
+    if (!selectedActionCurve) return null
+    const seen = new Set<string>()
+    return selectedActionCurve.curve.actionPoints?.map((point, i) => {
+      const marker = ACTION_MARKERS[point.type]
+      if (!marker || !visibleActionPointTypes.has(point.type)) return null
+      const row = rows.find(r => r.x === point.date)
+      const y = row?.[selectedActionCurve.dataKey]
+      if (typeof y !== 'number' || !Number.isFinite(y)) return null
+
+      const duplicateKey = `${point.date}-${point.type}`
+      if (seen.has(duplicateKey)) return null
+      seen.add(duplicateKey)
+
+      return (
+        <ReferenceDot
+          key={`${duplicateKey}-${i}`}
+          {...(yAxisId ? { yAxisId } : {})}
+          x={point.date}
+          y={y}
+          r={5}
+          fill={marker.color}
+          stroke={isDark ? '#111' : '#fff'}
+          strokeWidth={2}
+          ifOverflow="extendDomain"
+          label={{ value: marker.short, position: 'top', fill: marker.color, fontSize: 10 }}
+        />
+      )
+    })
   }
 
   const shouldScaleToNav = chartData?.shouldScaleToNav ?? false
@@ -784,7 +845,20 @@ export default function BacktestPage() {
 
           {/* Portfolio Value chart */}
           <div className="backtest-chart-title">Portfolio Value</div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+            <div className="chart-action-filter" aria-label="Action point type filters">
+              <span>Points</span>
+              {Object.entries(ACTION_MARKERS).map(([type, marker]) => (
+                <label key={type}>
+                  <input
+                    type="checkbox"
+                    checked={visibleActionPointTypes.has(type)}
+                    onChange={e => toggleActionPointType(type, e.target.checked)}
+                  />
+                  <span style={{ color: marker.color }}>{marker.short}</span>
+                </label>
+              ))}
+            </div>
             <button
               className={`chart-scale-toggle${logScale ? ' active' : ''}`}
               type="button"
@@ -912,6 +986,7 @@ export default function BacktestPage() {
                   )
                 })() : null}
 
+                {renderActionMarkers(chartData.mainData.rows, 'main')}
                 <Brush
                   dataKey="x"
                   height={26}
@@ -947,6 +1022,7 @@ export default function BacktestPage() {
                   .map(ds => (
                     <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
+                {renderActionMarkers(chartData.ddData.rows)}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -975,6 +1051,7 @@ export default function BacktestPage() {
                   .map(ds => (
                     <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
+                {renderActionMarkers(chartData.rtrData.rows)}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1003,6 +1080,7 @@ export default function BacktestPage() {
                     {chartData.marginData.datasets.map(ds => (
                       <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                     ))}
+                    {renderActionMarkers(chartData.marginData.rows)}
                   </LineChart>
                 </ResponsiveContainer>
               </div>

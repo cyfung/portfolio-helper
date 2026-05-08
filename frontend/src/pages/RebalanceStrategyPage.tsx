@@ -47,6 +47,14 @@ type OptimizerTestPortfolio = {
   config: any
 }
 
+type OptimizerScoreOptions = {
+  blockedCrossValidation?: {
+    blocks: number
+    validationBlock: number
+    mode: 'TRAINING' | 'VALIDATION'
+  }
+}
+
 type OptimizerLockKey =
   | 'marginPoints'
   | 'rebalancePeriod'
@@ -235,15 +243,18 @@ function makeUniqueStrategyLabels(strategies: RebalStrategyState[], portfolioLab
   })
 }
 
-const ACTION_MARKERS: Record<string, { label: string; short: string; color: string }> = {
-  SELL_HIGH:  { label: 'Sell high',  short: 'SH', color: '#d94841' },
-  BUY_LOW:    { label: 'Buy low',    short: 'BL', color: '#2f9e44' },
-  BUY_DIP:    { label: 'Buy dip',    short: 'BD', color: '#1971c2' },
-  SELL_SURGE: { label: 'Sell surge', short: 'SS', color: '#e67700' },
+const ACTION_MARKERS: Record<string, { label: string; short: string; color: string; defaultVisible?: boolean }> = {
+  SELL_HIGH:           { label: 'Sell high',          short: 'SH', color: '#d94841' },
+  BUY_LOW:             { label: 'Buy low',            short: 'BL', color: '#2f9e44' },
+  BUY_DIP:             { label: 'Buy dip',            short: 'BD', color: '#1971c2' },
+  SELL_SURGE:          { label: 'Sell surge',         short: 'SS', color: '#e67700' },
+  PORTFOLIO_REBALANCE: { label: 'Portfolio rebalance', short: 'RB', color: '#7950f2', defaultVisible: false },
+  MARGIN_REBALANCE:    { label: 'Margin rebalance',    short: 'MR', color: '#0ca678', defaultVisible: false },
 }
 
 const DEFAULT_OPTIMIZER_GENERATIONS = 20
 const DEFAULT_OPTIMIZER_POPULATION = 12
+const DEFAULT_OPTIMIZER_CV_BLOCKS = 5
 const OPTIMIZER_ELITES = 4
 const OPTIMIZER_MUTATION_RATE = 0.22
 const OPTIMIZER_PERIODS = REBALANCE_PERIOD_OVERRIDE_OPTIONS
@@ -274,6 +285,16 @@ function randomInt(lo: number, hi: number) {
 
 function randomChoice<T>(items: T[]) {
   return items[randomInt(0, items.length - 1)]
+}
+
+function nearestChoice(value: number, choices: number[]) {
+  return choices.reduce((best, choice) =>
+    Math.abs(choice - value) < Math.abs(best - value) ? choice : best
+  , choices[0])
+}
+
+function optimizerDiscreteMarginPoints(comfortLow: number, mid: number, comfortHigh: number) {
+  return [comfortLow, mid, comfortHigh]
 }
 
 function metricLabel(metric: OptimizerMetric) {
@@ -356,9 +377,17 @@ export default function RebalanceStrategyPage() {
   const [results, setResults]     = useState<BacktestResults | null>(null)
   const [selected, setSelected]   = useState<Set<string>>(new Set())
   const [logScale, setLogScale]   = useState(false)
+  const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
+    () => new Set(Object.entries(ACTION_MARKERS).filter(([, marker]) => marker.defaultVisible !== false).map(([type]) => type)),
+  )
   const [optimizerMetric, setOptimizerMetric] = useState<OptimizerMetric>('cagr')
   const [optimizerGenerations, setOptimizerGenerations] = useState(String(DEFAULT_OPTIMIZER_GENERATIONS))
   const [optimizerPopulation, setOptimizerPopulation] = useState(String(DEFAULT_OPTIMIZER_POPULATION))
+  const [optimizerUseBlockedCv, setOptimizerUseBlockedCv] = useState(false)
+  const [optimizerCvBlocks, setOptimizerCvBlocks] = useState(String(DEFAULT_OPTIMIZER_CV_BLOCKS))
+  const [optimizerCvSelectedBlocks, setOptimizerCvSelectedBlocks] = useState<Set<number>>(
+    () => new Set(Array.from({ length: DEFAULT_OPTIMIZER_CV_BLOCKS }, (_, i) => i)),
+  )
   const [optimizerTestPortfolios, setOptimizerTestPortfolios] = useState<OptimizerTestPortfolio[]>([])
   const [optimizerPortfolioDragOver, setOptimizerPortfolioDragOver] = useState(false)
   const [optimizerLocks, setOptimizerLocks] = useState<OptimizerLocks>(() => loadOptimizerLocks())
@@ -482,37 +511,38 @@ export default function RebalanceStrategyPage() {
   function normalizeGenome(genome: StrategyGenome, bounds: ReturnType<typeof optimizerBounds>): StrategyGenome {
     const minMargin = clampInt(genome.minMargin, bounds.low, bounds.mid - 1)
     const maxMargin = clampInt(genome.maxMargin, bounds.mid + 1, bounds.high)
+    const comfortLow = clampInt(genome.comfortLow, minMargin, bounds.mid - 1)
     const comfortHigh = clampInt(genome.comfortHigh, bounds.mid + 1, maxMargin)
-    const restoreMax = Math.min(bounds.restoreMax, maxMargin)
+    const discreteMargins = optimizerDiscreteMarginPoints(comfortLow, bounds.mid, comfortHigh)
     return {
       ...genome,
       minMargin,
       maxMargin,
-      comfortLow: clampInt(genome.comfortLow, minMargin, bounds.mid - 1),
+      comfortLow,
       comfortHigh,
       portfolioRebalance: OPTIMIZER_PORTFOLIO_REBALANCE_PERIODS.includes(genome.portfolioRebalance) ? genome.portfolioRebalance : 'YEARLY',
       cashflowImmediateInvestPct: clampInt(genome.cashflowImmediateInvestPct, 0, 100),
-      cashflowScalingMargin: clampInt(genome.cashflowScalingMargin, minMargin, maxMargin),
-      buyLowRestoreMargin: clampInt(genome.buyLowRestoreMargin, minMargin, restoreMax),
-      sellHighRestoreMargin: clampInt(genome.sellHighRestoreMargin, minMargin, restoreMax),
-      marginRebalanceRestoreMargin: clampInt(genome.marginRebalanceRestoreMargin, minMargin, restoreMax),
+      cashflowScalingMargin: nearestChoice(genome.cashflowScalingMargin, discreteMargins),
+      buyLowRestoreMargin: nearestChoice(genome.buyLowRestoreMargin, discreteMargins),
+      sellHighRestoreMargin: nearestChoice(genome.sellHighRestoreMargin, discreteMargins),
+      marginRebalanceRestoreMargin: nearestChoice(genome.marginRebalanceRestoreMargin, discreteMargins),
       buyCooldownAfterSellHighDays: clampInt(genome.buyCooldownAfterSellHighDays, 0, 60),
       sellCooldownAfterBuyLowDays: clampInt(genome.sellCooldownAfterBuyLowDays, 0, 60),
       rebalancePeriod: OPTIMIZER_PERIODS.includes(genome.rebalancePeriod) ? genome.rebalancePeriod : 'MONTHLY',
       allocStrategy: OPTIMIZER_ALLOC_STRATEGIES.includes(genome.allocStrategy) ? genome.allocStrategy : 'PROPORTIONAL',
-      buyDipWhole: genome.buyDipWhole ? normalizeDipSurgeGenome(genome.buyDipWhole, minMargin, restoreMax) : null,
-      buyDipIndividual: genome.buyDipIndividual ? normalizeDipSurgeGenome(genome.buyDipIndividual, minMargin, restoreMax) : null,
-      sellSurgeWhole: genome.sellSurgeWhole ? normalizeDipSurgeGenome(genome.sellSurgeWhole, minMargin, maxMargin) : null,
-      sellSurgeIndividual: genome.sellSurgeIndividual ? normalizeDipSurgeGenome(genome.sellSurgeIndividual, minMargin, maxMargin) : null,
+      buyDipWhole: genome.buyDipWhole ? normalizeDipSurgeGenome(genome.buyDipWhole, minMargin, maxMargin, discreteMargins) : null,
+      buyDipIndividual: genome.buyDipIndividual ? normalizeDipSurgeGenome(genome.buyDipIndividual, minMargin, maxMargin, discreteMargins) : null,
+      sellSurgeWhole: genome.sellSurgeWhole ? normalizeDipSurgeGenome(genome.sellSurgeWhole, minMargin, maxMargin, discreteMargins) : null,
+      sellSurgeIndividual: genome.sellSurgeIndividual ? normalizeDipSurgeGenome(genome.sellSurgeIndividual, minMargin, maxMargin, discreteMargins) : null,
     }
   }
 
-  function normalizeDipSurgeGenome(genome: DipSurgeGenome, minMargin: number, maxMargin: number): DipSurgeGenome {
+  function normalizeDipSurgeGenome(genome: DipSurgeGenome, minMargin: number, maxMargin: number, discreteMargins?: number[]): DipSurgeGenome {
     const triggers = genome.triggers.length > 0 ? genome.triggers : [randomDipSurgeTrigger()]
     return {
       ...genome,
       allocStrategy: OPTIMIZER_ALLOC_STRATEGIES.includes(genome.allocStrategy) ? genome.allocStrategy : 'PROPORTIONAL',
-      limit: clampInt(genome.limit, minMargin, maxMargin),
+      limit: discreteMargins?.length ? nearestChoice(genome.limit, discreteMargins) : clampInt(genome.limit, minMargin, maxMargin),
       coolingOffDays: clampInt(genome.coolingOffDays, 0, 60),
       executionMethod: OPTIMIZER_EXECUTION_METHODS.includes(genome.executionMethod) ? genome.executionMethod : 'ONCE',
       consecutiveDays: clampInt(genome.consecutiveDays, 2, 3),
@@ -554,17 +584,17 @@ export default function RebalanceStrategyPage() {
     }
   }
 
-  function randomDipSurgeGenome(minMargin: number, maxMargin: number): DipSurgeGenome {
+  function randomDipSurgeGenome(minMargin: number, maxMargin: number, discreteMargins?: number[]): DipSurgeGenome {
     return normalizeDipSurgeGenome({
       allocStrategy: randomChoice(OPTIMIZER_ALLOC_STRATEGIES),
-      limit: randomInt(minMargin, maxMargin),
+      limit: discreteMargins?.length ? randomChoice(discreteMargins) : randomInt(minMargin, maxMargin),
       coolingOffDays: randomInt(0, 12) * 5,
       executionMethod: randomChoice(OPTIMIZER_EXECUTION_METHODS),
       consecutiveDays: randomInt(2, 3),
       steppedPortions: randomInt(2, 6),
       steppedAdditionalPctTenths: randomInt(5, 100),
       triggers: [randomDipSurgeTrigger()],
-    }, minMargin, maxMargin)
+    }, minMargin, maxMargin, discreteMargins)
   }
 
   function executionFromDipSurgeGenome(genome: DipSurgeGenome): ExecutionMethodState {
@@ -600,6 +630,10 @@ export default function RebalanceStrategyPage() {
     if (locks.marginPoints !== 'none') {
       next.minMargin = baseGenome.minMargin
       next.maxMargin = baseGenome.maxMargin
+    }
+    if (locks.marginPoints === 'config') {
+      next.comfortLow = baseGenome.comfortLow
+      next.comfortHigh = baseGenome.comfortHigh
     }
     if (locks.rebalancePeriod !== 'none') next.portfolioRebalance = baseGenome.portfolioRebalance
     if (locks.marginRebalance !== 'none') next.marginRebalanceEnabled = base.marginRebalanceEnabled ?? true
@@ -707,31 +741,34 @@ export default function RebalanceStrategyPage() {
   function randomGenome(bounds: ReturnType<typeof optimizerBounds>): StrategyGenome {
     const minMargin = randomInt(bounds.low, bounds.mid - 1)
     const maxMargin = randomInt(bounds.mid + 1, bounds.high)
+    const comfortLow = randomInt(minMargin, bounds.mid - 1)
+    const comfortHigh = randomInt(bounds.mid + 1, maxMargin)
+    const discreteMargins = optimizerDiscreteMarginPoints(comfortLow, bounds.mid, comfortHigh)
     return normalizeGenome({
       minMargin,
-      comfortLow: randomInt(minMargin, bounds.mid - 1),
+      comfortLow,
       maxMargin,
-      comfortHigh: randomInt(bounds.mid + 1, maxMargin),
+      comfortHigh,
       portfolioRebalance: randomChoice(OPTIMIZER_PORTFOLIO_REBALANCE_PERIODS),
       portfolioRebalanceUseComfortZone: Math.random() >= 0.25,
       marginRebalanceEnabled: Math.random() >= 0.15,
       rebalancePeriod: randomChoice(OPTIMIZER_PERIODS),
       allocStrategy: randomChoice(OPTIMIZER_ALLOC_STRATEGIES),
       tradeDirection: randomChoice(OPTIMIZER_TRADE_DIRECTIONS),
-      marginRebalanceRestoreMargin: randomInt(minMargin, maxMargin),
+      marginRebalanceRestoreMargin: randomChoice(discreteMargins),
       cashflowImmediateInvestPct: randomInt(0, 20) * 5,
-      cashflowScalingMargin: randomInt(minMargin, maxMargin),
+      cashflowScalingMargin: randomChoice(discreteMargins),
       buyLowEnabled: Math.random() >= 0.2,
-      buyLowRestoreMargin: randomInt(minMargin, maxMargin),
+      buyLowRestoreMargin: randomChoice(discreteMargins),
       sellHighEnabled: Math.random() >= 0.2,
-      sellHighRestoreMargin: randomInt(minMargin, maxMargin),
+      sellHighRestoreMargin: randomChoice(discreteMargins),
       buyCooldownAfterSellHighDays: randomInt(0, 12) * 5,
       sellCooldownAfterBuyLowDays: randomInt(0, 12) * 5,
       useComfortZone: Math.random() >= 0.25,
-      buyDipWhole: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin) : null,
-      buyDipIndividual: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin) : null,
-      sellSurgeWhole: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin) : null,
-      sellSurgeIndividual: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin) : null,
+      buyDipWhole: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
+      buyDipIndividual: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
+      sellSurgeWhole: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
+      sellSurgeIndividual: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
     }, bounds)
   }
 
@@ -788,6 +825,7 @@ export default function RebalanceStrategyPage() {
   function mutateGenome(genome: StrategyGenome, bounds: ReturnType<typeof optimizerBounds>) {
     const g = { ...genome }
     const maybe = (fn: () => void) => { if (Math.random() < OPTIMIZER_MUTATION_RATE) fn() }
+    const discreteMargins = () => optimizerDiscreteMarginPoints(g.comfortLow, bounds.mid, g.comfortHigh)
     maybe(() => { g.minMargin += randomInt(-3, 3) })
     maybe(() => { g.maxMargin += randomInt(-3, 3) })
     maybe(() => { g.comfortLow += randomInt(-2, 2) })
@@ -798,32 +836,32 @@ export default function RebalanceStrategyPage() {
     maybe(() => { g.rebalancePeriod = randomChoice(OPTIMIZER_PERIODS) })
     maybe(() => { g.allocStrategy = randomChoice(OPTIMIZER_ALLOC_STRATEGIES) })
     maybe(() => { g.tradeDirection = randomChoice(OPTIMIZER_TRADE_DIRECTIONS) })
-    maybe(() => { g.marginRebalanceRestoreMargin += randomInt(-3, 3) })
+    maybe(() => { g.marginRebalanceRestoreMargin = randomChoice(discreteMargins()) })
     maybe(() => { g.cashflowImmediateInvestPct += randomChoice([-10, -5, 5, 10]) })
-    maybe(() => { g.cashflowScalingMargin += randomInt(-3, 3) })
+    maybe(() => { g.cashflowScalingMargin = randomChoice(discreteMargins()) })
     maybe(() => { g.buyLowEnabled = !g.buyLowEnabled })
-    maybe(() => { g.buyLowRestoreMargin += randomInt(-3, 3) })
+    maybe(() => { g.buyLowRestoreMargin = randomChoice(discreteMargins()) })
     maybe(() => { g.sellHighEnabled = !g.sellHighEnabled })
-    maybe(() => { g.sellHighRestoreMargin += randomInt(-3, 3) })
+    maybe(() => { g.sellHighRestoreMargin = randomChoice(discreteMargins()) })
     maybe(() => { g.buyCooldownAfterSellHighDays += randomChoice([-10, -5, 5, 10]) })
     maybe(() => { g.sellCooldownAfterBuyLowDays += randomChoice([-10, -5, 5, 10]) })
     maybe(() => { g.useComfortZone = !g.useComfortZone })
-    maybe(() => { g.buyDipWhole = g.buyDipWhole ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin) })
-    maybe(() => { g.buyDipIndividual = g.buyDipIndividual ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin) })
-    maybe(() => { if (g.buyDipWhole) g.buyDipWhole = mutateDipSurgeGenome(g.buyDipWhole, g.minMargin, g.maxMargin) })
-    maybe(() => { if (g.buyDipIndividual) g.buyDipIndividual = mutateDipSurgeGenome(g.buyDipIndividual, g.minMargin, g.maxMargin) })
-    maybe(() => { g.sellSurgeWhole = g.sellSurgeWhole ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin) })
-    maybe(() => { g.sellSurgeIndividual = g.sellSurgeIndividual ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin) })
-    maybe(() => { if (g.sellSurgeWhole) g.sellSurgeWhole = mutateDipSurgeGenome(g.sellSurgeWhole, g.minMargin, g.maxMargin) })
-    maybe(() => { if (g.sellSurgeIndividual) g.sellSurgeIndividual = mutateDipSurgeGenome(g.sellSurgeIndividual, g.minMargin, g.maxMargin) })
+    maybe(() => { g.buyDipWhole = g.buyDipWhole ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { g.buyDipIndividual = g.buyDipIndividual ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { if (g.buyDipWhole) g.buyDipWhole = mutateDipSurgeGenome(g.buyDipWhole, g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { if (g.buyDipIndividual) g.buyDipIndividual = mutateDipSurgeGenome(g.buyDipIndividual, g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { g.sellSurgeWhole = g.sellSurgeWhole ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { g.sellSurgeIndividual = g.sellSurgeIndividual ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { if (g.sellSurgeWhole) g.sellSurgeWhole = mutateDipSurgeGenome(g.sellSurgeWhole, g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { if (g.sellSurgeIndividual) g.sellSurgeIndividual = mutateDipSurgeGenome(g.sellSurgeIndividual, g.minMargin, g.maxMargin, discreteMargins()) })
     return normalizeGenome(g, bounds)
   }
 
-  function mutateDipSurgeGenome(genome: DipSurgeGenome, minMargin: number, maxMargin: number) {
+  function mutateDipSurgeGenome(genome: DipSurgeGenome, minMargin: number, maxMargin: number, discreteMargins?: number[]) {
     const g = { ...genome, triggers: genome.triggers.map(t => ({ ...t })) }
     const maybe = (fn: () => void) => { if (Math.random() < OPTIMIZER_MUTATION_RATE) fn() }
     maybe(() => { g.allocStrategy = randomChoice(OPTIMIZER_ALLOC_STRATEGIES) })
-    maybe(() => { g.limit += randomInt(-3, 3) })
+    maybe(() => { g.limit = discreteMargins?.length ? randomChoice(discreteMargins) : g.limit + randomInt(-3, 3) })
     maybe(() => { g.coolingOffDays += randomChoice([-10, -5, 5, 10]) })
     maybe(() => { g.executionMethod = randomChoice(OPTIMIZER_EXECUTION_METHODS) })
     maybe(() => { g.consecutiveDays += randomInt(-3, 3) })
@@ -844,10 +882,16 @@ export default function RebalanceStrategyPage() {
       const t = g.triggers[randomInt(0, g.triggers.length - 1)]
       t.pct += randomChoice([-5, -2, -1, 1, 2, 5])
     })
-    return normalizeDipSurgeGenome(g, minMargin, maxMargin)
+    return normalizeDipSurgeGenome(g, minMargin, maxMargin, discreteMargins)
   }
 
-  async function scoreStrategyBatch(portfolios: any[], batch: RebalStrategyState[], portfolioRebalances: string[], metric: OptimizerMetric) {
+  async function scoreStrategyBatch(
+    portfolios: any[],
+    batch: RebalStrategyState[],
+    portfolioRebalances: string[],
+    metric: OptimizerMetric,
+    options: OptimizerScoreOptions = {},
+  ) {
     const res = await fetch('/api/rebalance-strategy/score-batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -860,6 +904,7 @@ export default function RebalanceStrategyPage() {
         cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
         metric,
         strategies: batch.map(strategy => strategyStateToAPI(strategy)),
+        ...options,
       }),
     })
     const data: any = await res.json()
@@ -932,65 +977,129 @@ export default function RebalanceStrategyPage() {
 
     const generations = clampInt(parseInt(optimizerGenerations, 10) || DEFAULT_OPTIMIZER_GENERATIONS, 1, 100)
     const populationSize = clampInt(parseInt(optimizerPopulation, 10) || DEFAULT_OPTIMIZER_POPULATION, 4, 100)
+    const cvBlocks = clampInt(parseInt(optimizerCvBlocks, 10) || DEFAULT_OPTIMIZER_CV_BLOCKS, 2, 20)
+    const cvValidationBlocks = optimizerUseBlockedCv
+      ? Array.from(optimizerCvSelectedBlocks)
+          .filter(block => block >= 0 && block < cvBlocks)
+          .sort((a, b) => a - b)
+      : []
+    if (optimizerUseBlockedCv && cvValidationBlocks.length === 0) {
+      setError('Select at least one validation block for blocked cross-validation.')
+      return
+    }
     const eliteCount = Math.min(OPTIMIZER_ELITES, populationSize)
-    const total = generations * populationSize
+    const foldCount = optimizerUseBlockedCv ? cvValidationBlocks.length : 1
+    const total = foldCount * generations * populationSize + (optimizerUseBlockedCv ? foldCount : 0)
     setOptimizerProgress({
       running: true,
       completed: 0,
       total,
       generation: 1,
-      generations,
+      generations: generations * foldCount,
       bestScore: null,
     })
 
     const baseGenome = genomeFromStrategy(baseStrategy, bounds, portfolio.rebalance)
     const lockGenome = (genome: StrategyGenome) =>
-      applyEnabledLocks(normalizeGenome(genome, bounds), baseStrategy, baseGenome, optimizerLocks)
-    let population = [
-      baseGenome,
-      ...Array.from({ length: populationSize - 1 }, () => lockGenome(randomGenome(bounds))),
-    ]
-    let best: { genome: StrategyGenome; score: number } | null = null
+      normalizeGenome(applyEnabledLocks(normalizeGenome(genome, bounds), baseStrategy, baseGenome, optimizerLocks), bounds)
     let completed = 0
 
     try {
-      for (let generation = 1; generation <= generations; generation += 1) {
-        const candidates = population.map(genome =>
-          applySectionConfigLocks(strategyFromGenome(baseStrategy, genome, bounds), baseStrategy, optimizerLocks)
-        )
-        const candidateRebalances = population.map(genome => normalizeGenome(genome, bounds).portfolioRebalance)
-        const scores = await scoreStrategyBatch(optimizerPortfolioApis, candidates, candidateRebalances, optimizerMetric)
-        const scored = population.map((genome, i) => ({ genome, score: scores[i] ?? -Infinity }))
-        completed += population.length
-        for (const { genome, score } of scored) {
-          if (!best || score > best.score) best = { genome, score }
+      let finalBest: { genome: StrategyGenome; score: number } | null = null
+
+      const runFold = async (foldIndex: number, validationBlock: number | null) => {
+        let population = [
+          baseGenome,
+          ...Array.from({ length: populationSize - 1 }, () => lockGenome(randomGenome(bounds))),
+        ]
+        let foldBest: { genome: StrategyGenome; score: number } | null = null
+        const scoreOptions = validationBlock == null ? {} : {
+          blockedCrossValidation: {
+            blocks: cvBlocks,
+            validationBlock,
+            mode: 'TRAINING' as const,
+          },
         }
-        setOptimizerProgress({
-          running: true,
-          completed,
-          total,
-          generation,
-          generations,
-          bestScore: best?.score ?? null,
-        })
-        scored.sort((a, b) => b.score - a.score)
-        const elites = scored.slice(0, eliteCount).map(item => item.genome)
-        population = [...elites]
-        while (population.length < populationSize) {
-          const parentA = randomChoice(elites)
-          const parentB = randomChoice(elites)
-          population.push(lockGenome(mutateGenome(crossoverGenome(parentA, parentB, bounds), bounds)))
+
+        for (let generation = 1; generation <= generations; generation += 1) {
+          const candidates = population.map(genome =>
+            applySectionConfigLocks(strategyFromGenome(baseStrategy, genome, bounds), baseStrategy, optimizerLocks)
+          )
+          const candidateRebalances = population.map(genome => normalizeGenome(genome, bounds).portfolioRebalance)
+          const scores = await scoreStrategyBatch(optimizerPortfolioApis, candidates, candidateRebalances, optimizerMetric, scoreOptions)
+          const scored = population.map((genome, i) => ({ genome, score: scores[i] ?? -Infinity }))
+          completed += population.length
+          for (const { genome, score } of scored) {
+            if (!foldBest || score > foldBest.score) foldBest = { genome, score }
+          }
+          setOptimizerProgress({
+            running: true,
+            completed,
+            total,
+            generation: foldIndex * generations + generation,
+            generations: generations * foldCount,
+            bestScore: finalBest?.score ?? foldBest?.score ?? null,
+          })
+          scored.sort((a, b) => b.score - a.score)
+          const elites = scored.slice(0, eliteCount).map(item => item.genome)
+          population = [...elites]
+          while (population.length < populationSize) {
+            const parentA = randomChoice(elites)
+            const parentB = randomChoice(elites)
+            population.push(lockGenome(mutateGenome(crossoverGenome(parentA, parentB, bounds), bounds)))
+          }
         }
+
+        if (!foldBest) throw new Error('Optimizer did not produce a valid strategy.')
+        return foldBest
       }
 
-      if (!best) throw new Error('Optimizer did not produce a valid strategy.')
-      const optimized = applySectionConfigLocks(strategyFromGenome(baseStrategy, lockGenome(best.genome), bounds), baseStrategy, optimizerLocks)
+      if (optimizerUseBlockedCv) {
+        for (let foldIndex = 0; foldIndex < cvValidationBlocks.length; foldIndex += 1) {
+          const validationBlock = cvValidationBlocks[foldIndex]
+          const foldBest = await runFold(foldIndex, validationBlock)
+          const validationGenome = lockGenome(foldBest.genome)
+          const validationStrategy = applySectionConfigLocks(
+            strategyFromGenome(baseStrategy, validationGenome, bounds),
+            baseStrategy,
+            optimizerLocks,
+          )
+          const [validationScore] = await scoreStrategyBatch(
+            optimizerPortfolioApis,
+            [validationStrategy],
+            [validationGenome.portfolioRebalance],
+            optimizerMetric,
+            {
+              blockedCrossValidation: {
+                blocks: cvBlocks,
+                validationBlock,
+                mode: 'VALIDATION',
+              },
+            },
+          )
+          completed += 1
+          if (!finalBest || validationScore > finalBest.score) finalBest = { genome: validationGenome, score: validationScore }
+          setOptimizerProgress({
+            running: true,
+            completed,
+            total,
+            generation: Math.min((foldIndex + 1) * generations, generations * foldCount),
+            generations: generations * foldCount,
+            bestScore: finalBest.score,
+          })
+        }
+      } else {
+        finalBest = await runFold(0, null)
+      }
+
+      if (!finalBest) throw new Error('Optimizer did not produce a valid strategy.')
+      const optimized = applySectionConfigLocks(strategyFromGenome(baseStrategy, lockGenome(finalBest.genome), bounds), baseStrategy, optimizerLocks)
       setStrategies(prev => {
         const next = [...prev]
         next[0] = optimized
         return next
       })
-      setOptimizerProgress(prev => ({ ...prev, running: false, completed: total, bestScore: best?.score ?? prev.bestScore }))
+      setOptimizerProgress(prev => ({ ...prev, running: false, completed: total, bestScore: finalBest?.score ?? prev.bestScore }))
     } catch (e: any) {
       setError('Optimization failed: ' + (e.message || String(e)))
       setOptimizerProgress(prev => ({ ...prev, running: false }))
@@ -1058,7 +1167,7 @@ export default function RebalanceStrategyPage() {
     const [piText, ciText] = key.split('-')
     const pi = parseInt(piText, 10)
     const ci = parseInt(ciText, 10)
-    if (!Number.isFinite(pi) || !Number.isFinite(ci) || pi === 0) return null
+    if (!Number.isFinite(pi) || !Number.isFinite(ci)) return null
     const curve = results.portfolios[pi]?.curves[ci]
     if (!curve?.actionPoints?.length) return null
     return { dataKey: `p${pi}-c${ci}`, curve }
@@ -1068,6 +1177,13 @@ export default function RebalanceStrategyPage() {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
   }
   function toggleAll(checked: boolean) { setSelected(checked ? new Set(allKeys) : new Set()) }
+  function toggleActionPointType(type: string, checked: boolean) {
+    setVisibleActionPointTypes(prev => {
+      const next = new Set(prev)
+      checked ? next.add(type) : next.delete(type)
+      return next
+    })
+  }
 
   const strategyHandlers = useMemo(
     () => [0, 1].map(i => (s: RebalStrategyState) =>
@@ -1086,6 +1202,7 @@ export default function RebalanceStrategyPage() {
   ), [optimizerLocks])
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
   const refreshSavedStrategies = useCallback(() => savedStrategiesBarRef.current?.refresh(), [])
+  const optimizerCvBlockCount = clampInt(parseInt(optimizerCvBlocks, 10) || DEFAULT_OPTIMIZER_CV_BLOCKS, 2, 20)
 
   const numPoints      = chartData?.labels.length ?? 2
   const pixelsPerPoint = chartWidth / Math.max(numPoints - 1, 1)
@@ -1103,7 +1220,7 @@ export default function RebalanceStrategyPage() {
     const seen = new Set<string>()
     return selectedStrategyCurve.curve.actionPoints?.map((point, i) => {
       const marker = ACTION_MARKERS[point.type]
-      if (!marker) return null
+      if (!marker || !visibleActionPointTypes.has(point.type)) return null
       const row = rows.find(r => r.x === point.date)
       const y = row?.[selectedStrategyCurve.dataKey]
       if (typeof y !== 'number' || !Number.isFinite(y)) return null
@@ -1221,6 +1338,37 @@ export default function RebalanceStrategyPage() {
               onChange={e => setOptimizerPopulation(e.target.value)}
               onBlur={() => setOptimizerPopulation(String(clampInt(parseInt(optimizerPopulation, 10) || DEFAULT_OPTIMIZER_POPULATION, 4, 100)))}
             />
+            <label className="strategy-optimizer-toggle" htmlFor="rs-optimizer-blocked-cv">
+              <input
+                id="rs-optimizer-blocked-cv"
+                type="checkbox"
+                checked={optimizerUseBlockedCv}
+                disabled={optimizerProgress.running}
+                onChange={e => setOptimizerUseBlockedCv(e.target.checked)}
+              />
+              Blocked CV
+            </label>
+            {optimizerUseBlockedCv && (
+              <>
+                <label htmlFor="rs-optimizer-cv-blocks">Blocks</label>
+                <input
+                  id="rs-optimizer-cv-blocks"
+                  className="strategy-optimizer-number"
+                  type="number"
+                  min="2"
+                  max="20"
+                  step="1"
+                  value={optimizerCvBlocks}
+                  disabled={optimizerProgress.running}
+                  onChange={e => setOptimizerCvBlocks(e.target.value)}
+                  onBlur={() => {
+                    const nextBlocks = clampInt(parseInt(optimizerCvBlocks, 10) || DEFAULT_OPTIMIZER_CV_BLOCKS, 2, 20)
+                    setOptimizerCvBlocks(String(nextBlocks))
+                    setOptimizerCvSelectedBlocks(new Set(Array.from({ length: nextBlocks }, (_, i) => i)))
+                  }}
+                />
+              </>
+            )}
             <button
               className="backtest-config-btn"
               type="button"
@@ -1230,6 +1378,26 @@ export default function RebalanceStrategyPage() {
               {optimizerProgress.running ? <>Optimizing...<span className="btn-spinner" /></> : 'Optimize with GA'}
             </button>
           </div>
+          {optimizerUseBlockedCv && (
+            <div className="strategy-optimizer-cv-blocks" aria-label="Blocked cross-validation validation blocks">
+              {Array.from({ length: optimizerCvBlockCount }, (_, i) => (
+                <label key={i} className="strategy-optimizer-cv-block">
+                  <input
+                    type="checkbox"
+                    checked={optimizerCvSelectedBlocks.has(i)}
+                    disabled={optimizerProgress.running}
+                    onChange={e => setOptimizerCvSelectedBlocks(prev => {
+                      const next = new Set(prev)
+                      if (e.target.checked) next.add(i)
+                      else next.delete(i)
+                      return next
+                    })}
+                  />
+                  <span>{i + 1}</span>
+                </label>
+              ))}
+            </div>
+          )}
           <div className="strategy-optimizer-locks" aria-label="Optimizer section locks">
             {OPTIMIZER_LOCKS.map(item => {
               const mode = optimizerLocks[item.key]
@@ -1379,7 +1547,20 @@ export default function RebalanceStrategyPage() {
 
           {/* Portfolio Value + Margin Utilization chart */}
           <div className="backtest-chart-title">Portfolio Value</div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+            <div className="chart-action-filter" aria-label="Action point type filters">
+              <span>Points</span>
+              {Object.entries(ACTION_MARKERS).map(([type, marker]) => (
+                <label key={type}>
+                  <input
+                    type="checkbox"
+                    checked={visibleActionPointTypes.has(type)}
+                    onChange={e => toggleActionPointType(type, e.target.checked)}
+                  />
+                  <span style={{ color: marker.color }}>{marker.short}</span>
+                </label>
+              ))}
+            </div>
             <button className={`chart-scale-toggle${logScale ? ' active' : ''}`} type="button"
               style={{ position: 'static' }} onClick={() => setLogScale(l => !l)}>Log</button>
           </div>

@@ -105,20 +105,15 @@ object RebalanceStrategyService {
             val candidatePortfolio =
                 candidateRebalance?.let { portfolio.copy(rebalanceStrategy = it) }
                     ?: strategy.portfolioWithRebalanceOverride(portfolio)
-            val stats = runStrategy(
-                  candidatePortfolio,
-                  strategy,
-                  request.cashflow,
-                  context.seriesMap,
-                  context.dates,
-                  context.effrx,
-                  request.startingBalance,
-            ).stats
-            when (request.metric) {
-              RebalanceOptimizationMetric.CAGR -> stats.cagr
-              RebalanceOptimizationMetric.SHARPE -> stats.sharpe
-              RebalanceOptimizationMetric.UPI -> stats.upi
-            }
+            scoreCandidate(
+                candidatePortfolio,
+                strategy,
+                request.cashflow,
+                context,
+                request.startingBalance,
+                request.metric,
+                request.blockedCrossValidation,
+            )
           }
           if (scores.isEmpty()) Double.NEGATIVE_INFINITY else scores.average()
         }
@@ -130,6 +125,133 @@ object RebalanceStrategyService {
       val dates: List<LocalDate>,
       val effrx: Map<LocalDate, Double>,
   )
+
+  private fun scoreCandidate(
+      portfolio: PortfolioConfig,
+      strategy: RebalStrategyConfig,
+      cashflow: CashflowConfig?,
+      context: RunContext,
+      startingBalance: Double,
+      metric: RebalanceOptimizationMetric,
+      blockedCrossValidation: BlockedCrossValidationConfig?,
+  ): Double {
+    val stats =
+        if (blockedCrossValidation == null) {
+          runStrategy(
+              portfolio,
+              strategy,
+              cashflow,
+              context.seriesMap,
+              context.dates,
+              context.effrx,
+              startingBalance,
+          ).stats
+        } else {
+          scoreBlockedCrossValidationStats(
+              portfolio,
+              strategy,
+              cashflow,
+              context,
+              startingBalance,
+              blockedCrossValidation,
+          ) ?: return Double.NEGATIVE_INFINITY
+        }
+    return metricValue(stats, metric)
+  }
+
+  private fun scoreBlockedCrossValidationStats(
+      portfolio: PortfolioConfig,
+      strategy: RebalStrategyConfig,
+      cashflow: CashflowConfig?,
+      context: RunContext,
+      startingBalance: Double,
+      config: BlockedCrossValidationConfig,
+  ): BacktestStats? {
+    val blocks = splitDateBlocks(context.dates, config.blocks)
+    if (blocks.isEmpty()) return null
+    val validationBlock = config.validationBlock.coerceIn(0, blocks.lastIndex)
+    val segments =
+        if (config.mode == BlockedCrossValidationScoreMode.VALIDATION) {
+          listOf(blocks[validationBlock])
+        } else {
+          listOfNotNull(
+              blocks.take(validationBlock).flatten().takeIf { it.size >= 2 },
+              blocks.drop(validationBlock + 1).flatten().takeIf { it.size >= 2 },
+          )
+        }
+    if (segments.isEmpty()) return null
+
+    val curves =
+        segments.map { segmentDates ->
+          runStrategy(
+              portfolio,
+              strategy,
+              cashflow,
+              context.seriesMap,
+              segmentDates,
+              context.effrx,
+              startingBalance,
+          )
+        }
+    return mergedSegmentStats(curves, context.effrx, startingBalance)
+  }
+
+  private fun splitDateBlocks(dates: List<LocalDate>, requestedBlocks: Int): List<List<LocalDate>> {
+    if (dates.size < 4) return emptyList()
+    val blockCount = requestedBlocks.coerceIn(2, dates.size / 2)
+    val baseSize = dates.size / blockCount
+    val remainder = dates.size % blockCount
+    var start = 0
+    return (0 until blockCount).map { blockIndex ->
+      val size = baseSize + if (blockIndex < remainder) 1 else 0
+      dates.subList(start, start + size).also { start += size }
+    }
+  }
+
+  private fun mergedSegmentStats(
+      curves: List<CurveResult>,
+      effrx: Map<LocalDate, Double>,
+      startingBalance: Double,
+  ): BacktestStats? {
+    val values = mutableListOf<Double>()
+    var activeYears = 0.0
+    for (curve in curves) {
+      if (curve.points.size < 2) continue
+      val segmentValues = curve.points.map { it.value }
+      val segmentDates = curve.points.map { LocalDate.parse(it.date) }
+      val segmentBase =
+          when {
+            startingBalance > 0.0 -> startingBalance
+            segmentValues.first() > 0.0 -> segmentValues.first()
+            else -> 1.0
+          }
+      val scale =
+          if (values.isEmpty()) 1.0
+          else values.last() / segmentBase
+      val scaled = segmentValues.map { it * scale }
+      if (values.isEmpty()) values.addAll(scaled) else values.addAll(scaled.drop(1))
+      activeYears += (segmentDates.last().toEpochDay() - segmentDates.first().toEpochDay()) / 365.25
+    }
+    if (values.size < 2) return null
+    val stats = computeStats(values, activeYears, BacktestService.computeRfAnnualized(effrx))
+    return BacktestStats(
+        stats.cagr,
+        stats.maxDrawdown,
+        stats.sharpe,
+        stats.ulcerIndex,
+        stats.upi,
+        stats.annualVolatility,
+        stats.longestDrawdownDays,
+        values.last(),
+    )
+  }
+
+  private fun metricValue(stats: BacktestStats, metric: RebalanceOptimizationMetric): Double =
+      when (metric) {
+        RebalanceOptimizationMetric.CAGR -> stats.cagr
+        RebalanceOptimizationMetric.SHARPE -> stats.sharpe
+        RebalanceOptimizationMetric.UPI -> stats.upi
+      }
 
   private fun prepareRunContext(
       fromDateText: String?,
@@ -331,6 +453,7 @@ object RebalanceStrategyService {
         if (eq > 0) {
           val targetTotal = eq * (1.0 + comfortZoneMargin(strategy.portfolioRebalanceUseComfortZone))
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)
+          actionPoints.add(ActionPoint(curDate.toString(), "PORTFOLIO_REBALANCE"))
         }
       } else {
         if (marginRebalanceDay) {
@@ -354,7 +477,11 @@ object RebalanceStrategyService {
               val direction =
                   if (delta > 0.0) Direction.BUY else if (delta < 0.0) Direction.SELL else null
               if (direction == null || !globalCooldown.isBlocked(direction, i)) {
+                val grossBefore = account.grossStockValue()
                 applyAllocDelta(tickers, account, targetWeights, delta, strategy.rebalanceAllocStrategy)
+                if (direction != null && tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
+                  actionPoints.add(ActionPoint(curDate.toString(), "MARGIN_REBALANCE"))
+                }
               }
             }
           }

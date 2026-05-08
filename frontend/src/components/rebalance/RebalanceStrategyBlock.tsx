@@ -448,7 +448,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
         <div className="strategy-row">
           <label>Spread %</label>
-          <input className="no-spinner" type="number" min="0" step="0.1" value={s.marginSpread}
+          <input type="number" min="0" step="0.1" value={s.marginSpread}
             onChange={e => set({ marginSpread: e.target.value })}
             onBlur={() => commit()}
             style={{ width: '5rem' }} />
@@ -471,14 +471,14 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
         <div className="strategy-row">
           <label>Buy Cooldown After SH</label>
-          <input className="no-spinner" type="number" min="0" step="1" value={s.buyCooldownAfterSellHighDays ?? '10'}
+          <input type="number" min="0" step="1" value={s.buyCooldownAfterSellHighDays ?? '10'}
             onChange={e => set({ buyCooldownAfterSellHighDays: e.target.value })}
             onBlur={() => commit()}
             style={{ width: '5rem' }} />
         </div>
         <div className="strategy-row">
           <label>Sell Cooldown After BL</label>
-          <input className="no-spinner" type="number" min="0" step="1" value={s.sellCooldownAfterBuyLowDays ?? '10'}
+          <input type="number" min="0" step="1" value={s.sellCooldownAfterBuyLowDays ?? '10'}
             onChange={e => set({ sellCooldownAfterBuyLowDays: e.target.value })}
             onBlur={() => commit()}
             style={{ width: '5rem' }} />
@@ -554,7 +554,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         <div className="strategy-section-body">
           <div className="strategy-row">
             <label>Cashflow Immediate Invest %</label>
-            <input className="no-spinner" type="number" min="0" max="100" step="5" value={s.cashflowImmediateInvestPct}
+            <input type="number" min="0" max="100" step="5" value={s.cashflowImmediateInvestPct}
               onChange={e => set({ cashflowImmediateInvestPct: e.target.value })}
               onBlur={() => commit()}
               style={{ width: '5rem' }} />
