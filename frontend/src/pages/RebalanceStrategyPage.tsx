@@ -255,6 +255,20 @@ const ACTION_MARKERS: Record<string, { label: string; short: string; color: stri
 const DEFAULT_OPTIMIZER_GENERATIONS = 20
 const DEFAULT_OPTIMIZER_POPULATION = 12
 const DEFAULT_OPTIMIZER_CV_BLOCKS = 5
+const ACTION_MARKER_RENDER_LIMIT = 350
+type ActionPointChartKey = 'main' | 'drawdown' | 'recover' | 'margin'
+const DEFAULT_ACTION_POINT_CHART_VISIBILITY: Record<ActionPointChartKey, boolean> = {
+  main: false,
+  drawdown: true,
+  recover: false,
+  margin: false,
+}
+const DEFAULT_FORCE_ACTION_POINT_CHART_DOTS: Record<ActionPointChartKey, boolean> = {
+  main: false,
+  drawdown: false,
+  recover: false,
+  margin: false,
+}
 const OPTIMIZER_ELITES = 4
 const OPTIMIZER_MUTATION_RATE = 0.22
 const OPTIMIZER_PERIODS = REBALANCE_PERIOD_OVERRIDE_OPTIONS
@@ -295,6 +309,39 @@ function nearestChoice(value: number, choices: number[]) {
 
 function optimizerDiscreteMarginPoints(comfortLow: number, mid: number, comfortHigh: number) {
   return [comfortLow, mid, comfortHigh]
+}
+
+function visibleActionPointGroups(
+  actionPoints: { date: string; type: string }[] | undefined,
+  visibleTypes: Set<string>,
+  labels: string[],
+) {
+  if (!actionPoints?.length || visibleTypes.size === 0) return { markers: [], denseGroups: [] }
+  const rowIndexByDate = new Map(labels.map((date, i) => [date, i]))
+  const seen = new Set<string>()
+  const points: { date: string; type: string; rowIndex: number }[] = []
+  for (const point of actionPoints) {
+    if (!visibleTypes.has(point.type)) continue
+    const rowIndex = rowIndexByDate.get(point.date)
+    if (rowIndex == null) continue
+    const key = `${point.date}-${point.type}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    points.push({ date: point.date, type: point.type, rowIndex })
+  }
+  const byType = new Map<string, { date: string; type: string; rowIndex: number }[]>()
+  for (const point of points) {
+    const group = byType.get(point.type) ?? []
+    group.push(point)
+    byType.set(point.type, group)
+  }
+  const markers: { date: string; type: string; rowIndex: number }[] = []
+  const denseGroups: { type: string; points: { date: string; type: string; rowIndex: number }[] }[] = []
+  for (const [type, group] of byType) {
+    if (group.length > ACTION_MARKER_RENDER_LIMIT) denseGroups.push({ type, points: group })
+    else markers.push(...group)
+  }
+  return { markers, denseGroups }
 }
 
 function metricLabel(metric: OptimizerMetric) {
@@ -379,6 +426,12 @@ export default function RebalanceStrategyPage() {
   const [logScale, setLogScale]   = useState(false)
   const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
     () => new Set(Object.entries(ACTION_MARKERS).filter(([, marker]) => marker.defaultVisible !== false).map(([type]) => type)),
+  )
+  const [actionPointChartVisibility, setActionPointChartVisibility] = useState<Record<ActionPointChartKey, boolean>>(
+    () => ({ ...DEFAULT_ACTION_POINT_CHART_VISIBILITY }),
+  )
+  const [forceActionPointChartDots, setForceActionPointChartDots] = useState<Record<ActionPointChartKey, boolean>>(
+    () => ({ ...DEFAULT_FORCE_ACTION_POINT_CHART_DOTS }),
   )
   const [optimizerMetric, setOptimizerMetric] = useState<OptimizerMetric>('cagr')
   const [optimizerGenerations, setOptimizerGenerations] = useState(String(DEFAULT_OPTIMIZER_GENERATIONS))
@@ -1172,6 +1225,9 @@ export default function RebalanceStrategyPage() {
     if (!curve?.actionPoints?.length) return null
     return { dataKey: `p${pi}-c${ci}`, curve }
   }, [results, selected])
+  const selectedActionPointGroups = useMemo(() => (
+    visibleActionPointGroups(selectedStrategyCurve?.curve.actionPoints, visibleActionPointTypes, chartData?.labels ?? [])
+  ), [chartData?.labels, selectedStrategyCurve, visibleActionPointTypes])
 
   function toggleCurve(key: string, checked: boolean) {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
@@ -1183,6 +1239,12 @@ export default function RebalanceStrategyPage() {
       checked ? next.add(type) : next.delete(type)
       return next
     })
+  }
+  function toggleActionPointChart(chart: ActionPointChartKey, checked: boolean) {
+    setActionPointChartVisibility(prev => ({ ...prev, [chart]: checked }))
+  }
+  function toggleForceActionPointChartDots(chart: ActionPointChartKey, checked: boolean) {
+    setForceActionPointChartDots(prev => ({ ...prev, [chart]: checked }))
   }
 
   const strategyHandlers = useMemo(
@@ -1215,20 +1277,46 @@ export default function RebalanceStrategyPage() {
     activeDot: { r: 4 }, connectNulls: false, isAnimationActive: false,
   }
 
-  const renderActionMarkers = (rows: Record<string, any>[]) => {
-    if (!selectedStrategyCurve) return null
-    const seen = new Set<string>()
-    return selectedStrategyCurve.curve.actionPoints?.map((point, i) => {
+  const renderActionDotControls = (chart: ActionPointChartKey) => {
+    const dotsEnabled = actionPointChartVisibility[chart]
+    const hasDenseGroups = selectedActionPointGroups.denseGroups.length > 0
+    return (
+      <div className="chart-dot-controls" aria-label="Action point display">
+        <label>
+          <input
+            type="checkbox"
+            checked={dotsEnabled}
+            onChange={e => toggleActionPointChart(chart, e.target.checked)}
+          />
+          <span>Dots</span>
+        </label>
+        {dotsEnabled && hasDenseGroups && (
+          <label title="Render dense action points as chart dots">
+            <input
+              type="checkbox"
+              checked={forceActionPointChartDots[chart]}
+              onChange={e => toggleForceActionPointChartDots(chart, e.target.checked)}
+            />
+            <span>Force dots</span>
+          </label>
+        )}
+      </div>
+    )
+  }
+
+  const renderActionMarkers = (rows: Record<string, any>[], chart: ActionPointChartKey) => {
+    if (!selectedStrategyCurve || !actionPointChartVisibility[chart]) return null
+    const points = forceActionPointChartDots[chart]
+      ? selectedActionPointGroups.markers.concat(selectedActionPointGroups.denseGroups.flatMap(group => group.points))
+      : selectedActionPointGroups.markers
+    return points.map((point, i) => {
       const marker = ACTION_MARKERS[point.type]
-      if (!marker || !visibleActionPointTypes.has(point.type)) return null
-      const row = rows.find(r => r.x === point.date)
+      if (!marker) return null
+      const row = rows[point.rowIndex]
       const y = row?.[selectedStrategyCurve.dataKey]
       if (typeof y !== 'number' || !Number.isFinite(y)) return null
 
       const duplicateKey = `${point.date}-${point.type}`
-      if (seen.has(duplicateKey)) return null
-      seen.add(duplicateKey)
-
       return (
         <ReferenceDot
           key={`${duplicateKey}-${i}`}
@@ -1243,6 +1331,37 @@ export default function RebalanceStrategyPage() {
         />
       )
     })
+  }
+
+  const renderDenseActionStrips = (chart: ActionPointChartKey) => {
+    if (
+      !chartData?.labels.length ||
+      !actionPointChartVisibility[chart] ||
+      forceActionPointChartDots[chart] ||
+      selectedActionPointGroups.denseGroups.length === 0
+    ) return null
+    const maxX = Math.max(chartData.labels.length - 1, 1)
+    return (
+      <div className="chart-action-density" aria-label="Dense action point timeline">
+        {selectedActionPointGroups.denseGroups.map(group => {
+          const marker = ACTION_MARKERS[group.type]
+          if (!marker) return null
+          const path = group.points.map(point => {
+            const x = (point.rowIndex / maxX) * 1000
+            return `M ${x.toFixed(2)} 0 V 10`
+          }).join(' ')
+          return (
+            <div className="chart-action-density-row" key={group.type}>
+              <span style={{ color: marker.color }}>{marker.short}</span>
+              <svg viewBox="0 0 1000 10" preserveAspectRatio="none" aria-hidden="true">
+                <path d={path} stroke={marker.color} strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+              </svg>
+              <span>{group.points.length}</span>
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   const renderLegend = (props: any) => {
@@ -1546,7 +1665,10 @@ export default function RebalanceStrategyPage() {
           </div>
 
           {/* Portfolio Value + Margin Utilization chart */}
-          <div className="backtest-chart-title">Portfolio Value</div>
+          <div className="backtest-chart-heading">
+            <div className="backtest-chart-title">Portfolio Value</div>
+            {renderActionDotControls('main')}
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
             <div className="chart-action-filter" aria-label="Action point type filters">
               <span>Points</span>
@@ -1564,6 +1686,7 @@ export default function RebalanceStrategyPage() {
             <button className={`chart-scale-toggle${logScale ? ' active' : ''}`} type="button"
               style={{ position: 'static' }} onClick={() => setLogScale(l => !l)}>Log</button>
           </div>
+          {renderDenseActionStrips('main')}
           <div className="backtest-chart-container" ref={chartContainerRef}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData.mainData.rows} syncId="rs-backtest"
@@ -1580,7 +1703,7 @@ export default function RebalanceStrategyPage() {
                   <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                 ))}
-                {renderActionMarkers(chartData.mainData.rows)}
+                {renderActionMarkers(chartData.mainData.rows, 'main')}
                 <Brush dataKey="x" height={26} stroke={gridColor}
                   fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
               </LineChart>
@@ -1588,7 +1711,11 @@ export default function RebalanceStrategyPage() {
           </div>
 
           {/* Drawdown chart */}
-          <div className="backtest-chart-title">Drawdown</div>
+          <div className="backtest-chart-heading">
+            <div className="backtest-chart-title">Drawdown</div>
+            {renderActionDotControls('drawdown')}
+          </div>
+          {renderDenseActionStrips('drawdown')}
           <div className="backtest-chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData.ddData.rows} syncId="rs-backtest"
@@ -1604,13 +1731,17 @@ export default function RebalanceStrategyPage() {
                   <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
-                {renderActionMarkers(chartData.ddData.rows)}
+                {renderActionMarkers(chartData.ddData.rows, 'drawdown')}
               </LineChart>
             </ResponsiveContainer>
           </div>
 
           {/* RTR chart */}
-          <div className="backtest-chart-title">Return Required to Recover</div>
+          <div className="backtest-chart-heading">
+            <div className="backtest-chart-title">Return Required to Recover</div>
+            {renderActionDotControls('recover')}
+          </div>
+          {renderDenseActionStrips('recover')}
           <div className="backtest-chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData.rtrData.rows} syncId="rs-backtest"
@@ -1626,7 +1757,7 @@ export default function RebalanceStrategyPage() {
                   <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                     stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                 ))}
-                {renderActionMarkers(chartData.rtrData.rows)}
+                {renderActionMarkers(chartData.rtrData.rows, 'recover')}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -1634,7 +1765,11 @@ export default function RebalanceStrategyPage() {
           {/* Margin Utilization chart */}
           {chartData.marginData.datasets.length > 0 && (
             <>
-              <div className="backtest-chart-title">Margin Utilization</div>
+              <div className="backtest-chart-heading">
+                <div className="backtest-chart-title">Margin Utilization</div>
+                {renderActionDotControls('margin')}
+              </div>
+              {renderDenseActionStrips('margin')}
               <div className="backtest-chart-container">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData.marginData.rows} syncId="rs-backtest"
@@ -1650,7 +1785,7 @@ export default function RebalanceStrategyPage() {
                       <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
                         stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                     ))}
-                    {renderActionMarkers(chartData.marginData.rows)}
+                    {renderActionMarkers(chartData.marginData.rows, 'margin')}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
