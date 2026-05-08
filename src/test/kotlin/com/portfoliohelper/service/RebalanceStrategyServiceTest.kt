@@ -845,6 +845,36 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun buyTheDipSkipsAdjustmentBelowMinimum() {
+        val dates = days(LocalDate.of(2024, 1, 2), 21)
+        val prices = vShapeCurve(dates)
+        val series = mapOf("SPY" to prices)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
+                    method = ExecutionMethod.Once,
+                    limit = 0.51,
+                    minAdjustmentPct = 0.02,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        assertNull(result.actionPoints, "BD should not trade or mark when the adjustment is below the configured minimum")
+    }
+
+    @Test
     fun buyTheDipCooldownStartsOnlyAfterActualPurchase() {
         val dates = days(LocalDate.of(2024, 1, 2), 16)
         val values = listOf(

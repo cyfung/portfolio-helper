@@ -200,6 +200,7 @@ type DipSurgeGenome = {
   allocStrategy: string
   limit: number
   coolingOffDays: number
+  minAdjustmentPctTenths: number
   executionMethod: ExecutionMethodState['method']
   consecutiveDays: number
   steppedPortions: number
@@ -596,11 +597,13 @@ export default function RebalanceStrategyPage() {
 
   function normalizeDipSurgeGenome(genome: DipSurgeGenome, minMargin: number, maxMargin: number, discreteMargins?: number[]): DipSurgeGenome {
     const triggers = genome.triggers.length > 0 ? genome.triggers : [randomDipSurgeTrigger()]
+    const minAdjustmentPctTenths = Number.isFinite(genome.minAdjustmentPctTenths) ? genome.minAdjustmentPctTenths : 5
     return {
       ...genome,
       allocStrategy: OPTIMIZER_ALLOC_STRATEGIES.includes(genome.allocStrategy) ? genome.allocStrategy : 'PROPORTIONAL',
       limit: discreteMargins?.length ? nearestChoice(genome.limit, discreteMargins) : clampInt(genome.limit, minMargin, maxMargin),
       coolingOffDays: clampInt(genome.coolingOffDays, 0, 60),
+      minAdjustmentPctTenths: clampInt(minAdjustmentPctTenths, 0, 100),
       executionMethod: OPTIMIZER_EXECUTION_METHODS.includes(genome.executionMethod) ? genome.executionMethod : 'ONCE',
       consecutiveDays: clampInt(genome.consecutiveDays, 2, 3),
       steppedPortions: clampInt(genome.steppedPortions, 2, 8),
@@ -617,10 +620,12 @@ export default function RebalanceStrategyPage() {
     if (!state) return null
     const execution = state.execution
     const limit = parseInt(state.limit || '', 10)
+    const minAdjustmentPct = parseFloat(state.minAdjustmentPct ?? '')
     return normalizeDipSurgeGenome({
       allocStrategy: state.allocStrategy || 'PROPORTIONAL',
       limit: Number.isFinite(limit) ? limit : bounds.mid,
       coolingOffDays: parseInt(state.coolingOffDays ?? '', 10) || 10,
+      minAdjustmentPctTenths: clampInt((Number.isFinite(minAdjustmentPct) ? minAdjustmentPct : 0.5) * 10, 0, 100),
       executionMethod: execution.method,
       consecutiveDays: execution.method === 'CONSECUTIVE' ? parseInt(execution.days, 10) || 3 : 3,
       steppedPortions: execution.method === 'STEPPED' ? parseInt(execution.portions, 10) || 3 : 3,
@@ -646,6 +651,7 @@ export default function RebalanceStrategyPage() {
       allocStrategy: randomChoice(OPTIMIZER_ALLOC_STRATEGIES),
       limit: discreteMargins?.length ? randomChoice(discreteMargins) : randomInt(minMargin, maxMargin),
       coolingOffDays: randomInt(0, 12) * 5,
+      minAdjustmentPctTenths: 5,
       executionMethod: randomChoice(OPTIMIZER_EXECUTION_METHODS),
       consecutiveDays: randomInt(2, 3),
       steppedPortions: randomInt(2, 6),
@@ -673,6 +679,7 @@ export default function RebalanceStrategyPage() {
       limit: String(genome.limit),
       limitPointIndex: '',
       coolingOffDays: String(genome.coolingOffDays),
+      minAdjustmentPct: (genome.minAdjustmentPctTenths / 10).toFixed(1),
       execution: executionFromDipSurgeGenome(genome),
       triggers: genome.triggers.map(t => (
         t.type === 'PEAK_DEVIATION'
@@ -920,6 +927,7 @@ export default function RebalanceStrategyPage() {
     maybe(() => { g.allocStrategy = randomChoice(OPTIMIZER_ALLOC_STRATEGIES) })
     maybe(() => { g.limit = discreteMargins?.length ? randomChoice(discreteMargins) : g.limit + randomInt(-3, 3) })
     maybe(() => { g.coolingOffDays += randomChoice([-10, -5, 5, 10]) })
+    maybe(() => { g.minAdjustmentPctTenths += randomChoice([-2, -1, 1, 2]) })
     maybe(() => { g.executionMethod = randomChoice(OPTIMIZER_EXECUTION_METHODS) })
     maybe(() => { g.consecutiveDays += randomInt(-3, 3) })
     maybe(() => { g.steppedPortions += randomChoice([-1, 1]) })

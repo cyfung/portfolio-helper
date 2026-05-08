@@ -192,6 +192,18 @@ export default function DipSurgeSection({
             />
           </div>
 
+          <div className="strategy-row">
+            <label>Min Adjustment (%)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={value.minAdjustmentPct ?? '0.5'}
+              onChange={e => update({ minAdjustmentPct: e.target.value })}
+              style={{ width: '5rem' }}
+            />
+          </div>
+
           {/* Triggers */}
           <div className="strategy-row">
             <label>Triggers</label>

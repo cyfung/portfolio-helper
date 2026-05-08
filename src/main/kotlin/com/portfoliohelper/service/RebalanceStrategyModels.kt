@@ -112,6 +112,7 @@ data class DipSurgeConfig(
     val method: ExecutionMethod,
     val limit: Double,
     val coolingOffDays: Int = 10,
+    val minAdjustmentPct: Double = 0.005,
 )
 
 // ── Top-level strategy config ─────────────────────────────────────────────────

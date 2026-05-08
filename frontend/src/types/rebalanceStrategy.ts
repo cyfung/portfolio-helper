@@ -24,6 +24,7 @@ export interface DipSurgeState {
   limit: string
   limitPointIndex: string
   coolingOffDays?: string
+  minAdjustmentPct?: string
 }
 
 export interface DipSurgeScopeState {
@@ -123,6 +124,7 @@ export function emptyDipSurge(scope: DipSurgeState['scope'] = 'INDIVIDUAL_STOCK'
     limit: '',
     limitPointIndex: '',
     coolingOffDays: '10',
+    minAdjustmentPct: '0.5',
   }
 }
 
@@ -200,6 +202,7 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
     : parseFloat(d.limit)
   const mid = marginPoints[2] ?? 50
   const coolingOffDays = parseInt(d.coolingOffDays ?? '', 10)
+  const minAdjustmentPct = parseFloat(d.minAdjustmentPct ?? '')
   return {
     scope: d.scope,
     allocStrategy: d.scope === 'WHOLE_PORTFOLIO' ? d.allocStrategy : null,
@@ -207,6 +210,7 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
     method: serializeExecution(d.execution),
     limit: (Number.isFinite(selectedLimit) ? selectedLimit : mid) / 100,
     coolingOffDays: Number.isFinite(coolingOffDays) ? Math.max(0, coolingOffDays) : 10,
+    minAdjustmentPct: (Number.isFinite(minAdjustmentPct) ? Math.max(0, minAdjustmentPct) : 0.5) / 100,
   }
 }
 
@@ -218,17 +222,22 @@ function serializeDipSurgeScopes(d: DipSurgeScopeState | DipSurgeState | null | 
 }
 
 function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
+  const normalize = (item: any, scope: DipSurgeState['scope']): DipSurgeState => ({
+    ...item,
+    scope,
+    minAdjustmentPct: item.minAdjustmentPct ?? '0.5',
+  })
   const scopes = emptyDipSurgeScopes()
   if (configValue && !Array.isArray(configValue) && ('wholePortfolio' in configValue || 'individualStock' in configValue)) {
-    scopes.wholePortfolio = configValue.wholePortfolio ? { ...configValue.wholePortfolio, scope: 'WHOLE_PORTFOLIO' } : null
-    scopes.individualStock = configValue.individualStock ? { ...configValue.individualStock, scope: 'INDIVIDUAL_STOCK' } : null
+    scopes.wholePortfolio = configValue.wholePortfolio ? normalize(configValue.wholePortfolio, 'WHOLE_PORTFOLIO') : null
+    scopes.individualStock = configValue.individualStock ? normalize(configValue.individualStock, 'INDIVIDUAL_STOCK') : null
     return scopes
   }
   const items = Array.isArray(configValue) ? configValue : (configValue ? [configValue] : [])
   for (const item of items) {
     if (!item) continue
-    if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'WHOLE_PORTFOLIO') scopes.wholePortfolio = { ...item, scope: 'WHOLE_PORTFOLIO' }
-    else scopes.individualStock = { ...item, scope: 'INDIVIDUAL_STOCK' }
+    if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'WHOLE_PORTFOLIO') scopes.wholePortfolio = normalize(item, 'WHOLE_PORTFOLIO')
+    else scopes.individualStock = normalize(item, 'INDIVIDUAL_STOCK')
   }
   return scopes
 }

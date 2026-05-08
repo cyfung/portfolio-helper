@@ -231,6 +231,7 @@ private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig = DipSurgeConfi
     method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once,
     limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15,
     coolingOffDays = obj["coolingOffDays"]?.jsonPrimitive?.intOrNull ?: 10,
+    minAdjustmentPct = obj["minAdjustmentPct"]?.jsonPrimitive?.doubleOrNull ?: 0.005,
 )
 
 private fun parseDipSurgeConfigs(el: JsonElement?): List<DipSurgeConfig> =

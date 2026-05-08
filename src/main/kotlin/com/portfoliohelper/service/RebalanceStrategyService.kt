@@ -378,6 +378,7 @@ object RebalanceStrategyService {
           allocStrategy = allocStrategy,
           limit = limit,
           cooldown = DipSurgeCooldown(coolingOffDays),
+          minAdjustmentPct = minAdjustmentPct.coerceAtLeast(0.0),
       )
     }
 
@@ -410,10 +411,13 @@ object RebalanceStrategyService {
         ) { amount ->
           if (amount > 0.0) {
             val grossBefore = account.grossStockValue()
-            applyDipSurge(key, tickers, account, targetWeights, amount, direction, res.allocStrategy)
-            if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
-              res.cooldown.recordFire(key, curIndex)
-              actionPoints.add(ActionPoint(curDate.toString(), actionType))
+            val minAdjustment = grossBefore * res.minAdjustmentPct
+            if (amount >= minAdjustment) {
+              applyDipSurge(key, tickers, account, targetWeights, amount, direction, res.allocStrategy)
+              if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
+                res.cooldown.recordFire(key, curIndex)
+                actionPoints.add(ActionPoint(curDate.toString(), actionType))
+              }
             }
           }
         }
@@ -796,6 +800,7 @@ private data class DipSurgeResources(
     val allocStrategy: MarginRebalanceMode?,
     val limit: Double,
     val cooldown: DipSurgeCooldown,
+    val minAdjustmentPct: Double,
 )
 
 internal class DipSurgeCooldown(coolingOffDays: Int = 10) {
