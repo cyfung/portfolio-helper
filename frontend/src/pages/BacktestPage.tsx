@@ -93,6 +93,10 @@ function visibleActionPointGroups(
   return { markers, denseGroups }
 }
 
+function actionPointCount(actionPoints: { type: string }[] | undefined, type: string) {
+  return actionPoints?.filter(point => point.type === type).length ?? 0
+}
+
 function computeSeriesStats(dates: string[], values: number[]): SeriesStats | null {
   if (values.length < 2) return null
   const n = values.length
@@ -669,6 +673,7 @@ export default function BacktestPage() {
   }
 
   const renderActionDotControls = (chart: ActionPointChartKey) => {
+    if (!selectedActionCurve) return null
     const dotsEnabled = actionPointChartVisibility[chart]
     const hasDenseGroups = selectedActionPointGroups.denseGroups.length > 0
     return (
@@ -818,8 +823,10 @@ export default function BacktestPage() {
         <td>{fmt2(stats.sharpe)}</td>
         <td>{pct(stats.ulcerIndex)}</td>
         <td>{fmt2(stats.upi)}</td>
-        <td>–</td>
-        <td>–</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
+        <td>-</td>
       </tr>
     )
   }
@@ -919,8 +926,10 @@ export default function BacktestPage() {
                   <th>Sharpe</th>
                   <th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>
                   <th title="Ulcer Performance Index (Martin Ratio)">UPI</th>
-                  <th title="# upper-band rebalance triggers">Rebal↑</th>
-                  <th title="# lower-band rebalance triggers">Rebal↓</th>
+                  <th title="# buy-low margin triggers">BL</th>
+                  <th title="# sell-high margin triggers">SH</th>
+                  <th title="# buy-dip action points">BD</th>
+                  <th title="# sell-surge action points">SS</th>
                 </tr>
               </thead>
               <tbody>
@@ -942,8 +951,10 @@ export default function BacktestPage() {
                         <td>{fmt2(s.sharpe)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
-                        <td>{trig(s.marginUpperTriggers)}</td>
                         <td>{trig(s.marginLowerTriggers)}</td>
+                        <td>{trig(s.marginUpperTriggers)}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'SELL_SURGE')}</td>
                       </tr>
                     )
                   })
@@ -970,19 +981,21 @@ export default function BacktestPage() {
             {renderActionDotControls('main')}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-            <div className="chart-action-filter" aria-label="Action point type filters">
-              <span>Points</span>
-              {Object.entries(ACTION_MARKERS).map(([type, marker]) => (
-                <label key={type}>
-                  <input
-                    type="checkbox"
-                    checked={visibleActionPointTypes.has(type)}
-                    onChange={e => toggleActionPointType(type, e.target.checked)}
-                  />
-                  <span style={{ color: marker.color }}>{marker.short}</span>
-                </label>
-              ))}
-            </div>
+            {selectedActionCurve && (
+              <div className="chart-action-filter" aria-label="Action point type filters">
+                <span>Points</span>
+                {Object.entries(ACTION_MARKERS).map(([type, marker]) => (
+                  <label key={type}>
+                    <input
+                      type="checkbox"
+                      checked={visibleActionPointTypes.has(type)}
+                      onChange={e => toggleActionPointType(type, e.target.checked)}
+                    />
+                    <span style={{ color: marker.color }}>{marker.short}</span>
+                  </label>
+                ))}
+              </div>
+            )}
             <button
               className={`chart-scale-toggle${logScale ? ' active' : ''}`}
               type="button"

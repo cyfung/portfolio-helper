@@ -344,6 +344,10 @@ function visibleActionPointGroups(
   return { markers, denseGroups }
 }
 
+function actionPointCount(actionPoints: { type: string }[] | undefined, type: string) {
+  return actionPoints?.filter(point => point.type === type).length ?? 0
+}
+
 function metricLabel(metric: OptimizerMetric) {
   if (metric === 'cagr') return 'CAGR'
   if (metric === 'sharpe') return 'Sharpe'
@@ -1278,6 +1282,7 @@ export default function RebalanceStrategyPage() {
   }
 
   const renderActionDotControls = (chart: ActionPointChartKey) => {
+    if (!selectedStrategyCurve) return null
     const dotsEnabled = actionPointChartVisibility[chart]
     const hasDenseGroups = selectedActionPointGroups.denseGroups.length > 0
     return (
@@ -1635,6 +1640,10 @@ export default function RebalanceStrategyPage() {
                   <th>Sharpe</th>
                   <th title="Ulcer Index">Ulcer</th>
                   <th title="Ulcer Performance Index">UPI</th>
+                  <th title="# buy-low action points">BL</th>
+                  <th title="# sell-high action points">SH</th>
+                  <th title="# buy-dip action points">BD</th>
+                  <th title="# sell-surge action points">SS</th>
                 </tr>
               </thead>
               <tbody>
@@ -1656,6 +1665,10 @@ export default function RebalanceStrategyPage() {
                         <td>{fmt2(s.sharpe)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'BUY_LOW')}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'SELL_HIGH')}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'SELL_SURGE')}</td>
                       </tr>
                     )
                   })
@@ -1670,19 +1683,21 @@ export default function RebalanceStrategyPage() {
             {renderActionDotControls('main')}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-            <div className="chart-action-filter" aria-label="Action point type filters">
-              <span>Points</span>
-              {Object.entries(ACTION_MARKERS).map(([type, marker]) => (
-                <label key={type}>
-                  <input
-                    type="checkbox"
-                    checked={visibleActionPointTypes.has(type)}
-                    onChange={e => toggleActionPointType(type, e.target.checked)}
-                  />
-                  <span style={{ color: marker.color }}>{marker.short}</span>
-                </label>
-              ))}
-            </div>
+            {selectedStrategyCurve && (
+              <div className="chart-action-filter" aria-label="Action point type filters">
+                <span>Points</span>
+                {Object.entries(ACTION_MARKERS).map(([type, marker]) => (
+                  <label key={type}>
+                    <input
+                      type="checkbox"
+                      checked={visibleActionPointTypes.has(type)}
+                      onChange={e => toggleActionPointType(type, e.target.checked)}
+                    />
+                    <span style={{ color: marker.color }}>{marker.short}</span>
+                  </label>
+                ))}
+              </div>
+            )}
             <button className={`chart-scale-toggle${logScale ? ' active' : ''}`} type="button"
               style={{ position: 'static' }} onClick={() => setLogScale(l => !l)}>Log</button>
           </div>
