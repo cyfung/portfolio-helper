@@ -97,6 +97,16 @@ function actionPointCount(actionPoints: { type: string }[] | undefined, type: st
   return actionPoints?.filter(point => point.type === type).length ?? 0
 }
 
+function averageMarginUtilization(points: { value: number }[] | undefined) {
+  const values = points?.map(p => p.value).filter(Number.isFinite) ?? []
+  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+}
+
+function averageFinite(values: (number | null | undefined)[] | undefined) {
+  const finiteValues = values?.filter((value): value is number => Number.isFinite(value)) ?? []
+  return finiteValues.length > 0 ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length : null
+}
+
 function computeSeriesStats(dates: string[], values: number[]): SeriesStats | null {
   if (values.length < 2) return null
   const n = values.length
@@ -158,6 +168,7 @@ interface RealPortfolioData {
   mwrSeries: number[] | null
   positionSeries: number[] | null
   navSeries: number[]
+  marginUtilSeries: number[]
   navScaleFactor: number
 }
 
@@ -268,6 +279,7 @@ export default function BacktestPage() {
         mwrSeries:      d.mwrSeries      ?? null,
         positionSeries: d.positionSeries ?? null,
         navSeries:      d.navSeries      ?? [],
+        marginUtilSeries: d.marginUtilSeries ?? [],
         navScaleFactor: privacyNavScaleFactor,
       }))
       .catch(() => setRealData(null))
@@ -435,12 +447,16 @@ export default function BacktestPage() {
       ? realData.mwrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + mwrBase)) : null
     const pv = realData?.positionSeries && firstOverlapRealIdx >= 0
       ? realData.positionSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + posBase)) : null
+    const realAvgMargin = firstOverlapRealIdx >= 0
+      ? averageFinite(realData?.marginUtilSeries.slice(firstOverlapRealIdx))
+      : null
 
     const realStats = realData?.dates.length ? {
       nav: computeSeriesStats(od, nv),
       twr: computeSeriesStats(od, tv),
       mwr: mv ? computeSeriesStats(od, mv) : null,
       pos: pv ? computeSeriesStats(od, pv) : null,
+      navAvgMargin: realAvgMargin,
     } : null
 
     const ddData  = buildRechartsData(results, labels, selected, computeDrawdown)
@@ -563,6 +579,7 @@ export default function BacktestPage() {
             mwrSeries:      d.mwrSeries      ?? null,
             positionSeries: d.positionSeries ?? null,
             navSeries:      d.navSeries      ?? [],
+            marginUtilSeries: d.marginUtilSeries ?? [],
             navScaleFactor: privacyNavScaleFactor,
           }
         } catch { newRealData = null }
@@ -809,6 +826,7 @@ export default function BacktestPage() {
     label: string,
     stats: SeriesStats | null | undefined,
     color: string,
+    avgMargin?: number | null,
   ) => {
     if (!stats) return null
     return (
@@ -823,6 +841,7 @@ export default function BacktestPage() {
         <td>{fmt2(stats.sharpe)}</td>
         <td>{pct(stats.ulcerIndex)}</td>
         <td>{fmt2(stats.upi)}</td>
+        <td>{avgMargin == null ? '-' : pct(avgMargin)}</td>
         <td>-</td>
         <td>-</td>
         <td>-</td>
@@ -926,6 +945,7 @@ export default function BacktestPage() {
                   <th>Sharpe</th>
                   <th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>
                   <th title="Ulcer Performance Index (Martin Ratio)">UPI</th>
+                  <th title="Average margin utilization">Avg Margin</th>
                   <th title="# buy-low margin triggers">BL</th>
                   <th title="# sell-high margin triggers">SH</th>
                   <th title="# buy-dip action points">BD</th>
@@ -939,6 +959,7 @@ export default function BacktestPage() {
                     const s      = curve.stats
                     const factor = chartData.curveScaleFactors.get(key) ?? 1
                     const trig   = (v: number | null | undefined) => v == null ? '–' : String(v)
+                    const avgMargin = averageMarginUtilization(curve.marginPoints)
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
@@ -951,6 +972,7 @@ export default function BacktestPage() {
                         <td>{fmt2(s.sharpe)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
+                        <td>{avgMargin == null ? '–' : pct(avgMargin)}</td>
                         <td>{trig(s.marginLowerTriggers)}</td>
                         <td>{trig(s.marginUpperTriggers)}</td>
                         <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
@@ -964,7 +986,7 @@ export default function BacktestPage() {
                   const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
                   return (
                     <>
-                      {realStatRow('real-nav', 'Real – NAV',      rs.nav, ac[0])}
+                      {realStatRow('real-nav', 'Real – NAV',      rs.nav, ac[0], rs.navAvgMargin)}
                       {realStatRow('real-twr', 'Real – TWR',      rs.twr, ac[1])}
                       {rs.mwr && realStatRow('real-mwr', 'Real – MWR',      rs.mwr, ac[2])}
                       {rs.pos && realStatRow('real-pos', 'Real – Position', rs.pos, ac[3])}

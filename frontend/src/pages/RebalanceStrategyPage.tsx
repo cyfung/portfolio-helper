@@ -349,6 +349,11 @@ function actionPointCount(actionPoints: { type: string }[] | undefined, type: st
   return actionPoints?.filter(point => point.type === type).length ?? 0
 }
 
+function averageMarginUtilization(points: { value: number }[] | undefined) {
+  const values = points?.map(p => p.value).filter(Number.isFinite) ?? []
+  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+}
+
 function metricLabel(metric: OptimizerMetric) {
   if (metric === 'cagr') return 'CAGR'
   if (metric === 'sharpe') return 'Sharpe'
@@ -1648,6 +1653,7 @@ export default function RebalanceStrategyPage() {
                   <th>Sharpe</th>
                   <th title="Ulcer Index">Ulcer</th>
                   <th title="Ulcer Performance Index">UPI</th>
+                  <th title="Average margin utilization">Avg Margin</th>
                   <th title="# buy-low action points">BL</th>
                   <th title="# sell-high action points">SH</th>
                   <th title="# buy-dip action points">BD</th>
@@ -1659,6 +1665,7 @@ export default function RebalanceStrategyPage() {
                   portfolio.curves.map((curve, ci) => {
                     const key = `${pi}-${ci}`
                     const s = curve.stats
+                    const avgMargin = averageMarginUtilization(curve.marginPoints)
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
@@ -1673,6 +1680,7 @@ export default function RebalanceStrategyPage() {
                         <td>{fmt2(s.sharpe)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
+                        <td>{avgMargin == null ? '–' : pct(avgMargin)}</td>
                         <td>{actionPointCount(curve.actionPoints, 'BUY_LOW')}</td>
                         <td>{actionPointCount(curve.actionPoints, 'SELL_HIGH')}</td>
                         <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
