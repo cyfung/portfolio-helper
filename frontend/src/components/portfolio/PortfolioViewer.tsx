@@ -40,7 +40,7 @@ export default function PortfolioViewer() {
   const navigate = useNavigate()
   const store = usePortfolioStore()
   const {
-    portfolioId, cash, sseStatus, lastPortfolioTotals,
+    portfolioId, cash, lastPortfolioTotals,
     currentDisplayCurrency, moreInfoVisible, rebalVisible,
     groupViewActive, editModeActive, afterHoursGray,
     portfolioContentScale,
@@ -217,10 +217,6 @@ export default function PortfolioViewer() {
     )
   }
 
-  // ── SSE status dot ────────────────────────────────────────────────────────
-  const sseDotClass = `sse-dot${sseStatus === 'live' ? ' sse-dot--ok' : sseStatus === 'error' ? ' sse-dot--err' : ''}`
-  const sseDotTitle = sseStatus === 'live' ? 'Live' : sseStatus === 'error' ? 'Disconnected' : 'Connecting…'
-
   const lastUpdateTime = new Date().toLocaleTimeString(undefined, { hour12: false })
   const contentScalePct = Math.round(portfolioContentScale * 100)
   const contentScaleStyle = {
@@ -343,7 +339,6 @@ export default function PortfolioViewer() {
 
             <span className="h-divider" />
             <span className="header-timestamp">{lastUpdateTime}</span>
-            <span className={sseDotClass} title={sseDotTitle} />
             <span className="h-divider" />
 
             {renderCurrencyControl()}

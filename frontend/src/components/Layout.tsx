@@ -274,6 +274,18 @@ export function ThemeToggle() {
 
 // ── Header right (version chip + utility buttons + action buttons) ────────────
 
+export function ServerStatusIndicator() {
+  const sseStatus = usePortfolioStore(s => s.sseStatus)
+  const className = `server-status-dot sse-dot${sseStatus === 'live' ? ' sse-dot--ok' : sseStatus === 'error' ? ' sse-dot--err' : ''}`
+  const label = sseStatus === 'live'
+    ? 'Server online'
+    : sseStatus === 'error'
+      ? 'Server offline'
+      : 'Connecting to server'
+
+  return <span className={className} role="status" aria-label={label} title={label} />
+}
+
 interface HeaderRightProps {
   children: ReactNode
 }
@@ -302,7 +314,10 @@ export function HeaderRight({ children }: HeaderRightProps) {
   if (!appConfig) {
     return (
       <div className="header-right">
-        <div className="header-top-controls">{utilityControls}</div>
+        <div className="header-top-controls">
+          {utilityControls}
+          <ServerStatusIndicator />
+        </div>
         {actionControls.length > 0 && <div className="header-buttons">{actionControls}</div>}
       </div>
     )
@@ -511,6 +526,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
           {updateToast.msg}
         </div>
         {utilityControls}
+        <ServerStatusIndicator />
       </div>
       {actionControls.length > 0 && <div className="header-buttons">{actionControls}</div>}
     </div>

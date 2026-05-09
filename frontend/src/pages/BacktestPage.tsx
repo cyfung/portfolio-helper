@@ -172,6 +172,28 @@ interface RealPortfolioData {
   navScaleFactor: number
 }
 
+interface BacktestViewState {
+  results: BacktestResults | null
+  realData: RealPortfolioData | null
+  selected: Set<string>
+}
+
+function realPortfolioDataFromResponse(d: any, navScaleFactor: number): RealPortfolioData {
+  return {
+    dates:            d.dates            ?? [],
+    twrSeries:        d.twrSeries        ?? [],
+    mwrSeries:        d.mwrSeries        ?? null,
+    positionSeries:   d.positionSeries   ?? null,
+    navSeries:        d.navSeries        ?? [],
+    marginUtilSeries: d.marginUtilSeries ?? [],
+    navScaleFactor,
+  }
+}
+
+function withoutRealCurveKeys(selected: Set<string>) {
+  return new Set([...selected].filter(key => !key.startsWith('real-')))
+}
+
 // ── Legend canvas line preview ─────────────────────────────────────────────────
 
 function LegendLine({ color, strokeWidth, strokeDasharray }: { color: string; strokeWidth: number; strokeDasharray?: string }) {
@@ -206,8 +228,12 @@ export default function BacktestPage() {
   const [configError, setConfigError] = useState('')
   const [running, setRunning]         = useState(false)
   const [error, setError]             = useState('')
-  const [results, setResults]         = useState<BacktestResults | null>(null)
-  const [selected, setSelected]       = useState<Set<string>>(new Set())
+  const [viewState, setViewState]     = useState<BacktestViewState>({
+    results: null,
+    realData: null,
+    selected: new Set(),
+  })
+  const { results, realData, selected } = viewState
   const [logScale, setLogScale]       = useState(false)
   const [scaleToNav, setScaleToNav]   = useState(true)
   const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
@@ -223,7 +249,6 @@ export default function BacktestPage() {
   // Real portfolio overlay
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
   const [realSlug, setRealSlug]             = useState(() => localStorage.getItem('backtest-real-slug') ?? '')
-  const [realData, setRealData]             = useState<RealPortfolioData | null>(null)
   const appConfig = usePortfolioStore(s => s.appConfig)
   const appConfigReady = !!appConfig
   const privacyNavScaleFactor = useMemo(() => {
@@ -268,21 +293,26 @@ export default function BacktestPage() {
 
   // Fetch real portfolio data when slug or date range changes
   useEffect(() => {
-    if (!realSlug) { setRealData(null); return }
+    if (!realSlug) {
+      setViewState(prev => ({ ...prev, realData: null, selected: withoutRealCurveKeys(prev.selected) }))
+      return
+    }
     if (!appConfigReady) return
+    const ac = new AbortController()
     const params = [fromDate && `from=${fromDate}`, toDate && `to=${toDate}`].filter(Boolean).join('&')
-    fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`)
+    fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`, { signal: ac.signal })
       .then(r => r.json())
-      .then((d: any) => setRealData({
-        dates:          d.dates          ?? [],
-        twrSeries:      d.twrSeries      ?? [],
-        mwrSeries:      d.mwrSeries      ?? null,
-        positionSeries: d.positionSeries ?? null,
-        navSeries:      d.navSeries      ?? [],
-        marginUtilSeries: d.marginUtilSeries ?? [],
-        navScaleFactor: privacyNavScaleFactor,
-      }))
-      .catch(() => setRealData(null))
+      .then((d: any) => {
+        if (ac.signal.aborted) return
+        setViewState(prev => ({
+          ...prev,
+          realData: realPortfolioDataFromResponse(d, privacyNavScaleFactor),
+        }))
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setViewState(prev => ({ ...prev, realData: null }))
+      })
+    return () => ac.abort()
   }, [realSlug, fromDate, toDate, appConfigReady, privacyNavScaleFactor])
 
   // Persist real portfolio selection
@@ -569,28 +599,21 @@ export default function BacktestPage() {
       const data: BacktestResults = await backtestRes.json()
       if (!backtestRes.ok || data.error) { setError(data.error || `Server error ${backtestRes.status}`); return }
 
-      let newRealData: RealPortfolioData | null = realData
+      let newRealData: RealPortfolioData | null = realSlug ? realData : null
       if (realRes) {
         try {
           const d = await realRes.json()
-          newRealData = {
-            dates:          d.dates          ?? [],
-            twrSeries:      d.twrSeries      ?? [],
-            mwrSeries:      d.mwrSeries      ?? null,
-            positionSeries: d.positionSeries ?? null,
-            navSeries:      d.navSeries      ?? [],
-            marginUtilSeries: d.marginUtilSeries ?? [],
-            navScaleFactor: privacyNavScaleFactor,
-          }
+          newRealData = realPortfolioDataFromResponse(d, privacyNavScaleFactor)
         } catch { newRealData = null }
       }
 
-      // Both set in same React 18 batch → single re-render, no delay
-      setResults(data)
       const defaultKeys = data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
       if (newRealData?.twrSeries?.length) defaultKeys.push('real-twr')
-      setSelected(new Set(defaultKeys))
-      setRealData(newRealData)
+      setViewState({
+        results: data,
+        realData: newRealData,
+        selected: new Set(defaultKeys),
+      })
     } catch (e: any) {
       setError('Request failed: ' + e.message)
     } finally {
@@ -642,11 +665,15 @@ export default function BacktestPage() {
   // ── Curve toggle ──────────────────────────────────────────────────────────
 
   function toggleCurve(key: string, checked: boolean) {
-    setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
+    setViewState(prev => {
+      const selected = new Set(prev.selected)
+      checked ? selected.add(key) : selected.delete(key)
+      return { ...prev, selected }
+    })
   }
 
   function toggleAll(checked: boolean) {
-    setSelected(checked ? new Set(allKeys) : new Set())
+    setViewState(prev => ({ ...prev, selected: checked ? new Set(allKeys) : new Set() }))
   }
 
   function toggleActionPointType(type: string, checked: boolean) {

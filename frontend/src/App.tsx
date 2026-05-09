@@ -22,6 +22,7 @@ export default function App() {
 
   // Bootstrap: load appConfig + portfolioId so version badge and SSE work on all pages
   const loadPortfolioData = usePortfolioStore(s => s.loadPortfolioData)
+  const setSseStatus = usePortfolioStore(s => s.setSseStatus)
   useEffect(() => {
     const match = window.location.pathname.match(/\/(portfolio|analyst)\/([^/]+)/)
     const slug = match?.[2]
@@ -33,8 +34,8 @@ export default function App() {
         return r.json() as Promise<PortfolioData>
       })
       .then(data => { if (data) loadPortfolioData(data) })
-      .catch(() => {})
-  }, [loadPortfolioData])
+      .catch(() => setSseStatus('error'))
+  }, [loadPortfolioData, setSseStatus])
 
   return (
     <Suspense fallback={null}>

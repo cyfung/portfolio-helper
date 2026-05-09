@@ -304,6 +304,11 @@ h1 {
 }
 .sse-dot--ok  { background: var(--color-positive); }
 .sse-dot--err { background: var(--color-negative); }
+.server-status-dot {
+    align-self: center;
+    flex-shrink: 0;
+    margin-left: 0;
+}
 
 .btn-spinner {
     display: inline-block;
