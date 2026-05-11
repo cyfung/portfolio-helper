@@ -3,10 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Settings } from 'lucide-react'
 import {
-  BlockState, MarginRow, newId,
+  BlockState, MarginRow, RebalanceStrategyRow, newId,
   blockStateToSavedConfig, configToBlockState,
   REBALANCE_OPTIONS, MARGIN_MODE_OPTIONS,
 } from '@/types/backtest'
+import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
 
 interface Props {
   idx: number
@@ -156,6 +157,20 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     commit({ ...localRef.current, margins: localRef.current.margins.filter(m => m.id !== id) })
   }
 
+  function addRebalanceStrategy(row: Omit<RebalanceStrategyRow, 'id'>) {
+    commit({
+      ...localRef.current,
+      rebalanceStrategies: [...(localRef.current.rebalanceStrategies ?? []), { id: newId(), ...row }],
+    })
+  }
+
+  function removeRebalanceStrategy(id: string) {
+    commit({
+      ...localRef.current,
+      rebalanceStrategies: (localRef.current.rebalanceStrategies ?? []).filter(s => s.id !== id),
+    })
+  }
+
   // ── Save / Clear ──────────────────────────────────────────────────────────
 
   async function handleSave(overwrite: boolean) {
@@ -177,17 +192,17 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   function handleClear() {
-    commit({ label: '', tickers: [], rebalance: 'YEARLY', margins: [], includeNoMargin: true })
+    commit({ label: '', tickers: [], rebalance: 'YEARLY', margins: [], rebalanceStrategies: [], includeNoMargin: true })
   }
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
 
   function handleDragOver(e: React.DragEvent) {
     const types = e.dataTransfer.types
-    if (types.includes('application/x-margin-config') || types.includes('application/x-portfolio-chip')) {
+    if (types.includes('application/x-margin-config') || types.includes('application/x-strategy-chip') || types.includes('application/x-portfolio-chip')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
-      if (types.includes('application/x-margin-config')) {
+      if (types.includes('application/x-margin-config') || types.includes('application/x-strategy-chip')) {
         setDragOver('margin')
       } else {
         setDragOver((e.target as HTMLElement | null)?.closest('.ticker-rows') ? 'portfolio-ref' : 'chip')
@@ -206,6 +221,12 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     if (e.dataTransfer.types.includes('application/x-margin-config')) {
       const cfg = JSON.parse(e.dataTransfer.getData('application/x-margin-config'))
       addMargin({ ratio: cfg.ratio, spread: cfg.spread, devUpper: cfg.devUpper, devLower: cfg.devLower, modeUpper: cfg.modeUpper, modeLower: cfg.modeLower })
+    } else if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
+      const raw = e.dataTransfer.getData('application/x-strategy-chip')
+      if (raw) {
+        const { name, config } = JSON.parse(raw)
+        addRebalanceStrategy({ name, config })
+      }
     } else if (e.dataTransfer.types.includes('application/x-portfolio-chip')) {
       const raw = e.dataTransfer.getData('application/x-portfolio-chip')
       if (raw) {
@@ -217,6 +238,27 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   const hasLabel = local.label.trim().length > 0
+  const strategySummaries = (local.rebalanceStrategies ?? []).map(row => {
+    const strategy = savedConfigToStrategyState(row.config, row.name)
+    const points = strategy.marginPoints ?? []
+    const btd = strategy.buyTheDip
+    const sos = strategy.sellOnSurge
+    return {
+      row,
+      low: points[0] ?? '40',
+      mid: points[2] ?? strategy.marginRatio ?? '50',
+      high: points[4] ?? '60',
+      marginEnabled: strategy.marginRebalanceEnabled ?? true,
+      buyLowEnabled: strategy.buyLowEnabled,
+      sellHighEnabled: strategy.sellHighEnabled,
+      bdSgp: btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
+      bdR:   btd?.basePortfolio != null && btd.basePortfolio.portfolioSource !== 'STRATEGY_GROSS',
+      bdI:   btd?.individualStock != null,
+      ssSgp: sos?.basePortfolio != null && sos.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
+      ssR:   sos?.basePortfolio != null && sos.basePortfolio.portfolioSource !== 'STRATEGY_GROSS',
+      ssI:   sos?.individualStock != null,
+    }
+  })
 
   return (
     <div
@@ -382,6 +424,27 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 {MARGIN_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
+            </div>
+          ))}
+          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, bdSgp, bdR, bdI, ssSgp, ssR, ssI }) => (
+            <div key={row.id} className="margin-config-row rebalance-strategy-margin-row">
+              <span className="margin-drag-handle" aria-hidden="true">S</span>
+              <div className="strategy-margin-info">
+                <span className="strategy-margin-name" title={row.name}>{row.name}</span>
+                <span>L {low}%</span>
+                <span>M {mid}%</span>
+                <span>H {high}%</span>
+                {marginEnabled && <span>MR</span>}
+                {buyLowEnabled && <span>BL</span>}
+                {sellHighEnabled && <span>SH</span>}
+                {bdSgp && <span>BD-SGP</span>}
+                {bdR && <span>BD-R</span>}
+                {bdI && <span>BD-I</span>}
+                {ssSgp && <span>SS-SGP</span>}
+                {ssR && <span>SS-R</span>}
+                {ssI && <span>SS-I</span>}
+              </div>
+              <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeRebalanceStrategy(row.id)}>✕</button>
             </div>
           ))}
         </div>

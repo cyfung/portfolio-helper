@@ -554,8 +554,8 @@ export default function BacktestPage() {
       setError('Add at least one ticker with a positive weight to any portfolio block.')
       return
     }
-    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0)) {
-      setError('Each portfolio must have Unlevered enabled or at least one margin row.')
+    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && (p.rebalanceStrategies?.length ?? 0) === 0)) {
+      setError('Each portfolio must have Unlevered enabled or at least one margin or rebalance strategy row.')
       return
     }
     setRunning(true)
@@ -911,6 +911,7 @@ export default function BacktestPage() {
           blocks={blocks}
           onBlockChange={updateBlock}
           onSavedRefresh={refreshSaved}
+          showSavedStrategies
         />
 
         <RunButton label="Run Backtest" running={running} disabled={running} onClick={handleRun} />

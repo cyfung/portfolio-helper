@@ -4142,6 +4142,38 @@ a.loan-calc-link:hover {
 .margin-drag-handle:hover { opacity: 1; }
 .margin-config-row:active .margin-drag-handle { cursor: grabbing; }
 
+.rebalance-strategy-margin-row {
+    grid-template-columns: 1rem 1fr auto;
+    padding: 0.35rem 0;
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.strategy-margin-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    min-width: 0;
+}
+
+.strategy-margin-name {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.strategy-margin-info span:not(.strategy-margin-name) {
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    padding: 0.12rem 0.35rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
 /* Margin drop-zone highlight */
 .portfolio-block.drag-over-margin .margin-config-rows {
     outline: 2px dashed var(--color-accent-primary);

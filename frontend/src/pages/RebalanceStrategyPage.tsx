@@ -514,7 +514,9 @@ export default function RebalanceStrategyPage() {
     }
     const currentStrategies = strategies.map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
     strategyBlockRefs.current.forEach(ref => ref?.commit())
-    const runStrategies = makeUniqueStrategyLabels(currentStrategies, portfolioApi.label)
+    const portfolioBlockStates = (portfolioApi.rebalanceStrategies as any[]).map(s => savedConfigToStrategyState(s.config, s.name))
+    const allStrategies = makeUniqueStrategyLabels([...portfolioBlockStates, ...currentStrategies], portfolioApi.label)
+    const runStrategies = allStrategies.slice(portfolioBlockStates.length)
     if (runStrategies.some((s, i) => s.label !== strategies[i]?.label)) setStrategies(runStrategies)
     setRunning(true)
     try {
@@ -527,7 +529,7 @@ export default function RebalanceStrategyPage() {
           startingBalance: startingBalanceToPayload(startingBalance),
           portfolio: portfolioApi,
           cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
-          strategies: runStrategies.map(s => strategyStateToAPI(s)),
+          strategies: allStrategies.map(s => strategyStateToAPI(s)),
         }),
       })
       const data: BacktestResults = await res.json()

@@ -64,7 +64,7 @@ object RebalanceStrategyService {
             MultiBacktestRequest(
                 request.fromDate,
                 request.toDate,
-                listOf(request.portfolio),
+                listOf(request.portfolio.copy(rebalanceStrategies = emptyList())),
                 request.cashflow,
                 request.startingBalance,
             )
@@ -82,7 +82,7 @@ object RebalanceStrategyService {
                   effrx,
                   request.startingBalance,
               )
-          PortfolioResult(strategy.label, listOf(curve))
+          PortfolioResult(request.portfolio.label, listOf(curve))
         }
     return MultiBacktestResult(baseResult.portfolios + strategyResults)
   }
@@ -123,6 +123,31 @@ object RebalanceStrategyService {
           if (scores.isEmpty()) Double.NEGATIVE_INFINITY else scores.average()
         }
         .toList()
+  }
+
+  fun runAttachedStrategies(
+      fromDate: String?,
+      toDate: String?,
+      portfolio: PortfolioConfig,
+      cashflow: CashflowConfig?,
+      strategies: List<RebalStrategyConfig>,
+      startingBalance: Double = 10_000.0,
+      globalDates: List<LocalDate>? = null,
+  ): List<CurveResult> {
+    if (strategies.isEmpty()) return emptyList()
+    val referenceTickers = strategies.flatMap { it.referenceTickers() }.distinct()
+    val context = prepareRunContext(fromDate, toDate, portfolio, referenceTickers, globalDates)
+    return strategies.map { strategy ->
+      runStrategy(
+          strategy.portfolioWithRebalanceOverride(portfolio),
+          strategy,
+          cashflow,
+          context.seriesMap,
+          context.dates,
+          context.effrx,
+          startingBalance,
+      )
+    }
   }
 
   private data class RunContext(
@@ -280,6 +305,7 @@ object RebalanceStrategyService {
       toDateText: String?,
       portfolio: PortfolioConfig,
       referenceTickers: Collection<String> = emptyList(),
+      overrideDates: List<LocalDate>? = null,
   ): RunContext {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
     val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()
@@ -322,14 +348,24 @@ object RebalanceStrategyService {
       if (BacktestService.parseLETFDefinition(ticker) == null) cachedLoad(ticker)
     }
 
-    val seriesMap: Map<String, Map<LocalDate, Double>> =
+    val rawSeriesMap: Map<String, Map<LocalDate, Double>> =
         requestedTickers.associateWith { ticker ->
           seriesCache[ticker] ?: error("Series for '$ticker' not found")
         }
-    val dates = BacktestService.intersectDates(seriesMap.values.toList(), fromDate, toDate)
+
+    if (overrideDates != null) {
+      // Use the provided dates (already intersected from portfolio tickers) and forward-fill all
+      // series so that direct date lookups never miss, even for reference tickers with gaps.
+      val filledSeriesMap = rawSeriesMap.mapValues { (_, series) ->
+        BacktestService.forwardFillSeries(series, overrideDates)
+      }
+      return RunContext(filledSeriesMap, overrideDates, effrx)
+    }
+
+    val dates = BacktestService.intersectDates(rawSeriesMap.values.toList(), fromDate, toDate)
     if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
 
-    return RunContext(seriesMap, dates, effrx)
+    return RunContext(rawSeriesMap, dates, effrx)
   }
 
   internal fun runStrategyForTest(

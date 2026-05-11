@@ -47,6 +47,7 @@ data class PortfolioConfig(
     val tickers: List<TickerWeight>,
     val rebalanceStrategy: RebalanceStrategy,
     val marginStrategies: List<MarginConfig>,  // empty = base curve only
+    val rebalanceStrategies: List<RebalStrategyConfig> = emptyList(),
     val includeNoMargin: Boolean = true
 )
 

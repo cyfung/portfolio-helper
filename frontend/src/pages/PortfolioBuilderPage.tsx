@@ -21,7 +21,7 @@ interface GroupRow {
 }
 
 function blankBlock(): BlockState {
-  return { label: '', tickers: [], rebalance: 'YEARLY', margins: [], includeNoMargin: true }
+  return { label: '', tickers: [], rebalance: 'YEARLY', margins: [], rebalanceStrategies: [], includeNoMargin: true }
 }
 
 function marginRatio(block: BlockState, marginIndex: number) {

@@ -2,6 +2,8 @@
 
 // ── Row state ─────────────────────────────────────────────────────────────────
 
+import { savedConfigToStrategyState, strategyStateToAPI } from './rebalanceStrategy'
+
 export interface TickerRow {
   id: string
   ticker: string
@@ -19,11 +21,18 @@ export interface MarginRow {
   modeLower: string
 }
 
+export interface RebalanceStrategyRow {
+  id: string
+  name: string
+  config: any
+}
+
 export interface BlockState {
   label: string
   tickers: TickerRow[]
   rebalance: string
   margins: MarginRow[]
+  rebalanceStrategies: RebalanceStrategyRow[]
   includeNoMargin: boolean
 }
 
@@ -120,10 +129,11 @@ export function emptyBlock(idx: number): BlockState {
       ],
       rebalance: 'YEARLY',
       margins: [],
+      rebalanceStrategies: [],
       includeNoMargin: true,
     }
   }
-  return { label: '', tickers: [], rebalance: 'YEARLY', margins: [], includeNoMargin: true }
+  return { label: '', tickers: [], rebalance: 'YEARLY', margins: [], rebalanceStrategies: [], includeNoMargin: true }
 }
 
 /** Convert an API saved-portfolio config into BlockState (ratio → percentage). */
@@ -146,6 +156,11 @@ export function configToBlockState(config: any, name: string): BlockState {
       devLower: r(m.marginDeviationLower ?? 0.05),
       modeUpper: m.upperRebalanceMode || 'PROPORTIONAL',
       modeLower: m.lowerRebalanceMode || 'PROPORTIONAL',
+    })),
+    rebalanceStrategies: (config.rebalanceStrategies || []).map((s: any) => ({
+      id: newId(),
+      name: String(s.name || s.label || 'Strategy'),
+      config: s.config ?? s,
     })),
     includeNoMargin: config.includeNoMargin !== false,
   }
@@ -170,6 +185,10 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
       upperRebalanceMode: m.modeUpper,
       lowerRebalanceMode: m.modeLower,
     })),
+    rebalanceStrategies: (state.rebalanceStrategies ?? []).map(s => {
+      const strategy = savedConfigToStrategyState(s.config, s.name)
+      return { name: s.name, config: s.config, ...strategyStateToAPI(strategy) }
+    }),
     includeNoMargin: state.includeNoMargin,
   }
 }
@@ -190,6 +209,11 @@ export function blockStateToSavedConfig(state: BlockState) {
       marginDeviationLower: (parseFloat(m.devLower) || 5)   / 100,
       upperRebalanceMode: m.modeUpper,
       lowerRebalanceMode: m.modeLower,
+    })),
+    rebalanceStrategies: (state.rebalanceStrategies ?? []).map(s => ({
+      name: s.name,
+      config: s.config,
+      ...strategyStateToAPI(savedConfigToStrategyState(s.config, s.name)),
     })),
     includeNoMargin: state.includeNoMargin,
   }

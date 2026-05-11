@@ -5,6 +5,7 @@ import CashflowControls from './CashflowControls'
 import DateFieldWithQuickSelect from './DateFieldWithQuickSelect'
 import PortfolioBlock from './PortfolioBlock'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from './SavedPortfoliosBar'
+import SavedStrategiesBar from '@/components/rebalance/SavedStrategiesBar'
 
 type StringSetter = (value: string) => void
 
@@ -107,6 +108,7 @@ interface SavedPortfolioBlocksSectionProps {
   blocks: BlockState[]
   onBlockChange: (idx: number, value: BlockState) => void
   onSavedRefresh: () => void
+  showSavedStrategies?: boolean
 }
 
 export function SavedPortfolioBlocksSection({
@@ -114,10 +116,12 @@ export function SavedPortfolioBlocksSection({
   blocks,
   onBlockChange,
   onSavedRefresh,
+  showSavedStrategies = false,
 }: SavedPortfolioBlocksSectionProps) {
   return (
     <>
       <SavedPortfoliosBar ref={savedBarRef} />
+      {showSavedStrategies && <SavedStrategiesBar />}
 
       <div className="portfolio-blocks">
         {blocks.map((block, idx) => (

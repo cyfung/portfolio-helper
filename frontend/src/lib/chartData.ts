@@ -16,11 +16,12 @@ export interface RechartsChartData {
   datasets: RechartsDataset[]
 }
 
-/** Build common date labels across all portfolios (intersection). */
+/** Build common date labels across all curves of all portfolios (intersection). */
 export function buildCommonLabels(data: BacktestResults): string[] {
-  let common = new Set(data.portfolios[0].curves[0].points.map(p => p.date))
-  for (let i = 1; i < data.portfolios.length; i++) {
-    const dates = new Set(data.portfolios[i].curves[0].points.map(p => p.date))
+  const allCurves = data.portfolios.flatMap(p => p.curves)
+  let common = new Set(allCurves[0].points.map(p => p.date))
+  for (let i = 1; i < allCurves.length; i++) {
+    const dates = new Set(allCurves[i].points.map(p => p.date))
     for (const d of [...common]) { if (!dates.has(d)) common.delete(d) }
   }
   return [...common].sort()

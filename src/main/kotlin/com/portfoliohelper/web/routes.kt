@@ -191,6 +191,9 @@ private fun parseSinglePortfolioConfig(
                 }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
             )
         } ?: emptyList(),
+        rebalanceStrategies = (pObj["rebalanceStrategies"] as? JsonArray)?.map { el ->
+            parseRebalStrategyConfig(el.jsonObject)
+        } ?: emptyList(),
         includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
     )
 }

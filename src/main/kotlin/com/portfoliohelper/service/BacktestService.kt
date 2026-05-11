@@ -167,6 +167,17 @@ object BacktestService {
             }.toList()
 
             curves.addAll(marginCurves)
+            curves.addAll(
+                RebalanceStrategyService.runAttachedStrategies(
+                    request.fromDate,
+                    request.toDate,
+                    pConfig,
+                    request.cashflow,
+                    pConfig.rebalanceStrategies,
+                    request.startingBalance,
+                    globalDates = globalDates,
+                )
+            )
             PortfolioResult(pConfig.label, curves)
         }.toList()
 
