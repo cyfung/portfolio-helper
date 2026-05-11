@@ -63,15 +63,15 @@ type OptimizerLockKey =
   | 'cashflow'
   | 'buyLow'
   | 'sellHigh'
-  | 'buyDipWhole'
+  | 'buyDipBase'
   | 'buyDipIndividual'
-  | 'sellSurgeWhole'
+  | 'sellSurgeBase'
   | 'sellSurgeIndividual'
 
 type OptimizerLockMode = 'none' | 'enabled' | 'config'
 type OptimizerLocks = Record<OptimizerLockKey, OptimizerLockMode>
 
-const OPTIMIZER_LOCK_STORAGE_KEY = 'rebalanceStrategy.optimizerLocks.v1'
+const OPTIMIZER_LOCK_STORAGE_KEY = 'rebalanceStrategy.optimizerLocks.v2'
 const DEFAULT_OPTIMIZER_LOCKS: OptimizerLocks = {
   marginPoints: 'none',
   rebalancePeriod: 'none',
@@ -79,9 +79,9 @@ const DEFAULT_OPTIMIZER_LOCKS: OptimizerLocks = {
   cashflow: 'none',
   buyLow: 'none',
   sellHigh: 'enabled',
-  buyDipWhole: 'none',
+  buyDipBase: 'none',
   buyDipIndividual: 'none',
-  sellSurgeWhole: 'none',
+  sellSurgeBase: 'none',
   sellSurgeIndividual: 'none',
 }
 
@@ -135,11 +135,11 @@ const OPTIMIZER_LOCKS: {
     configItems: ['Sell high enabled', 'Sell high alloc strategy', 'Sell high restore target'],
   },
   {
-    key: 'buyDipWhole',
-    label: 'BD-W',
-    name: 'Buy Dip Whole Portfolio',
-    enabledItems: ['Whole-portfolio buy dip enabled'],
-    configItems: ['Whole-portfolio buy dip config'],
+    key: 'buyDipBase',
+    label: 'BD-B',
+    name: 'Buy Dip Daily-Rebalanced Base Reference',
+    enabledItems: ['Daily-rebalanced base buy dip enabled'],
+    configItems: ['Daily-rebalanced base buy dip config'],
   },
   {
     key: 'buyDipIndividual',
@@ -149,11 +149,11 @@ const OPTIMIZER_LOCKS: {
     configItems: ['Individual-stock buy dip config'],
   },
   {
-    key: 'sellSurgeWhole',
-    label: 'SS-W',
-    name: 'Sell Surge Whole Portfolio',
-    enabledItems: ['Whole-portfolio sell surge enabled'],
-    configItems: ['Whole-portfolio sell surge config'],
+    key: 'sellSurgeBase',
+    label: 'SS-B',
+    name: 'Sell Surge Daily-Rebalanced Base Reference',
+    enabledItems: ['Daily-rebalanced base sell surge enabled'],
+    configItems: ['Daily-rebalanced base sell surge config'],
   },
   {
     key: 'sellSurgeIndividual',
@@ -185,9 +185,9 @@ type StrategyGenome = {
   buyCooldownAfterSellHighDays: number
   sellCooldownAfterBuyLowDays: number
   useComfortZone: boolean
-  buyDipWhole: DipSurgeGenome | null
+  buyDipBase: DipSurgeGenome | null
   buyDipIndividual: DipSurgeGenome | null
-  sellSurgeWhole: DipSurgeGenome | null
+  sellSurgeBase: DipSurgeGenome | null
   sellSurgeIndividual: DipSurgeGenome | null
 }
 
@@ -577,9 +577,9 @@ export default function RebalanceStrategyPage() {
       sellCooldownAfterBuyLowDays: clampInt(genome.sellCooldownAfterBuyLowDays, 0, 60),
       rebalancePeriod: OPTIMIZER_PERIODS.includes(genome.rebalancePeriod) ? genome.rebalancePeriod : 'MONTHLY',
       allocStrategy: OPTIMIZER_ALLOC_STRATEGIES.includes(genome.allocStrategy) ? genome.allocStrategy : 'PROPORTIONAL',
-      buyDipWhole: genome.buyDipWhole ? normalizeDipSurgeGenome(genome.buyDipWhole, minMargin, maxMargin, discreteMargins) : null,
+      buyDipBase: genome.buyDipBase ? normalizeDipSurgeGenome(genome.buyDipBase, minMargin, maxMargin, discreteMargins) : null,
       buyDipIndividual: genome.buyDipIndividual ? normalizeDipSurgeGenome(genome.buyDipIndividual, minMargin, maxMargin, discreteMargins) : null,
-      sellSurgeWhole: genome.sellSurgeWhole ? normalizeDipSurgeGenome(genome.sellSurgeWhole, minMargin, maxMargin, discreteMargins) : null,
+      sellSurgeBase: genome.sellSurgeBase ? normalizeDipSurgeGenome(genome.sellSurgeBase, minMargin, maxMargin, discreteMargins) : null,
       sellSurgeIndividual: genome.sellSurgeIndividual ? normalizeDipSurgeGenome(genome.sellSurgeIndividual, minMargin, maxMargin, discreteMargins) : null,
     }
   }
@@ -693,9 +693,9 @@ export default function RebalanceStrategyPage() {
     if (locks.cashflow !== 'none') next.cashflowImmediateInvestPct = baseGenome.cashflowImmediateInvestPct
     if (locks.buyLow !== 'none') next.buyLowEnabled = base.buyLowEnabled
     if (locks.sellHigh !== 'none') next.sellHighEnabled = base.sellHighEnabled
-    if (locks.buyDipWhole !== 'none') next.buyDipWhole = base.buyTheDip.wholePortfolio ? (next.buyDipWhole ?? baseGenome.buyDipWhole) : null
+    if (locks.buyDipBase !== 'none') next.buyDipBase = base.buyTheDip.basePortfolio ? (next.buyDipBase ?? baseGenome.buyDipBase) : null
     if (locks.buyDipIndividual !== 'none') next.buyDipIndividual = base.buyTheDip.individualStock ? (next.buyDipIndividual ?? baseGenome.buyDipIndividual) : null
-    if (locks.sellSurgeWhole !== 'none') next.sellSurgeWhole = base.sellOnSurge.wholePortfolio ? (next.sellSurgeWhole ?? baseGenome.sellSurgeWhole) : null
+    if (locks.sellSurgeBase !== 'none') next.sellSurgeBase = base.sellOnSurge.basePortfolio ? (next.sellSurgeBase ?? baseGenome.sellSurgeBase) : null
     if (locks.sellSurgeIndividual !== 'none') next.sellSurgeIndividual = base.sellOnSurge.individualStock ? (next.sellSurgeIndividual ?? baseGenome.sellSurgeIndividual) : null
     return next
   }
@@ -740,11 +740,11 @@ export default function RebalanceStrategyPage() {
         sellHighRestoreMargin: base.sellHighRestoreMargin,
       } : {}),
       buyTheDip: {
-        wholePortfolio: locks.buyDipWhole === 'config' ? base.buyTheDip.wholePortfolio : strategy.buyTheDip.wholePortfolio,
+        basePortfolio: locks.buyDipBase === 'config' ? base.buyTheDip.basePortfolio : strategy.buyTheDip.basePortfolio,
         individualStock: locks.buyDipIndividual === 'config' ? base.buyTheDip.individualStock : strategy.buyTheDip.individualStock,
       },
       sellOnSurge: {
-        wholePortfolio: locks.sellSurgeWhole === 'config' ? base.sellOnSurge.wholePortfolio : strategy.sellOnSurge.wholePortfolio,
+        basePortfolio: locks.sellSurgeBase === 'config' ? base.sellOnSurge.basePortfolio : strategy.sellOnSurge.basePortfolio,
         individualStock: locks.sellSurgeIndividual === 'config' ? base.sellOnSurge.individualStock : strategy.sellOnSurge.individualStock,
       },
     }
@@ -784,9 +784,9 @@ export default function RebalanceStrategyPage() {
       buyCooldownAfterSellHighDays: clampInt(parseFloat(strategy.buyCooldownAfterSellHighDays ?? '') || 10, 0, 60),
       sellCooldownAfterBuyLowDays: clampInt(parseFloat(strategy.sellCooldownAfterBuyLowDays ?? '') || 10, 0, 60),
       useComfortZone: strategy.useComfortZone ?? true,
-      buyDipWhole: dipSurgeGenomeFromState(strategy.buyTheDip.wholePortfolio, bounds),
+      buyDipBase: dipSurgeGenomeFromState(strategy.buyTheDip.basePortfolio, bounds),
       buyDipIndividual: dipSurgeGenomeFromState(strategy.buyTheDip.individualStock, bounds),
-      sellSurgeWhole: dipSurgeGenomeFromState(strategy.sellOnSurge.wholePortfolio, bounds),
+      sellSurgeBase: dipSurgeGenomeFromState(strategy.sellOnSurge.basePortfolio, bounds),
       sellSurgeIndividual: dipSurgeGenomeFromState(strategy.sellOnSurge.individualStock, bounds),
     }, bounds)
   }
@@ -818,9 +818,9 @@ export default function RebalanceStrategyPage() {
       buyCooldownAfterSellHighDays: randomInt(0, 12) * 5,
       sellCooldownAfterBuyLowDays: randomInt(0, 12) * 5,
       useComfortZone: Math.random() >= 0.25,
-      buyDipWhole: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
+      buyDipBase: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
       buyDipIndividual: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
-      sellSurgeWhole: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
+      sellSurgeBase: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
       sellSurgeIndividual: Math.random() < 0.45 ? randomDipSurgeGenome(minMargin, maxMargin, discreteMargins) : null,
     }, bounds)
   }
@@ -857,11 +857,11 @@ export default function RebalanceStrategyPage() {
       buyCooldownAfterSellHighDays: String(g.buyCooldownAfterSellHighDays),
       sellCooldownAfterBuyLowDays: String(g.sellCooldownAfterBuyLowDays),
       buyTheDip: {
-        wholePortfolio: g.buyDipWhole ? dipSurgeStateFromGenome('WHOLE_PORTFOLIO', g.buyDipWhole) : null,
+        basePortfolio: g.buyDipBase ? dipSurgeStateFromGenome('BASE_PORTFOLIO', g.buyDipBase) : null,
         individualStock: g.buyDipIndividual ? dipSurgeStateFromGenome('INDIVIDUAL_STOCK', g.buyDipIndividual) : null,
       },
       sellOnSurge: {
-        wholePortfolio: g.sellSurgeWhole ? dipSurgeStateFromGenome('WHOLE_PORTFOLIO', g.sellSurgeWhole) : null,
+        basePortfolio: g.sellSurgeBase ? dipSurgeStateFromGenome('BASE_PORTFOLIO', g.sellSurgeBase) : null,
         individualStock: g.sellSurgeIndividual ? dipSurgeStateFromGenome('INDIVIDUAL_STOCK', g.sellSurgeIndividual) : null,
       },
     }
@@ -899,13 +899,13 @@ export default function RebalanceStrategyPage() {
     maybe(() => { g.buyCooldownAfterSellHighDays += randomChoice([-10, -5, 5, 10]) })
     maybe(() => { g.sellCooldownAfterBuyLowDays += randomChoice([-10, -5, 5, 10]) })
     maybe(() => { g.useComfortZone = !g.useComfortZone })
-    maybe(() => { g.buyDipWhole = g.buyDipWhole ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { g.buyDipBase = g.buyDipBase ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
     maybe(() => { g.buyDipIndividual = g.buyDipIndividual ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
-    maybe(() => { if (g.buyDipWhole) g.buyDipWhole = mutateDipSurgeGenome(g.buyDipWhole, g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { if (g.buyDipBase) g.buyDipBase = mutateDipSurgeGenome(g.buyDipBase, g.minMargin, g.maxMargin, discreteMargins()) })
     maybe(() => { if (g.buyDipIndividual) g.buyDipIndividual = mutateDipSurgeGenome(g.buyDipIndividual, g.minMargin, g.maxMargin, discreteMargins()) })
-    maybe(() => { g.sellSurgeWhole = g.sellSurgeWhole ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { g.sellSurgeBase = g.sellSurgeBase ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
     maybe(() => { g.sellSurgeIndividual = g.sellSurgeIndividual ? null : randomDipSurgeGenome(g.minMargin, g.maxMargin, discreteMargins()) })
-    maybe(() => { if (g.sellSurgeWhole) g.sellSurgeWhole = mutateDipSurgeGenome(g.sellSurgeWhole, g.minMargin, g.maxMargin, discreteMargins()) })
+    maybe(() => { if (g.sellSurgeBase) g.sellSurgeBase = mutateDipSurgeGenome(g.sellSurgeBase, g.minMargin, g.maxMargin, discreteMargins()) })
     maybe(() => { if (g.sellSurgeIndividual) g.sellSurgeIndividual = mutateDipSurgeGenome(g.sellSurgeIndividual, g.minMargin, g.maxMargin, discreteMargins()) })
     return normalizeGenome(g, bounds)
   }
@@ -1808,3 +1808,4 @@ export default function RebalanceStrategyPage() {
     </div>
   )
 }
+

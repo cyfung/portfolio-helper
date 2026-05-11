@@ -48,6 +48,14 @@ class RebalanceStrategyServiceTest {
     private fun singleStockPortfolio(rebalance: RebalanceStrategy = RebalanceStrategy.NONE) =
         PortfolioConfig("test", listOf(TickerWeight("SPY", 1.0)), rebalance, emptyList())
 
+    private fun twoStockPortfolio(rebalance: RebalanceStrategy = RebalanceStrategy.NONE) =
+        PortfolioConfig(
+            "test",
+            listOf(TickerWeight("AAA", 0.5), TickerWeight("BBB", 0.5)),
+            rebalance,
+            emptyList(),
+        )
+
     private fun strategy(
         marginRatio: Double = 0.0,
         marginSpread: Double = 0.0,
@@ -136,6 +144,19 @@ class RebalanceStrategyServiceTest {
         sellChecker.advance(110.0)
         sellChecker.advance(112.0)
         assertTrue(sellChecker.check(Direction.SELL), "SS should compare against the lowest price in the N-day window")
+    }
+
+    @Test
+    fun vsRunningAvgTriggerRequiresFullWindow() {
+        val checker = PriceMoveTrigger.VsRunningAvg(nDays = 3, pct = 0.1).buildChecker(DipSurgeKey.Stock("SPY"))
+
+        checker.advance(100.0)
+        checker.advance(80.0)
+        assertFalse(checker.check(Direction.BUY), "BD should wait for a full running-average window")
+        checker.advance(80.0)
+        assertFalse(checker.check(Direction.BUY), "BD should still wait for three prior values")
+        checker.advance(70.0)
+        assertTrue(checker.check(Direction.BUY), "BD should compare against the full prior 3-day average")
     }
 
     @Test
@@ -766,17 +787,17 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
-    fun vShape_buyTheDip_wholePortfolio() {
+    fun vShape_buyTheDip_basePortfolio() {
         val dates = days(LocalDate.of(2024, 1, 2), 21)
         val prices = vShapeCurve(dates)
         val series = mapOf("SPY" to prices)
 
         // Reference: mirrors PeakDeviationChecker advance/check ordering and OnceExecutor.
-        // advance(i) runs before check(i) — price[0] never seen so runningPeak starts from price[1].
+        // The first date is seeded before the loop, then each day is fed before check(i).
         // OnceExecutor fires execute(eligible()) every day triggered == true (stateless).
         // eligible = max(0, equity*(limit - currentRatio)); when currentRatio >= limit, eligible=0.
         var H = 15_000.0; var CB = -5_000.0
-        var runningPeak = Double.MIN_VALUE
+        var runningPeak = prices[dates[0]]!!
         val expEqs = mutableListOf(10_000.0)
         val expMargins = mutableListOf(0.5)
         for (i in 1 until dates.size) {
@@ -795,7 +816,7 @@ class RebalanceStrategyServiceTest {
             expMargins += if (eq > 0.0) (-CB).coerceAtLeast(0.0) / eq else 0.0
         }
 
-        for (scope in listOf(DipSurgeScope.WHOLE_PORTFOLIO, DipSurgeScope.INDIVIDUAL_STOCK)) {
+        for (scope in listOf(DipSurgeScope.BASE_PORTFOLIO, DipSurgeScope.INDIVIDUAL_STOCK)) {
             val r = RebalanceStrategyService.runStrategyResultForTest(
                 singleStockPortfolio(),
                 strategy(
@@ -828,7 +849,7 @@ class RebalanceStrategyServiceTest {
                 marginSpread = 0.0,
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
-                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
                     method = ExecutionMethod.Once,
@@ -845,6 +866,76 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun buyTheDipBasePortfolioSteppedUsesReferenceValueNotAccountGross() {
+        val dates = days(LocalDate.of(2024, 1, 2), 4)
+        val prices = dates.zip(listOf(1.0, 0.84, 0.79, 0.74)).toMap()
+        val series = mapOf("SPY" to prices)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
+                    method = ExecutionMethod.Stepped(portions = 3, additionalPct = 0.05),
+                    limit = 1.5,
+                    coolingOffDays = 0,
+                    minAdjustmentPct = 0.0,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val buyDipActions = result.actionPoints.orEmpty().filter { it.type == "BUY_DIP" }
+        assertEquals(3, buyDipActions.size, "Each stepped BD portion should use the base reference path, not account gross exposure")
+    }
+
+    @Test
+    fun buyTheDipBasePortfolioReferenceIsDailyRebalanced() {
+        val dates = days(LocalDate.of(2024, 1, 2), 3)
+        val series = mapOf(
+            "AAA" to dates.zip(listOf(1.0, 0.5, 0.25)).toMap(),
+            "BBB" to dates.zip(listOf(1.0, 1.0, 1.0)).toMap(),
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            twoStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.4)),
+                    method = ExecutionMethod.Once,
+                    limit = 1.5,
+                    coolingOffDays = 0,
+                    minAdjustmentPct = 0.0,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val buyDipActions = result.actionPoints.orEmpty().filter { it.type == "BUY_DIP" }
+        assertEquals(
+            listOf("2024-01-04"),
+            buyDipActions.map { it.date },
+            "Base portfolio reference should rebalance daily before checking the drawdown trigger",
+        )
+    }
+
+    @Test
     fun buyTheDipSkipsAdjustmentBelowMinimum() {
         val dates = days(LocalDate.of(2024, 1, 2), 21)
         val prices = vShapeCurve(dates)
@@ -857,7 +948,7 @@ class RebalanceStrategyServiceTest {
                 marginSpread = 0.0,
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
-                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
                     method = ExecutionMethod.Once,
@@ -895,7 +986,7 @@ class RebalanceStrategyServiceTest {
                     targetMargin = 0.75,
                 ),
                 buyTheDip = DipSurgeConfig(
-                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     triggers = listOf(PriceMoveTrigger.VsRunningAvg(nDays = 1, pct = 0.0)),
                     method = ExecutionMethod.Once,
@@ -943,7 +1034,7 @@ class RebalanceStrategyServiceTest {
                     targetMargin = 0.85,
                 ),
                 buyTheDip = DipSurgeConfig(
-                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     triggers = listOf(PriceMoveTrigger.VsRunningAvg(nDays = 1, pct = 0.0)),
                     method = ExecutionMethod.Once,
@@ -1019,7 +1110,7 @@ class RebalanceStrategyServiceTest {
                     targetMargin = 0.5,
                 ),
                 sellOnSurge = DipSurgeConfig(
-                    scope = DipSurgeScope.WHOLE_PORTFOLIO,
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
                     method = ExecutionMethod.Once,
@@ -1041,18 +1132,18 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
-    fun reverseV_sellOnSurge_wholePortfolio() {
+    fun reverseV_sellOnSurge_basePortfolio() {
         val dates = days(LocalDate.of(2024, 1, 2), 21)
         val prices = reverseVCurve(dates)
         val series = mapOf("SPY" to prices)
 
         // Reference: mirrors PeakDeviationChecker for SELL direction (runningTrough).
         // marginRatio=0.5 needed so currentRatio > limit=0.2 → eligible > 0 when sell fires.
-        // advance(i) runs before check(i) — price[0] never seen, trough starts from price[1].
+        // The first date is seeded before the loop, then each day is fed before check(i).
         // check(i, SELL): (cur - trough)/trough > 0.15
         // eligible = max(0, equity*(currentRatio - limit)); fires only when currentRatio > 0.2.
         var H = 15_000.0; var CB = -5_000.0
-        var runningTrough = Double.MAX_VALUE
+        var runningTrough = prices[dates[0]]!!
         val expEqs = mutableListOf(10_000.0)
         val expMargins = mutableListOf(0.5)
         for (i in 1 until dates.size) {
@@ -1071,7 +1162,7 @@ class RebalanceStrategyServiceTest {
             expMargins += if (eq > 0.0) (-CB).coerceAtLeast(0.0) / eq else 0.0
         }
 
-        for (scope in listOf(DipSurgeScope.WHOLE_PORTFOLIO, DipSurgeScope.INDIVIDUAL_STOCK)) {
+        for (scope in listOf(DipSurgeScope.BASE_PORTFOLIO, DipSurgeScope.INDIVIDUAL_STOCK)) {
             val r = RebalanceStrategyService.runStrategyResultForTest(
                 singleStockPortfolio(),
                 strategy(
@@ -1091,3 +1182,5 @@ class RebalanceStrategyServiceTest {
         }
     }
 }
+
+

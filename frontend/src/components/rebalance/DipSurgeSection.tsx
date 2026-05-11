@@ -14,7 +14,7 @@ interface Props {
   onChange: (v: DipSurgeState | null) => void
   marginPoints?: string[]
   sliderMax?: number
-  scope?: 'INDIVIDUAL_STOCK' | 'WHOLE_PORTFOLIO'
+  scope?: 'INDIVIDUAL_STOCK' | 'BASE_PORTFOLIO'
   title?: string
 }
 
@@ -157,7 +157,7 @@ export default function DipSurgeSection({
             </div>
           )}
 
-          {value.scope === 'WHOLE_PORTFOLIO' && (
+          {value.scope === 'BASE_PORTFOLIO' && (
             <div className="strategy-row">
               <label>Allocation Strategy</label>
               <select value={value.allocStrategy} onChange={e => update({ allocStrategy: e.target.value })}>

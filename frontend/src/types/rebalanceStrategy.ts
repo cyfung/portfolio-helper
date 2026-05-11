@@ -17,7 +17,7 @@ export type ExecutionMethodState =
 // ── Form state ────────────────────────────────────────────────────────────────
 
 export interface DipSurgeState {
-  scope: string            // 'INDIVIDUAL_STOCK' | 'WHOLE_PORTFOLIO'
+  scope: string            // 'INDIVIDUAL_STOCK' | 'BASE_PORTFOLIO' (daily-rebalanced base reference)
   allocStrategy: string    // MarginRebalanceMode value
   triggers: (PriceMoveTriggerState & { id: string })[]
   execution: ExecutionMethodState
@@ -28,7 +28,7 @@ export interface DipSurgeState {
 }
 
 export interface DipSurgeScopeState {
-  wholePortfolio: DipSurgeState | null
+  basePortfolio: DipSurgeState | null
   individualStock: DipSurgeState | null
 }
 
@@ -98,7 +98,7 @@ export const MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS: { value: MarginRebalanceT
 
 export const DIP_SURGE_SCOPE_OPTIONS = [
   { value: 'INDIVIDUAL_STOCK', label: 'Per Individual Stock' },
-  { value: 'WHOLE_PORTFOLIO',  label: 'Whole Portfolio' },
+  { value: 'BASE_PORTFOLIO',   label: 'Daily-Rebalanced Base Reference' },
 ]
 
 export const PRICE_MOVE_TRIGGER_OPTIONS = [
@@ -129,7 +129,7 @@ export function emptyDipSurge(scope: DipSurgeState['scope'] = 'INDIVIDUAL_STOCK'
 }
 
 function emptyDipSurgeScopes(): DipSurgeScopeState {
-  return { wholePortfolio: null, individualStock: null }
+  return { basePortfolio: null, individualStock: null }
 }
 
 export function emptyStrategy(idx: number): RebalStrategyState {
@@ -205,7 +205,7 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   const minAdjustmentPct = parseFloat(d.minAdjustmentPct ?? '')
   return {
     scope: d.scope,
-    allocStrategy: d.scope === 'WHOLE_PORTFOLIO' ? d.allocStrategy : null,
+    allocStrategy: d.scope === 'BASE_PORTFOLIO' ? d.allocStrategy : null,
     triggers: d.triggers.map(serializeTrigger),
     method: serializeExecution(d.execution),
     limit: (Number.isFinite(selectedLimit) ? selectedLimit : mid) / 100,
@@ -216,7 +216,7 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
 
 function serializeDipSurgeScopes(d: DipSurgeScopeState | DipSurgeState | null | undefined, marginPoints: number[]): object[] {
   const scopes = normalizeDipSurgeScopes(d)
-  return [scopes.wholePortfolio, scopes.individualStock]
+  return [scopes.basePortfolio, scopes.individualStock]
     .filter((v): v is DipSurgeState => v !== null)
     .map(v => serializeDipSurge(v, marginPoints))
 }
@@ -228,16 +228,16 @@ function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
     minAdjustmentPct: item.minAdjustmentPct ?? '0.5',
   })
   const scopes = emptyDipSurgeScopes()
-  if (configValue && !Array.isArray(configValue) && ('wholePortfolio' in configValue || 'individualStock' in configValue)) {
-    scopes.wholePortfolio = configValue.wholePortfolio ? normalize(configValue.wholePortfolio, 'WHOLE_PORTFOLIO') : null
+  if (configValue && !Array.isArray(configValue) && ('basePortfolio' in configValue || 'individualStock' in configValue || 'wholePortfolio' in configValue)) {
+    scopes.basePortfolio = configValue.basePortfolio ? normalize(configValue.basePortfolio, 'BASE_PORTFOLIO') : null
     scopes.individualStock = configValue.individualStock ? normalize(configValue.individualStock, 'INDIVIDUAL_STOCK') : null
     return scopes
   }
   const items = Array.isArray(configValue) ? configValue : (configValue ? [configValue] : [])
   for (const item of items) {
     if (!item) continue
-    if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'WHOLE_PORTFOLIO') scopes.wholePortfolio = normalize(item, 'WHOLE_PORTFOLIO')
-    else scopes.individualStock = normalize(item, 'INDIVIDUAL_STOCK')
+    if (item.scope === 'BASE_PORTFOLIO') scopes.basePortfolio = normalize(item, 'BASE_PORTFOLIO')
+    else if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'INDIVIDUAL_STOCK') scopes.individualStock = normalize(item, 'INDIVIDUAL_STOCK')
   }
   return scopes
 }

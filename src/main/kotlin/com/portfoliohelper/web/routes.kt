@@ -221,23 +221,28 @@ private fun parseExecutionMethod(obj: JsonObject): ExecutionMethod =
         else          -> ExecutionMethod.Once
     }
 
-private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig = DipSurgeConfig(
-    scope         = runCatching { DipSurgeScope.valueOf(obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK") }
-                        .getOrDefault(DipSurgeScope.INDIVIDUAL_STOCK),
-    allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-    },
-    triggers      = (obj["triggers"] as? JsonArray)?.map { parsePriceMoveTrigger(it.jsonObject) } ?: emptyList(),
-    method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once,
-    limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15,
-    coolingOffDays = obj["coolingOffDays"]?.jsonPrimitive?.intOrNull ?: 10,
-    minAdjustmentPct = obj["minAdjustmentPct"]?.jsonPrimitive?.doubleOrNull ?: 0.005,
-)
+private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig? {
+    val scope = runCatching {
+        DipSurgeScope.valueOf(obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK")
+    }.getOrNull() ?: return null
+
+    return DipSurgeConfig(
+        scope         = scope,
+        allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+        },
+        triggers      = (obj["triggers"] as? JsonArray)?.map { parsePriceMoveTrigger(it.jsonObject) } ?: emptyList(),
+        method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once,
+        limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15,
+        coolingOffDays = obj["coolingOffDays"]?.jsonPrimitive?.intOrNull ?: 10,
+        minAdjustmentPct = obj["minAdjustmentPct"]?.jsonPrimitive?.doubleOrNull ?: 0.005,
+    )
+}
 
 private fun parseDipSurgeConfigs(el: JsonElement?): List<DipSurgeConfig> =
     when (el) {
-        is JsonArray -> el.map { parseDipSurgeConfig(it.jsonObject) }
-        is JsonObject -> listOf(parseDipSurgeConfig(el))
+        is JsonArray -> el.mapNotNull { parseDipSurgeConfig(it.jsonObject) }
+        is JsonObject -> listOfNotNull(parseDipSurgeConfig(el))
         else -> emptyList()
     }
 

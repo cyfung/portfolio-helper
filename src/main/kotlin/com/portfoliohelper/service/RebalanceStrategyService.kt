@@ -362,6 +362,9 @@ object RebalanceStrategyService {
     val returnRatios = BacktestService.buildReturnRatios(tickers, seriesMap, dates)
     val dailyLoanRates =
         BacktestService.buildDailyLoanRates(dates, effrx, strategy.marginSpread / 252.0)
+    val dailyBaseReferenceHoldings =
+        tickers.associateWith { targetWeights[it] ?: 0.0 }.toMutableMap()
+    var dailyBaseReferenceValue = dailyBaseReferenceHoldings.values.sum()
 
     val values = mutableListOf(startingBalance)
     val marginUtils = mutableListOf(marginTarget)
@@ -371,7 +374,7 @@ object RebalanceStrategyService {
     fun DipSurgeConfig.buildResources(): DipSurgeResources {
       val keys =
           if (scope == DipSurgeScope.INDIVIDUAL_STOCK) tickers.map { DipSurgeKey.Stock(it) }
-          else listOf(DipSurgeKey.WholePortfolio)
+          else listOf(DipSurgeKey.BasePortfolio)
       return DipSurgeResources(
           checkersByKey = keys.associateWith { key -> triggers.map { it.buildChecker(key) } },
           executorsByKey = keys.associateWith { method.newExecutor() },
@@ -386,6 +389,20 @@ object RebalanceStrategyService {
         .map { it.buildResources() }
     val surgeResources = (listOfNotNull(strategy.sellOnSurge) + strategy.sellOnSurgeConfigs)
         .map { it.buildResources() }
+
+    fun advanceInitialCheckers(res: DipSurgeResources) {
+      val firstDate = dates.firstOrNull() ?: return
+      for ((key, checkers) in res.checkersByKey) {
+        val v =
+            when (key) {
+              is DipSurgeKey.Stock -> seriesMap[key.ticker]!![firstDate]!!
+              is DipSurgeKey.BasePortfolio -> dailyBaseReferenceValue
+            }
+        checkers.forEach { it.advance(v) }
+      }
+    }
+    dipResources.forEach { advanceInitialCheckers(it) }
+    surgeResources.forEach { advanceInitialCheckers(it) }
 
     // ── Per-day helper: check triggers and drive executors for one config ─
     fun processConfig(
@@ -402,7 +419,7 @@ object RebalanceStrategyService {
         val currentValue =
             when (key) {
               is DipSurgeKey.Stock -> seriesMap[key.ticker]!![curDate]!!
-              is DipSurgeKey.WholePortfolio -> account.grossStockValue()
+              is DipSurgeKey.BasePortfolio -> dailyBaseReferenceValue
             }
         res.executorsByKey[key]?.advance(
             triggered,
@@ -433,6 +450,16 @@ object RebalanceStrategyService {
 
       // Step 1: Apply daily price returns to holdings
       account.applyDayReturns(returnRatios, i)
+      for (ticker in tickers) {
+        dailyBaseReferenceHoldings[ticker] =
+            (dailyBaseReferenceHoldings[ticker] ?: 0.0) * (returnRatios[ticker]?.get(i) ?: 1.0)
+      }
+      // Independent reference path: no margin, no cashflow, daily target-weight rebalance.
+      val dailyBaseReferenceTotal = dailyBaseReferenceHoldings.values.sum()
+      for (ticker in tickers) {
+        dailyBaseReferenceHoldings[ticker] = dailyBaseReferenceTotal * (targetWeights[ticker] ?: 0.0)
+      }
+      dailyBaseReferenceValue = dailyBaseReferenceTotal
 
       // Step 2: Accrue margin interest on debt
       account.accrueMarginInterest(dailyLoanRates[i])
@@ -551,13 +578,12 @@ object RebalanceStrategyService {
       }
 
       // Step 7: Advance all trigger checkers with today's values
-      val portfolioGrossValue = account.grossStockValue()
       fun advanceCheckers(res: DipSurgeResources) {
         for ((key, checkers) in res.checkersByKey) {
           val v =
               when (key) {
                 is DipSurgeKey.Stock -> seriesMap[key.ticker]!![curDate]!!
-                is DipSurgeKey.WholePortfolio -> portfolioGrossValue
+                is DipSurgeKey.BasePortfolio -> dailyBaseReferenceValue
               }
           checkers.forEach { it.advance(v) }
         }
@@ -601,7 +627,7 @@ object RebalanceStrategyService {
     if (equity <= 0) return 0.0
 
     return when (key) {
-      is DipSurgeKey.WholePortfolio -> {
+      is DipSurgeKey.BasePortfolio -> {
         val currentRatio = (-account.cashBalance()).coerceAtLeast(0.0) / equity
         if (direction == Direction.BUY) {
           max(0.0, equity * (limit - currentRatio))
@@ -689,7 +715,7 @@ object RebalanceStrategyService {
   ) {
     val delta = if (direction == Direction.BUY) amount else -amount
     when (key) {
-      is DipSurgeKey.WholePortfolio ->
+      is DipSurgeKey.BasePortfolio ->
           applyAllocDelta(tickers, account, targetWeights, delta, allocStrategy)
       is DipSurgeKey.Stock ->
           account.applyTradeDelta(key.ticker, delta)

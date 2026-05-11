@@ -20,7 +20,7 @@ enum class RebalancePeriodOverride {
 
 enum class CashflowScaling { SCALED_BY_TARGET_MARGIN, SCALED_BY_CURRENT_MARGIN, NO_SCALING }
 
-enum class DipSurgeScope { INDIVIDUAL_STOCK, WHOLE_PORTFOLIO }
+enum class DipSurgeScope { INDIVIDUAL_STOCK, BASE_PORTFOLIO }
 
 enum class Direction { BUY, SELL }
 
@@ -29,14 +29,14 @@ enum class MarginRebalanceTradeDirection { BOTH, BUY_ONLY, SELL_ONLY }
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 
 sealed class DipSurgeKey {
-    object WholePortfolio : DipSurgeKey()
+    object BasePortfolio : DipSurgeKey()
     data class Stock(val ticker: String) : DipSurgeKey()
 }
 
 // ── TriggerChecker interface ──────────────────────────────────────────────────
 
 interface TriggerChecker {
-    /** Called every day with today's value (stock price for Stock keys, portfolio gross value for WholePortfolio). */
+    /** Called every day with today's value (stock price for Stock keys, daily-rebalanced base reference for BasePortfolio). */
     fun advance(value: Double)
 
     /** Evaluate trigger against accumulated state. Called after advance on the same day. */
@@ -48,7 +48,7 @@ interface TriggerChecker {
 interface DipSurgeExecutor {
     /**
      * Called every day per key. Handles both ongoing installment runs and new trigger fires.
-     * [currentValue] ticker price for Stock keys, total holdings value for WholePortfolio.
+     * [currentValue] ticker price for Stock keys, daily-rebalanced base reference for BasePortfolio.
      */
     fun advance(
         triggered: Boolean,
@@ -107,7 +107,7 @@ data class MarginTriggerAction(
 
 data class DipSurgeConfig(
     val scope: DipSurgeScope,
-    val allocStrategy: MarginRebalanceMode?,  // required when scope = WHOLE_PORTFOLIO
+    val allocStrategy: MarginRebalanceMode?,  // required when scope = BASE_PORTFOLIO
     val triggers: List<PriceMoveTrigger>,
     val method: ExecutionMethod,
     val limit: Double,
@@ -182,9 +182,10 @@ data class RebalanceStrategyScoreBatchRequest(
 // ── TriggerChecker implementations ───────────────────────────────────────────
 
 private class VsNDaysAgoChecker(
-    private val nDays: Int,
+    nDays: Int,
     private val pct: Double
 ) : TriggerChecker {
+    private val nDays = nDays.coerceAtLeast(1)
     private val window = ArrayDeque<Double>()
 
     override fun advance(value: Double) {
@@ -206,9 +207,10 @@ private class VsNDaysAgoChecker(
 }
 
 private class VsRunningAvgChecker(
-    private val nDays: Int,
+    nDays: Int,
     private val pct: Double
 ) : TriggerChecker {
+    private val nDays = nDays.coerceAtLeast(1)
     private val window = ArrayDeque<Double>()
     private var current = Double.NaN
 
@@ -222,7 +224,7 @@ private class VsRunningAvgChecker(
     }
 
     override fun check(direction: Direction): Boolean {
-        if (window.isEmpty() || current.isNaN()) return false
+        if (window.size < nDays || current.isNaN()) return false
         val avg = window.average()
         if (avg <= 0) return false
         val move = (current - avg) / avg
