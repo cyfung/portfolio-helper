@@ -217,7 +217,6 @@ export default function PortfolioViewer() {
     )
   }
 
-  const lastUpdateTime = new Date().toLocaleTimeString(undefined, { hour12: false })
   const contentScalePct = Math.round(portfolioContentScale * 100)
   const contentScaleStyle = {
     '--portfolio-content-scale': String(portfolioContentScale),
@@ -338,9 +337,6 @@ export default function PortfolioViewer() {
             </div>
 
             <span className="h-divider" />
-            <span className="header-timestamp">{lastUpdateTime}</span>
-            <span className="h-divider" />
-
             {renderCurrencyControl()}
           </div>
 

@@ -1,5 +1,5 @@
 // ── StockTable.tsx — Port of buildStockTable from PortfolioRenderer.kt ────────
-import { Fragment, useEffect, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
 import {
@@ -29,6 +29,11 @@ export default function StockTable() {
     showStockDisplayCurrency, groupViewActive,
     appConfig, stockGroupBy,
   } = usePortfolioStore()
+  const [freshAt, setFreshAt] = useState<Date | null>(null)
+
+  useEffect(() => {
+    if (lastStockDisplay) setFreshAt(new Date())
+  }, [lastStockDisplay])
 
   const sortedCcys = useMemo(() => buildSortedCcys(
     appConfig?.displayCurrencies ?? [],
@@ -99,6 +104,7 @@ export default function StockTable() {
   // Check if any stock has target weight > 0 (for rebal warning)
   const totalTargetWeight = stocks.reduce((sum, s) => sum + (s.targetWeight ?? 0), 0)
   const showWeightWarning = totalTargetWeight > 0 && Math.abs(totalTargetWeight - 100) > 1
+  const freshAtLabel = freshAt?.toLocaleTimeString(undefined, { hour12: false }) ?? 'Waiting for data'
 
   // ── EST price ladder tooltip ───────────────────────────────────────────────
   useEffect(() => {
@@ -153,6 +159,7 @@ export default function StockTable() {
 
   return (
     <>
+      <div className="stock-table-block">
       <table className="portfolio-table" id="stock-view-table">
         <thead>
           <tr>
@@ -384,6 +391,16 @@ export default function StockTable() {
           ))}
         </tbody>
       </table>
+
+      <div className="stock-table-freshness">
+        <span className="stock-table-freshness-label">Data freshness:</span>
+        {freshAt ? (
+          <time dateTime={freshAt.toISOString()}>{freshAtLabel}</time>
+        ) : (
+          <span className="stock-table-freshness-value">{freshAtLabel}</span>
+        )}
+      </div>
+      </div>
 
       {showWeightWarning && (
         <div className="rebal-weight-warning" id="rebal-weight-warning">

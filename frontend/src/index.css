@@ -1545,6 +1545,31 @@ h1 {
 .stock-section {
     width: max-content;
 }
+.stock-table-block {
+    width: max-content;
+}
+.stock-table-freshness {
+    display: flex;
+    justify-content: flex-end;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-top: 0.15rem;
+    margin-bottom: var(--spacing-sm);
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+}
+.stock-table-freshness time,
+.stock-table-freshness-value {
+    color: var(--color-positive);
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+}
+.stock-table-freshness-label {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-base), sans-serif;
+    font-weight: var(--font-weight-medium);
+}
 
 .group-by-control {
     display: flex;
