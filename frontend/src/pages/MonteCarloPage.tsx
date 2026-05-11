@@ -5,11 +5,11 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush,
 } from 'recharts'
-import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
-import PortfolioBlock from '@/components/backtest/PortfolioBlock'
-import CashflowControls from '@/components/backtest/CashflowControls'
-import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
-import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import {
+  BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
+} from '@/components/backtest/CommonBacktestSections'
+import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { getChartTheme } from '@/lib/chartTheme'
 import { scaleDash } from '@/lib/colorScheme'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
@@ -19,9 +19,9 @@ import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
-  cashflowStateFromSettings, cashflowToPayload, startingBalanceToPayload,
+  cashflowStateFromSettings, cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, startingBalanceToPayload,
 } from '@/types/backtest'
-import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 // ── Effective curves helper ───────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ export default function MonteCarloPage() {
   const [toDate, setToDate]           = useState('')
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
-  const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
+  const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [minChunk, setMinChunk]       = useState('3')
   const [maxChunk, setMaxChunk]       = useState('8')
   const [simYears, setSimYears]       = useState('20')
@@ -70,26 +70,7 @@ export default function MonteCarloPage() {
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
-  const [chartWidth, setChartWidth] = useState(1000)
-  const chartObsRef = useRef<ResizeObserver | null>(null)
-  const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
-    chartObsRef.current?.disconnect()
-    chartObsRef.current = null
-    if (!node) return
-    const obs = new ResizeObserver(entries => setChartWidth(entries[0].contentRect.width))
-    obs.observe(node)
-    chartObsRef.current = obs
-  }, [])
-
-  async function loadSavedPortfolios() {
-    try {
-      const res = await fetch('/api/backtest/savedPortfolios')
-      if (!res.ok) return []
-      return await res.json()
-    } catch (_) {
-      return []
-    }
-  }
+  const { chartWidth, chartContainerRef } = useChartContainerWidth()
 
   // Restore settings on mount
   useEffect(() => {
@@ -173,7 +154,7 @@ export default function MonteCarloPage() {
     setError('')
     let portfolios
     try {
-      const savedPortfolios = await loadSavedPortfolios()
+      const savedPortfolios = await fetchSavedPortfolios()
       portfolios = blocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios))
         .filter(p => p.tickers.length > 0)
@@ -296,8 +277,8 @@ export default function MonteCarloPage() {
   }
   function toggleAll(checked: boolean) { setSelected(checked ? new Set(allKeys) : new Set()) }
 
-  const updateBlock = useCallback((i: number) =>
-    (s: BlockState) => setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
+  const updateBlock = useCallback((i: number, s: BlockState) =>
+    setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
     [],
   )
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
@@ -327,35 +308,28 @@ export default function MonteCarloPage() {
 
   return (
     <div className="container">
-      <div className="portfolio-header">
-        <div className="header-title-group"><PageNavTabs active="/montecarlo" /></div>
-        <HeaderRight><PrivacyToggleButton /><ConfigButton /><ThemeToggle /></HeaderRight>
-      </div>
+      <BacktestPageHeader active="/montecarlo" />
 
       <div className="backtest-form-card">
-        <div className="backtest-section backtest-config-row">
-          <DateFieldWithQuickSelect label="From Date (pool)" inputId="mc-from-date" value={fromDate} onChange={setFromDate} />
-          <DateFieldWithQuickSelect label="To Date (pool)"   inputId="mc-to-date"   value={toDate}   onChange={setToDate} />
-
-          <div className="backtest-config-controls">
-            <label htmlFor="mc-import-code">Config Code</label>
-            <div className="backtest-config-group">
-              <input
-                type="text" id="mc-import-code" placeholder="Paste code..." spellCheck={false}
-                value={importCode} onChange={e => setImportCode(e.target.value)}
-              />
-              <button className="backtest-config-btn" onClick={handleImport}>Import</button>
-              <button className="backtest-config-btn" onClick={handleExport}>Export</button>
-              {configError && <div className="backtest-config-error">{configError}</div>}
-            </div>
-          </div>
-        </div>
-
-        <CashflowControls
+        <ScenarioSetupControls
           idPrefix="mc"
+          fromLabel="From Date (pool)"
+          fromInputId="mc-from-date"
+          fromDate={fromDate}
+          toLabel="To Date (pool)"
+          toInputId="mc-to-date"
+          toDate={toDate}
+          importInputId="mc-import-code"
+          importCode={importCode}
+          configError={configError}
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
+          onFromDateChange={setFromDate}
+          onToDateChange={setToDate}
+          onImportCodeChange={setImportCode}
+          onImport={handleImport}
+          onExport={handleExport}
           onStartingBalanceChange={setStartingBalance}
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
@@ -375,18 +349,15 @@ export default function MonteCarloPage() {
           ))}
         </div>
 
-        <SavedPortfoliosBar ref={savedBarRef} />
-
-        <div className="portfolio-blocks">
-          {blocks.map((b, i) => (
-            <PortfolioBlock key={i} idx={i} value={b} onChange={updateBlock(i)} onSavedRefresh={refreshSaved} />
-          ))}
-        </div>
+        <SavedPortfolioBlocksSection
+          savedBarRef={savedBarRef}
+          blocks={blocks}
+          onBlockChange={updateBlock}
+          onSavedRefresh={refreshSaved}
+        />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button className="run-backtest-btn" type="button" onClick={() => doRun(null)} disabled={running}>
-            {running ? <>Running…<span className="btn-spinner" /></> : 'Run Simulation'}
-          </button>
+          <RunButton label="Run Simulation" running={running} disabled={running} onClick={() => doRun(null)} />
           {lastSeed != null && (
             <button
               className="run-backtest-btn" type="button"

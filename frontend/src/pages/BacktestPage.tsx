@@ -5,26 +5,26 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush, ReferenceDot,
 } from 'recharts'
-import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
-import PortfolioBlock from '@/components/backtest/PortfolioBlock'
-import CashflowControls from '@/components/backtest/CashflowControls'
-import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
-import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import {
+  BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
+} from '@/components/backtest/CommonBacktestSections'
+import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
+import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
-  cashflowToPayload, startingBalanceToPayload,
+  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, startingBalanceToPayload,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
-import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 // ── Stats helper ──────────────────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@ export default function BacktestPage() {
   const [toDate, setToDate]           = useState('')
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
-  const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
+  const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
   const [running, setRunning]         = useState(false)
@@ -257,16 +257,7 @@ export default function BacktestPage() {
   }, [appConfig?.privacyScaleEnabled, appConfig?.privacyScalePct])
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
-  const [chartWidth, setChartWidth] = useState(1000)
-  const chartObsRef = useRef<ResizeObserver | null>(null)
-  const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
-    chartObsRef.current?.disconnect()
-    chartObsRef.current = null
-    if (!node) return
-    const obs = new ResizeObserver(entries => setChartWidth(entries[0].contentRect.width))
-    obs.observe(node)
-    chartObsRef.current = obs
-  }, [])
+  const { chartWidth, chartContainerRef } = useChartContainerWidth()
 
   // Load portfolios for overlay selector
   useEffect(() => {
@@ -280,16 +271,6 @@ export default function BacktestPage() {
       })
       .catch(() => {})
   }, [])
-
-  async function loadSavedPortfolios() {
-    try {
-      const res = await fetch('/api/backtest/savedPortfolios')
-      if (!res.ok) return []
-      return await res.json()
-    } catch (_) {
-      return []
-    }
-  }
 
   // Fetch real portfolio data when slug or date range changes
   useEffect(() => {
@@ -561,7 +542,7 @@ export default function BacktestPage() {
     setError('')
     let portfolios
     try {
-      const latestSavedPortfolios = await loadSavedPortfolios()
+      const latestSavedPortfolios = await fetchSavedPortfolios()
       portfolios = blocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
         .filter(p => p.tickers.length > 0)
@@ -692,8 +673,8 @@ export default function BacktestPage() {
     setForceActionPointChartDots(prev => ({ ...prev, [chart]: checked }))
   }
 
-  const updateBlock = useCallback((i: number) =>
-    (s: BlockState) => setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
+  const updateBlock = useCallback((i: number, s: BlockState) =>
+    setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
     [],
   )
   const refreshSaved = useCallback(() => {
@@ -879,35 +860,28 @@ export default function BacktestPage() {
 
   return (
     <div className="container">
-      <div className="portfolio-header">
-        <div className="header-title-group"><PageNavTabs active="/backtest" /></div>
-        <HeaderRight><PrivacyToggleButton /><ConfigButton /><ThemeToggle /></HeaderRight>
-      </div>
+      <BacktestPageHeader active="/backtest" />
 
       <div className="backtest-form-card">
-        <div className="backtest-section backtest-config-row">
-          <DateFieldWithQuickSelect label="From Date" inputId="from-date" value={fromDate} onChange={setFromDate} />
-          <DateFieldWithQuickSelect label="To Date"   inputId="to-date"   value={toDate}   onChange={setToDate} />
-
-          <div className="backtest-config-controls">
-            <label htmlFor="backtest-import-code">Config Code</label>
-            <div className="backtest-config-group">
-              <input
-                type="text" id="backtest-import-code" placeholder="Paste code..." spellCheck={false}
-                value={importCode} onChange={e => setImportCode(e.target.value)}
-              />
-              <button className="backtest-config-btn" onClick={handleImport}>Import</button>
-              <button className="backtest-config-btn" onClick={handleExport}>Export</button>
-              {configError && <div className="backtest-config-error">{configError}</div>}
-            </div>
-          </div>
-        </div>
-
-        <CashflowControls
+        <ScenarioSetupControls
           idPrefix="backtest"
+          fromLabel="From Date"
+          fromInputId="from-date"
+          fromDate={fromDate}
+          toLabel="To Date"
+          toInputId="to-date"
+          toDate={toDate}
+          importInputId="backtest-import-code"
+          importCode={importCode}
+          configError={configError}
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
+          onFromDateChange={setFromDate}
+          onToDateChange={setToDate}
+          onImportCodeChange={setImportCode}
+          onImport={handleImport}
+          onExport={handleExport}
           onStartingBalanceChange={setStartingBalance}
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
@@ -932,21 +906,14 @@ export default function BacktestPage() {
           </div>
         )}
 
-        <SavedPortfoliosBar ref={savedBarRef} />
+        <SavedPortfolioBlocksSection
+          savedBarRef={savedBarRef}
+          blocks={blocks}
+          onBlockChange={updateBlock}
+          onSavedRefresh={refreshSaved}
+        />
 
-        <div className="portfolio-blocks">
-          {blocks.map((b, i) => (
-            <PortfolioBlock
-              key={i} idx={i} value={b}
-              onChange={updateBlock(i)}
-              onSavedRefresh={refreshSaved}
-            />
-          ))}
-        </div>
-
-        <button className="run-backtest-btn" type="button" onClick={handleRun} disabled={running}>
-          {running ? <>Running…<span className="btn-spinner" /></> : 'Run Backtest'}
-        </button>
+        <RunButton label="Run Backtest" running={running} disabled={running} onClick={handleRun} />
       </div>
 
       {error && <div className="backtest-error">{error}</div>}

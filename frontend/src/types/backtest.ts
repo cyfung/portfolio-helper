@@ -38,8 +38,9 @@ export const PALETTE = [
 export const PERCENTILE_COLORS = ['#e05c5c', '#e0955c', '#d4c84a', '#4caf50', '#4aabcf', '#4a6fcf', '#7c4acf']
 export const PERCENTILE_LIST = [5, 10, 25, 50, 75, 90, 95]
 
+export const DEFAULT_CASHFLOW_FREQUENCY = 'MONTHLY'
+
 export const CASHFLOW_FREQUENCY_OPTIONS = [
-  { value: 'NONE',      label: 'None' },
   { value: 'MONTHLY',   label: 'Monthly' },
   { value: 'QUARTERLY', label: 'Quarterly' },
   { value: 'YEARLY',    label: 'Yearly' },
@@ -93,10 +94,14 @@ export function cashflowToPayload(amount: string, frequency: string): CashflowPa
 }
 
 export function cashflowStateFromSettings(req: any): Partial<CashflowFormState> {
+  const frequency = req.cashflow?.frequency === 'NONE'
+    ? DEFAULT_CASHFLOW_FREQUENCY
+    : req.cashflow?.frequency
+
   return {
     ...(req.startingBalance != null ? { startingBalance: String(req.startingBalance) } : {}),
     ...(req.cashflow?.amount != null ? { cashflowAmount: String(req.cashflow.amount) } : {}),
-    ...(req.cashflow?.frequency ? { cashflowFrequency: req.cashflow.frequency } : {}),
+    ...(frequency ? { cashflowFrequency: frequency } : {}),
   }
 }
 

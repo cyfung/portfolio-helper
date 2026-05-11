@@ -6,20 +6,21 @@ import {
   Legend, ResponsiveContainer, Brush, ReferenceDot,
 } from 'recharts'
 import { Lock, SlidersHorizontal, Unlock } from 'lucide-react'
-import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
+import {
+  BacktestPageHeader, RunButton, ScenarioSetupControls,
+} from '@/components/backtest/CommonBacktestSections'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
-import CashflowControls from '@/components/backtest/CashflowControls'
-import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import RebalanceStrategyBlock, { type RebalanceStrategyBlockRef } from '@/components/rebalance/RebalanceStrategyBlock'
 import SavedStrategiesBar, { type SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { useChartTheme } from '@/lib/chartTheme'
+import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
-  cashflowToPayload, startingBalanceToPayload, REBALANCE_MARGIN_MODE_OPTIONS, REBALANCE_OPTIONS,
+  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, startingBalanceToPayload, REBALANCE_MARGIN_MODE_OPTIONS, REBALANCE_OPTIONS,
 } from '@/types/backtest'
 import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
@@ -30,7 +31,7 @@ import {
   REBALANCE_PERIOD_OVERRIDE_OPTIONS, type DipSurgeState, type ExecutionMethodState,
   type PriceMoveTriggerState,
 } from '@/types/rebalanceStrategy'
-import { resolvedBlockStateToAPIPortfolio, savedPortfolioConfig } from '@/lib/portfolioRefs'
+import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio, savedPortfolioConfig } from '@/lib/portfolioRefs'
 
 type OptimizerMetric = 'cagr' | 'sharpe' | 'upi'
 type OptimizerProgress = {
@@ -426,7 +427,7 @@ export default function RebalanceStrategyPage() {
   const [toDate, setToDate]       = useState('')
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
-  const [cashflowFrequency, setCashflowFrequency] = useState('NONE')
+  const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
   const [running, setRunning]     = useState(false)
@@ -466,14 +467,7 @@ export default function RebalanceStrategyPage() {
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
   const strategyBlockRefs = useRef<(RebalanceStrategyBlockRef | null)[]>([])
-  const [chartWidth, setChartWidth] = useState(1000)
-  const chartObsRef = useRef<ResizeObserver | null>(null)
-  const chartContainerRef = useCallback((node: HTMLDivElement | null) => {
-    chartObsRef.current?.disconnect(); chartObsRef.current = null
-    if (!node) return
-    const obs = new ResizeObserver(entries => setChartWidth(entries[0].contentRect.width))
-    obs.observe(node); chartObsRef.current = obs
-  }, [])
+  const { chartWidth, chartContainerRef } = useChartContainerWidth()
 
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
@@ -503,21 +497,11 @@ export default function RebalanceStrategyPage() {
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
-  async function loadSavedPortfolios() {
-    try {
-      const res = await fetch('/api/backtest/savedPortfolios')
-      if (!res.ok) return []
-      return await res.json()
-    } catch (_) {
-      return []
-    }
-  }
-
   async function handleRun() {
     setError('')
     let portfolioApi
     try {
-      portfolioApi = resolvedBlockStateToAPIPortfolio(portfolio, 0, await loadSavedPortfolios())
+      portfolioApi = resolvedBlockStateToAPIPortfolio(portfolio, 0, await fetchSavedPortfolios())
     } catch (e: any) {
       setError(e.message || 'Unable to resolve saved portfolio references.')
       return
@@ -1015,7 +999,7 @@ export default function RebalanceStrategyPage() {
       return
     }
 
-    const savedPortfolios = await loadSavedPortfolios()
+    const savedPortfolios = await fetchSavedPortfolios()
     let portfolioApi
     try {
       portfolioApi = resolvedBlockStateToAPIPortfolio(portfolio, 0, savedPortfolios)
@@ -1399,35 +1383,28 @@ export default function RebalanceStrategyPage() {
 
   return (
     <div className="container">
-      <div className="portfolio-header">
-        <div className="header-title-group"><PageNavTabs active="/rebalance-strategy" /></div>
-        <HeaderRight><PrivacyToggleButton /><ConfigButton /><ThemeToggle /></HeaderRight>
-      </div>
+      <BacktestPageHeader active="/rebalance-strategy" />
 
       <div className="backtest-form-card">
-        <div className="backtest-section backtest-config-row">
-          <DateFieldWithQuickSelect label="From Date" inputId="rs-from-date" value={fromDate} onChange={setFromDate} />
-          <DateFieldWithQuickSelect label="To Date"   inputId="rs-to-date"   value={toDate}   onChange={setToDate} />
-
-          <div className="backtest-config-controls">
-            <label htmlFor="rs-import-code">Config Code</label>
-            <div className="backtest-config-group">
-              <input
-                type="text" id="rs-import-code" placeholder="Paste code..." spellCheck={false}
-                value={importCode} onChange={e => setImportCode(e.target.value)}
-              />
-              <button className="backtest-config-btn" onClick={handleImport}>Import</button>
-              <button className="backtest-config-btn" onClick={handleExport}>Export</button>
-              {configError && <div className="backtest-config-error">{configError}</div>}
-            </div>
-          </div>
-        </div>
-
-        <CashflowControls
+        <ScenarioSetupControls
           idPrefix="rs"
+          fromLabel="From Date"
+          fromInputId="rs-from-date"
+          fromDate={fromDate}
+          toLabel="To Date"
+          toInputId="rs-to-date"
+          toDate={toDate}
+          importInputId="rs-import-code"
+          importCode={importCode}
+          configError={configError}
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
+          onFromDateChange={setFromDate}
+          onToDateChange={setToDate}
+          onImportCodeChange={setImportCode}
+          onImport={handleImport}
+          onExport={handleExport}
           onStartingBalanceChange={setStartingBalance}
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
@@ -1626,9 +1603,12 @@ export default function RebalanceStrategyPage() {
           ))}
         </div>
 
-        <button className="run-backtest-btn" type="button" onClick={handleRun} disabled={running || optimizerProgress.running}>
-          {running ? <>Running…<span className="btn-spinner" /></> : 'Run Rebalance Strategy'}
-        </button>
+        <RunButton
+          label="Run Rebalance Strategy"
+          running={running}
+          disabled={running || optimizerProgress.running}
+          onClick={handleRun}
+        />
       </div>
 
       {error && <div className="backtest-error">{error}</div>}

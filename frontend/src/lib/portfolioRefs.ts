@@ -6,6 +6,16 @@ export interface ResolvedStockWeight {
   weight: number
 }
 
+export async function fetchSavedPortfolios(): Promise<SavedPortfolio[]> {
+  try {
+    const res = await fetch('/api/backtest/savedPortfolios')
+    if (!res.ok) return []
+    return await res.json()
+  } catch (_) {
+    return []
+  }
+}
+
 function isPortfolioRef(row: any) {
   return row?.isPortfolioRef === true || row?.type === 'PORTFOLIO_REF' || !!row?.portfolioRef
 }
