@@ -137,9 +137,9 @@ const OPTIMIZER_LOCKS: {
   {
     key: 'buyDipBase',
     label: 'BD-B',
-    name: 'Buy Dip Daily-Rebalanced Base Reference',
-    enabledItems: ['Daily-rebalanced base buy dip enabled'],
-    configItems: ['Daily-rebalanced base buy dip config'],
+    name: 'Buy Dip Portfolio Trigger',
+    enabledItems: ['Portfolio buy dip enabled'],
+    configItems: ['Portfolio buy dip config'],
   },
   {
     key: 'buyDipIndividual',
@@ -151,9 +151,9 @@ const OPTIMIZER_LOCKS: {
   {
     key: 'sellSurgeBase',
     label: 'SS-B',
-    name: 'Sell Surge Daily-Rebalanced Base Reference',
-    enabledItems: ['Daily-rebalanced base sell surge enabled'],
-    configItems: ['Daily-rebalanced base sell surge config'],
+    name: 'Sell Surge Portfolio Trigger',
+    enabledItems: ['Portfolio sell surge enabled'],
+    configItems: ['Portfolio sell surge config'],
   },
   {
     key: 'sellSurgeIndividual',
@@ -199,6 +199,8 @@ type DipSurgeTriggerGenome = {
 
 type DipSurgeGenome = {
   allocStrategy: string
+  portfolioSource?: string
+  referenceTicker?: string
   limit: number
   coolingOffDays: number
   minAdjustmentPctTenths: number
@@ -281,6 +283,7 @@ const OPTIMIZER_ALLOC_STRATEGIES = REBALANCE_MARGIN_MODE_OPTIONS.map(o => o.valu
 const OPTIMIZER_TRADE_DIRECTIONS: RebalStrategyState['marginRebalanceTradeDirection'][] = ['BOTH', 'BUY_ONLY', 'SELL_ONLY']
 const OPTIMIZER_TRIGGER_TYPES: PriceMoveTriggerState['type'][] = ['VS_N_DAYS_AGO', 'VS_RUNNING_AVG', 'PEAK_DEVIATION']
 const OPTIMIZER_EXECUTION_METHODS: ExecutionMethodState['method'][] = ['ONCE', 'CONSECUTIVE', 'STEPPED']
+const PORTFOLIO_TRIGGER_SOURCES = ['STRATEGY_GROSS', 'REFERENCE_PORTFOLIO']
 
 function clampNumber(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
@@ -590,6 +593,7 @@ export default function RebalanceStrategyPage() {
     return {
       ...genome,
       allocStrategy: OPTIMIZER_ALLOC_STRATEGIES.includes(genome.allocStrategy) ? genome.allocStrategy : 'PROPORTIONAL',
+      portfolioSource: PORTFOLIO_TRIGGER_SOURCES.includes(genome.portfolioSource ?? '') ? genome.portfolioSource : 'REFERENCE_PORTFOLIO',
       limit: discreteMargins?.length ? nearestChoice(genome.limit, discreteMargins) : clampInt(genome.limit, minMargin, maxMargin),
       coolingOffDays: clampInt(genome.coolingOffDays, 0, 60),
       minAdjustmentPctTenths: clampInt(minAdjustmentPctTenths, 0, 100),
@@ -612,6 +616,8 @@ export default function RebalanceStrategyPage() {
     const minAdjustmentPct = parseFloat(state.minAdjustmentPct ?? '')
     return normalizeDipSurgeGenome({
       allocStrategy: state.allocStrategy || 'PROPORTIONAL',
+      portfolioSource: state.portfolioSource ?? 'REFERENCE_PORTFOLIO',
+      referenceTicker: state.referenceTicker ?? '',
       limit: Number.isFinite(limit) ? limit : bounds.mid,
       coolingOffDays: parseInt(state.coolingOffDays ?? '', 10) || 10,
       minAdjustmentPctTenths: clampInt((Number.isFinite(minAdjustmentPct) ? minAdjustmentPct : 0.5) * 10, 0, 100),
@@ -638,6 +644,7 @@ export default function RebalanceStrategyPage() {
   function randomDipSurgeGenome(minMargin: number, maxMargin: number, discreteMargins?: number[]): DipSurgeGenome {
     return normalizeDipSurgeGenome({
       allocStrategy: randomChoice(OPTIMIZER_ALLOC_STRATEGIES),
+      portfolioSource: 'REFERENCE_PORTFOLIO',
       limit: discreteMargins?.length ? randomChoice(discreteMargins) : randomInt(minMargin, maxMargin),
       coolingOffDays: randomInt(0, 12) * 5,
       minAdjustmentPctTenths: 5,
@@ -665,6 +672,8 @@ export default function RebalanceStrategyPage() {
     return {
       scope,
       allocStrategy: genome.allocStrategy,
+      portfolioSource: genome.portfolioSource ?? 'REFERENCE_PORTFOLIO',
+      referenceTicker: genome.referenceTicker ?? '',
       limit: String(genome.limit),
       limitPointIndex: '',
       coolingOffDays: String(genome.coolingOffDays),

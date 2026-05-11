@@ -17,8 +17,10 @@ export type ExecutionMethodState =
 // ── Form state ────────────────────────────────────────────────────────────────
 
 export interface DipSurgeState {
-  scope: string            // 'INDIVIDUAL_STOCK' | 'BASE_PORTFOLIO' (daily-rebalanced base reference)
+  scope: string            // 'INDIVIDUAL_STOCK' | 'BASE_PORTFOLIO'
   allocStrategy: string    // MarginRebalanceMode value
+  portfolioSource?: string // 'STRATEGY_GROSS' | 'REFERENCE_PORTFOLIO'
+  referenceTicker?: string
   triggers: (PriceMoveTriggerState & { id: string })[]
   execution: ExecutionMethodState
   limit: string
@@ -98,7 +100,12 @@ export const MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS: { value: MarginRebalanceT
 
 export const DIP_SURGE_SCOPE_OPTIONS = [
   { value: 'INDIVIDUAL_STOCK', label: 'Per Individual Stock' },
-  { value: 'BASE_PORTFOLIO',   label: 'Daily-Rebalanced Base Reference' },
+  { value: 'BASE_PORTFOLIO',   label: 'Portfolio Trigger' },
+]
+
+export const PORTFOLIO_TRIGGER_SOURCE_OPTIONS = [
+  { value: 'STRATEGY_GROSS',      label: 'Strategy Gross Portfolio' },
+  { value: 'REFERENCE_PORTFOLIO', label: 'Independent Reference' },
 ]
 
 export const PRICE_MOVE_TRIGGER_OPTIONS = [
@@ -119,6 +126,8 @@ export function emptyDipSurge(scope: DipSurgeState['scope'] = 'INDIVIDUAL_STOCK'
   return {
     scope,
     allocStrategy: 'PROPORTIONAL',
+    portfolioSource: 'REFERENCE_PORTFOLIO',
+    referenceTicker: '',
     triggers: [],
     execution: { method: 'ONCE' },
     limit: '',
@@ -203,9 +212,13 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   const mid = marginPoints[2] ?? 50
   const coolingOffDays = parseInt(d.coolingOffDays ?? '', 10)
   const minAdjustmentPct = parseFloat(d.minAdjustmentPct ?? '')
+  const portfolioSource = d.portfolioSource || 'REFERENCE_PORTFOLIO'
+  const referenceTicker = (d.referenceTicker ?? '').trim().toUpperCase()
   return {
     scope: d.scope,
     allocStrategy: d.scope === 'BASE_PORTFOLIO' ? d.allocStrategy : null,
+    portfolioSource: d.scope === 'BASE_PORTFOLIO' ? portfolioSource : null,
+    referenceTicker: d.scope === 'BASE_PORTFOLIO' && portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
     triggers: d.triggers.map(serializeTrigger),
     method: serializeExecution(d.execution),
     limit: (Number.isFinite(selectedLimit) ? selectedLimit : mid) / 100,
@@ -222,14 +235,22 @@ function serializeDipSurgeScopes(d: DipSurgeScopeState | DipSurgeState | null | 
 }
 
 function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
-  const normalize = (item: any, scope: DipSurgeState['scope']): DipSurgeState => ({
+  const normalize = (
+    item: any,
+    scope: DipSurgeState['scope'],
+    portfolioSource = item.portfolioSource ?? 'REFERENCE_PORTFOLIO',
+  ): DipSurgeState => ({
     ...item,
     scope,
+    portfolioSource: scope === 'BASE_PORTFOLIO' ? portfolioSource : 'REFERENCE_PORTFOLIO',
+    referenceTicker: scope === 'BASE_PORTFOLIO' && portfolioSource === 'REFERENCE_PORTFOLIO' ? (item.referenceTicker ?? '') : '',
     minAdjustmentPct: item.minAdjustmentPct ?? '0.5',
   })
   const scopes = emptyDipSurgeScopes()
   if (configValue && !Array.isArray(configValue) && ('basePortfolio' in configValue || 'individualStock' in configValue || 'wholePortfolio' in configValue)) {
-    scopes.basePortfolio = configValue.basePortfolio ? normalize(configValue.basePortfolio, 'BASE_PORTFOLIO') : null
+    scopes.basePortfolio = configValue.basePortfolio
+      ? normalize(configValue.basePortfolio, 'BASE_PORTFOLIO')
+      : (configValue.wholePortfolio ? normalize(configValue.wholePortfolio, 'BASE_PORTFOLIO', 'STRATEGY_GROSS') : null)
     scopes.individualStock = configValue.individualStock ? normalize(configValue.individualStock, 'INDIVIDUAL_STOCK') : null
     return scopes
   }
@@ -237,6 +258,7 @@ function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
   for (const item of items) {
     if (!item) continue
     if (item.scope === 'BASE_PORTFOLIO') scopes.basePortfolio = normalize(item, 'BASE_PORTFOLIO')
+    else if (item.scope === 'WHOLE_PORTFOLIO') scopes.basePortfolio = normalize(item, 'BASE_PORTFOLIO', 'STRATEGY_GROSS')
     else if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'INDIVIDUAL_STOCK') scopes.individualStock = normalize(item, 'INDIVIDUAL_STOCK')
   }
   return scopes

@@ -221,16 +221,42 @@ private fun parseExecutionMethod(obj: JsonObject): ExecutionMethod =
         else          -> ExecutionMethod.Once
     }
 
+private fun parsePortfolioTriggerSource(obj: JsonObject, scopeText: String?): PortfolioTriggerSource =
+    if (scopeText == "WHOLE_PORTFOLIO") {
+        PortfolioTriggerSource.STRATEGY_GROSS
+    } else {
+        runCatching {
+            PortfolioTriggerSource.valueOf(
+                obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO"
+            )
+        }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
+    }
+
 private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig? {
-    val scope = runCatching {
-        DipSurgeScope.valueOf(obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK")
-    }.getOrNull() ?: return null
+    val scopeText = obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK"
+    val scope =
+        if (scopeText == "WHOLE_PORTFOLIO") DipSurgeScope.BASE_PORTFOLIO
+        else runCatching { DipSurgeScope.valueOf(scopeText) }.getOrNull() ?: return null
+    val portfolioSource = parsePortfolioTriggerSource(obj, scopeText)
 
     return DipSurgeConfig(
         scope         = scope,
         allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
             runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
         },
+        portfolioSource = if (scope == DipSurgeScope.BASE_PORTFOLIO) {
+            portfolioSource
+        } else {
+            PortfolioTriggerSource.REFERENCE_PORTFOLIO
+        },
+        referenceTicker = obj["referenceTicker"]?.jsonPrimitive?.contentOrNull
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf {
+                it.isNotBlank() &&
+                    scope == DipSurgeScope.BASE_PORTFOLIO &&
+                    portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO
+            },
         triggers      = (obj["triggers"] as? JsonArray)?.map { parsePriceMoveTrigger(it.jsonObject) } ?: emptyList(),
         method        = (obj["method"] as? JsonObject)?.let { parseExecutionMethod(it) } ?: ExecutionMethod.Once,
         limit         = obj["limit"]?.jsonPrimitive?.doubleOrNull ?: 0.15,

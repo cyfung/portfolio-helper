@@ -646,7 +646,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       <div className="strategy-subsection">
         <DipSurgeSection
           direction="buy"
-          title="Buy the Dip - Daily-Rebalanced Base Reference"
+          title="Buy the Dip - Portfolio Trigger"
           scope="BASE_PORTFOLIO"
           value={s.buyTheDip.basePortfolio}
           onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'basePortfolio', v)}
@@ -666,7 +666,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       <div className="strategy-subsection">
         <DipSurgeSection
           direction="sell"
-          title="Sell on Surge - Daily-Rebalanced Base Reference"
+          title="Sell on Surge - Portfolio Trigger"
           scope="BASE_PORTFOLIO"
           value={s.sellOnSurge.basePortfolio}
           onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'basePortfolio', v)}

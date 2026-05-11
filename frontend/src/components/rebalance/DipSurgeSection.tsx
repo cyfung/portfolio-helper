@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import {
   DipSurgeState, PriceMoveTriggerState, ExecutionMethodState,
   PRICE_MOVE_TRIGGER_OPTIONS, EXECUTION_METHOD_OPTIONS, DIP_SURGE_SCOPE_OPTIONS,
+  PORTFOLIO_TRIGGER_SOURCE_OPTIONS,
   emptyTrigger, emptyDipSurge,
 } from '@/types/rebalanceStrategy'
 import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
@@ -158,14 +159,42 @@ export default function DipSurgeSection({
           )}
 
           {value.scope === 'BASE_PORTFOLIO' && (
-            <div className="strategy-row">
-              <label>Allocation Strategy</label>
-              <select value={value.allocStrategy} onChange={e => update({ allocStrategy: e.target.value })}>
-                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
+            <>
+              <div className="strategy-row">
+                <label>Trigger Source</label>
+                <select
+                  value={value.portfolioSource ?? 'REFERENCE_PORTFOLIO'}
+                  onChange={e => update({
+                    portfolioSource: e.target.value,
+                    referenceTicker: e.target.value === 'REFERENCE_PORTFOLIO' ? (value.referenceTicker ?? '') : '',
+                  })}
+                >
+                  {PORTFOLIO_TRIGGER_SOURCE_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+              {(value.portfolioSource ?? 'REFERENCE_PORTFOLIO') === 'REFERENCE_PORTFOLIO' && (
+                <div className="strategy-row">
+                  <label>Reference Ticker</label>
+                  <input
+                    type="text"
+                    value={value.referenceTicker ?? ''}
+                    placeholder="Portfolio"
+                    aria-label={`${title} reference ticker`}
+                    onChange={e => update({ referenceTicker: e.target.value.toUpperCase() })}
+                  />
+                </div>
+              )}
+              <div className="strategy-row">
+                <label>Allocation Strategy</label>
+                <select value={value.allocStrategy} onChange={e => update({ allocStrategy: e.target.value })}>
+                  {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
 
           {/* Limit */}

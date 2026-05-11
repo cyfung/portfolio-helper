@@ -936,6 +936,92 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun buyTheDipBasePortfolioCanUseSingleTickerReference() {
+        val dates = days(LocalDate.of(2024, 1, 2), 3)
+        val series = mapOf(
+            "SPY" to flatCurve(dates),
+            "VT" to dates.zip(listOf(1.0, 0.9, 0.5)).toMap(),
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    referenceTicker = "VT",
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.4)),
+                    method = ExecutionMethod.Once,
+                    limit = 1.5,
+                    coolingOffDays = 0,
+                    minAdjustmentPct = 0.0,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val buyDipActions = result.actionPoints.orEmpty().filter { it.type == "BUY_DIP" }
+        assertEquals(
+            listOf("2024-01-04"),
+            buyDipActions.map { it.date },
+            "Reference ticker should drive the base-portfolio trigger while trades still apply to the strategy portfolio",
+        )
+    }
+
+    @Test
+    fun sellOnSurgePortfolioTriggerCanUseStrategyGrossSource() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val series = mapOf("SPY" to flatCurve(dates))
+        val cashflow = CashflowConfig(amount = 1_000.0, frequency = CashflowFrequency.MONTHLY)
+
+        fun run(source: PortfolioTriggerSource) =
+            RebalanceStrategyService.runStrategyResultForTest(
+                singleStockPortfolio(),
+                strategy(
+                    marginRatio = 0.5,
+                    marginSpread = 0.0,
+                    rebalancePeriod = RebalancePeriodOverride.NONE,
+                    sellOnSurge = DipSurgeConfig(
+                        scope = DipSurgeScope.BASE_PORTFOLIO,
+                        allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                        portfolioSource = source,
+                        triggers = listOf(PriceMoveTrigger.PeakDeviation(0.05)),
+                        method = ExecutionMethod.Once,
+                        limit = 0.4,
+                        coolingOffDays = 0,
+                        minAdjustmentPct = 0.0,
+                    ),
+                ),
+                cashflow,
+                series,
+                dates,
+                emptyMap(),
+            )
+
+        val strategyGrossActions = run(PortfolioTriggerSource.STRATEGY_GROSS).actionPoints.orEmpty()
+        val referenceActions = run(PortfolioTriggerSource.REFERENCE_PORTFOLIO).actionPoints.orEmpty()
+
+        assertTrue(
+            strategyGrossActions.any { it.date == "2024-02-01" && it.type == "SELL_SURGE" },
+            "Strategy-gross source should include the cashflow-funded gross exposure increase",
+        )
+        assertFalse(
+            referenceActions.any { it.type == "SELL_SURGE" },
+            "Independent reference should ignore strategy cashflows",
+        )
+    }
+
+    @Test
     fun buyTheDipSkipsAdjustmentBelowMinimum() {
         val dates = days(LocalDate.of(2024, 1, 2), 21)
         val prices = vShapeCurve(dates)

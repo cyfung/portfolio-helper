@@ -13,10 +13,13 @@ object RebalanceStrategyService {
     val effrx = BacktestService.loadEffrxSeries()
     val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
+    val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
+    val requestedTickers = (request.portfolio.tickers.map { it.ticker } + referenceTickers).distinct()
+
     // Load LETF definitions and component series
     val letfDefs = mutableMapOf<String, LETFDefinition>()
-    for (tw in request.portfolio.tickers) {
-      BacktestService.parseLETFDefinition(tw.ticker)?.let { letfDefs.putIfAbsent(tw.ticker, it) }
+    for (ticker in requestedTickers) {
+      BacktestService.parseLETFDefinition(ticker)?.let { letfDefs.putIfAbsent(ticker, it) }
     }
     val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
     fun cachedLoad(ticker: String) =
@@ -45,13 +48,13 @@ object RebalanceStrategyService {
         }
       }
     }
-    for (tw in request.portfolio.tickers) {
-      if (BacktestService.parseLETFDefinition(tw.ticker) == null) cachedLoad(tw.ticker)
+    for (ticker in requestedTickers) {
+      if (BacktestService.parseLETFDefinition(ticker) == null) cachedLoad(ticker)
     }
 
     val seriesMap: Map<String, Map<LocalDate, Double>> =
-        request.portfolio.tickers.associate { tw ->
-          tw.ticker to (seriesCache[tw.ticker] ?: error("Series for '${tw.ticker}' not found"))
+        requestedTickers.associateWith { ticker ->
+          seriesCache[ticker] ?: error("Series for '$ticker' not found")
         }
     val dates = BacktestService.intersectDates(seriesMap.values.toList(), fromDate, toDate)
     if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
@@ -87,11 +90,13 @@ object RebalanceStrategyService {
   fun scoreBatch(request: RebalanceStrategyScoreBatchRequest): List<Double> {
     val portfolios = request.portfolios.takeIf { it.isNotEmpty() }
         ?: throw IllegalArgumentException("Missing portfolios")
+    val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
     val contexts = portfolios.map { portfolio ->
       portfolio to prepareRunContext(
           request.fromDate,
           request.toDate,
           portfolio,
+          referenceTickers,
       )
     }
 
@@ -253,19 +258,38 @@ object RebalanceStrategyService {
         RebalanceOptimizationMetric.UPI -> stats.upi
       }
 
+  private fun normalizeReferenceTicker(ticker: String?): String? =
+      ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+
+  private fun DipSurgeConfig.normalizedReferenceTicker(): String? =
+      if (scope == DipSurgeScope.BASE_PORTFOLIO &&
+          portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO
+      ) {
+        normalizeReferenceTicker(referenceTicker)
+      } else {
+        null
+      }
+
+  private fun RebalStrategyConfig.referenceTickers(): Set<String> =
+      (listOfNotNull(buyTheDip, sellOnSurge) + buyTheDipConfigs + sellOnSurgeConfigs)
+          .mapNotNull { it.normalizedReferenceTicker() }
+          .toSet()
+
   private fun prepareRunContext(
       fromDateText: String?,
       toDateText: String?,
       portfolio: PortfolioConfig,
+      referenceTickers: Collection<String> = emptyList(),
   ): RunContext {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
     val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()
     val effrx = BacktestService.loadEffrxSeries()
     val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
+    val requestedTickers = (portfolio.tickers.map { it.ticker } + referenceTickers).distinct()
     val letfDefs = mutableMapOf<String, LETFDefinition>()
-    for (tw in portfolio.tickers) {
-      BacktestService.parseLETFDefinition(tw.ticker)?.let { letfDefs.putIfAbsent(tw.ticker, it) }
+    for (ticker in requestedTickers) {
+      BacktestService.parseLETFDefinition(ticker)?.let { letfDefs.putIfAbsent(ticker, it) }
     }
     val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
     fun cachedLoad(ticker: String) =
@@ -294,13 +318,13 @@ object RebalanceStrategyService {
         }
       }
     }
-    for (tw in portfolio.tickers) {
-      if (BacktestService.parseLETFDefinition(tw.ticker) == null) cachedLoad(tw.ticker)
+    for (ticker in requestedTickers) {
+      if (BacktestService.parseLETFDefinition(ticker) == null) cachedLoad(ticker)
     }
 
     val seriesMap: Map<String, Map<LocalDate, Double>> =
-        portfolio.tickers.associate { tw ->
-          tw.ticker to (seriesCache[tw.ticker] ?: error("Series for '${tw.ticker}' not found"))
+        requestedTickers.associateWith { ticker ->
+          seriesCache[ticker] ?: error("Series for '$ticker' not found")
         }
     val dates = BacktestService.intersectDates(seriesMap.values.toList(), fromDate, toDate)
     if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
@@ -359,12 +383,29 @@ object RebalanceStrategyService {
 
     val account = PaperTradingPortfolio(tickers, targetWeights, startingBalance, marginTarget)
 
+    val allDipSurgeConfigs =
+        listOfNotNull(strategy.buyTheDip, strategy.sellOnSurge) +
+            strategy.buyTheDipConfigs +
+            strategy.sellOnSurgeConfigs
+    val singleTickerReferenceTickers =
+        allDipSurgeConfigs.mapNotNull { it.normalizedReferenceTicker() }.distinct()
     val returnRatios = BacktestService.buildReturnRatios(tickers, seriesMap, dates)
+    val singleTickerReferenceReturnRatios =
+        BacktestService.buildReturnRatios(singleTickerReferenceTickers, seriesMap, dates)
+    val singleTickerReferenceValues =
+        singleTickerReferenceTickers.associateWith { 1.0 }.toMutableMap()
     val dailyLoanRates =
         BacktestService.buildDailyLoanRates(dates, effrx, strategy.marginSpread / 252.0)
     val dailyBaseReferenceHoldings =
         tickers.associateWith { targetWeights[it] ?: 0.0 }.toMutableMap()
     var dailyBaseReferenceValue = dailyBaseReferenceHoldings.values.sum()
+
+    fun portfolioTriggerValue(key: DipSurgeKey.Portfolio): Double =
+        when (key.source) {
+          PortfolioTriggerSource.STRATEGY_GROSS -> account.grossStockValue()
+          PortfolioTriggerSource.REFERENCE_PORTFOLIO ->
+              key.referenceTicker?.let { singleTickerReferenceValues[it] } ?: dailyBaseReferenceValue
+        }
 
     val values = mutableListOf(startingBalance)
     val marginUtils = mutableListOf(marginTarget)
@@ -374,7 +415,7 @@ object RebalanceStrategyService {
     fun DipSurgeConfig.buildResources(): DipSurgeResources {
       val keys =
           if (scope == DipSurgeScope.INDIVIDUAL_STOCK) tickers.map { DipSurgeKey.Stock(it) }
-          else listOf(DipSurgeKey.BasePortfolio)
+          else listOf(DipSurgeKey.Portfolio(portfolioSource, normalizedReferenceTicker()))
       return DipSurgeResources(
           checkersByKey = keys.associateWith { key -> triggers.map { it.buildChecker(key) } },
           executorsByKey = keys.associateWith { method.newExecutor() },
@@ -396,7 +437,7 @@ object RebalanceStrategyService {
         val v =
             when (key) {
               is DipSurgeKey.Stock -> seriesMap[key.ticker]!![firstDate]!!
-              is DipSurgeKey.BasePortfolio -> dailyBaseReferenceValue
+              is DipSurgeKey.Portfolio -> portfolioTriggerValue(key)
             }
         checkers.forEach { it.advance(v) }
       }
@@ -419,7 +460,7 @@ object RebalanceStrategyService {
         val currentValue =
             when (key) {
               is DipSurgeKey.Stock -> seriesMap[key.ticker]!![curDate]!!
-              is DipSurgeKey.BasePortfolio -> dailyBaseReferenceValue
+              is DipSurgeKey.Portfolio -> portfolioTriggerValue(key)
             }
         res.executorsByKey[key]?.advance(
             triggered,
@@ -453,6 +494,11 @@ object RebalanceStrategyService {
       for (ticker in tickers) {
         dailyBaseReferenceHoldings[ticker] =
             (dailyBaseReferenceHoldings[ticker] ?: 0.0) * (returnRatios[ticker]?.get(i) ?: 1.0)
+      }
+      for (ticker in singleTickerReferenceTickers) {
+        singleTickerReferenceValues[ticker] =
+            (singleTickerReferenceValues[ticker] ?: 1.0) *
+                (singleTickerReferenceReturnRatios[ticker]?.get(i) ?: 1.0)
       }
       // Independent reference path: no margin, no cashflow, daily target-weight rebalance.
       val dailyBaseReferenceTotal = dailyBaseReferenceHoldings.values.sum()
@@ -583,7 +629,7 @@ object RebalanceStrategyService {
           val v =
               when (key) {
                 is DipSurgeKey.Stock -> seriesMap[key.ticker]!![curDate]!!
-                is DipSurgeKey.BasePortfolio -> dailyBaseReferenceValue
+                is DipSurgeKey.Portfolio -> portfolioTriggerValue(key)
               }
           checkers.forEach { it.advance(v) }
         }
@@ -627,7 +673,7 @@ object RebalanceStrategyService {
     if (equity <= 0) return 0.0
 
     return when (key) {
-      is DipSurgeKey.BasePortfolio -> {
+      is DipSurgeKey.Portfolio -> {
         val currentRatio = (-account.cashBalance()).coerceAtLeast(0.0) / equity
         if (direction == Direction.BUY) {
           max(0.0, equity * (limit - currentRatio))
@@ -715,7 +761,7 @@ object RebalanceStrategyService {
   ) {
     val delta = if (direction == Direction.BUY) amount else -amount
     when (key) {
-      is DipSurgeKey.BasePortfolio ->
+      is DipSurgeKey.Portfolio ->
           applyAllocDelta(tickers, account, targetWeights, delta, allocStrategy)
       is DipSurgeKey.Stock ->
           account.applyTradeDelta(key.ticker, delta)

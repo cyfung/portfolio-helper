@@ -22,6 +22,8 @@ enum class CashflowScaling { SCALED_BY_TARGET_MARGIN, SCALED_BY_CURRENT_MARGIN, 
 
 enum class DipSurgeScope { INDIVIDUAL_STOCK, BASE_PORTFOLIO }
 
+enum class PortfolioTriggerSource { STRATEGY_GROSS, REFERENCE_PORTFOLIO }
+
 enum class Direction { BUY, SELL }
 
 enum class MarginRebalanceTradeDirection { BOTH, BUY_ONLY, SELL_ONLY }
@@ -29,14 +31,14 @@ enum class MarginRebalanceTradeDirection { BOTH, BUY_ONLY, SELL_ONLY }
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 
 sealed class DipSurgeKey {
-    object BasePortfolio : DipSurgeKey()
+    data class Portfolio(val source: PortfolioTriggerSource, val referenceTicker: String? = null) : DipSurgeKey()
     data class Stock(val ticker: String) : DipSurgeKey()
 }
 
 // ── TriggerChecker interface ──────────────────────────────────────────────────
 
 interface TriggerChecker {
-    /** Called every day with today's value (stock price for Stock keys, daily-rebalanced base reference for BasePortfolio). */
+    /** Called every day with today's value (stock price for Stock keys, selected portfolio trigger value for Portfolio keys). */
     fun advance(value: Double)
 
     /** Evaluate trigger against accumulated state. Called after advance on the same day. */
@@ -48,7 +50,7 @@ interface TriggerChecker {
 interface DipSurgeExecutor {
     /**
      * Called every day per key. Handles both ongoing installment runs and new trigger fires.
-     * [currentValue] ticker price for Stock keys, daily-rebalanced base reference for BasePortfolio.
+     * [currentValue] ticker price for Stock keys, selected portfolio trigger value for Portfolio keys.
      */
     fun advance(
         triggered: Boolean,
@@ -108,6 +110,8 @@ data class MarginTriggerAction(
 data class DipSurgeConfig(
     val scope: DipSurgeScope,
     val allocStrategy: MarginRebalanceMode?,  // required when scope = BASE_PORTFOLIO
+    val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+    val referenceTicker: String? = null,       // optional 100% reference ticker when portfolioSource = REFERENCE_PORTFOLIO
     val triggers: List<PriceMoveTrigger>,
     val method: ExecutionMethod,
     val limit: Double,
