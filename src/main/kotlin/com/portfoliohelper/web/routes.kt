@@ -446,6 +446,7 @@ private fun createSavedJsonConfig(
 private data class StockDto(
     val label: String,
     val amount: Double,
+    val originalAmount: Double,
     val targetWeight: Double,
     val letf: String,
     val groups: String
@@ -609,6 +610,7 @@ fun Application.configureRouting() {
                     StockDto(
                         label = stock.label,
                         amount = scaleQty(stock.amount),
+                        originalAmount = stock.amount,
                         targetWeight = stock.targetWeight ?: 0.0,
                         letf = stock.letfComponents?.joinToString(",") { "${it.first},${it.second}" } ?: "",
                         groups = stock.groups.joinToString(";") { "${it.first} ${it.second}" }

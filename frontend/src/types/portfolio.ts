@@ -9,6 +9,7 @@ export interface PortfolioOption {
 export interface StockData {
   label: string
   amount: number
+  originalAmount?: number
   targetWeight: number     // 0 if unset
   letf: string             // "mult,sym,mult,sym" format
   groups: string           // "mult name;mult name" format

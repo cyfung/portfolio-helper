@@ -4,6 +4,7 @@ import type { CashData, PortfolioOption } from '@/types/portfolio'
 
 interface Props {
   allPortfolios: PortfolioOption[]
+  entries?: CashData[]
 }
 
 interface CashEditRowProps {
@@ -129,12 +130,12 @@ function CashEditRow({ entry, allPortfolios }: CashEditRowProps) {
   )
 }
 
-export default function CashEditTable({ allPortfolios }: Props) {
+export default function CashEditTable({ allPortfolios, entries }: Props) {
   const { cash } = usePortfolioStore()
   const nextNewRowId = useRef(1)
   const [newRows, setNewRows] = useState<Array<{ id: number }>>([])
 
-  const sorted = [...cash].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()))
+  const sorted = [...(entries ?? cash)].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()))
 
   function addCashRow() {
     const id = nextNewRowId.current

@@ -56,6 +56,8 @@ export default function PortfolioViewer() {
   const [dividendDate, setDividendDate] = useState(store.config.dividendStartDate ?? '')
   const [twsSyncing, setTwsSyncing] = useState(false)
   const [syncToast, setSyncToast] = useState({ msg: '', type: '' })
+  const [stagedEditStocks, setStagedEditStocks] = useState<StockData[] | null>(null)
+  const [stagedEditCash, setStagedEditCash] = useState<CashData[] | null>(null)
   const syncToastTimer = useRef<number | null>(null)
 
   function showSyncToast(msg: string, type: string) {
@@ -69,6 +71,27 @@ export default function PortfolioViewer() {
 
   const hasMargin = cash.some(c => c.marginFlag)
   const virtualBalance = store.config.virtualBalanceEnabled
+
+  function clearStagedEditData() {
+    setStagedEditStocks(null)
+    setStagedEditCash(null)
+  }
+
+  function enterEditMode(stocks?: StockData[] | null, cashEntries?: CashData[] | null) {
+    setStagedEditStocks(stocks ?? null)
+    setStagedEditCash(cashEntries ?? null)
+    setEditResetKey(k => k + 1)
+    setEditModeActive(true)
+  }
+
+  function toggleEditMode() {
+    if (editModeActive) {
+      clearStagedEditData()
+      setEditModeActive(false)
+    } else {
+      enterEditMode()
+    }
+  }
 
   async function saveDividendDate(date: string) {
     await fetch(`/api/portfolio/dividend-start-date?portfolio=${portfolioId}`, {
@@ -88,19 +111,19 @@ export default function PortfolioViewer() {
       const snap = await r.json()
       if (snap.error) throw new Error(snap.error)
 
-      // Merge TWS positions into current stocks (update qty, add new)
+      // Stage TWS positions for edit mode without changing display quantities.
       const updatedStocks: StockData[] = store.stocks.map(s => {
         const pos = (snap.positions as Array<{ symbol: string; qty: number }>)
           .find(p => p.symbol === s.label)
-        return pos ? { ...s, amount: pos.qty } : s
+        return pos ? { ...s, originalAmount: pos.qty } : s
       })
       for (const pos of snap.positions as Array<{ symbol: string; qty: number }>) {
         if (!updatedStocks.find(s => s.label === pos.symbol)) {
-          updatedStocks.push({ label: pos.symbol, amount: pos.qty, targetWeight: 0, letf: '', groups: '' })
+          updatedStocks.push({ label: pos.symbol, amount: pos.qty, originalAmount: pos.qty, targetWeight: 0, letf: '', groups: '' })
         }
       }
 
-      // Merge TWS cash balances and accrued cash
+      // Stage TWS cash balances and accrued cash for edit mode.
       let updatedCash: CashData[] = [...store.cash]
       const upsertCash = (label: string, currency: string, amount: number, marginFlag: boolean) => {
         const idx = updatedCash.findIndex(c =>
@@ -117,10 +140,7 @@ export default function PortfolioViewer() {
         upsertCash('MTD Interest', ccy, amt, false)
       }
 
-      store.setStocks(updatedStocks)
-      store.setCash(updatedCash)
-      setEditResetKey(k => k + 1)
-      setEditModeActive(true)
+      enterEditMode(updatedStocks, updatedCash)
     } catch (e) {
       showSyncToast(`TWS sync failed: ${e}`, 'error')
     } finally {
@@ -130,23 +150,24 @@ export default function PortfolioViewer() {
 
   // ── Import success callback (from BackupPanel) ─────────────────────────────
   const handleImportSuccess = useCallback((json: any) => {
+    let importedStocks: StockData[] | null = null
+    let importedCash: CashData[] | null = null
     if (json.stocks) {
-      store.setStocks((json.stocks as Array<any>).map(s => ({
+      importedStocks = (json.stocks as Array<any>).map(s => ({
         label: s.symbol ?? s.label ?? '',
         amount: s.amount ?? 0,
+        originalAmount: s.amount ?? 0,
         targetWeight: s.targetWeight ?? 0,
         letf: s.letf ?? '',
         groups: s.groups ?? '',
-      })))
+      }))
     }
     if (json.cash) {
-      const parsed = (json.cash as Array<{ key: string; value: string }>)
+      importedCash = (json.cash as Array<{ key: string; value: string }>)
         .map(c => parseCashKey(c.key, c.value))
         .filter((c): c is CashData => c !== null)
-      store.setCash(parsed)
     }
-    setEditResetKey(k => k + 1)
-    setEditModeActive(true)
+    enterEditMode(importedStocks, importedCash)
   }, [store, setEditModeActive])
 
   // ── Save to backtest ───────────────────────────────────────────────────────
@@ -250,7 +271,7 @@ export default function PortfolioViewer() {
             type="button"
             title="Edit Qty and Target Weight"
             aria-label="Toggle edit mode"
-            onClick={() => setEditModeActive(!editModeActive)}
+            onClick={toggleEditMode}
           >Edit</button>
 
           {editModeActive && (
@@ -353,7 +374,7 @@ export default function PortfolioViewer() {
       <div className="portfolio-tables-wrapper" style={contentScaleStyle}>
         <div className="summary-and-rates">
           <SummaryTable />
-          <CashEditTable key={editResetKey} allPortfolios={allPortfolios} />
+          <CashEditTable key={editResetKey} allPortfolios={allPortfolios} entries={stagedEditCash ?? undefined} />
           {virtualBalance && (
             <div className="dividend-from-section">
               <label htmlFor="dividend-from-input">Dividend From</label>
@@ -374,7 +395,13 @@ export default function PortfolioViewer() {
         <div className="stock-section">
           {!editModeActive && <RebalanceControls showGroupBy={!groupViewActive} />}
           {editModeActive ? (
-            <EditMode key={editResetKey} saveKey={saveKey} onSaved={handleSaved} pendingDividendDate={dividendDate} />
+            <EditMode
+              key={editResetKey}
+              saveKey={saveKey}
+              onSaved={handleSaved}
+              pendingDividendDate={dividendDate}
+              initialStocks={stagedEditStocks ?? undefined}
+            />
           ) : groupViewActive ? (
             <GroupsView />
           ) : (
@@ -388,7 +415,7 @@ export default function PortfolioViewer() {
               type="button"
               className="add-stock-btn"
               id="add-stock-btn"
-              onClick={() => setEditModeActive(true)}
+              onClick={() => enterEditMode()}
             >
               + Add Stock
             </button>
@@ -411,13 +438,13 @@ export default function PortfolioViewer() {
                 const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
                 const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
                 if (!stockGrossKnown || stockGrossUsd <= 0) {
-                  setEditModeActive(true)
+                  enterEditMode()
                   return
                 }
                 const result = computeDisplay(
                   store.stocks.map(s => ({
                     symbol: s.label,
-                    qty: s.amount,
+                    qty: s.originalAmount ?? s.amount,
                     targetWeight: s.targetWeight ?? 0,
                     positionValueUsd: liveBySymbol.get(s.label)?.positionValueUsd ?? 0,
                   })),
@@ -432,13 +459,12 @@ export default function PortfolioViewer() {
                 const updated = store.stocks.map(s => {
                   const delta = result.rebalQty[s.label]
                   if (!delta || delta === 0) return s
-                  return { ...s, amount: parseFloat((s.amount + delta).toFixed(2)) }
+                  const nextAmount = parseFloat(((s.originalAmount ?? s.amount) + delta).toFixed(2))
+                  return { ...s, originalAmount: nextAmount }
                 })
-                store.setStocks(updated)
                 const pendingDate = store.config.dividendCalcUpToDate || store.config.dividendStartDate || ''
                 setDividendDate(pendingDate)
-                setEditResetKey(k => k + 1)
-                setEditModeActive(true)
+                enterEditMode(updated)
               }}
             >
               <span className="toggle-label">Virtual Rebalance</span>

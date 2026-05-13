@@ -6,11 +6,13 @@ import { Copy } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { resolveSavedPortfolioConfig, savedPortfolioConfig, savedPortfolioConfigMap } from '@/lib/portfolioRefs'
 import type { SavedPortfolio } from '@/types/backtest'
+import type { StockData } from '@/types/portfolio'
 
 interface Props {
   saveKey: number   // incrementing triggers save
   onSaved: () => void
   pendingDividendDate?: string
+  initialStocks?: StockData[]
 }
 
 interface StockRow {
@@ -85,17 +87,20 @@ function flashCopyButton(btn: HTMLElement) {
   setTimeout(() => btn.classList.remove('copy-btn-flash'), 900)
 }
 
-export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Props) {
-  const { stocks, portfolioId, config } = usePortfolioStore()
+export default function EditMode({ saveKey, onSaved, pendingDividendDate, initialStocks }: Props) {
+  const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
   const [dividendDate] = useState(pendingDividendDate ?? config.dividendStartDate ?? '')
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedImportName, setSelectedImportName] = useState('')
   const [importStatus, setImportStatus] = useState('')
+  const [focusedQtyRows, setFocusedQtyRows] = useState<Set<number>>(() => new Set())
+  const privacyScalingActive =
+    !!appConfig?.privacyScaleEnabled && (parseFloat(appConfig.privacyScalePct ?? '') || 0) > 0
 
   const [stockRows, setStockRows] = useState<StockRow[]>(() =>
-    stocks.map(s => ({
+    (initialStocks ?? stocks).map(s => ({
       symbol: s.label,
-      qty: s.amount,
+      qty: s.originalAmount ?? s.amount,
       weight: s.targetWeight ?? 0,
       letf: letfAttrToStr(s.letf),
       groups: s.groups,
@@ -172,6 +177,15 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
 
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
     setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  function setQtyFocused(idx: number, focused: boolean) {
+    setFocusedQtyRows(prev => {
+      const next = new Set(prev)
+      if (focused) next.add(idx)
+      else next.delete(idx)
+      return next
+    })
   }
 
   function importSavedPortfolioWeights() {
@@ -413,10 +427,13 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate }: Prop
                   className="edit-input edit-qty"
                   data-column="qty"
                   data-symbol={row.symbol}
-                  value={row.qty}
+                  value={privacyScalingActive && !focusedQtyRows.has(idx) ? '' : row.qty}
+                  placeholder={privacyScalingActive && !focusedQtyRows.has(idx) ? 'Set' : undefined}
                   min={0}
                   step="any"
                   style={{ display: 'block' }}
+                  onFocus={() => setQtyFocused(idx, true)}
+                  onBlur={() => setQtyFocused(idx, false)}
                   onChange={e => updateStock(idx, 'qty', parseFloat(e.target.value) || 0)}
                   onKeyDown={handleEnterKey}
                 />
