@@ -249,6 +249,9 @@ export default function BacktestPage() {
   // Real portfolio overlay
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
   const [realSlug, setRealSlug]             = useState(() => localStorage.getItem('backtest-real-slug') ?? '')
+  const [realIngesting, setRealIngesting]   = useState(false)
+  const [realFetchNotice, setRealFetchNotice] = useState('')
+  const realIngestingRef = useRef(false)
   const appConfig = usePortfolioStore(s => s.appConfig)
   const appConfigReady = !!appConfig
   const privacyNavScaleFactor = useMemo(() => {
@@ -272,6 +275,14 @@ export default function BacktestPage() {
       .catch(() => {})
   }, [])
 
+  const fetchRealPortfolioData = useCallback(async (slug: string, signal?: AbortSignal) => {
+    const params = [fromDate && `from=${fromDate}`, toDate && `to=${toDate}`].filter(Boolean).join('&')
+    const r = await fetch(`/api/performance/chart/${slug}${params ? '?' + params : ''}`, { signal })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const d = await r.json()
+    return realPortfolioDataFromResponse(d, privacyNavScaleFactor)
+  }, [fromDate, toDate, privacyNavScaleFactor])
+
   // Fetch real portfolio data when slug or date range changes
   useEffect(() => {
     if (!realSlug) {
@@ -280,26 +291,54 @@ export default function BacktestPage() {
     }
     if (!appConfigReady) return
     const ac = new AbortController()
-    const params = [fromDate && `from=${fromDate}`, toDate && `to=${toDate}`].filter(Boolean).join('&')
-    fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`, { signal: ac.signal })
-      .then(r => r.json())
-      .then((d: any) => {
+    fetchRealPortfolioData(realSlug, ac.signal)
+      .then(realData => {
         if (ac.signal.aborted) return
         setViewState(prev => ({
           ...prev,
-          realData: realPortfolioDataFromResponse(d, privacyNavScaleFactor),
+          realData,
         }))
       })
       .catch(() => {
         if (!ac.signal.aborted) setViewState(prev => ({ ...prev, realData: null }))
       })
     return () => ac.abort()
-  }, [realSlug, fromDate, toDate, appConfigReady, privacyNavScaleFactor])
+  }, [realSlug, appConfigReady, fetchRealPortfolioData])
 
   // Persist real portfolio selection
   useEffect(() => {
     localStorage.setItem('backtest-real-slug', realSlug)
   }, [realSlug])
+
+  async function handleFetchRealFromIbkr(slug: string) {
+    if (!slug || realIngestingRef.current) return
+    const portfolioName = realPortfolios.find(p => p.slug === slug)?.name ?? slug
+    realIngestingRef.current = true
+    setRealIngesting(true)
+    setRealFetchNotice(`Fetching ${portfolioName} from IBKR...`)
+    setError('')
+    try {
+      const r = await fetch(`/api/performance/ingest/${slug}`, { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+      const newRealData = appConfigReady
+        ? await fetchRealPortfolioData(slug)
+        : null
+      if (slug === realSlug) {
+        setViewState(prev => ({
+          ...prev,
+          realData: newRealData ?? prev.realData,
+        }))
+      }
+      setRealFetchNotice(`Fetched ${d.written} new snapshot(s).`)
+    } catch (e: any) {
+      setRealFetchNotice('')
+      setError(`Fetch from IBKR failed for ${portfolioName}: ${e.message}`)
+    } finally {
+      realIngestingRef.current = false
+      setRealIngesting(false)
+    }
+  }
 
   // Restore settings on mount
   useEffect(() => {
@@ -894,7 +933,10 @@ export default function BacktestPage() {
               <select
                 id="real-portfolio-select"
                 value={realSlug}
-                onChange={e => setRealSlug(e.target.value)}
+                onChange={e => {
+                  setRealSlug(e.target.value)
+                  setRealFetchNotice('')
+                }}
                 style={{ width: 'auto' }}
               >
                 <option value="">— none —</option>
@@ -902,7 +944,21 @@ export default function BacktestPage() {
                   <option key={p.slug} value={p.slug}>{p.name}</option>
                 ))}
               </select>
+              <button
+                className="backtest-config-btn"
+                type="button"
+                style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
+                onClick={() => handleFetchRealFromIbkr(realSlug)}
+                disabled={!realSlug || realIngesting}
+              >
+                {realIngesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
+              </button>
             </div>
+            {realFetchNotice && (
+              <div style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: 'var(--color-text-tertiary)' }}>
+                {realFetchNotice}
+              </div>
+            )}
           </div>
         )}
 
@@ -968,8 +1024,8 @@ export default function BacktestPage() {
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
                         <td>{avgMargin == null ? '–' : pct(avgMargin)}</td>
-                        <td>{trig(s.marginLowerTriggers)}</td>
-                        <td>{trig(s.marginUpperTriggers)}</td>
+                        <td>{s.marginLowerTriggers != null ? String(s.marginLowerTriggers) : String(actionPointCount(curve.actionPoints, 'BUY_LOW'))}</td>
+                        <td>{s.marginUpperTriggers != null ? String(s.marginUpperTriggers) : String(actionPointCount(curve.actionPoints, 'SELL_HIGH'))}</td>
                         <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
                         <td>{actionPointCount(curve.actionPoints, 'SELL_SURGE')}</td>
                       </tr>
