@@ -283,7 +283,7 @@ const OPTIMIZER_ALLOC_STRATEGIES = REBALANCE_MARGIN_MODE_OPTIONS.map(o => o.valu
 const OPTIMIZER_TRADE_DIRECTIONS: RebalStrategyState['marginRebalanceTradeDirection'][] = ['BOTH', 'BUY_ONLY', 'SELL_ONLY']
 const OPTIMIZER_TRIGGER_TYPES: PriceMoveTriggerState['type'][] = ['VS_N_DAYS_AGO', 'VS_RUNNING_AVG', 'PEAK_DEVIATION']
 const OPTIMIZER_EXECUTION_METHODS: ExecutionMethodState['method'][] = ['ONCE', 'CONSECUTIVE', 'STEPPED']
-const PORTFOLIO_TRIGGER_SOURCES = ['STRATEGY_GROSS', 'REFERENCE_PORTFOLIO']
+const PORTFOLIO_TRIGGER_SOURCES = ['STRATEGY_GROSS', 'STRATEGY_VALUE', 'REFERENCE_PORTFOLIO']
 
 function clampNumber(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
@@ -646,7 +646,7 @@ export default function RebalanceStrategyPage() {
   function randomDipSurgeGenome(minMargin: number, maxMargin: number, discreteMargins?: number[]): DipSurgeGenome {
     return normalizeDipSurgeGenome({
       allocStrategy: randomChoice(OPTIMIZER_ALLOC_STRATEGIES),
-      portfolioSource: 'REFERENCE_PORTFOLIO',
+      portfolioSource: randomChoice(PORTFOLIO_TRIGGER_SOURCES),
       limit: discreteMargins?.length ? randomChoice(discreteMargins) : randomInt(minMargin, maxMargin),
       coolingOffDays: randomInt(0, 12) * 5,
       minAdjustmentPctTenths: 5,
@@ -932,6 +932,7 @@ export default function RebalanceStrategyPage() {
     maybe(() => { g.consecutiveDays += randomInt(-3, 3) })
     maybe(() => { g.steppedPortions += randomChoice([-1, 1]) })
     maybe(() => { g.steppedAdditionalPctTenths += randomInt(-10, 10) })
+    maybe(() => { g.portfolioSource = randomChoice(PORTFOLIO_TRIGGER_SOURCES) })
     maybe(() => {
       if (g.triggers.length === 0) g.triggers.push(randomDipSurgeTrigger())
       const t = g.triggers[randomInt(0, g.triggers.length - 1)]
@@ -1819,4 +1820,3 @@ export default function RebalanceStrategyPage() {
     </div>
   )
 }
-

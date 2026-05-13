@@ -439,6 +439,7 @@ object RebalanceStrategyService {
     fun portfolioTriggerValue(key: DipSurgeKey.Portfolio): Double =
         when (key.source) {
           PortfolioTriggerSource.STRATEGY_GROSS -> account.grossStockValue()
+          PortfolioTriggerSource.STRATEGY_VALUE -> account.equity()
           PortfolioTriggerSource.REFERENCE_PORTFOLIO ->
               key.referenceTicker?.let { singleTickerReferenceValues[it] } ?: dailyBaseReferenceValue
         }

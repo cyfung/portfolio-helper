@@ -252,10 +252,12 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       buyLowEnabled: strategy.buyLowEnabled,
       sellHighEnabled: strategy.sellHighEnabled,
       bdSgp: btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
-      bdR:   btd?.basePortfolio != null && btd.basePortfolio.portfolioSource !== 'STRATEGY_GROSS',
+      bdPv:  btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_VALUE',
+      bdR:   btd?.basePortfolio != null && btd.basePortfolio.portfolioSource !== 'STRATEGY_GROSS' && btd.basePortfolio.portfolioSource !== 'STRATEGY_VALUE',
       bdI:   btd?.individualStock != null,
       ssSgp: sos?.basePortfolio != null && sos.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
-      ssR:   sos?.basePortfolio != null && sos.basePortfolio.portfolioSource !== 'STRATEGY_GROSS',
+      ssPv:  sos?.basePortfolio != null && sos.basePortfolio.portfolioSource === 'STRATEGY_VALUE',
+      ssR:   sos?.basePortfolio != null && sos.basePortfolio.portfolioSource !== 'STRATEGY_GROSS' && sos.basePortfolio.portfolioSource !== 'STRATEGY_VALUE',
       ssI:   sos?.individualStock != null,
     }
   })
@@ -426,7 +428,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
             </div>
           ))}
-          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, bdSgp, bdR, bdI, ssSgp, ssR, ssI }) => (
+          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
             <div key={row.id} className="margin-config-row rebalance-strategy-margin-row">
               <span className="margin-drag-handle" aria-hidden="true">S</span>
               <div className="strategy-margin-info">
@@ -438,9 +440,11 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 {buyLowEnabled && <span>BL</span>}
                 {sellHighEnabled && <span>SH</span>}
                 {bdSgp && <span>BD-SGP</span>}
+                {bdPv && <span>BD-PV</span>}
                 {bdR && <span>BD-R</span>}
                 {bdI && <span>BD-I</span>}
                 {ssSgp && <span>SS-SGP</span>}
+                {ssPv && <span>SS-PV</span>}
                 {ssR && <span>SS-R</span>}
                 {ssI && <span>SS-I</span>}
               </div>

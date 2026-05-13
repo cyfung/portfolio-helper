@@ -19,7 +19,7 @@ export type ExecutionMethodState =
 export interface DipSurgeState {
   scope: string            // 'INDIVIDUAL_STOCK' | 'BASE_PORTFOLIO'
   allocStrategy: string    // MarginRebalanceMode value
-  portfolioSource?: string // 'STRATEGY_GROSS' | 'REFERENCE_PORTFOLIO'
+  portfolioSource?: string // 'STRATEGY_GROSS' | 'STRATEGY_VALUE' | 'REFERENCE_PORTFOLIO'
   referenceTicker?: string
   triggers: (PriceMoveTriggerState & { id: string })[]
   execution: ExecutionMethodState
@@ -104,7 +104,8 @@ export const DIP_SURGE_SCOPE_OPTIONS = [
 ]
 
 export const PORTFOLIO_TRIGGER_SOURCE_OPTIONS = [
-  { value: 'STRATEGY_GROSS',      label: 'Strategy Gross Portfolio' },
+  { value: 'STRATEGY_GROSS',      label: 'Strategy Stock Gross Value' },
+  { value: 'STRATEGY_VALUE',      label: 'Strategy Portfolio Value' },
   { value: 'REFERENCE_PORTFOLIO', label: 'Independent Reference' },
 ]
 

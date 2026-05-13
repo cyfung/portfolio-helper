@@ -22,7 +22,7 @@ enum class CashflowScaling { SCALED_BY_TARGET_MARGIN, SCALED_BY_CURRENT_MARGIN, 
 
 enum class DipSurgeScope { INDIVIDUAL_STOCK, BASE_PORTFOLIO }
 
-enum class PortfolioTriggerSource { STRATEGY_GROSS, REFERENCE_PORTFOLIO }
+enum class PortfolioTriggerSource { STRATEGY_GROSS, STRATEGY_VALUE, REFERENCE_PORTFOLIO }
 
 enum class Direction { BUY, SELL }
 

@@ -1022,6 +1022,53 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun sellOnSurgePortfolioTriggerCanUseStrategyValueSource() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val series = mapOf("SPY" to flatCurve(dates))
+        val cashflow = CashflowConfig(amount = 1_000.0, frequency = CashflowFrequency.MONTHLY)
+
+        fun run(source: PortfolioTriggerSource) =
+            RebalanceStrategyService.runStrategyResultForTest(
+                singleStockPortfolio(),
+                strategy(
+                    marginRatio = 0.5,
+                    marginSpread = 0.0,
+                    rebalancePeriod = RebalancePeriodOverride.NONE,
+                    sellOnSurge = DipSurgeConfig(
+                        scope = DipSurgeScope.BASE_PORTFOLIO,
+                        allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                        portfolioSource = source,
+                        triggers = listOf(PriceMoveTrigger.PeakDeviation(0.08)),
+                        method = ExecutionMethod.Once,
+                        limit = 0.4,
+                        coolingOffDays = 0,
+                        minAdjustmentPct = 0.0,
+                    ),
+                ),
+                cashflow,
+                series,
+                dates,
+                emptyMap(),
+            )
+
+        val strategyValueActions = run(PortfolioTriggerSource.STRATEGY_VALUE).actionPoints.orEmpty()
+        val strategyGrossActions = run(PortfolioTriggerSource.STRATEGY_GROSS).actionPoints.orEmpty()
+
+        assertTrue(
+            strategyValueActions.any { it.date == "2024-02-01" && it.type == "SELL_SURGE" },
+            "Strategy-value source should use stock gross value plus cash",
+        )
+        assertFalse(
+            strategyGrossActions.any { it.type == "SELL_SURGE" },
+            "Strategy-gross source should ignore cash when this threshold is above the gross-only move",
+        )
+    }
+
+    @Test
     fun buyTheDipSkipsAdjustmentBelowMinimum() {
         val dates = days(LocalDate.of(2024, 1, 2), 21)
         val prices = vShapeCurve(dates)
