@@ -140,6 +140,7 @@ export interface IbkrDisplayEvent {
   cheapestDailyUsd: number
   savingsUsd: number
   label: string
+  errorMessage?: string | null
 }
 
 export interface GroupAllocItem {

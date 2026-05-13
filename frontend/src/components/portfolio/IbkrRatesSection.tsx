@@ -31,6 +31,9 @@ export default function IbkrRatesSection() {
   return (
     <div className="ibkr-rates-wrapper">
       <div id="ibkr-display">
+        {data?.errorMessage && (
+          <div className="ibkr-rates-error">{data.errorMessage}</div>
+        )}
         {data && data.perCurrency && data.perCurrency.length > 0 && (
           <>
             <table className="ibkr-rates-table">

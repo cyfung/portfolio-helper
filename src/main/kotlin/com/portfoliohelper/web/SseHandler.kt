@@ -69,7 +69,8 @@ private data class IbkrDisplayEvent(
     val cheapestDailyUsd: Double,
     val savingsUsd: Double,
     val label: String,
-    val perCurrency: List<IbkrCurrencyInterest>
+    val perCurrency: List<IbkrCurrencyInterest>,
+    val errorMessage: String? = null
 ) : SseEvent()
 
 @Serializable
@@ -147,7 +148,8 @@ internal suspend fun ServerSSESession.handleSseStream() {
                 cheapestDailyUsd = snap.cheapestDailyUsd,
                 savingsUsd = snap.savingsUsd,
                 label = snap.label,
-                perCurrency = snap.perCurrency
+                perCurrency = snap.perCurrency,
+                errorMessage = snap.errorMessage
             )))
         }
     }

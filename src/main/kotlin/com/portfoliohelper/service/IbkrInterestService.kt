@@ -29,7 +29,8 @@ data class IbkrInterestSnapshot(
     val savingsUsd: Double,
     val label: String,                       // "Saving" or "Saving (Buy/Sell USD.XXX)"
     val perCurrency: List<IbkrCurrencyInterest>,
-    val lastFetch: Long
+    val lastFetch: Long,
+    val errorMessage: String? = null
 )
 
 class IbkrInterestService(
@@ -50,7 +51,6 @@ class IbkrInterestService(
 
     private fun compute(entries: List<CashEntry>, cashSnap: CashDisplaySnapshot, ratesSnap: IbkrMarginRateService.RatesSnapshot, scale: Double?): IbkrInterestSnapshot? {
         val allRates = ratesSnap.rates
-        if (allRates.isEmpty()) return null
 
         val marginCurrencies = mutableSetOf("USD")
         val nativeMargin = mutableMapOf<String, Double>()
@@ -63,6 +63,17 @@ class IbkrInterestService(
             }
         }
 
+        if (ratesSnap.errorMessage != null) {
+            return errorSnapshot(ratesSnap.errorMessage, ratesSnap.lastFetch)
+        }
+
+        val relevantCurrencyErrors = ratesSnap.currencyErrors.filterKeys { it in marginCurrencies }
+        if (relevantCurrencyErrors.isNotEmpty()) {
+            return errorSnapshot(relevantCurrencyErrors.values.joinToString(" "), ratesSnap.lastFetch)
+        }
+
+        if (allRates.isEmpty()) return null
+
         // cashSnap.marginBaseUsd is already the NET of all margin entries; negative = net borrowing
         val totalMarginUsd = if (cashSnap.marginBaseUsd < 0) -cashSnap.marginBaseUsd else 0.0
         val perCurrency = mutableListOf<IbkrCurrencyInterest>()
@@ -71,9 +82,7 @@ class IbkrInterestService(
         var cheapestDailyUsd = 0.0
 
         for (ccy in marginCurrencies) {
-            // Fall back to USD rates for currencies that have no IBKR pro rate
-            val usingUsdFallback = allRates[ccy] == null
-            val rates = allRates[ccy] ?: allRates["USD"] ?: continue
+            val rates = allRates[ccy] ?: continue
             val tiers = rates.tiers
             val baseRate = tiers.firstOrNull()?.rate ?: continue
 
@@ -86,37 +95,24 @@ class IbkrInterestService(
             // Interest charged on net loan per currency only (positive balance = no interest)
             val scaleFactor = (scale ?: 100.0) / 100.0
             val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0)) * scaleFactor
-            // For USD-fallback CCYs: convert to USD so tier thresholds (expressed in USD) apply correctly
-            val loanForRate = if (usingUsdFallback) nativeLoan * fxRate else nativeLoan
-            val blended = if (nativeLoan > 0) blendedRate(tiers, loanForRate) else null
+            val blended = if (nativeLoan > 0) blendedRate(tiers, nativeLoan) else null
             val effectiveRate = blended ?: baseRate
-            val days = if (usingUsdFallback) CurrencyConventions.getDaysInYear("USD")
-                       else CurrencyConventions.getDaysInYear(ccy)
+            val days = CurrencyConventions.getDaysInYear(ccy)
 
-            val dailyInterestUsd = if (usingUsdFallback)
-                if (nativeLoan > 0) loanForRate * effectiveRate / 100.0 / days else 0.0
-            else {
-                val nativeDaily = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days else 0.0
-                nativeDaily * fxRate
-            }
+            val nativeDaily = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days else 0.0
+            val dailyInterestUsd = nativeDaily * fxRate
             currentDailyUsd += dailyInterestUsd
 
             // Use 0.0 when totalMarginUsd == 0 so blendedRate returns null (base tier shown)
             val hypotheticalNative = if (totalMarginUsd > 0) totalMarginUsd / fxRate else 0.0
-            val hypotheticalLoanForRate = if (usingUsdFallback) totalMarginUsd else hypotheticalNative
-            val hypotheticalBlended = blendedRate(tiers, hypotheticalLoanForRate)
+            val hypotheticalBlended = blendedRate(tiers, hypotheticalNative)
             val hypotheticalRate = hypotheticalBlended ?: baseRate
-            val hypotheticalDaily = if (usingUsdFallback)
-                hypotheticalLoanForRate * hypotheticalRate / 100.0 / days
-            else
-                hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
+            val hypotheticalDaily = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
 
             if (totalMarginUsd > 0 && (cheapestCcy == null || hypotheticalDaily < cheapestDailyUsd)) {
                 cheapestDailyUsd = hypotheticalDaily
                 cheapestCcy = ccy
             }
-
-            if (usingUsdFallback) continue
 
             val displayRateText = if (hypotheticalBlended != null)
                 "%.3f%% (%.3f%%)".format(hypotheticalBlended, baseRate)
@@ -161,6 +157,18 @@ class IbkrInterestService(
             lastFetch = ratesSnap.lastFetch
         )
     }
+
+    private fun errorSnapshot(message: String, lastFetch: Long) = IbkrInterestSnapshot(
+        portfolioId = portfolioId,
+        currentDailyUsd = 0.0,
+        cheapestCcy = null,
+        cheapestDailyUsd = 0.0,
+        savingsUsd = 0.0,
+        label = "Saving",
+        perCurrency = emptyList(),
+        lastFetch = lastFetch,
+        errorMessage = message
+    )
 
     private fun blendedRate(tiers: List<IbkrMarginRateService.RateTier>, amount: Double): Double? {
         if (amount <= 0 || tiers.isEmpty()) return null

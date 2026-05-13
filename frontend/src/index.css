@@ -2613,6 +2613,14 @@ a.loan-calc-link:hover {
     min-width: 180px;
 }
 
+.ibkr-rates-error {
+    color: var(--color-negative);
+    font-size: 0.82em;
+    line-height: 1.35;
+    max-width: 260px;
+    padding: 2px 8px 4px 8px;
+}
+
 .ibkr-rates-table thead th {
     text-align: left;
     font-size: 0.78em;

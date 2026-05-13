@@ -106,6 +106,19 @@ object MarginCheckRunner {
             Log.w(TAG, "IBKR rates fetch skipped: ${e.message}")
             null
         }
+        val neededMarginCurrencies = allCashEntries
+            .filter { it.isMargin }
+            .map { it.currency.uppercase() }
+            .toSet() + "USD"
+        val rateFetchError = if (ratesSnap == null) {
+            IbkrRateFetcher.lastError
+        } else {
+            ratesSnap.currencyErrors
+                .filterKeys { it in neededMarginCurrencies }
+                .values
+                .joinToString(" ")
+                .ifBlank { null }
+        }
         val currencySuggestionThreshold = app.settingsRepo.currencySuggestionThresholdUsd.first()
 
         var currencySuggestionText: String? = null
@@ -218,7 +231,7 @@ object MarginCheckRunner {
                 runTime = System.currentTimeMillis(),
                 oldestDataTime = if (oldestDataTime == Long.MAX_VALUE) System.currentTimeMillis() else oldestDataTime,
                 triggeredPortfolios = triggeredPortfolioNames,
-                errorMessage = null,
+                errorMessage = rateFetchError,
                 currencySuggestionText = currencySuggestionText
             )
         )

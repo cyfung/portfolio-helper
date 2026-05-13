@@ -18,7 +18,8 @@ data class IbkrInterestResult(
     val savingsUsd: Double,
     val label: String,
     val labelAction: String?,    // e.g. "Sell USD.HKD: $10.00 → HKD78", shown below the Saving row
-    val perCurrency: List<IbkrCurrencyInterest>
+    val perCurrency: List<IbkrCurrencyInterest>,
+    val errorMessage: String? = null
 )
 
 object IbkrInterestCalculator {
@@ -50,6 +51,11 @@ object IbkrInterestCalculator {
             nativeMargin[ccy] = (nativeMargin[ccy] ?: 0.0) + entry.amount
             totalMarginUsd += entry.amount * fxRate
             marginCurrencies.add(ccy)
+        }
+
+        val relevantCurrencyErrors = ratesSnap.currencyErrors.filterKeys { it in marginCurrencies }
+        if (relevantCurrencyErrors.isNotEmpty()) {
+            return errorResult(relevantCurrencyErrors.values.joinToString(" "))
         }
 
         // Negative totalMarginUsd means net borrowing; positive means net long (no borrowing needed)
@@ -127,6 +133,17 @@ object IbkrInterestCalculator {
             perCurrency = perCurrency
         )
     }
+
+    private fun errorResult(message: String) = IbkrInterestResult(
+        currentDailyUsd = 0.0,
+        cheapestCcy = null,
+        cheapestDailyUsd = 0.0,
+        savingsUsd = 0.0,
+        label = "Saving",
+        labelAction = null,
+        perCurrency = emptyList(),
+        errorMessage = message
+    )
 
     private fun blendedRate(tiers: List<IbkrRateTier>, amount: Double): Double? {
         if (amount <= 0 || tiers.isEmpty()) return null

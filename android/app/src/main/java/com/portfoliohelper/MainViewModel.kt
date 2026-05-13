@@ -226,6 +226,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── IBKR margin rates ─────────────────────────────────────────────────────
 
     private val _ibkrRates = MutableStateFlow(IbkrRatesSnapshot(emptyMap(), 0L))
+    private val _ibkrRateError = MutableStateFlow<String?>(null)
+    val ibkrRateError: StateFlow<String?> = _ibkrRateError.asStateFlow()
 
     val ibkrInterest: StateFlow<IbkrInterestResult?> = combine(_ibkrRates, cashEntries, fxRates) { rates, entries, fx ->
         if (rates.rates.isEmpty()) return@combine null
@@ -416,7 +418,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshIbkrRates() = viewModelScope.launch {
         val last = _ibkrRates.value.lastFetch
         if (last > 0 && System.currentTimeMillis() - last < 60 * 60_000L) return@launch
-        val snapshot = IbkrRateFetcher.fetch() ?: return@launch
+        val snapshot = IbkrRateFetcher.fetch()
+        if (snapshot == null) {
+            _ibkrRateError.value = IbkrRateFetcher.lastError
+            return@launch
+        }
+        _ibkrRateError.value = null
         _ibkrRates.value = snapshot
     }
 

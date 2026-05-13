@@ -48,6 +48,7 @@ fun CashScreen(vm: MainViewModel) {
     val displayCurrency by vm.displayCurrency.collectAsState()
     val scalingPercent by vm.scalingPercent.collectAsState()
     val ibkrInterest by vm.ibkrInterest.collectAsState()
+    val ibkrRateError by vm.ibkrRateError.collectAsState()
 
     LaunchedEffect(Unit) { vm.refreshIbkrRates() }
 
@@ -124,6 +125,12 @@ fun CashScreen(vm: MainViewModel) {
                     Divider()
                 }
             }
+            if (ibkrInterest == null && ibkrRateError != null && cashEntries.any { it.isMargin && it.amount < 0 }) {
+                item {
+                    IbkrRatesErrorSection(ibkrRateError ?: "")
+                    Divider()
+                }
+            }
 
             itemsIndexed(cashEntries, key = { _, it -> it.id }) { index, entry ->
                 val showLabel = index == 0 || entry.label != cashEntries[index - 1].label
@@ -160,6 +167,33 @@ fun CashScreen(vm: MainViewModel) {
 }
 
 @Composable
+fun IbkrRatesErrorSection(message: String) {
+    val ext = MaterialTheme.ext
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            "IBKR Pro Rates",
+            fontSize = 11.sp,
+            color = ext.textTertiary,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Text(
+            message,
+            fontSize = 12.sp,
+            color = ext.negative,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+    }
+}
+
+@Composable
 fun IbkrRatesSection(
     result: IbkrInterestResult,
     displayCurrency: String,
@@ -181,6 +215,16 @@ fun IbkrRatesSection(
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
+        if (result.errorMessage != null) {
+            Text(
+                result.errorMessage,
+                fontSize = 12.sp,
+                color = ext.negative,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+            return@Column
+        }
         Spacer(Modifier.height(2.dp))
 
         for (ci in result.perCurrency) {
