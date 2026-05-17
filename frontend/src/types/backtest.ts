@@ -3,6 +3,7 @@
 // ── Row state ─────────────────────────────────────────────────────────────────
 
 import { savedConfigToStrategyState, strategyStateToAPI } from './rebalanceStrategy'
+import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 
 export interface TickerRow {
   id: string
@@ -166,6 +167,17 @@ export function configToBlockState(config: any, name: string): BlockState {
   }
 }
 
+export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
+  let changed = false
+  const margins = state.margins.map(m => {
+    const spread = normalizeNumberInput(m.spread, DEFAULT_SPREAD_PERCENT, { min: 0 })
+    if (spread === m.spread) return m
+    changed = true
+    return { ...m, spread }
+  })
+  return changed ? { ...state, margins } : state
+}
+
 /** Convert BlockState to the portfolio object expected by the run API. */
 export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
   return {
@@ -179,7 +191,7 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
       marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,
-      marginSpread:         (parseFloat(m.spread)   || 1.5) / 100,
+      marginSpread:         percentInputToFraction(m.spread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
       marginDeviationUpper: (parseFloat(m.devUpper) || 5)   / 100,
       marginDeviationLower: (parseFloat(m.devLower) || 5)   / 100,
       upperRebalanceMode: m.modeUpper,
@@ -204,7 +216,7 @@ export function blockStateToSavedConfig(state: BlockState) {
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
       marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,
-      marginSpread:         (parseFloat(m.spread)   || 1.5) / 100,
+      marginSpread:         percentInputToFraction(m.spread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
       marginDeviationUpper: (parseFloat(m.devUpper) || 5)   / 100,
       marginDeviationLower: (parseFloat(m.devLower) || 5)   / 100,
       upperRebalanceMode: m.modeUpper,
@@ -239,7 +251,26 @@ export interface BacktestCurve {
   points: { date: string; value: number }[]
   stats: BacktestCurveStats
   marginPoints?: { date: string; value: number }[]
-  actionPoints?: { date: string; type: 'SELL_HIGH' | 'BUY_LOW' | 'BUY_DIP' | 'SELL_SURGE' | 'PORTFOLIO_REBALANCE' | 'MARGIN_REBALANCE' }[]
+  actionPoints?: {
+    date: string
+    type: 'SELL_HIGH' | 'BUY_LOW' | 'BUY_DIP' | 'SELL_SURGE' | 'PORTFOLIO_REBALANCE' | 'MARGIN_REBALANCE' | 'DRAWDOWN_MR' | 'DRAWDOWN_MR_EXIT'
+    detail?: {
+      tradingDayIndex?: number | null
+      key?: string | null
+      direction?: string | null
+      triggerValue?: number | null
+      cooldownDays?: number | null
+      daysSincePrevious?: number | null
+      amount?: number | null
+      eligibleAmount?: number | null
+      minAdjustment?: number | null
+      grossBefore?: number | null
+      grossAfter?: number | null
+      marginBefore?: number | null
+      marginAfter?: number | null
+      allocStrategy?: string | null
+    } | null
+  }[]
 }
 
 export interface BacktestPortfolioResult {

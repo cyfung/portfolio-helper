@@ -4,10 +4,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Settings } from 'lucide-react'
 import {
   BlockState, MarginRow, RebalanceStrategyRow, newId,
-  blockStateToSavedConfig, configToBlockState,
+  blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
   REBALANCE_OPTIONS, MARGIN_MODE_OPTIONS,
 } from '@/types/backtest'
 import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
+import { isValidNumberInput } from '@/lib/numberInputs'
 
 interface Props {
   idx: number
@@ -31,6 +32,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   // Local state — text inputs update this only; parent is notified on blur or structural change
   const [local, setLocal] = useState<BlockState>(value)
+  const [spreadTouched, setSpreadTouched] = useState<Record<string, boolean>>({})
   const localRef = useRef<BlockState>(local)
   const prevValueRef = useRef<BlockState>(value)
 
@@ -40,6 +42,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       prevValueRef.current = value
       localRef.current = value
       setLocal(value)
+      setSpreadTouched({})
     }
   }, [value])
 
@@ -60,6 +63,11 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   function commitBlur() {
     prevValueRef.current = localRef.current
     onChange(localRef.current)
+  }
+
+  function commitSpreadBlur(id: string) {
+    setSpreadTouched(prev => ({ ...prev, [id]: true }))
+    commitBlur()
   }
 
   // ── Weight hint ───────────────────────────────────────────────────────────
@@ -174,7 +182,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   // ── Save / Clear ──────────────────────────────────────────────────────────
 
   async function handleSave(overwrite: boolean) {
-    const name = localRef.current.label.trim()
+    const normalized = normalizeBlockSpreadInputs(localRef.current)
+    if (normalized !== localRef.current) commit(normalized)
+    const name = normalized.label.trim()
     if (!name) return
     if (overwrite) {
       await fetch(`/api/backtest/savedPortfolios?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
@@ -182,7 +192,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const res = await fetch('/api/backtest/savedPortfolios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, config: blockStateToSavedConfig(localRef.current) }),
+      body: JSON.stringify({ name, config: blockStateToSavedConfig(normalized) }),
     })
     if (res.ok) {
       onSavedRefresh()
@@ -243,6 +253,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const points = strategy.marginPoints ?? []
     const btd = strategy.buyTheDip
     const sos = strategy.sellOnSurge
+    const dmo = strategy.drawdownMarginOverride
+    const ddBl = strategy.drawdownBuyOnLowMargin
+    const ddSh = strategy.drawdownSellOnHighMargin
     return {
       row,
       low: points[0] ?? '40',
@@ -251,6 +264,18 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       marginEnabled: strategy.marginRebalanceEnabled ?? true,
       buyLowEnabled: strategy.buyLowEnabled,
       sellHighEnabled: strategy.sellHighEnabled,
+      ddBl: ddBl?.enabled,
+      ddBlSgp: ddBl?.enabled && ddBl.portfolioSource === 'STRATEGY_GROSS',
+      ddBlPv: ddBl?.enabled && ddBl.portfolioSource === 'STRATEGY_VALUE',
+      ddBlR: ddBl?.enabled && ddBl.portfolioSource !== 'STRATEGY_GROSS' && ddBl.portfolioSource !== 'STRATEGY_VALUE',
+      ddSh: ddSh?.enabled,
+      ddShSgp: ddSh?.enabled && ddSh.portfolioSource === 'STRATEGY_GROSS',
+      ddShPv: ddSh?.enabled && ddSh.portfolioSource === 'STRATEGY_VALUE',
+      ddShR: ddSh?.enabled && ddSh.portfolioSource !== 'STRATEGY_GROSS' && ddSh.portfolioSource !== 'STRATEGY_VALUE',
+      ddMr: dmo?.enabled,
+      ddMrSgp: dmo?.enabled && dmo.portfolioSource === 'STRATEGY_GROSS',
+      ddMrPv: dmo?.enabled && dmo.portfolioSource === 'STRATEGY_VALUE',
+      ddMrR: dmo?.enabled && dmo.portfolioSource !== 'STRATEGY_GROSS' && dmo.portfolioSource !== 'STRATEGY_VALUE',
       bdSgp: btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
       bdPv:  btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_VALUE',
       bdR:   btd?.basePortfolio != null && btd.basePortfolio.portfolioSource !== 'STRATEGY_GROSS' && btd.basePortfolio.portfolioSource !== 'STRATEGY_VALUE',
@@ -406,7 +431,16 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 }}
               >⠿</span>
               <input type="text" className="mc-ratio"     value={m.ratio}    onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, ratio:    e.target.value } : x) })} onBlur={commitBlur} title="Margin % of Equity" placeholder="%" />
-              <input type="text" className="mc-spread"    value={m.spread}   onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, spread:   e.target.value } : x) })} onBlur={commitBlur} title="Spread % (annualised)" placeholder="%" />
+              <input
+                type="text"
+                className={`mc-spread${spreadTouched[m.id] && !isValidNumberInput(m.spread, { min: 0 }) ? ' input-error' : ''}`}
+                value={m.spread}
+                onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, spread: e.target.value } : x) })}
+                onBlur={() => commitSpreadBlur(m.id)}
+                aria-invalid={spreadTouched[m.id] && !isValidNumberInput(m.spread, { min: 0 })}
+                title={spreadTouched[m.id] && !isValidNumberInput(m.spread, { min: 0 }) ? 'Enter a valid non-negative spread percent' : 'Spread % (annualised)'}
+                placeholder="%"
+              />
               <input type="text" className="mc-dev-upper" value={m.devUpper} onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, devUpper: e.target.value } : x) })} onBlur={commitBlur} title="Upper deviation %" placeholder="%" />
               <input type="text" className="mc-dev-lower" value={m.devLower} onChange={e => updateLocal({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, devLower: e.target.value } : x) })} onBlur={commitBlur} title="Lower deviation %" placeholder="%" />
               <select
@@ -428,7 +462,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
             </div>
           ))}
-          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
+          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, ddBl, ddBlSgp, ddBlPv, ddBlR, ddSh, ddShSgp, ddShPv, ddShR, ddMr, ddMrSgp, ddMrPv, ddMrR, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
             <div key={row.id} className="margin-config-row rebalance-strategy-margin-row">
               <span className="margin-drag-handle" aria-hidden="true">S</span>
               <div className="strategy-margin-info">
@@ -437,8 +471,20 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 <span>M {mid}%</span>
                 <span>H {high}%</span>
                 {marginEnabled && <span>MR</span>}
+                {ddMr && <span>DD-MR</span>}
+                {ddMrSgp && <span>DD-SGP</span>}
+                {ddMrPv && <span>DD-PV</span>}
+                {ddMrR && <span>DD-R</span>}
                 {buyLowEnabled && <span>BL</span>}
                 {sellHighEnabled && <span>SH</span>}
+                {ddBl && <span>DD-BL</span>}
+                {ddBlSgp && <span>DD-BL-SGP</span>}
+                {ddBlPv && <span>DD-BL-PV</span>}
+                {ddBlR && <span>DD-BL-R</span>}
+                {ddSh && <span>DD-SH</span>}
+                {ddShSgp && <span>DD-SH-SGP</span>}
+                {ddShPv && <span>DD-SH-PV</span>}
+                {ddShR && <span>DD-SH-R</span>}
                 {bdSgp && <span>BD-SGP</span>}
                 {bdPv && <span>BD-PV</span>}
                 {bdR && <span>BD-R</span>}

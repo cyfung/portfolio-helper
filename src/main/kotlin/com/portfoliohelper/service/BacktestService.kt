@@ -184,6 +184,279 @@ object BacktestService {
         return MultiBacktestResult(portfolioResults)
     }
 
+    fun runHoldDip(request: HoldDipRequest): HoldDipMultiResult {
+        val fromDate = request.fromDate?.let { LocalDate.parse(it) }
+        val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        val effrxSeries = loadEffrxSeries()
+        val neededFrom = LocalDate.of(1990, 1, 1)
+        val portfolio = request.portfolio.copy(marginStrategies = emptyList(), rebalanceStrategies = emptyList())
+        val referenceTicker = request.referenceTicker
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() && request.referenceSource == HoldDipReferenceSource.TICKER }
+
+        if (portfolio.tickers.isEmpty()) throw IllegalArgumentException("Portfolio must contain at least one ticker")
+        if (request.referenceSource == HoldDipReferenceSource.TICKER && referenceTicker == null) {
+            throw IllegalArgumentException("Reference ticker is required")
+        }
+
+        val allTickers = (portfolio.tickers.map { it.ticker } + listOfNotNull(referenceTicker)).distinct()
+        val letfDefs = mutableMapOf<String, LETFDefinition>()
+        for (ticker in allTickers) {
+            val def = parseLETFDefinition(ticker) ?: continue
+            letfDefs.putIfAbsent(ticker, def)
+        }
+
+        val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
+        fun cachedLoad(ticker: String) =
+            seriesCache.getOrPut(ticker) { loadNormalizedSeries(ticker, neededFrom) }
+
+        val letfComponentTickers = letfDefs.values
+            .flatMap { def -> def.components.map { it.ticker } }
+            .toSet()
+        for (ticker in letfComponentTickers) cachedLoad(ticker)
+
+        val componentSeriesForDates = letfComponentTickers.mapNotNull { seriesCache[it] }
+        val letfDates = if (componentSeriesForDates.isNotEmpty())
+            intersectDates(componentSeriesForDates, null, toDate)
+        else emptyList()
+
+        if (letfDates.size >= 2) {
+            for ((letfString, def) in letfDefs) {
+                if (letfString !in seriesCache) {
+                    val componentSeriesMap = def.components.associate { comp ->
+                        comp.ticker to (seriesCache[comp.ticker]
+                            ?: error("Component ticker ${comp.ticker} was not loaded"))
+                    }
+                    seriesCache[letfString] = computeLetfSeries(
+                        def, componentSeriesMap, letfDates, effrxSeries, def.rebalanceStrategy
+                    )
+                }
+            }
+        }
+
+        allTickers
+            .filter { parseLETFDefinition(it) == null }
+            .forEach { cachedLoad(it) }
+
+        val portfolioSeriesMap = portfolio.tickers.associate { tw ->
+            tw.ticker to (seriesCache[tw.ticker] ?: error("Series for '${tw.ticker}' not found in cache"))
+        }
+        val dateSeries = portfolioSeriesMap.values.toMutableList()
+        val referenceSeries = referenceTicker?.let {
+            seriesCache[it] ?: error("Series for '$it' not found in cache")
+        }
+        if (referenceSeries != null) dateSeries.add(referenceSeries)
+
+        val dates = intersectDates(dateSeries, fromDate, toDate)
+        if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
+
+        val portfolioValues = computeNoMargin(portfolio, portfolioSeriesMap, dates, request.startingBalance, null)
+        val referenceHistory = if (referenceSeries == null) {
+            val historyDates = intersectDates(portfolioSeriesMap.values.toList(), null, toDate)
+            val historyValues = computeNoMargin(portfolio, portfolioSeriesMap, historyDates, request.startingBalance, null)
+            historyDates to historyValues
+        } else {
+            val historyDates = (referenceSeries.keys + dates)
+                .filter { it <= toDate }
+                .distinct()
+                .sorted()
+            val filled = forwardFillSeries(referenceSeries, historyDates)
+            val usableDates = historyDates.filter { filled[it] != null }
+            usableDates to usableDates.map { filled[it] ?: error("Missing reference value for $it") }
+        }
+        val (referenceHistoryDates, referenceHistoryValues) = referenceHistory
+        val referenceHistoryDrawdowns = computeReferenceDrawdowns(referenceHistoryValues)
+        val referenceDrawdownByDate = referenceHistoryDates
+            .mapIndexed { i, date -> date to referenceHistoryDrawdowns[i] }
+            .toMap()
+        val referenceValueByDate = referenceHistoryDates
+            .mapIndexed { i, date -> date to referenceHistoryValues[i] }
+            .toMap()
+        val referenceDrawdowns = dates.map { date ->
+            referenceDrawdownByDate[date] ?: error("Missing reference drawdown for $date")
+        }
+        val referenceRawValues = dates.map { date ->
+            referenceValueByDate[date] ?: error("Missing reference value for $date")
+        }
+        val referenceDisplayStart = referenceRawValues.firstOrNull()?.takeIf { it > 0.0 } ?: request.startingBalance
+        val referenceValues = referenceRawValues.map { it / referenceDisplayStart * request.startingBalance }
+
+        val annualRate = when (request.interestMode) {
+            HoldDipInterestMode.SPREAD -> request.annualSpread ?: 0.0
+            HoldDipInterestMode.FIXED -> request.fixedAnnualRate ?: 0.0
+        }.coerceAtLeast(0.0)
+        val dailyLoanRates = when (request.interestMode) {
+            HoldDipInterestMode.SPREAD -> buildDailyLoanRates(dates, effrxSeries, annualRate / 252.0)
+            HoldDipInterestMode.FIXED -> DoubleArray(dates.size) { i -> if (i == 0) 0.0 else annualRate / 252.0 }
+        }
+        val debtIndex = DoubleArray(dates.size) { 1.0 }
+        for (i in 1 until dates.size) debtIndex[i] = debtIndex[i - 1] * (1.0 + dailyLoanRates[i])
+
+        val thresholds = request.drawdownPcts
+            .map { if (it > 1.0) it / 100.0 else it }
+            .filter { it > 0.0 && it < 1.0 }
+            .distinct()
+            .sorted()
+            .ifEmpty { listOf(0.05, 0.10, 0.15, 0.20, 0.25) }
+
+        val drawdownIndex = ReferenceRangeIndex(referenceDrawdowns)
+        val results = thresholds.map { drawdownPct ->
+            val firstTriggerDate = referenceHistoryDates
+                .zip(referenceHistoryDrawdowns)
+                .firstOrNull { (_, drawdown) -> drawdown <= -drawdownPct }
+                ?.first
+            buildHoldDipResult(
+                drawdownPct,
+                dates,
+                portfolioValues,
+                referenceDrawdowns,
+                debtIndex,
+                drawdownIndex,
+                request.startingBalance,
+                firstTriggerDate,
+            )
+        }
+
+        return HoldDipMultiResult(
+            referenceLabel = referenceTicker ?: portfolio.label,
+            referencePoints = dates.mapIndexed { i, date -> DataPoint(date.toString(), referenceValues[i]) },
+            results = results,
+        )
+    }
+
+    private fun buildHoldDipResult(
+        drawdownPct: Double,
+        dates: List<LocalDate>,
+        portfolioValues: List<Double>,
+        referenceDrawdowns: List<Double>,
+        debtIndex: DoubleArray,
+        drawdownIndex: ReferenceRangeIndex,
+        startingBalance: Double,
+        firstTriggerDate: LocalDate?,
+    ): HoldDipResult {
+        val n = dates.size
+        val triggerIndex = arrayOfNulls<Int>(n)
+        for (i in n - 1 downTo 0) {
+            triggerIndex[i] = if (firstTriggerDate == null || dates[i] < firstTriggerDate) {
+                null
+            } else if (referenceDrawdowns[i] <= -drawdownPct) {
+                i
+            } else {
+                drawdownIndex.firstAtOrBelow(i + 1, -drawdownPct)
+            }
+        }
+
+        val points = dates.mapIndexed { i, date ->
+            val j = triggerIndex[i]
+            if (j == null || portfolioValues[i] <= 0.0 || debtIndex[i] <= 0.0) {
+                HoldDipPoint(date.toString())
+            } else if (j == i) {
+                HoldDipPoint(
+                    date = date.toString(),
+                    value = 0.0,
+                    triggerDate = date.toString(),
+                    daysToTrigger = 0,
+                    referenceDrawdown = referenceDrawdowns[i],
+                )
+            } else {
+                val buyHoldValue = startingBalance * (portfolioValues[j] / portfolioValues[i])
+                val debtValue = startingBalance * (debtIndex[j] / debtIndex[i])
+                HoldDipPoint(
+                    date = date.toString(),
+                    value = buyHoldValue - debtValue,
+                    triggerDate = dates[j].toString(),
+                    daysToTrigger = (dates[j].toEpochDay() - date.toEpochDay()).toInt(),
+                    referenceDrawdown = referenceDrawdowns[j],
+                )
+            }
+        }
+
+        val triggered = points.filter { it.value != null }
+        val values = triggered.mapNotNull { it.value }.sorted()
+        val summary = if (values.isEmpty()) {
+            HoldDipSummary(totalPoints = points.size, triggeredPoints = 0)
+        } else {
+            val median = if (values.size % 2 == 1) {
+                values[values.size / 2]
+            } else {
+                (values[values.size / 2 - 1] + values[values.size / 2]) / 2.0
+            }
+            val decisiveValues = values.filter { abs(it) > 1e-9 }
+            HoldDipSummary(
+                totalPoints = points.size,
+                triggeredPoints = triggered.size,
+                bestValue = values.last(),
+                worstValue = values.first(),
+                averageValue = values.average(),
+                medianValue = median,
+                winRate = decisiveValues
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { decisive -> decisive.count { it > 0.0 }.toDouble() / decisive.size },
+                averageDaysToTrigger = triggered.mapNotNull { it.daysToTrigger }.average(),
+            )
+        }
+
+        return HoldDipResult(drawdownPct, points, summary)
+    }
+
+    private fun computeReferenceDrawdowns(values: List<Double>): List<Double> {
+        var peak = Double.NEGATIVE_INFINITY
+        return values.map { value ->
+            if (value > peak) peak = value
+            if (peak > 0.0) value / peak - 1.0 else 0.0
+        }
+    }
+
+    private class ReferenceRangeIndex(private val values: List<Double>) {
+        private val n = values.size
+        private val minTree = DoubleArray(n * 4) { Double.POSITIVE_INFINITY }
+        private val maxTree = DoubleArray(n * 4) { Double.NEGATIVE_INFINITY }
+
+        init {
+            if (n > 0) build(1, 0, n - 1)
+        }
+
+        private fun build(node: Int, left: Int, right: Int) {
+            if (left == right) {
+                minTree[node] = values[left]
+                maxTree[node] = values[left]
+                return
+            }
+            val mid = (left + right) / 2
+            build(node * 2, left, mid)
+            build(node * 2 + 1, mid + 1, right)
+            minTree[node] = minOf(minTree[node * 2], minTree[node * 2 + 1])
+            maxTree[node] = maxOf(maxTree[node * 2], maxTree[node * 2 + 1])
+        }
+
+        fun firstAtOrBelow(start: Int, threshold: Double): Int? {
+            if (start >= n || minTree[1] > threshold) return null
+            return firstAtOrBelow(1, 0, n - 1, start, threshold)
+        }
+
+        private fun firstAtOrBelow(node: Int, left: Int, right: Int, start: Int, threshold: Double): Int? {
+            if (right < start || minTree[node] > threshold) return null
+            if (left == right) return left
+            val mid = (left + right) / 2
+            return firstAtOrBelow(node * 2, left, mid, start, threshold)
+                ?: firstAtOrBelow(node * 2 + 1, mid + 1, right, start, threshold)
+        }
+
+        fun maxIn(queryLeft: Int, queryRight: Int): Double =
+            maxIn(1, 0, n - 1, queryLeft, queryRight)
+
+        private fun maxIn(node: Int, left: Int, right: Int, queryLeft: Int, queryRight: Int): Double {
+            if (queryRight < left || right < queryLeft) return Double.NEGATIVE_INFINITY
+            if (queryLeft <= left && right <= queryRight) return maxTree[node]
+            val mid = (left + right) / 2
+            return maxOf(
+                maxIn(node * 2, left, mid, queryLeft, queryRight),
+                maxIn(node * 2 + 1, mid + 1, right, queryLeft, queryRight),
+            )
+        }
+    }
+
     // ── Ticker data loading ───────────────────────────────────────────────────
 
 

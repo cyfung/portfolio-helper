@@ -19,7 +19,7 @@ import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
-  cashflowStateFromSettings, cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, startingBalanceToPayload,
+  cashflowStateFromSettings, cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -152,10 +152,12 @@ export default function MonteCarloPage() {
 
   async function doRun(seed: number | null = null) {
     setError('')
+    const runBlocks = blocks.map(normalizeBlockSpreadInputs)
+    if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     let portfolios
     try {
       const savedPortfolios = await fetchSavedPortfolios()
-      portfolios = blocks
+      portfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios))
         .filter(p => p.tickers.length > 0)
     } catch (e: any) {
@@ -221,7 +223,9 @@ export default function MonteCarloPage() {
   // ── Import / Export ───────────────────────────────────────────────────────
 
   async function handleExport() {
-    const portfolios = blocks.map((b, i) => blockStateToAPIPortfolio(b, i))
+    const exportBlocks = blocks.map(normalizeBlockSpreadInputs)
+    if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
+    const portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
     const code = await compressToCode({
       fromDate: fromDate || null, toDate: toDate || null,
       minChunkYears: parseFloat(minChunk) || 3, maxChunkYears: parseFloat(maxChunk) || 8,

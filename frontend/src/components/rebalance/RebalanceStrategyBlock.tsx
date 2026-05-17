@@ -5,10 +5,17 @@ import {
   DipSurgeScopeState,
   REBALANCE_PERIOD_OVERRIDE_OPTIONS,
   MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS,
+  PORTFOLIO_TRIGGER_SOURCE_OPTIONS,
+  DrawdownMarginOverrideState,
+  DrawdownMarginTriggerState,
+  emptyDrawdownMarginOverride,
+  emptyDrawdownMarginTrigger,
+  normalizeStrategySpreadInput,
   strategyStateToSavedConfig,
   savedConfigToStrategyState,
 } from '@/types/rebalanceStrategy'
 import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
+import { isValidNumberInput } from '@/lib/numberInputs'
 import DipSurgeSection from './DipSurgeSection'
 
 interface Props {
@@ -300,6 +307,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   ref,
 ) {
   const [local, setLocal] = useState<RebalStrategyState>(value)
+  const [spreadTouched, setSpreadTouched] = useState(false)
   const localRef = useRef(local)
   const prevValueRef = useRef(value)
   const s = local
@@ -324,6 +332,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       prevValueRef.current = value
       localRef.current = value
       setLocal(value)
+      setSpreadTouched(false)
     }
   }, [value])
 
@@ -358,8 +367,14 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const marginPoints = draftMarginPoints
   const midMarginPoint = marginPoints[2] ?? DEFAULT_POINTS[2]
   const marginRebalanceRestoreMargin = s.marginRebalanceRestoreMargin ?? midMarginPoint
+  const drawdownMarginOverride = s.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
+  const drawdownBuyOnLowMargin = s.drawdownBuyOnLowMargin ?? emptyDrawdownMarginTrigger('buy')
+  const drawdownSellOnHighMargin = s.drawdownSellOnHighMargin ?? emptyDrawdownMarginTrigger('sell')
+  const drawdownOverrideTargetMargin = drawdownMarginOverride.targetMargin || '95'
   const cashflowScalingMargin = s.cashflowScalingMargin ?? marginValueFromLegacyPoint(marginPoints, s.cashflowScalingPointIndex, 1)
+  const buyLowTriggerMargin = s.buyLowTriggerMargin ?? marginValueFromLegacyPoint(marginPoints, s.buyLowTriggerPointIndex)
   const buyLowRestoreMargin = s.buyLowRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.buyLowRestorePointIndex)
+  const sellHighTriggerMargin = s.sellHighTriggerMargin ?? marginValueFromLegacyPoint(marginPoints, s.sellHighTriggerPointIndex)
   const sellHighRestoreMargin = s.sellHighRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.sellHighRestorePointIndex)
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -372,9 +387,28 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     set({ [key]: { ...localRef.current[key], [scope]: value } } as Partial<RebalStrategyState>)
   }, [set])
 
+  const updateDrawdownMarginOverride = useCallback((patch: Partial<DrawdownMarginOverrideState>) => {
+    const current = localRef.current.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
+    const next = { ...current, ...patch }
+    if (next.portfolioSource !== 'REFERENCE_PORTFOLIO') next.referenceTicker = ''
+    set({ drawdownMarginOverride: next })
+  }, [set])
+
+  const updateDrawdownMarginTrigger = useCallback((
+    key: 'drawdownBuyOnLowMargin' | 'drawdownSellOnHighMargin',
+    direction: 'buy' | 'sell',
+    patch: Partial<DrawdownMarginTriggerState>,
+  ) => {
+    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
+    const next = { ...current, ...patch }
+    if (next.portfolioSource !== 'REFERENCE_PORTFOLIO') next.referenceTicker = ''
+    set({ [key]: next } as Partial<RebalStrategyState>)
+  }, [set])
+
   async function handleSave(overwrite: boolean) {
-    commit()
-    const current = localRef.current
+    const current = normalizeStrategySpreadInput(localRef.current)
+    if (current !== localRef.current) updateLocal(current)
+    commit(current)
     const name = current.label.trim(); if (!name) return
     if (overwrite) await fetch(`/api/rebalance-strategy/savedStrategies?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
     const res = await fetch('/api/rebalance-strategy/savedStrategies', {
@@ -397,6 +431,106 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       const { name, config } = JSON.parse(e.dataTransfer.getData('application/x-strategy-chip'))
       updateLocal(savedConfigToStrategyState(config, name))
     }
+  }
+
+  function renderDrawdownMarginTrigger(
+    key: 'drawdownBuyOnLowMargin' | 'drawdownSellOnHighMargin',
+    direction: 'buy' | 'sell',
+    title: string,
+    value: DrawdownMarginTriggerState,
+    triggerPlaceholder: string,
+  ) {
+    return (
+      <details open={value.enabled} className="strategy-subsection">
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>
+          {title}
+          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={value.enabled}
+              onChange={e => updateDrawdownMarginTrigger(key, direction, { enabled: e.target.checked })}
+            />
+            {' '}Enable
+          </label>
+        </summary>
+        {value.enabled && (
+          <div className="strategy-section-body">
+            <div className="strategy-row">
+              <label>Reference</label>
+              <select
+                value={value.portfolioSource ?? 'REFERENCE_PORTFOLIO'}
+                onChange={e => updateDrawdownMarginTrigger(key, direction, {
+                  portfolioSource: e.target.value,
+                  referenceTicker: e.target.value === 'REFERENCE_PORTFOLIO' ? (value.referenceTicker ?? '') : '',
+                })}
+              >
+                {PORTFOLIO_TRIGGER_SOURCE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {(value.portfolioSource ?? 'REFERENCE_PORTFOLIO') === 'REFERENCE_PORTFOLIO' && (
+              <div className="strategy-row">
+                <label>Reference Ticker</label>
+                <input
+                  type="text"
+                  value={value.referenceTicker ?? ''}
+                  placeholder="Portfolio"
+                  aria-label={`${title} reference ticker`}
+                  onChange={e => updateDrawdownMarginTrigger(key, direction, { referenceTicker: e.target.value.toUpperCase() })}
+                  onBlur={() => commit()}
+                />
+              </div>
+            )}
+            <div className="strategy-row">
+              <label>Drawdown %</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={value.drawdownPct}
+                onChange={e => updateDrawdownMarginTrigger(key, direction, { drawdownPct: e.target.value })}
+                onBlur={() => commit()}
+                style={{ width: '5rem' }}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Trigger At</label>
+              <MarginPercentInput
+                value={value.triggerMargin}
+                placeholder={triggerPlaceholder}
+                max={sliderMax}
+                ariaLabel={`${title} trigger margin`}
+                onChange={margin => updateDrawdownMarginTrigger(key, direction, { triggerMargin: margin, triggerPointIndex: '' })}
+                onCommit={() => commit()}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Alloc Strategy</label>
+              <select
+                value={value.allocStrategy ?? 'PROPORTIONAL'}
+                onChange={e => updateDrawdownMarginTrigger(key, direction, { allocStrategy: e.target.value })}
+              >
+                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="strategy-row">
+              <label>Restore To</label>
+              <MarginPercentInput
+                value={value.restoreMargin}
+                placeholder={midMarginPoint}
+                max={sliderMax}
+                ariaLabel={`${title} restore margin`}
+                onChange={margin => updateDrawdownMarginTrigger(key, direction, { restoreMargin: margin, restorePointIndex: '' })}
+                onCommit={() => commit()}
+              />
+            </div>
+          </div>
+        )}
+      </details>
+    )
   }
 
   return (
@@ -449,8 +583,11 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         <div className="strategy-row">
           <label>Spread %</label>
           <input type="number" min="0" step="0.1" value={s.marginSpread}
+            className={spreadTouched && !isValidNumberInput(s.marginSpread, { min: 0 }) ? 'input-error' : undefined}
             onChange={e => set({ marginSpread: e.target.value })}
-            onBlur={() => commit()}
+            onBlur={() => { setSpreadTouched(true); commit() }}
+            aria-invalid={spreadTouched && !isValidNumberInput(s.marginSpread, { min: 0 })}
+            title={spreadTouched && !isValidNumberInput(s.marginSpread, { min: 0 }) ? 'Enter a valid non-negative spread percent' : undefined}
             style={{ width: '5rem' }} />
         </div>
         <div className="strategy-row">
@@ -549,6 +686,163 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         )}
       </details>
 
+      <details open={drawdownMarginOverride.enabled} className="strategy-subsection">
+        <summary className="strategy-section-title" onClick={keepSectionOpen}>
+          Drawdown MR Override
+          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={drawdownMarginOverride.enabled}
+              disabled={!(s.marginRebalanceEnabled ?? true)}
+              onChange={e => updateDrawdownMarginOverride({ enabled: e.target.checked })}
+            />
+            {' '}Enable
+          </label>
+        </summary>
+        {drawdownMarginOverride.enabled && (s.marginRebalanceEnabled ?? true) && (
+          <div className="strategy-section-body">
+            <div className="strategy-row">
+              <label>Trigger Source</label>
+              <select
+                value={drawdownMarginOverride.portfolioSource ?? 'REFERENCE_PORTFOLIO'}
+                onChange={e => updateDrawdownMarginOverride({
+                  portfolioSource: e.target.value,
+                  referenceTicker: e.target.value === 'REFERENCE_PORTFOLIO' ? (drawdownMarginOverride.referenceTicker ?? '') : '',
+                })}
+              >
+                {PORTFOLIO_TRIGGER_SOURCE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {(drawdownMarginOverride.portfolioSource ?? 'REFERENCE_PORTFOLIO') === 'REFERENCE_PORTFOLIO' && (
+              <div className="strategy-row">
+                <label>Reference Ticker</label>
+                <input
+                  type="text"
+                  value={drawdownMarginOverride.referenceTicker ?? ''}
+                  placeholder="Portfolio"
+                  aria-label="Drawdown MR override reference ticker"
+                  onChange={e => updateDrawdownMarginOverride({ referenceTicker: e.target.value.toUpperCase() })}
+                  onBlur={() => commit()}
+                />
+              </div>
+            )}
+            <div className="strategy-row">
+              <label>Enter DD %</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={drawdownMarginOverride.enterDrawdownPct}
+                onChange={e => updateDrawdownMarginOverride({ enterDrawdownPct: e.target.value })}
+                onBlur={() => commit()}
+                style={{ width: '5rem' }}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Exit DD %</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={drawdownMarginOverride.exitDrawdownPct}
+                onChange={e => updateDrawdownMarginOverride({ exitDrawdownPct: e.target.value })}
+                onBlur={() => commit()}
+                style={{ width: '5rem' }}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Override MR</label>
+              <select
+                value={drawdownMarginOverride.rebalancePeriod}
+                onChange={e => updateDrawdownMarginOverride({ rebalancePeriod: e.target.value })}
+              >
+                {REBALANCE_PERIOD_OVERRIDE_OPTIONS.filter(o => o.value !== 'INHERIT').map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="strategy-row">
+              <label>Rebalance On Enter</label>
+              <input
+                type="checkbox"
+                checked={drawdownMarginOverride.rebalanceOnEnter ?? true}
+                onChange={e => updateDrawdownMarginOverride({ rebalanceOnEnter: e.target.checked })}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Target Margin</label>
+              <MarginPercentInput
+                value={drawdownOverrideTargetMargin}
+                placeholder="95"
+                max={sliderMax}
+                ariaLabel="Drawdown MR override target margin"
+                onChange={value => updateDrawdownMarginOverride({ targetMargin: value })}
+                onCommit={() => commit()}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Trade Direction</label>
+              <select
+                value={drawdownMarginOverride.tradeDirection ?? 'BOTH'}
+                onChange={e => updateDrawdownMarginOverride({ tradeDirection: e.target.value as RebalStrategyState['marginRebalanceTradeDirection'] })}
+              >
+                {MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {(drawdownMarginOverride.tradeDirection ?? 'BOTH') === 'BOTH' ? (
+              <>
+                <div className="strategy-row">
+                  <label>Buy Alloc Strategy</label>
+                  <select
+                    value={drawdownMarginOverride.buyAllocStrategy ?? drawdownMarginOverride.allocStrategy ?? 'PROPORTIONAL'}
+                    onChange={e => updateDrawdownMarginOverride({ buyAllocStrategy: e.target.value })}
+                  >
+                    {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="strategy-row">
+                  <label>Sell Alloc Strategy</label>
+                  <select
+                    value={drawdownMarginOverride.sellAllocStrategy ?? drawdownMarginOverride.allocStrategy ?? 'PROPORTIONAL'}
+                    onChange={e => updateDrawdownMarginOverride({ sellAllocStrategy: e.target.value })}
+                  >
+                    {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : (
+              <div className="strategy-row">
+                <label>Alloc Strategy</label>
+                <select
+                  value={
+                    (drawdownMarginOverride.tradeDirection ?? 'BOTH') === 'SELL_ONLY'
+                      ? (drawdownMarginOverride.sellAllocStrategy ?? drawdownMarginOverride.allocStrategy ?? 'PROPORTIONAL')
+                      : (drawdownMarginOverride.buyAllocStrategy ?? drawdownMarginOverride.allocStrategy ?? 'PROPORTIONAL')
+                  }
+                  onChange={e => updateDrawdownMarginOverride(
+                    (drawdownMarginOverride.tradeDirection ?? 'BOTH') === 'SELL_ONLY'
+                      ? { sellAllocStrategy: e.target.value, allocStrategy: e.target.value }
+                      : { buyAllocStrategy: e.target.value, allocStrategy: e.target.value },
+                  )}
+                >
+                  {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+      </details>
+
       <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>Cashflow</summary>
         <div className="strategy-section-body">
@@ -575,7 +869,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
 
       <details open={s.buyLowEnabled} className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
-          Buy on Low Margin
+          BL
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={s.buyLowEnabled}
               onChange={e => set({ buyLowEnabled: e.target.checked })} />
@@ -584,6 +878,17 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </summary>
         {s.buyLowEnabled && (
           <div className="strategy-section-body">
+            <div className="strategy-row">
+              <label>Trigger At</label>
+              <MarginPercentInput
+                value={buyLowTriggerMargin}
+                placeholder={marginPoints[0] ?? DEFAULT_POINTS[0]}
+                max={sliderMax}
+                ariaLabel="BL trigger margin"
+                onChange={value => set({ buyLowTriggerMargin: value, buyLowTriggerPointIndex: '' })}
+                onCommit={() => commit()}
+              />
+            </div>
             <div className="strategy-row">
               <label>Alloc Strategy</label>
               <select value={s.buyLowAllocStrategy}
@@ -610,7 +915,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
 
       <details open={s.sellHighEnabled} className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
-          Sell on High Margin
+          SH
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
             <input type="checkbox" checked={s.sellHighEnabled}
               onChange={e => set({ sellHighEnabled: e.target.checked })} />
@@ -619,6 +924,17 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </summary>
         {s.sellHighEnabled && (
           <div className="strategy-section-body">
+            <div className="strategy-row">
+              <label>Trigger At</label>
+              <MarginPercentInput
+                value={sellHighTriggerMargin}
+                placeholder={marginPoints[4] ?? DEFAULT_POINTS[4]}
+                max={sliderMax}
+                ariaLabel="SH trigger margin"
+                onChange={value => set({ sellHighTriggerMargin: value, sellHighTriggerPointIndex: '' })}
+                onCommit={() => commit()}
+              />
+            </div>
             <div className="strategy-row">
               <label>Alloc Strategy</label>
               <select value={s.sellHighAllocStrategy}
@@ -642,6 +958,22 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           </div>
         )}
       </details>
+
+      {renderDrawdownMarginTrigger(
+        'drawdownBuyOnLowMargin',
+        'buy',
+        'BL on Drawdown',
+        drawdownBuyOnLowMargin,
+        marginPoints[0] ?? DEFAULT_POINTS[0],
+      )}
+
+      {renderDrawdownMarginTrigger(
+        'drawdownSellOnHighMargin',
+        'sell',
+        'SH on Drawdown',
+        drawdownSellOnHighMargin,
+        marginPoints[4] ?? DEFAULT_POINTS[4],
+      )}
 
       <div className="strategy-subsection">
         <DipSurgeSection

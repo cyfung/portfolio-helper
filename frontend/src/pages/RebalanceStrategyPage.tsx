@@ -20,7 +20,7 @@ import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
-  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, startingBalanceToPayload, REBALANCE_MARGIN_MODE_OPTIONS, REBALANCE_OPTIONS,
+  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload, REBALANCE_MARGIN_MODE_OPTIONS, REBALANCE_OPTIONS,
 } from '@/types/backtest'
 import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
@@ -28,6 +28,7 @@ import {
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import {
   RebalStrategyState, emptyStrategy, strategyStateToAPI, savedConfigToStrategyState,
+  normalizeStrategySpreadInput,
   REBALANCE_PERIOD_OVERRIDE_OPTIONS, type DipSurgeState, type ExecutionMethodState,
   type PriceMoveTriggerState,
 } from '@/types/rebalanceStrategy'
@@ -96,8 +97,8 @@ const OPTIMIZER_LOCKS: {
     key: 'marginPoints',
     label: 'MP',
     name: 'Margin Points',
-    enabledItems: ['Low margin point', 'High margin point'],
-    configItems: ['Low margin point', 'Low comfort point', 'Target margin point', 'High comfort point', 'High margin point'],
+    enabledItems: ['BL trigger default', 'SH trigger default'],
+    configItems: ['BL trigger default', 'Low comfort point', 'Target margin point', 'High comfort point', 'SH trigger default'],
   },
   {
     key: 'rebalancePeriod',
@@ -125,14 +126,14 @@ const OPTIMIZER_LOCKS: {
     label: 'BL',
     name: 'Buy Low',
     enabledItems: ['Buy low enabled'],
-    configItems: ['Buy low enabled', 'Buy low alloc strategy', 'Buy low restore target'],
+    configItems: ['Buy low enabled', 'Buy low trigger point', 'Buy low alloc strategy', 'Buy low restore target'],
   },
   {
     key: 'sellHigh',
     label: 'SH',
     name: 'Sell High',
     enabledItems: ['Sell high enabled'],
-    configItems: ['Sell high enabled', 'Sell high alloc strategy', 'Sell high restore target'],
+    configItems: ['Sell high enabled', 'Sell high trigger point', 'Sell high alloc strategy', 'Sell high restore target'],
   },
   {
     key: 'buyDipBase',
@@ -254,6 +255,8 @@ const ACTION_MARKERS: Record<string, { label: string; short: string; color: stri
   SELL_SURGE:          { label: 'Sell surge',         short: 'SS', color: '#e67700' },
   PORTFOLIO_REBALANCE: { label: 'Portfolio rebalance', short: 'RB', color: '#7950f2', defaultVisible: false },
   MARGIN_REBALANCE:    { label: 'Margin rebalance',    short: 'MR', color: '#0ca678', defaultVisible: false },
+  DRAWDOWN_MR:          { label: 'Drawdown MR',         short: 'DD-MR', color: '#6741d9', defaultVisible: false },
+  DRAWDOWN_MR_EXIT:     { label: 'Drawdown MR exit',    short: 'DD-X', color: '#868e96', defaultVisible: false },
 }
 
 const DEFAULT_OPTIMIZER_GENERATIONS = 20
@@ -431,6 +434,7 @@ export default function RebalanceStrategyPage() {
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
+  const [includeActionDiagnostics, setIncludeActionDiagnostics] = useState(false)
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
   const [running, setRunning]     = useState(false)
@@ -502,9 +506,11 @@ export default function RebalanceStrategyPage() {
 
   async function handleRun() {
     setError('')
+    const runPortfolio = normalizeBlockSpreadInputs(portfolio)
+    if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
     let portfolioApi
     try {
-      portfolioApi = resolvedBlockStateToAPIPortfolio(portfolio, 0, await fetchSavedPortfolios())
+      portfolioApi = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, await fetchSavedPortfolios())
     } catch (e: any) {
       setError(e.message || 'Unable to resolve saved portfolio references.')
       return
@@ -512,12 +518,14 @@ export default function RebalanceStrategyPage() {
     if (portfolioApi.tickers.length === 0) {
       setError('Add at least one ticker with a positive weight to the portfolio.'); return
     }
-    const currentStrategies = strategies.map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+    const currentStrategies = strategies
+      .map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+      .map(normalizeStrategySpreadInput)
     strategyBlockRefs.current.forEach(ref => ref?.commit())
     const portfolioBlockStates = (portfolioApi.rebalanceStrategies as any[]).map(s => savedConfigToStrategyState(s.config, s.name))
     const allStrategies = makeUniqueStrategyLabels([...portfolioBlockStates, ...currentStrategies], portfolioApi.label)
     const runStrategies = allStrategies.slice(portfolioBlockStates.length)
-    if (runStrategies.some((s, i) => s.label !== strategies[i]?.label)) setStrategies(runStrategies)
+    if (runStrategies.some((s, i) => s !== strategies[i] || s.label !== strategies[i]?.label)) setStrategies(runStrategies)
     setRunning(true)
     try {
       const res = await fetch('/api/rebalance-strategy/run', {
@@ -530,6 +538,7 @@ export default function RebalanceStrategyPage() {
           portfolio: portfolioApi,
           cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
           strategies: allStrategies.map(s => strategyStateToAPI(s)),
+          includeActionDiagnostics,
         }),
       })
       const data: BacktestResults = await res.json()
@@ -740,12 +749,16 @@ export default function RebalanceStrategyPage() {
       } : {}),
       ...(locks.buyLow === 'config' ? {
         buyLowEnabled: base.buyLowEnabled,
+        buyLowTriggerPointIndex: base.buyLowTriggerPointIndex,
+        buyLowTriggerMargin: base.buyLowTriggerMargin,
         buyLowAllocStrategy: base.buyLowAllocStrategy,
         buyLowRestorePointIndex: base.buyLowRestorePointIndex,
         buyLowRestoreMargin: base.buyLowRestoreMargin,
       } : {}),
       ...(locks.sellHigh === 'config' ? {
         sellHighEnabled: base.sellHighEnabled,
+        sellHighTriggerPointIndex: base.sellHighTriggerPointIndex,
+        sellHighTriggerMargin: base.sellHighTriggerMargin,
         sellHighAllocStrategy: base.sellHighAllocStrategy,
         sellHighRestorePointIndex: base.sellHighRestorePointIndex,
         sellHighRestoreMargin: base.sellHighRestoreMargin,
@@ -855,10 +868,14 @@ export default function RebalanceStrategyPage() {
       cashflowScalingPointIndex: '',
       deviationMode: 'ABSOLUTE',
       buyLowEnabled: g.buyLowEnabled,
+      buyLowTriggerMargin: String(g.minMargin),
+      buyLowTriggerPointIndex: '',
       buyLowAllocStrategy: g.allocStrategy,
       buyLowRestoreMargin: String(g.buyLowRestoreMargin),
       buyLowRestorePointIndex: '',
       sellHighEnabled: g.sellHighEnabled,
+      sellHighTriggerMargin: String(g.maxMargin),
+      sellHighTriggerPointIndex: '',
       sellHighAllocStrategy: g.allocStrategy,
       sellHighRestoreMargin: String(g.sellHighRestoreMargin),
       sellHighRestorePointIndex: '',
@@ -1002,8 +1019,11 @@ export default function RebalanceStrategyPage() {
 
   async function handleOptimizeStrategy1() {
     setError('')
-    const currentStrategies = strategies.map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+    const currentStrategies = strategies
+      .map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+      .map(normalizeStrategySpreadInput)
     strategyBlockRefs.current.forEach(ref => ref?.commit())
+    if (currentStrategies.some((s, i) => s !== strategies[i])) setStrategies(currentStrategies)
     const baseStrategy = optimizerLocks.sellHigh === 'enabled' ? { ...currentStrategies[0], sellHighEnabled: true } : currentStrategies[0]
     const bounds = optimizerBounds(baseStrategy)
     if (!bounds.canOptimize) {
@@ -1011,10 +1031,12 @@ export default function RebalanceStrategyPage() {
       return
     }
 
+    const runPortfolio = normalizeBlockSpreadInputs(portfolio)
+    if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
     const savedPortfolios = await fetchSavedPortfolios()
     let portfolioApi
     try {
-      portfolioApi = resolvedBlockStateToAPIPortfolio(portfolio, 0, savedPortfolios)
+      portfolioApi = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, savedPortfolios)
     } catch (e: any) {
       setError(e.message || 'Unable to resolve saved portfolio references.')
       return
@@ -1173,14 +1195,19 @@ export default function RebalanceStrategyPage() {
   }
 
   async function handleExport() {
-    const currentStrategies = strategies.map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+    const currentStrategies = strategies
+      .map((strategy, i) => strategyBlockRefs.current[i]?.getValue() ?? strategy)
+      .map(normalizeStrategySpreadInput)
     strategyBlockRefs.current.forEach(ref => ref?.commit())
+    if (currentStrategies.some((s, i) => s !== strategies[i])) setStrategies(currentStrategies)
+    const exportPortfolio = normalizeBlockSpreadInputs(portfolio)
+    if (exportPortfolio !== portfolio) setPortfolio(exportPortfolio)
     const code = await compressToCode({
       fromDate: fromDate || null,
       toDate: toDate || null,
       startingBalance: startingBalanceToPayload(startingBalance),
-      portfolio: blockStateToAPIPortfolio(portfolio, 0),
-      portfolioState: portfolio,
+      portfolio: blockStateToAPIPortfolio(exportPortfolio, 0),
+      portfolioState: exportPortfolio,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       strategies: currentStrategies,
     })
@@ -1241,6 +1268,11 @@ export default function RebalanceStrategyPage() {
   const selectedActionPointGroups = useMemo(() => (
     visibleActionPointGroups(selectedStrategyCurve?.curve.actionPoints, visibleActionPointTypes, chartData?.labels ?? [])
   ), [chartData?.labels, selectedStrategyCurve, visibleActionPointTypes])
+  const selectedActionDiagnostics = useMemo(() => (
+    selectedStrategyCurve?.curve.actionPoints
+      ?.filter(point => point.detail)
+      .slice(0, 250) ?? []
+  ), [selectedStrategyCurve])
 
   function toggleCurve(key: string, checked: boolean) {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
@@ -1424,6 +1456,19 @@ export default function RebalanceStrategyPage() {
 
         <SavedPortfoliosBar ref={savedBarRef} />
         <SavedStrategiesBar ref={savedStrategiesBarRef} />
+
+        <div className="strategy-optimizer-panel">
+          <label className="strategy-optimizer-toggle" htmlFor="rs-action-diagnostics">
+            <input
+              id="rs-action-diagnostics"
+              type="checkbox"
+              checked={includeActionDiagnostics}
+              disabled={running || optimizerProgress.running}
+              onChange={e => setIncludeActionDiagnostics(e.target.checked)}
+            />
+            Action diagnostics
+          </label>
+        </div>
 
         <div className="strategy-optimizer-panel">
           <div className="strategy-optimizer-controls">
@@ -1684,6 +1729,50 @@ export default function RebalanceStrategyPage() {
               </tbody>
             </table>
           </div>
+
+          {selectedActionDiagnostics.length > 0 && (
+            <div className="stats-container">
+              <table className="backtest-stats-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th title="Zero-based trading date index in the backtest date set">Idx</th>
+                    <th title="Trading dates since previous action for the same trigger key">Since Prev</th>
+                    <th>Key</th>
+                    <th>Dir</th>
+                    <th>Trigger Value</th>
+                    <th>Amount</th>
+                    <th>Eligible</th>
+                    <th>Margin Before</th>
+                    <th>Margin After</th>
+                    <th>Alloc</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedActionDiagnostics.map((point, i) => {
+                    const d = point.detail!
+                    return (
+                      <tr key={`${point.date}-${point.type}-${i}`}>
+                        <td>{point.date}</td>
+                        <td>{point.type}</td>
+                        <td>{d.tradingDayIndex ?? '-'}</td>
+                        <td>{d.daysSincePrevious ?? '-'}</td>
+                        <td>{d.key ?? '-'}</td>
+                        <td>{d.direction ?? '-'}</td>
+                        <td>{d.triggerValue == null ? '-' : fmt2(d.triggerValue)}</td>
+                        <td>{d.amount == null ? '-' : money(d.amount)}</td>
+                        <td>{d.eligibleAmount == null ? '-' : money(d.eligibleAmount)}</td>
+                        <td>{d.marginBefore == null ? '-' : pct(d.marginBefore)}</td>
+                        <td>{d.marginAfter == null ? '-' : pct(d.marginAfter)}</td>
+                        <td>{d.allocStrategy ?? '-'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Portfolio Value + Margin Utilization chart */}
           <div className="backtest-chart-heading">

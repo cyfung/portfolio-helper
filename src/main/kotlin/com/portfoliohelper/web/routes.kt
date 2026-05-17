@@ -283,6 +283,65 @@ private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = Mar
     targetMargin  = obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
 )
 
+private fun parseDrawdownMarginTriggerAction(obj: JsonObject): DrawdownMarginTriggerAction? {
+    if (obj["enabled"]?.jsonPrimitive?.booleanOrNull != true) return null
+    val portfolioSource = runCatching {
+        PortfolioTriggerSource.valueOf(obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO")
+    }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
+    return DrawdownMarginTriggerAction(
+        portfolioSource = portfolioSource,
+        referenceTicker = obj["referenceTicker"]?.jsonPrimitive?.contentOrNull
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() && portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
+        drawdownPct = (obj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
+            ?: obj["enterDrawdownPct"]?.jsonPrimitive?.doubleOrNull
+            ?: 0.10).coerceAtLeast(0.0),
+        triggerMargin = (obj["triggerMargin"]?.jsonPrimitive?.doubleOrNull
+            ?: obj["deviationPct"]?.jsonPrimitive?.doubleOrNull
+            ?: 0.0).coerceAtLeast(0.0),
+        allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+        } ?: MarginRebalanceMode.PROPORTIONAL,
+        targetMargin = (obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5).coerceAtLeast(0.0),
+    )
+}
+
+private fun parseDrawdownMarginOverride(obj: JsonObject): DrawdownMarginOverrideConfig? {
+    if (obj["enabled"]?.jsonPrimitive?.booleanOrNull != true) return null
+    val portfolioSource = runCatching {
+        PortfolioTriggerSource.valueOf(obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO")
+    }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
+    val legacyAllocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+    } ?: MarginRebalanceMode.PROPORTIONAL
+    return DrawdownMarginOverrideConfig(
+        enabled = true,
+        portfolioSource = portfolioSource,
+        referenceTicker = obj["referenceTicker"]?.jsonPrimitive?.contentOrNull
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() && portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
+        enterDrawdownPct = (obj["enterDrawdownPct"]?.jsonPrimitive?.doubleOrNull ?: 0.10).coerceAtLeast(0.0),
+        exitDrawdownPct = (obj["exitDrawdownPct"]?.jsonPrimitive?.doubleOrNull ?: 0.05).coerceAtLeast(0.0),
+        targetMargin = (obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.95).coerceAtLeast(0.0),
+        rebalancePeriod = runCatching {
+            RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "BI_MONTHLY")
+        }.getOrDefault(RebalancePeriodOverride.BI_MONTHLY),
+        rebalanceOnEnter = obj["rebalanceOnEnter"]?.jsonPrimitive?.booleanOrNull ?: true,
+        allocStrategy = legacyAllocStrategy,
+        buyAllocStrategy = obj["buyAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+        } ?: legacyAllocStrategy,
+        sellAllocStrategy = obj["sellAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
+            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
+        } ?: legacyAllocStrategy,
+        tradeDirection = runCatching {
+            MarginRebalanceTradeDirection.valueOf(obj["tradeDirection"]?.jsonPrimitive?.content ?: "BOTH")
+        }.getOrDefault(MarginRebalanceTradeDirection.BOTH),
+    )
+}
+
 private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = RebalStrategyConfig(
     label                      = obj["label"]?.jsonPrimitive?.contentOrNull ?: "Strategy",
     marginRatio                = obj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
@@ -304,6 +363,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
         MarginRebalanceTradeDirection.valueOf(obj["marginRebalanceTradeDirection"]?.jsonPrimitive?.content ?: "BOTH")
     }.getOrDefault(MarginRebalanceTradeDirection.BOTH),
     marginRebalanceRestoreMargin = obj["marginRebalanceRestoreMargin"]?.jsonPrimitive?.doubleOrNull,
+    drawdownMarginOverride     = (obj["drawdownMarginOverride"] as? JsonObject)?.let { parseDrawdownMarginOverride(it) },
     cashflowImmediateInvestPct = obj["cashflowImmediateInvestPct"]?.jsonPrimitive?.doubleOrNull ?: 1.0,
     cashflowScaling            = runCatching {
         CashflowScaling.valueOf(obj["cashflowScaling"]?.jsonPrimitive?.content ?: "SCALED_BY_TARGET_MARGIN")
@@ -314,6 +374,8 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     }.getOrDefault(DeviationMode.ABSOLUTE),
     sellOnHighMargin           = (obj["sellOnHighMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
     buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
+    drawdownSellOnHighMargin   = (obj["drawdownSellOnHighMargin"] as? JsonObject)?.let { parseDrawdownMarginTriggerAction(it) },
+    drawdownBuyOnLowMargin     = (obj["drawdownBuyOnLowMargin"] as? JsonObject)?.let { parseDrawdownMarginTriggerAction(it) },
     buyTheDip                  = null,
     sellOnSurge                = null,
     buyTheDipConfigs           = parseDipSurgeConfigs(obj["buyTheDip"]),
@@ -773,6 +835,58 @@ fun Application.configureRouting() {
             }
         }
 
+        post("/api/hold-dip/run") {
+            try {
+                val body = call.receiveText()
+                val json = Json.parseToJsonElement(body).jsonObject
+                if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
+                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings") }
+
+                val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
+                val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
+                    ?: throw IllegalArgumentException("Missing portfolio")
+
+                val drawdownPcts = when (val el = json["drawdownPcts"]) {
+                    is JsonArray -> el.mapNotNull { it.jsonPrimitive.doubleOrNull }
+                    else -> listOfNotNull(json["drawdownPct"]?.jsonPrimitive?.doubleOrNull)
+                }
+                val referenceSource = runCatching {
+                    HoldDipReferenceSource.valueOf(
+                        json["referenceSource"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "PORTFOLIO"
+                    )
+                }.getOrDefault(HoldDipReferenceSource.PORTFOLIO)
+                val interestMode = runCatching {
+                    HoldDipInterestMode.valueOf(
+                        json["interestMode"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "SPREAD"
+                    )
+                }.getOrDefault(HoldDipInterestMode.SPREAD)
+
+                val result = BacktestService.runHoldDip(
+                    HoldDipRequest(
+                        fromDate = fromDate,
+                        toDate = toDate,
+                        portfolio = portfolio,
+                        drawdownPcts = drawdownPcts,
+                        referenceSource = referenceSource,
+                        referenceTicker = json["referenceTicker"]?.jsonPrimitive?.contentOrNull,
+                        interestMode = interestMode,
+                        annualSpread = json["annualSpread"]?.jsonPrimitive?.doubleOrNull,
+                        fixedAnnualRate = json["fixedAnnualRate"]?.jsonPrimitive?.doubleOrNull,
+                        startingBalance = startingBalance,
+                    )
+                )
+                call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
         get("/api/rebalance-strategy/savedStrategies") {
             val rows = listSavedJsonConfigs(
                 SavedRebalanceStrategiesTable,
@@ -815,6 +929,7 @@ fun Application.configureRouting() {
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
+                val includeActionDiagnostics = json["includeActionDiagnostics"]?.jsonPrimitive?.booleanOrNull ?: false
 
                 val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
                     ?: throw IllegalArgumentException("Missing portfolio")
@@ -826,7 +941,15 @@ fun Application.configureRouting() {
                 } ?: emptyList()
 
                 val result = RebalanceStrategyService.run(
-                    RebalanceStrategyRequest(fromDate, toDate, portfolio, cashflow, strategies, startingBalance)
+                    RebalanceStrategyRequest(
+                        fromDate,
+                        toDate,
+                        portfolio,
+                        cashflow,
+                        strategies,
+                        startingBalance,
+                        includeActionDiagnostics,
+                    )
                 )
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {

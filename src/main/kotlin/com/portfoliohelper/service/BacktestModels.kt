@@ -58,6 +58,9 @@ data class CashflowConfig(
     val frequency: CashflowFrequency
 )
 
+enum class HoldDipReferenceSource { PORTFOLIO, TICKER }
+enum class HoldDipInterestMode { SPREAD, FIXED }
+
 data class MultiBacktestRequest(
     val fromDate: String?,
     val toDate: String?,
@@ -66,11 +69,77 @@ data class MultiBacktestRequest(
     val startingBalance: Double = 10_000.0
 )
 
+data class HoldDipRequest(
+    val fromDate: String?,
+    val toDate: String?,
+    val portfolio: PortfolioConfig,
+    val drawdownPcts: List<Double>,
+    val referenceSource: HoldDipReferenceSource,
+    val referenceTicker: String? = null,
+    val interestMode: HoldDipInterestMode,
+    val annualSpread: Double? = null,
+    val fixedAnnualRate: Double? = null,
+    val startingBalance: Double = 10_000.0
+)
+
 @Serializable
 data class DataPoint(val date: String, val value: Double)
 
 @Serializable
-data class ActionPoint(val date: String, val type: String)
+data class HoldDipPoint(
+    val date: String,
+    val value: Double? = null,
+    val triggerDate: String? = null,
+    val daysToTrigger: Int? = null,
+    val referenceDrawdown: Double? = null,
+)
+
+@Serializable
+data class HoldDipSummary(
+    val totalPoints: Int,
+    val triggeredPoints: Int,
+    val bestValue: Double? = null,
+    val worstValue: Double? = null,
+    val averageValue: Double? = null,
+    val medianValue: Double? = null,
+    val winRate: Double? = null,
+    val averageDaysToTrigger: Double? = null,
+)
+
+@Serializable
+data class HoldDipResult(
+    val drawdownPct: Double,
+    val points: List<HoldDipPoint>,
+    val summary: HoldDipSummary,
+)
+
+@Serializable
+data class HoldDipMultiResult(
+    val referenceLabel: String,
+    val referencePoints: List<DataPoint>,
+    val results: List<HoldDipResult>,
+)
+
+@Serializable
+data class ActionPointDetail(
+    val tradingDayIndex: Int? = null,
+    val key: String? = null,
+    val direction: String? = null,
+    val triggerValue: Double? = null,
+    val cooldownDays: Int? = null,
+    val daysSincePrevious: Int? = null,
+    val amount: Double? = null,
+    val eligibleAmount: Double? = null,
+    val minAdjustment: Double? = null,
+    val grossBefore: Double? = null,
+    val grossAfter: Double? = null,
+    val marginBefore: Double? = null,
+    val marginAfter: Double? = null,
+    val allocStrategy: String? = null,
+)
+
+@Serializable
+data class ActionPoint(val date: String, val type: String, val detail: ActionPointDetail? = null)
 
 @Serializable
 data class BacktestStats(

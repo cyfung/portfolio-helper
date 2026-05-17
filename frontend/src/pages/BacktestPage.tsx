@@ -17,7 +17,7 @@ import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
-  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, startingBalanceToPayload,
+  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
@@ -44,6 +44,8 @@ const ACTION_MARKERS: Record<string, { label: string; short: string; color: stri
   BUY_LOW:             { label: 'Buy low',             short: 'BL', color: '#2f9e44' },
   PORTFOLIO_REBALANCE: { label: 'Portfolio rebalance', short: 'RB', color: '#7950f2', defaultVisible: false },
   MARGIN_REBALANCE:    { label: 'Margin rebalance',    short: 'MR', color: '#0ca678', defaultVisible: false },
+  DRAWDOWN_MR:          { label: 'Drawdown MR',         short: 'DD-MR', color: '#6741d9', defaultVisible: false },
+  DRAWDOWN_MR_EXIT:     { label: 'Drawdown MR exit',    short: 'DD-X', color: '#868e96', defaultVisible: false },
 }
 const ACTION_MARKER_RENDER_LIMIT = 350
 type ActionPointChartKey = 'main' | 'drawdown' | 'recover' | 'margin'
@@ -579,10 +581,12 @@ export default function BacktestPage() {
 
   async function handleRun() {
     setError('')
+    const runBlocks = blocks.map(normalizeBlockSpreadInputs)
+    if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     let portfolios
     try {
       const latestSavedPortfolios = await fetchSavedPortfolios()
-      portfolios = blocks
+      portfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
         .filter(p => p.tickers.length > 0)
     } catch (e: any) {
@@ -644,7 +648,9 @@ export default function BacktestPage() {
   // ── Import / Export ───────────────────────────────────────────────────────
 
   async function handleExport() {
-    const portfolios = blocks.map((b, i) => blockStateToAPIPortfolio(b, i))
+    const exportBlocks = blocks.map(normalizeBlockSpreadInputs)
+    if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
+    const portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
     const code = await compressToCode({
       fromDate: fromDate || null,
       toDate: toDate || null,

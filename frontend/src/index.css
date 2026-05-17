@@ -3961,6 +3961,14 @@ a.loan-calc-link:hover {
     border-color: var(--color-accent-primary);
 }
 
+input.input-error,
+.margin-config-row input.input-error,
+.strategy-row input.input-error,
+.backtest-config-row input.input-error {
+    border-color: var(--color-negative);
+    background: color-mix(in srgb, var(--color-negative) 8%, var(--color-bg-primary));
+}
+
 .margin-config-row select.mc-mode {
     padding: 0.25rem 0.25rem;
     border: 1px solid var(--color-border-medium);

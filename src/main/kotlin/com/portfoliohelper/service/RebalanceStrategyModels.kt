@@ -119,6 +119,30 @@ data class DipSurgeConfig(
     val minAdjustmentPct: Double = 0.005,
 )
 
+data class DrawdownMarginOverrideConfig(
+    val enabled: Boolean = false,
+    val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+    val referenceTicker: String? = null,
+    val enterDrawdownPct: Double = 0.10,
+    val exitDrawdownPct: Double = 0.05,
+    val targetMargin: Double = 0.95,
+    val rebalancePeriod: RebalancePeriodOverride = RebalancePeriodOverride.BI_MONTHLY,
+    val rebalanceOnEnter: Boolean = true,
+    val allocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val buyAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val sellAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val tradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
+)
+
+data class DrawdownMarginTriggerAction(
+    val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+    val referenceTicker: String? = null,
+    val drawdownPct: Double = 0.10,
+    val triggerMargin: Double,
+    val allocStrategy: MarginRebalanceMode,
+    val targetMargin: Double,
+)
+
 // ── Top-level strategy config ─────────────────────────────────────────────────
 
 data class RebalStrategyConfig(
@@ -132,6 +156,7 @@ data class RebalStrategyConfig(
     val rebalanceAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
     val marginRebalanceTradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
     val marginRebalanceRestoreMargin: Double? = null,
+    val drawdownMarginOverride: DrawdownMarginOverrideConfig? = null,
     val cashflowImmediateInvestPct: Double,   // 0.0–1.0; default 1.0
     val cashflowScaling: CashflowScaling,
     val cashflowScalingMargin: Double? = null,
@@ -140,6 +165,8 @@ data class RebalStrategyConfig(
     // Sections 3 & 4: deviationPct IS the threshold; null = disabled
     val sellOnHighMargin: MarginTriggerAction?,
     val buyOnLowMargin: MarginTriggerAction?,
+    val drawdownSellOnHighMargin: DrawdownMarginTriggerAction? = null,
+    val drawdownBuyOnLowMargin: DrawdownMarginTriggerAction? = null,
     // Sections 5 & 6
     val buyTheDip: DipSurgeConfig?,
     val sellOnSurge: DipSurgeConfig?,
@@ -158,7 +185,8 @@ data class RebalanceStrategyRequest(
     val portfolio: PortfolioConfig,
     val cashflow: CashflowConfig?,
     val strategies: List<RebalStrategyConfig>,  // exactly 2
-    val startingBalance: Double = 10_000.0
+    val startingBalance: Double = 10_000.0,
+    val includeActionDiagnostics: Boolean = false,
 )
 
 enum class RebalanceOptimizationMetric { CAGR, SHARPE, UPI }

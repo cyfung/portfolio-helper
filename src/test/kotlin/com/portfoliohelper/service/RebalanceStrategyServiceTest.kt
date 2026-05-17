@@ -64,8 +64,11 @@ class RebalanceStrategyServiceTest {
         comfortHigh: Double = 0.0,
         sellOnHighMargin: MarginTriggerAction? = null,
         buyOnLowMargin: MarginTriggerAction? = null,
+        drawdownSellOnHighMargin: DrawdownMarginTriggerAction? = null,
+        drawdownBuyOnLowMargin: DrawdownMarginTriggerAction? = null,
         buyTheDip: DipSurgeConfig? = null,
         sellOnSurge: DipSurgeConfig? = null,
+        drawdownMarginOverride: DrawdownMarginOverrideConfig? = null,
         cashflowImmediateInvestPct: Double = 1.0,
         cashflowScaling: CashflowScaling = CashflowScaling.NO_SCALING,
         useComfortZone: Boolean = true,
@@ -80,11 +83,14 @@ class RebalanceStrategyServiceTest {
         portfolioRebalanceUseComfortZone = portfolioRebalanceUseComfortZone,
         rebalancePeriod = rebalancePeriod,
         marginRebalanceTradeDirection = marginRebalanceTradeDirection,
+        drawdownMarginOverride = drawdownMarginOverride,
         cashflowImmediateInvestPct = cashflowImmediateInvestPct,
         cashflowScaling = cashflowScaling,
         deviationMode = DeviationMode.ABSOLUTE,
         sellOnHighMargin = sellOnHighMargin,
         buyOnLowMargin = buyOnLowMargin,
+        drawdownSellOnHighMargin = drawdownSellOnHighMargin,
+        drawdownBuyOnLowMargin = drawdownBuyOnLowMargin,
         buyTheDip = buyTheDip,
         sellOnSurge = sellOnSurge,
         useComfortZone = useComfortZone,
@@ -126,6 +132,387 @@ class RebalanceStrategyServiceTest {
         cooldown.recordFire(bbb, 2)
         assertFalse(cooldown.shouldFire(bbb, 12, rawTriggered = true), "BBB should still block its own tenth day")
         assertTrue(cooldown.shouldFire(bbb, 13, rawTriggered = true), "BBB should fire after its own cooldown")
+    }
+
+    @Test
+    fun buyTheDipDiagnostics_showTenCooldownDaysMeansNextActionAfterElevenTradingDates() {
+        val dates = days(LocalDate.of(2024, 1, 1), 20)
+        val spy = dates.mapIndexed { i, d -> d to Math.pow(1.01, i.toDouble()) }.toMap()
+        val ref = dates.mapIndexed { i, d -> d to if (i == 0) 1.0 else 0.8 }.toMap()
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.0,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
+                    method = ExecutionMethod.Once,
+                    limit = 1.0,
+                    coolingOffDays = 10,
+                    minAdjustmentPct = 0.0,
+                ),
+            ),
+            null,
+            mapOf("SPY" to spy, "REF" to ref),
+            dates,
+            emptyMap(),
+            includeActionDiagnostics = true,
+        )
+
+        val buyDipActions = result.actionPoints.orEmpty().filter { it.type == "BUY_DIP" }
+        assertEquals(
+            listOf(dates[1].toString(), dates[12].toString()),
+            buyDipActions.take(2).map { it.date },
+            "10 cooling-off days block the next ten trading dates after a BD action",
+        )
+        assertEquals(1, buyDipActions[0].detail?.tradingDayIndex)
+        assertEquals(12, buyDipActions[1].detail?.tradingDayIndex)
+        assertEquals(10, buyDipActions[1].detail?.cooldownDays)
+        assertEquals(11, buyDipActions[1].detail?.daysSincePrevious)
+    }
+
+    @Test
+    fun screenshotParameters_compareBuyTheDipAndDrawdownMarginOverrideDiagnostics() {
+        val portfolio = PortfolioConfig(
+            label = "VT:CTA 7:3",
+            tickers = listOf(
+                TickerWeight("1 KMLM 1 VT", 0.276),
+                TickerWeight("DBMF", 0.108),
+                TickerWeight("VT", 0.616),
+            ),
+            rebalanceStrategy = RebalanceStrategy.YEARLY,
+            marginStrategies = emptyList(),
+            includeNoMargin = false,
+        )
+
+        fun baseStrategy(
+            label: String,
+            buyTheDip: DipSurgeConfig?,
+            drawdownMarginOverride: DrawdownMarginOverrideConfig?,
+        ) = RebalStrategyConfig(
+            label = label,
+            marginRatio = 0.80,
+            marginSpread = 0.015,
+            portfolioRebalancePeriod = RebalancePeriodOverride.INHERIT,
+            portfolioRebalanceUseComfortZone = true,
+            marginRebalanceEnabled = true,
+            rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+            rebalanceAllocStrategy = MarginRebalanceMode.WATERFALL,
+            marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+            marginRebalanceRestoreMargin = 0.80,
+            drawdownMarginOverride = drawdownMarginOverride,
+            cashflowImmediateInvestPct = 1.0,
+            cashflowScaling = CashflowScaling.SCALED_BY_TARGET_MARGIN,
+            cashflowScalingMargin = 0.80,
+            deviationMode = DeviationMode.ABSOLUTE,
+            sellOnHighMargin = MarginTriggerAction(
+                deviationPct = 1.10,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                targetMargin = 0.90,
+            ),
+            buyOnLowMargin = null,
+            buyTheDip = buyTheDip,
+            sellOnSurge = null,
+            useComfortZone = true,
+            comfortZoneLow = 0.62,
+            comfortZoneHigh = 1.10,
+            buyCooldownAfterSellHighDays = 10,
+            sellCooldownAfterBuyLowDays = 10,
+        )
+
+        val buyDipStrategy = baseStrategy(
+            label = "80-100-110",
+            buyTheDip = DipSurgeConfig(
+                scope = DipSurgeScope.BASE_PORTFOLIO,
+                allocStrategy = MarginRebalanceMode.WATERFALL,
+                portfolioSource = PortfolioTriggerSource.STRATEGY_GROSS,
+                triggers = listOf(PriceMoveTrigger.PeakDeviation(0.10)),
+                method = ExecutionMethod.Once,
+                limit = 1.00,
+                coolingOffDays = 10,
+                minAdjustmentPct = 0.000,
+            ),
+            drawdownMarginOverride = null,
+        )
+        val drawdownMrStrategy = baseStrategy(
+            label = "80-100-110 (2)",
+            buyTheDip = null,
+            drawdownMarginOverride = DrawdownMarginOverrideConfig(
+                enabled = true,
+                portfolioSource = PortfolioTriggerSource.STRATEGY_GROSS,
+                enterDrawdownPct = 0.10,
+                exitDrawdownPct = 0.10,
+                targetMargin = 1.00,
+                rebalancePeriod = RebalancePeriodOverride.BI_WEEKLY,
+                rebalanceOnEnter = true,
+                allocStrategy = MarginRebalanceMode.WATERFALL,
+                buyAllocStrategy = MarginRebalanceMode.WATERFALL,
+                sellAllocStrategy = MarginRebalanceMode.WATERFALL,
+                tradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+            ),
+        )
+
+        val result = RebalanceStrategyService.run(
+            RebalanceStrategyRequest(
+                fromDate = null,
+                toDate = null,
+                portfolio = portfolio,
+                cashflow = null,
+                strategies = listOf(buyDipStrategy, drawdownMrStrategy),
+                startingBalance = 10_000.0,
+                includeActionDiagnostics = true,
+            )
+        )
+        val curves = result.portfolios.flatMap { it.curves }.associateBy { it.label }
+        val buyDipCurve = requireNotNull(curves["80-100-110"])
+        val drawdownMrCurve = requireNotNull(curves["80-100-110 (2)"])
+
+        fun avgMargin(curve: CurveResult): Double =
+            requireNotNull(curve.marginPoints).map { it.value }.average()
+
+        fun count(curve: CurveResult, type: String): Int =
+            curve.actionPoints.orEmpty().count { it.type == type }
+
+        fun timing(curve: CurveResult, type: String, limit: Int = 12): String =
+            curve.actionPoints.orEmpty()
+                .filter { it.type == type }
+                .take(limit)
+                .joinToString(" | ") {
+                    val d = requireNotNull(it.detail)
+                    "${it.date}#${d.tradingDayIndex} since=${d.daysSincePrevious ?: "-"} " +
+                        "amt=${"%.0f".format(d.amount ?: 0.0)} " +
+                        "m=${"%.3f".format(d.marginBefore ?: 0.0)}->${"%.3f".format(d.marginAfter ?: 0.0)}"
+                }
+
+        fun gaps(curve: CurveResult, type: String): List<Int> =
+            curve.actionPoints.orEmpty()
+                .filter { it.type == type }
+                .mapNotNull { it.detail?.tradingDayIndex }
+                .zipWithNext { a, b -> b - a }
+
+        println(
+            "EXACT_COMPARE_SUMMARY BD end=${"%.2f".format(buyDipCurve.stats.endingValue)} " +
+                "cagr=${"%.6f".format(buyDipCurve.stats.cagr)} maxDD=${"%.6f".format(buyDipCurve.stats.maxDrawdown)} " +
+                "avgMargin=${"%.6f".format(avgMargin(buyDipCurve))} SH=${count(buyDipCurve, "SELL_HIGH")} " +
+                "BD=${count(buyDipCurve, "BUY_DIP")} DDMR=${count(buyDipCurve, "DRAWDOWN_MR")} " +
+                "DDMR_EXIT=${count(buyDipCurve, "DRAWDOWN_MR_EXIT")} MR=${count(buyDipCurve, "MARGIN_REBALANCE")}"
+        )
+        println(
+            "EXACT_COMPARE_SUMMARY DDMR end=${"%.2f".format(drawdownMrCurve.stats.endingValue)} " +
+                "cagr=${"%.6f".format(drawdownMrCurve.stats.cagr)} maxDD=${"%.6f".format(drawdownMrCurve.stats.maxDrawdown)} " +
+                "avgMargin=${"%.6f".format(avgMargin(drawdownMrCurve))} SH=${count(drawdownMrCurve, "SELL_HIGH")} " +
+                "BD=${count(drawdownMrCurve, "BUY_DIP")} DDMR=${count(drawdownMrCurve, "DRAWDOWN_MR")} " +
+                "DDMR_EXIT=${count(drawdownMrCurve, "DRAWDOWN_MR_EXIT")} MR=${count(drawdownMrCurve, "MARGIN_REBALANCE")}"
+        )
+        println("EXACT_COMPARE_TIMING BD ${timing(buyDipCurve, "BUY_DIP")}")
+        println("EXACT_COMPARE_TIMING DDMR ${timing(drawdownMrCurve, "DRAWDOWN_MR")}")
+        println("EXACT_COMPARE_TIMING DDMR_EXIT ${timing(drawdownMrCurve, "DRAWDOWN_MR_EXIT")}")
+        println("EXACT_COMPARE_TIMING DDMR_BASE_MR ${timing(drawdownMrCurve, "MARGIN_REBALANCE")}")
+        println("EXACT_COMPARE_GAPS BD ${gaps(buyDipCurve, "BUY_DIP").take(20)}")
+        println("EXACT_COMPARE_GAPS DDMR ${gaps(drawdownMrCurve, "DRAWDOWN_MR").take(20)}")
+
+        assertTrue(count(buyDipCurve, "BUY_DIP") > 0, "BD strategy should produce buy-dip actions")
+        assertTrue(count(drawdownMrCurve, "DRAWDOWN_MR") > 0, "DD-MR strategy should produce drawdown-MR actions")
+    }
+
+    @Test
+    fun screenshotParameters_compareStockGrossAndPortfolioValueBuyTheDipDiagnostics() {
+        val portfolio = PortfolioConfig(
+            label = "VT:CTA 65:35",
+            tickers = listOf(
+                TickerWeight("VT", 0.5619),
+                TickerWeight("1 KMLM 1 VT", 0.2524),
+                TickerWeight("KMLM", 0.0657),
+                TickerWeight("DBMF", 0.1200),
+            ),
+            rebalanceStrategy = RebalanceStrategy.YEARLY,
+            marginStrategies = emptyList(),
+            includeNoMargin = false,
+        )
+
+        fun strategyFor(
+            label: String,
+            source: PortfolioTriggerSource,
+            dropPct: Double,
+            minAdjustmentPct: Double = 0.005,
+        ) =
+            RebalStrategyConfig(
+                label = label,
+                marginRatio = 0.80,
+                marginSpread = 0.015,
+                portfolioRebalancePeriod = RebalancePeriodOverride.INHERIT,
+                portfolioRebalanceUseComfortZone = true,
+                marginRebalanceEnabled = true,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                rebalanceAllocStrategy = MarginRebalanceMode.WATERFALL,
+                marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+                marginRebalanceRestoreMargin = 0.80,
+                cashflowImmediateInvestPct = 1.0,
+                cashflowScaling = CashflowScaling.SCALED_BY_TARGET_MARGIN,
+                cashflowScalingMargin = 0.80,
+                deviationMode = DeviationMode.ABSOLUTE,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 1.10,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.95,
+                ),
+                buyOnLowMargin = null,
+                useComfortZone = true,
+                comfortZoneLow = 0.62,
+                comfortZoneHigh = 1.10,
+                buyCooldownAfterSellHighDays = 10,
+                sellCooldownAfterBuyLowDays = 10,
+                buyTheDip = DipSurgeConfig(
+                    scope = DipSurgeScope.BASE_PORTFOLIO,
+                    allocStrategy = MarginRebalanceMode.WATERFALL,
+                    portfolioSource = source,
+                    triggers = listOf(PriceMoveTrigger.PeakDeviation(dropPct)),
+                    method = ExecutionMethod.Once,
+                    limit = 1.00,
+                    coolingOffDays = 9,
+                    minAdjustmentPct = minAdjustmentPct,
+                ),
+                sellOnSurge = null,
+            )
+
+        val stockGross = strategyFor(
+            "80-100-110",
+            PortfolioTriggerSource.STRATEGY_GROSS,
+            0.10,
+            minAdjustmentPct = 0.0,
+        )
+        val portfolioValue = strategyFor("80-100-110 (2)", PortfolioTriggerSource.STRATEGY_VALUE, 0.18)
+        val portfolioValueBaseline = strategyFor(
+            "80-100-110 (2) baseline",
+            PortfolioTriggerSource.STRATEGY_VALUE,
+            0.18,
+        )
+        val result = RebalanceStrategyService.run(
+            RebalanceStrategyRequest(
+                fromDate = null,
+                toDate = null,
+                portfolio = portfolio,
+                cashflow = null,
+                strategies = listOf(stockGross, portfolioValue, portfolioValueBaseline),
+                startingBalance = 10_000.0,
+                includeActionDiagnostics = true,
+            )
+        )
+        val curves = result.portfolios.flatMap { it.curves }.associateBy { it.label }
+        val stockGrossCurve = requireNotNull(curves["80-100-110"])
+        val portfolioValueCurve = requireNotNull(curves["80-100-110 (2)"])
+        val portfolioValueBaselineCurve = requireNotNull(curves["80-100-110 (2) baseline"])
+
+        fun avgMargin(curve: CurveResult): Double =
+            requireNotNull(curve.marginPoints).map { it.value }.average()
+
+        fun count(curve: CurveResult, type: String): Int =
+            curve.actionPoints.orEmpty().count { it.type == type }
+
+        fun actionMap(curve: CurveResult, type: String): Map<String, ActionPoint> =
+            curve.actionPoints.orEmpty().filter { it.type == type }.associateBy { it.date }
+
+        fun timing(curve: CurveResult, type: String, limit: Int = 14): String =
+            curve.actionPoints.orEmpty()
+                .filter { it.type == type }
+                .take(limit)
+                .joinToString(" | ") {
+                    val d = requireNotNull(it.detail)
+                    "${it.date}#${d.tradingDayIndex} since=${d.daysSincePrevious ?: "-"} " +
+                        "amt=${"%.0f".format(d.amount ?: 0.0)} " +
+                        "m=${"%.3f".format(d.marginBefore ?: 0.0)}->${"%.3f".format(d.marginAfter ?: 0.0)}"
+                }
+
+        fun pointMap(curve: CurveResult): Map<String, Double> = curve.points.associate { it.date to it.value }
+
+        val stockValues = pointMap(stockGrossCurve)
+        val valueValues = pointMap(portfolioValueCurve)
+        val sharedDates = stockValues.keys.intersect(valueValues.keys).sorted()
+        val largestGapGrowth =
+            sharedDates.zipWithNext()
+                .map { (prev, cur) ->
+                    val prevGap = stockValues.getValue(prev) - valueValues.getValue(prev)
+                    val curGap = stockValues.getValue(cur) - valueValues.getValue(cur)
+                    Triple(prev, cur, curGap - prevGap)
+                }
+                .sortedByDescending { kotlin.math.abs(it.third) }
+                .take(12)
+                .joinToString(" | ") { (prev, cur, delta) ->
+                    "$prev->$cur delta=${"%.0f".format(delta)} gap=${"%.0f".format(stockValues.getValue(cur) - valueValues.getValue(cur))}"
+                }
+
+        val stockBdByDate = actionMap(stockGrossCurve, "BUY_DIP")
+        val valueBdByDate = actionMap(portfolioValueCurve, "BUY_DIP")
+        fun mismatches(primary: Map<String, ActionPoint>, other: Map<String, ActionPoint>, limit: Int): String =
+            primary.values
+                .filter { other[it.date] == null }
+                .take(limit)
+                .joinToString(" | ") {
+                    val d = requireNotNull(it.detail)
+                    "${it.date}#${d.tradingDayIndex} amt=${"%.0f".format(d.amount ?: 0.0)} m=${"%.3f".format(d.marginBefore ?: 0.0)}"
+                }
+        val dateIndex = sharedDates.withIndex().associate { it.value to it.index }
+        fun gapAt(date: String): Double = stockValues.getValue(date) - valueValues.getValue(date)
+        fun unmatchedImpacts(label: String, primary: Map<String, ActionPoint>, other: Map<String, ActionPoint>): List<String> =
+            primary.values
+                .filter { other[it.date] == null }
+                .mapNotNull { action ->
+                    val idx = dateIndex[action.date] ?: return@mapNotNull null
+                    val d = requireNotNull(action.detail)
+                    val qDate = sharedDates[(idx + 63).coerceAtMost(sharedDates.lastIndex)]
+                    val yDate = sharedDates[(idx + 252).coerceAtMost(sharedDates.lastIndex)]
+                    val qChange = gapAt(qDate) - gapAt(action.date)
+                    val yChange = gapAt(yDate) - gapAt(action.date)
+                    "$label ${action.date} amt=${"%.0f".format(d.amount ?: 0.0)} " +
+                        "gap+63=${"%.0f".format(qChange)} gap+252=${"%.0f".format(yChange)}"
+                }
+
+        val largestUnmatchedImpacts =
+            (unmatchedImpacts("STOCK_ONLY", stockBdByDate, valueBdByDate) +
+                unmatchedImpacts("VALUE_ONLY", valueBdByDate, stockBdByDate))
+                .sortedByDescending {
+                    Regex("gap\\+252=([-0-9]+)").find(it)?.groupValues?.get(1)?.toDoubleOrNull()?.let { value ->
+                        kotlin.math.abs(value)
+                    } ?: 0.0
+                }
+                .take(16)
+                .joinToString(" | ")
+
+        println(
+            "GROSS_VALUE_COMPARE_SUMMARY STOCK_GROSS end=${"%.2f".format(stockGrossCurve.stats.endingValue)} " +
+                "cagr=${"%.6f".format(stockGrossCurve.stats.cagr)} maxDD=${"%.6f".format(stockGrossCurve.stats.maxDrawdown)} " +
+                "avgMargin=${"%.6f".format(avgMargin(stockGrossCurve))} SH=${count(stockGrossCurve, "SELL_HIGH")} " +
+                "BD=${count(stockGrossCurve, "BUY_DIP")} MR=${count(stockGrossCurve, "MARGIN_REBALANCE")}"
+        )
+        println(
+            "GROSS_VALUE_COMPARE_SUMMARY PORTFOLIO_VALUE end=${"%.2f".format(portfolioValueCurve.stats.endingValue)} " +
+                "cagr=${"%.6f".format(portfolioValueCurve.stats.cagr)} maxDD=${"%.6f".format(portfolioValueCurve.stats.maxDrawdown)} " +
+                "avgMargin=${"%.6f".format(avgMargin(portfolioValueCurve))} SH=${count(portfolioValueCurve, "SELL_HIGH")} " +
+                "BD=${count(portfolioValueCurve, "BUY_DIP")} MR=${count(portfolioValueCurve, "MARGIN_REBALANCE")}"
+        )
+        println("GROSS_VALUE_COMPARE_TIMING STOCK_GROSS ${timing(stockGrossCurve, "BUY_DIP")}")
+        println("GROSS_VALUE_COMPARE_TIMING PORTFOLIO_VALUE ${timing(portfolioValueCurve, "BUY_DIP")}")
+        println("GROSS_VALUE_COMPARE_ONLY_STOCK_GROSS ${mismatches(stockBdByDate, valueBdByDate, 18)}")
+        println("GROSS_VALUE_COMPARE_ONLY_PORTFOLIO_VALUE ${mismatches(valueBdByDate, stockBdByDate, 18)}")
+        println("GROSS_VALUE_COMPARE_LARGEST_GAP_GROWTH $largestGapGrowth")
+        println("GROSS_VALUE_COMPARE_UNMATCHED_IMPACTS $largestUnmatchedImpacts")
+
+        assertTrue(count(stockGrossCurve, "BUY_DIP") > 0, "Stock-gross trigger should produce buy-dip actions")
+        assertTrue(count(portfolioValueCurve, "BUY_DIP") > 0, "Portfolio-value trigger should produce buy-dip actions")
+        portfolioValueCurve.points.zip(portfolioValueBaselineCurve.points).forEachIndexed { i, (actual, baseline) ->
+            assertEquals(baseline.date, actual.date)
+            assertApprox(baseline.value, actual.value, eps = 1e-9, label = "portfolio-value equity[$i]")
+        }
+        requireNotNull(portfolioValueCurve.marginPoints)
+            .zip(requireNotNull(portfolioValueBaselineCurve.marginPoints))
+            .forEachIndexed { i, (actual, baseline) ->
+                assertEquals(baseline.date, actual.date)
+                assertApprox(baseline.value, actual.value, eps = 1e-9, label = "portfolio-value margin[$i]")
+            }
     }
 
     @Test
@@ -366,6 +753,232 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun drawdownMarginOverride_replacesScheduledMrUntilReferenceRecovers() {
+        val dates = days(LocalDate.of(2024, 1, 1), 5)
+        val series = mapOf(
+            "SPY" to flatCurve(dates),
+            "REF" to mapOf(
+                dates[0] to 1.0,
+                dates[1] to 0.89,
+                dates[2] to 0.88,
+                dates[3] to 0.96,
+                dates[4] to 0.97,
+            ),
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                drawdownMarginOverride = DrawdownMarginOverrideConfig(
+                    enabled = true,
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    enterDrawdownPct = 0.10,
+                    exitDrawdownPct = 0.05,
+                    targetMargin = 0.95,
+                    rebalancePeriod = RebalancePeriodOverride.DAILY,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    tradeDirection = MarginRebalanceTradeDirection.BOTH,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val actions = result.actionPoints.orEmpty()
+        assertTrue(
+            actions.any { it.date == dates[1].toString() && it.type == "DRAWDOWN_MR" },
+            "override should run when the reference reaches the entry drawdown",
+        )
+        assertFalse(actions.any { it.type == "MARGIN_REBALANCE" }, "base MR should be replaced while override is active")
+        assertFalse(
+            actions.any { it.date == dates[3].toString() && it.type == "DRAWDOWN_MR" },
+            "override should stop once drawdown recovers to the exit threshold",
+        )
+        assertApprox(0.95, requireNotNull(result.marginPoints)[1].value, label = "override margin target")
+    }
+
+    @Test
+    fun drawdownMarginOverride_rebalanceOnEnterAnchorsWeeklyScheduleToEntryDay() {
+        val dates = days(LocalDate.of(2024, 1, 1), 8)
+        val series = mapOf(
+            "SPY" to mapOf(
+                dates[0] to 1.0,
+                dates[1] to 1.0,
+                dates[2] to 1.05,
+                dates[3] to 1.10,
+                dates[4] to 1.15,
+                dates[5] to 1.20,
+                dates[6] to 1.20,
+                dates[7] to 1.20,
+            ),
+            "REF" to dates.associateWith { if (it == dates[0]) 1.0 else 0.89 },
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                useComfortZone = false,
+                drawdownMarginOverride = DrawdownMarginOverrideConfig(
+                    enabled = true,
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    enterDrawdownPct = 0.10,
+                    exitDrawdownPct = 0.05,
+                    targetMargin = 0.95,
+                    rebalancePeriod = RebalancePeriodOverride.WEEKLY,
+                    rebalanceOnEnter = true,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    tradeDirection = MarginRebalanceTradeDirection.BOTH,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        val drawdownMrDates = result.actionPoints.orEmpty()
+            .filter { it.type == "DRAWDOWN_MR" }
+            .map { it.date }
+        assertEquals(
+            listOf(dates[1].toString(), dates[6].toString()),
+            drawdownMrDates,
+            "weekly override MR should run on entry day and five trading days after entry",
+        )
+    }
+
+    @Test
+    fun drawdownMarginOverride_exitsOnlyOnIntervalAndAnchorsBaseMrResume() {
+        val dates =
+            listOf(LocalDate.of(2023, 12, 31), LocalDate.of(2024, 1, 1)) +
+                (2..21).map { LocalDate.of(2024, 1, it) } +
+                listOf(LocalDate.of(2024, 2, 1), LocalDate.of(2024, 3, 1))
+        val series = mapOf(
+            "SPY" to flatCurve(dates),
+            "REF" to dates.associateWith { date ->
+                when (date) {
+                    dates.first() -> 1.0
+                    LocalDate.of(2024, 2, 1), LocalDate.of(2024, 3, 1) -> 0.96
+                    else -> 0.89
+                }
+            },
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.BI_MONTHLY,
+                useComfortZone = false,
+                drawdownMarginOverride = DrawdownMarginOverrideConfig(
+                    enabled = true,
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    enterDrawdownPct = 0.10,
+                    exitDrawdownPct = 0.05,
+                    targetMargin = 1.0,
+                    rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                    rebalanceOnEnter = true,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    buyAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    sellAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    tradeDirection = MarginRebalanceTradeDirection.BOTH,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+            includeActionDiagnostics = true,
+        )
+
+        val actions = result.actionPoints.orEmpty().map { it.date to it.type }
+        assertTrue(
+            actions.contains(LocalDate.of(2024, 1, 1).toString() to "DRAWDOWN_MR"),
+            "DD-MR should rebalance on the entry day",
+        )
+        assertTrue(
+            actions.contains(LocalDate.of(2024, 2, 1).toString() to "DRAWDOWN_MR_EXIT"),
+            "DD-MR should exit on its monthly checkpoint after recovery",
+        )
+        assertFalse(
+            actions.contains(LocalDate.of(2024, 2, 1).toString() to "MARGIN_REBALANCE"),
+            "Base MR should not run on the same day DD-MR exits",
+        )
+        assertTrue(
+            actions.contains(LocalDate.of(2024, 3, 1).toString() to "MARGIN_REBALANCE"),
+            "Bi-monthly base MR should resume from the DD-MR exit date, producing the next checkpoint on Mar 1",
+        )
+    }
+
+    @Test
+    fun drawdownMarginOverride_runsBaseMrOnExitWhenBaseIntervalIsAlreadyDue() {
+        val entryDate = LocalDate.of(2024, 1, 1)
+        val exitDate = entryDate.plusDays(42)
+        val dates = listOf(LocalDate.of(2023, 12, 31)) + (0..42).map { entryDate.plusDays(it.toLong()) }
+        val series = mapOf(
+            "SPY" to flatCurve(dates),
+            "REF" to dates.associateWith { date ->
+                when (date) {
+                    dates.first() -> 1.0
+                    exitDate -> 0.96
+                    else -> 0.89
+                }
+            },
+        )
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                useComfortZone = false,
+                drawdownMarginOverride = DrawdownMarginOverrideConfig(
+                    enabled = true,
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    enterDrawdownPct = 0.10,
+                    exitDrawdownPct = 0.05,
+                    targetMargin = 1.0,
+                    rebalancePeriod = RebalancePeriodOverride.BI_MONTHLY,
+                    rebalanceOnEnter = true,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    buyAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    sellAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    tradeDirection = MarginRebalanceTradeDirection.BOTH,
+                ),
+            ),
+            null,
+            series,
+            dates,
+            emptyMap(),
+            includeActionDiagnostics = true,
+        )
+
+        val actions = result.actionPoints.orEmpty().map { it.date to it.type }
+        assertTrue(
+            actions.contains(entryDate.toString() to "DRAWDOWN_MR"),
+            "DD-MR should rebalance on the entry day",
+        )
+        assertTrue(
+            actions.contains(exitDate.toString() to "DRAWDOWN_MR_EXIT"),
+            "DD-MR should exit on the bi-monthly checkpoint after recovery",
+        )
+        assertTrue(
+            actions.contains(exitDate.toString() to "MARGIN_REBALANCE"),
+            "Monthly base MR should run on the DD-MR exit day because it is already due",
+        )
+    }
+
+    @Test
     fun marginRebalance_buyOnlyStillAllowsSellOnHighMarginTrigger() {
         val dates = listOf(
             LocalDate.of(2024, 1, 30),
@@ -427,6 +1040,114 @@ class RebalanceStrategyServiceTest {
 
         assertApprox(0.5, requireNotNull(result.marginPoints)[2].value, label = "buy low restores margin")
         assertTrue(result.actionPoints?.any { it.date == "2024-02-01" && it.type == "BUY_LOW" } == true)
+    }
+
+    @Test
+    fun drawdownBuyLowRunsWithoutBaseBuyLow() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 3),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 2.0)
+        val reference = mapOf(dates[0] to 1.0, dates[1] to 0.8, dates[2] to 0.8)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    drawdownPct = 0.1,
+                    triggerMargin = 0.6,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+            ),
+            null,
+            mapOf("SPY" to rising, "REF" to reference),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.5, requireNotNull(result.marginPoints)[1].value, label = "drawdown BL restores margin")
+        assertTrue(result.actionPoints?.any { it.date == "2024-01-02" && it.type == "BUY_LOW" } == true)
+    }
+
+    @Test
+    fun activeDrawdownBuyLowOverridesBaseBuyLow() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 3),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 2.0)
+        val reference = mapOf(dates[0] to 1.0, dates[1] to 0.8, dates[2] to 0.8)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                buyOnLowMargin = MarginTriggerAction(
+                    deviationPct = 0.9,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.3,
+                ),
+                drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    drawdownPct = 0.1,
+                    triggerMargin = 0.6,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+            ),
+            null,
+            mapOf("SPY" to rising, "REF" to reference),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.5, requireNotNull(result.marginPoints)[1].value, label = "drawdown BL target overrides base")
+    }
+
+    @Test
+    fun activeDrawdownSellHighOverridesBaseSellHigh() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 3),
+        )
+        val falling = mapOf(dates[0] to 1.0, dates[1] to 0.5, dates[2] to 0.5)
+        val reference = mapOf(dates[0] to 1.0, dates[1] to 0.8, dates[2] to 0.8)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.4,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                drawdownSellOnHighMargin = DrawdownMarginTriggerAction(
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    drawdownPct = 0.1,
+                    triggerMargin = 0.4,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 1.0,
+                ),
+            ),
+            null,
+            mapOf("SPY" to falling, "REF" to reference),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(1.0, requireNotNull(result.marginPoints)[1].value, label = "drawdown SH target overrides base")
+        assertTrue(result.actionPoints?.any { it.date == "2024-01-02" && it.type == "SELL_HIGH" } == true)
     }
 
     @Test
@@ -1189,13 +1910,15 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
-    fun sellHighBlocksBuyDirectionMarginRebalanceDuringGlobalCooldown() {
-        val dates = listOf(
-            LocalDate.of(2024, 1, 30),
-            LocalDate.of(2024, 1, 31),
-            LocalDate.of(2024, 2, 1),
-        )
-        val prices = mapOf(dates[0] to 1.0, dates[1] to 0.5, dates[2] to 1.0)
+    fun sellHighDefersBuyDirectionMarginRebalanceUntilGlobalCooldownExpires() {
+        val dates = days(LocalDate.of(2024, 1, 30), 13)
+        val prices = dates.mapIndexed { i, date ->
+            date to when (i) {
+                0 -> 1.0
+                1 -> 0.5
+                else -> 1.0
+            }
+        }.toMap()
 
         val result = RebalanceStrategyService.runStrategyResultForTest(
             singleStockPortfolio(),
@@ -1217,8 +1940,61 @@ class RebalanceStrategyServiceTest {
             emptyMap(),
         )
 
-        assertTrue(result.actionPoints?.any { it.date == "2024-01-31" && it.type == "SELL_HIGH" } == true)
-        assertApprox(0.2, requireNotNull(result.marginPoints)[2].value, label = "monthly buy rebalance blocked after SH")
+        val actions = result.actionPoints.orEmpty()
+        assertTrue(actions.any { it.date == "2024-01-31" && it.type == "SELL_HIGH" })
+        assertFalse(actions.any { it.date == "2024-02-01" && it.type == "MARGIN_REBALANCE" })
+        assertTrue(actions.any { it.date == "2024-02-11" && it.type == "MARGIN_REBALANCE" })
+        assertApprox(0.2, requireNotNull(result.marginPoints)[2].value, label = "monthly buy rebalance waits during SH cooldown")
+        assertApprox(0.85, requireNotNull(result.marginPoints)[12].value, label = "monthly buy rebalance runs at deferred date")
+    }
+
+    @Test
+    fun sellHighDefersBuyDirectionDrawdownMarginRebalanceUntilGlobalCooldownExpires() {
+        val dates = days(LocalDate.of(2024, 1, 30), 13)
+        val prices = dates.mapIndexed { i, date ->
+            date to when (i) {
+                0 -> 1.0
+                1 -> 0.5
+                else -> 1.0
+            }
+        }.toMap()
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.85,
+                marginSpread = 0.0,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                useComfortZone = false,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.8,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+                drawdownMarginOverride = DrawdownMarginOverrideConfig(
+                    enabled = true,
+                    portfolioSource = PortfolioTriggerSource.STRATEGY_GROSS,
+                    enterDrawdownPct = 0.1,
+                    exitDrawdownPct = 0.0,
+                    targetMargin = 1.0,
+                    rebalancePeriod = RebalancePeriodOverride.DAILY,
+                    rebalanceOnEnter = true,
+                    tradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
+                ),
+                buyCooldownAfterSellHighDays = 10,
+            ),
+            null,
+            mapOf("SPY" to prices),
+            dates,
+            emptyMap(),
+        )
+
+        val actions = result.actionPoints.orEmpty()
+        assertTrue(actions.any { it.date == "2024-01-31" && it.type == "SELL_HIGH" })
+        assertFalse(actions.any { it.date == "2024-02-01" && it.type == "DRAWDOWN_MR" })
+        assertTrue(actions.any { it.date == "2024-02-11" && it.type == "DRAWDOWN_MR" })
+        assertApprox(0.2, requireNotNull(result.marginPoints)[2].value, label = "DD-MR buy waits during SH cooldown")
+        assertApprox(1.0, requireNotNull(result.marginPoints)[12].value, label = "DD-MR buy runs at deferred date")
     }
 
     @Test
@@ -1315,5 +2091,3 @@ class RebalanceStrategyServiceTest {
         }
     }
 }
-
-

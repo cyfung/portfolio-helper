@@ -1,6 +1,7 @@
 // ── types/rebalanceStrategy.ts ───────────────────────────────────────────────
 
 import { newId } from './backtest'
+import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 
 // ── Discriminated unions matching Kotlin sealed classes ───────────────────────
 
@@ -36,6 +37,33 @@ export interface DipSurgeScopeState {
 
 export type MarginRebalanceTradeDirection = 'BOTH' | 'BUY_ONLY' | 'SELL_ONLY'
 
+export interface DrawdownMarginOverrideState {
+  enabled: boolean
+  portfolioSource: string
+  referenceTicker?: string
+  enterDrawdownPct: string
+  exitDrawdownPct: string
+  targetMargin: string
+  rebalancePeriod: string
+  rebalanceOnEnter: boolean
+  allocStrategy: string
+  buyAllocStrategy: string
+  sellAllocStrategy: string
+  tradeDirection: MarginRebalanceTradeDirection
+}
+
+export interface DrawdownMarginTriggerState {
+  enabled: boolean
+  portfolioSource: string
+  referenceTicker?: string
+  drawdownPct: string
+  triggerPointIndex: string
+  triggerMargin: string
+  allocStrategy: string
+  restorePointIndex: string
+  restoreMargin: string
+}
+
 export interface RebalStrategyState {
   label: string
   marginRatio: string
@@ -48,19 +76,26 @@ export interface RebalStrategyState {
   rebalanceAllocStrategy: string
   marginRebalanceTradeDirection: MarginRebalanceTradeDirection
   marginRebalanceRestoreMargin: string
+  drawdownMarginOverride: DrawdownMarginOverrideState
   cashflowImmediateInvestPct: string   // default '100'
   cashflowScaling: string              // CashflowScaling value
   cashflowScalingPointIndex: string
   cashflowScalingMargin: string
   deviationMode: string                // 'ABSOLUTE' | 'RELATIVE'
   sellHighEnabled: boolean
+  sellHighTriggerPointIndex: string
+  sellHighTriggerMargin: string
   sellHighAllocStrategy: string
   sellHighRestorePointIndex: string    // index into marginPoints[] for restore target; default '2'
   sellHighRestoreMargin: string
   buyLowEnabled: boolean
+  buyLowTriggerPointIndex: string
+  buyLowTriggerMargin: string
   buyLowAllocStrategy: string
   buyLowRestorePointIndex: string      // index into marginPoints[] for restore target; default '2'
   buyLowRestoreMargin: string
+  drawdownSellOnHighMargin: DrawdownMarginTriggerState
+  drawdownBuyOnLowMargin: DrawdownMarginTriggerState
   buyTheDip: DipSurgeScopeState
   sellOnSurge: DipSurgeScopeState
   useComfortZone: boolean
@@ -142,6 +177,37 @@ function emptyDipSurgeScopes(): DipSurgeScopeState {
   return { basePortfolio: null, individualStock: null }
 }
 
+export function emptyDrawdownMarginOverride(): DrawdownMarginOverrideState {
+  return {
+    enabled: false,
+    portfolioSource: 'REFERENCE_PORTFOLIO',
+    referenceTicker: '',
+    enterDrawdownPct: '10',
+    exitDrawdownPct: '5',
+    targetMargin: '95',
+    rebalancePeriod: 'BI_MONTHLY',
+    rebalanceOnEnter: true,
+    allocStrategy: 'PROPORTIONAL',
+    buyAllocStrategy: 'PROPORTIONAL',
+    sellAllocStrategy: 'PROPORTIONAL',
+    tradeDirection: 'BOTH',
+  }
+}
+
+export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownMarginTriggerState {
+  return {
+    enabled: false,
+    portfolioSource: 'REFERENCE_PORTFOLIO',
+    referenceTicker: '',
+    drawdownPct: '10',
+    triggerPointIndex: direction === 'buy' ? '0' : '4',
+    triggerMargin: '',
+    allocStrategy: 'PROPORTIONAL',
+    restorePointIndex: '2',
+    restoreMargin: '',
+  }
+}
+
 export function emptyStrategy(idx: number): RebalStrategyState {
   return {
     label: `Strategy ${idx + 1}`,
@@ -155,19 +221,26 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     rebalanceAllocStrategy: 'PROPORTIONAL',
     marginRebalanceTradeDirection: 'BOTH',
     marginRebalanceRestoreMargin: '',
+    drawdownMarginOverride: emptyDrawdownMarginOverride(),
     cashflowImmediateInvestPct: '100',
     cashflowScaling: 'SCALED_BY_TARGET_MARGIN',
     cashflowScalingPointIndex: '3',
     cashflowScalingMargin: '',
     deviationMode: 'ABSOLUTE',
     sellHighEnabled: false,
+    sellHighTriggerPointIndex: '4',
+    sellHighTriggerMargin: '',
     sellHighAllocStrategy: 'PROPORTIONAL',
     sellHighRestorePointIndex: '2',
     sellHighRestoreMargin: '',
     buyLowEnabled: false,
+    buyLowTriggerPointIndex: '0',
+    buyLowTriggerMargin: '',
     buyLowAllocStrategy: 'PROPORTIONAL',
     buyLowRestorePointIndex: '2',
     buyLowRestoreMargin: '',
+    drawdownSellOnHighMargin: emptyDrawdownMarginTrigger('sell'),
+    drawdownBuyOnLowMargin: emptyDrawdownMarginTrigger('buy'),
     buyTheDip: emptyDipSurgeScopes(),
     sellOnSurge: emptyDipSurgeScopes(),
     useComfortZone: true,
@@ -265,8 +338,51 @@ function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
   return scopes
 }
 
+function normalizeDrawdownMarginOverride(configValue: any): DrawdownMarginOverrideState {
+  const base = emptyDrawdownMarginOverride()
+  if (!configValue) return base
+  const portfolioSource = configValue.portfolioSource ?? base.portfolioSource
+  return {
+    ...base,
+    ...configValue,
+    enabled: configValue.enabled ?? false,
+    portfolioSource,
+    referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
+    tradeDirection: configValue.tradeDirection ?? base.tradeDirection,
+    allocStrategy: configValue.allocStrategy ?? base.allocStrategy,
+    buyAllocStrategy: configValue.buyAllocStrategy ?? configValue.allocStrategy ?? base.buyAllocStrategy,
+    sellAllocStrategy: configValue.sellAllocStrategy ?? configValue.allocStrategy ?? base.sellAllocStrategy,
+    rebalancePeriod: configValue.rebalancePeriod ?? base.rebalancePeriod,
+    rebalanceOnEnter: configValue.rebalanceOnEnter ?? true,
+  }
+}
+
+function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'sell'): DrawdownMarginTriggerState {
+  const base = emptyDrawdownMarginTrigger(direction)
+  if (!configValue) return base
+  const portfolioSource = configValue.portfolioSource ?? base.portfolioSource
+  return {
+    ...base,
+    ...configValue,
+    enabled: configValue.enabled ?? false,
+    portfolioSource,
+    referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
+    drawdownPct: configValue.drawdownPct ?? configValue.enterDrawdownPct ?? base.drawdownPct,
+    triggerPointIndex: configValue.triggerPointIndex ?? base.triggerPointIndex,
+    triggerMargin: configValue.triggerMargin ?? '',
+    allocStrategy: configValue.allocStrategy ?? base.allocStrategy,
+    restorePointIndex: configValue.restorePointIndex ?? base.restorePointIndex,
+    restoreMargin: configValue.restoreMargin ?? '',
+  }
+}
+
 export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategyState {
   return { ...s }
+}
+
+export function normalizeStrategySpreadInput(s: RebalStrategyState): RebalStrategyState {
+  const marginSpread = normalizeNumberInput(s.marginSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
+  return marginSpread === s.marginSpread ? s : { ...s, marginSpread }
 }
 
 export function savedConfigToStrategyState(config: any, name: string): RebalStrategyState {
@@ -280,6 +396,13 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
     rebalanceAllocStrategy: config.rebalanceAllocStrategy ?? 'PROPORTIONAL',
     marginRebalanceTradeDirection: config.marginRebalanceTradeDirection ?? 'BOTH',
     marginRebalanceRestoreMargin: config.marginRebalanceRestoreMargin ?? '',
+    drawdownMarginOverride: normalizeDrawdownMarginOverride(config.drawdownMarginOverride),
+    sellHighTriggerPointIndex: config.sellHighTriggerPointIndex ?? '4',
+    sellHighTriggerMargin: config.sellHighTriggerMargin ?? '',
+    buyLowTriggerPointIndex: config.buyLowTriggerPointIndex ?? '0',
+    buyLowTriggerMargin: config.buyLowTriggerMargin ?? '',
+    drawdownSellOnHighMargin: normalizeDrawdownMarginTrigger(config.drawdownSellOnHighMargin, 'sell'),
+    drawdownBuyOnLowMargin: normalizeDrawdownMarginTrigger(config.drawdownBuyOnLowMargin, 'buy'),
     useComfortZone: config.useComfortZone ?? true,
     buyTheDip: normalizeDipSurgeScopes(config.buyTheDip),
     sellOnSurge: normalizeDipSurgeScopes(config.sellOnSurge),
@@ -290,26 +413,53 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
 
 export function strategyStateToAPI(s: RebalStrategyState): object {
   const pct = (v: string, def = 0) => (parseFloat(v) || def) / 100
+  const pctAllowZero = (v: string | undefined, def = 0) => {
+    const parsed = parseFloat(v ?? '')
+    return (Number.isFinite(parsed) ? parsed : def) / 100
+  }
   const points = [...Array(5)].map((_, i) => parseFloat(s.marginPoints?.[i] ?? '') || [40, 45, 50, 55, 60][i])
   const margin = points[2]
-  const low = points[0]
-  const high = points[4]
-  const customOrPointPct = (customValue: string | undefined, legacyPointIndex: string | undefined, offset = 0) => {
+  const lowComfort = points[1]
+  const highComfort = points[3]
+  const customOrPointPct = (customValue: string | undefined, legacyPointIndex: string | undefined, offset = 0, fallbackPointIndex = 2) => {
     const custom = parseFloat(customValue ?? '')
     if (Number.isFinite(custom)) return custom / 100
     const idx = parseInt(legacyPointIndex ?? '', 10)
     const pointIdx = Number.isFinite(idx) ? idx - offset : NaN
-    return (Number.isFinite(pointIdx) && points[pointIdx] != null ? points[pointIdx] : margin) / 100
+    return (Number.isFinite(pointIdx) && points[pointIdx] != null ? points[pointIdx] : (points[fallbackPointIndex] ?? margin)) / 100
   }
+  const marginTriggerPct = (customValue: string | undefined, pointIndex: string | undefined, fallbackPointIndex: number) =>
+    customOrPointPct(customValue, pointIndex, 0, fallbackPointIndex)
   const cashflowIdx = parseInt(s.cashflowScalingPointIndex, 10)
   const cashflowScalingMargin = customOrPointPct(s.cashflowScalingMargin, cashflowIdx <= 0 ? '' : s.cashflowScalingPointIndex, 1)
   const buyCooldownAfterSellHighDays = parseInt(s.buyCooldownAfterSellHighDays ?? '', 10)
   const sellCooldownAfterBuyLowDays = parseInt(s.sellCooldownAfterBuyLowDays ?? '', 10)
+  const drawdownOverride = s.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
+  const drawdownReferenceTicker = (drawdownOverride.referenceTicker ?? '').trim().toUpperCase()
+  const serializeDrawdownMarginTrigger = (
+    d: DrawdownMarginTriggerState | undefined,
+    direction: 'buy' | 'sell',
+  ) => {
+    const fallback = emptyDrawdownMarginTrigger(direction)
+    const cfg = d ?? fallback
+    if (!cfg.enabled) return null
+    const portfolioSource = cfg.portfolioSource || 'REFERENCE_PORTFOLIO'
+    const referenceTicker = (cfg.referenceTicker ?? '').trim().toUpperCase()
+    return {
+      enabled: true,
+      portfolioSource,
+      referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
+      drawdownPct: pctAllowZero(cfg.drawdownPct, 10),
+      triggerMargin: marginTriggerPct(cfg.triggerMargin, cfg.triggerPointIndex, direction === 'buy' ? 0 : 4),
+      allocStrategy: cfg.allocStrategy || 'PROPORTIONAL',
+      targetMargin: customOrPointPct(cfg.restoreMargin, cfg.restorePointIndex, 0, 2),
+    }
+  }
 
   return {
     label: s.label.trim() || 'Strategy',
     marginRatio: margin / 100,
-    marginSpread: pct(s.marginSpread, 1.5),
+    marginSpread: percentInputToFraction(s.marginSpread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
     portfolioRebalancePeriod: s.portfolioRebalancePeriod || 'INHERIT',
     portfolioRebalanceUseComfortZone: s.portfolioRebalanceUseComfortZone ?? true,
     marginRebalanceEnabled: s.marginRebalanceEnabled ?? true,
@@ -319,21 +469,47 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     rebalanceAllocStrategy: s.rebalanceAllocStrategy || 'PROPORTIONAL',
     marginRebalanceTradeDirection: s.marginRebalanceTradeDirection || 'BOTH',
     marginRebalanceRestoreMargin: customOrPointPct(s.marginRebalanceRestoreMargin, undefined),
+    drawdownMarginOverride: (s.marginRebalanceEnabled ?? true) && drawdownOverride.enabled
+      ? {
+        enabled: true,
+        portfolioSource: drawdownOverride.portfolioSource || 'REFERENCE_PORTFOLIO',
+        referenceTicker: drawdownOverride.portfolioSource === 'REFERENCE_PORTFOLIO' && drawdownReferenceTicker ? drawdownReferenceTicker : null,
+        enterDrawdownPct: pctAllowZero(drawdownOverride.enterDrawdownPct, 10),
+        exitDrawdownPct: pctAllowZero(drawdownOverride.exitDrawdownPct, 5),
+        targetMargin: pctAllowZero(drawdownOverride.targetMargin, 95),
+        rebalancePeriod: drawdownOverride.rebalancePeriod === 'INHERIT' ? 'NONE' : (drawdownOverride.rebalancePeriod || 'BI_MONTHLY'),
+        rebalanceOnEnter: drawdownOverride.rebalanceOnEnter ?? true,
+        allocStrategy: drawdownOverride.allocStrategy || s.rebalanceAllocStrategy || 'PROPORTIONAL',
+        buyAllocStrategy: drawdownOverride.buyAllocStrategy || drawdownOverride.allocStrategy || s.rebalanceAllocStrategy || 'PROPORTIONAL',
+        sellAllocStrategy: drawdownOverride.sellAllocStrategy || drawdownOverride.allocStrategy || s.rebalanceAllocStrategy || 'PROPORTIONAL',
+        tradeDirection: drawdownOverride.tradeDirection || s.marginRebalanceTradeDirection || 'BOTH',
+      }
+      : null,
     cashflowImmediateInvestPct: pct(s.cashflowImmediateInvestPct, 100),
     cashflowScaling: s.cashflowScaling || 'SCALED_BY_TARGET_MARGIN',
     cashflowScalingMargin,
     deviationMode: 'ABSOLUTE',
     sellOnHighMargin: s.sellHighEnabled
-      ? { deviationPct: high / 100, allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL', targetMargin: customOrPointPct(s.sellHighRestoreMargin, s.sellHighRestorePointIndex) }
+      ? {
+        deviationPct: marginTriggerPct(s.sellHighTriggerMargin, s.sellHighTriggerPointIndex, 4),
+        allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL',
+        targetMargin: customOrPointPct(s.sellHighRestoreMargin, s.sellHighRestorePointIndex),
+      }
       : null,
     buyOnLowMargin: s.buyLowEnabled
-      ? { deviationPct: low / 100, allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL', targetMargin: customOrPointPct(s.buyLowRestoreMargin, s.buyLowRestorePointIndex) }
+      ? {
+        deviationPct: marginTriggerPct(s.buyLowTriggerMargin, s.buyLowTriggerPointIndex, 0),
+        allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL',
+        targetMargin: customOrPointPct(s.buyLowRestoreMargin, s.buyLowRestorePointIndex),
+      }
       : null,
+    drawdownSellOnHighMargin: serializeDrawdownMarginTrigger(s.drawdownSellOnHighMargin, 'sell'),
+    drawdownBuyOnLowMargin: serializeDrawdownMarginTrigger(s.drawdownBuyOnLowMargin, 'buy'),
     buyTheDip: serializeDipSurgeScopes(s.buyTheDip, points),
     sellOnSurge: serializeDipSurgeScopes(s.sellOnSurge, points),
     useComfortZone: s.useComfortZone ?? true,
-    comfortZoneLow:  low / 100,
-    comfortZoneHigh: high / 100,
+    comfortZoneLow:  lowComfort / 100,
+    comfortZoneHigh: highComfort / 100,
     buyCooldownAfterSellHighDays: Number.isFinite(buyCooldownAfterSellHighDays) ? Math.max(0, buyCooldownAfterSellHighDays) : 10,
     sellCooldownAfterBuyLowDays: Number.isFinite(sellCooldownAfterBuyLowDays) ? Math.max(0, sellCooldownAfterBuyLowDays) : 10,
   }
