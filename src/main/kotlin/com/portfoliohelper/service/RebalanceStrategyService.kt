@@ -545,6 +545,7 @@ object RebalanceStrategyService {
         val config: DrawdownMarginTriggerAction,
         val key: DipSurgeKey.Portfolio,
         var peak: Double,
+        var activeReferencePeak: Double = Double.NaN,
         var active: Boolean = false,
     )
 
@@ -717,10 +718,29 @@ object RebalanceStrategyService {
         if (runtime.peak.isNaN() || referenceValue > runtime.peak) {
           runtime.peak = referenceValue
         }
-        val current =
-            if (runtime.peak > 0.0) (runtime.peak - referenceValue) / runtime.peak
-            else 0.0
-        runtime.active = current >= runtime.config.drawdownPct.coerceAtLeast(0.0)
+        if (runtime.active) {
+          val exitPeak =
+              if (!runtime.activeReferencePeak.isNaN() && runtime.activeReferencePeak > 0.0) {
+                runtime.activeReferencePeak
+              } else {
+                runtime.peak
+              }
+          val exitDrawdown =
+              if (exitPeak > 0.0) (exitPeak - referenceValue) / exitPeak
+              else 0.0
+          if (exitDrawdown <= runtime.config.exitDrawdownPct) {
+            runtime.active = false
+            runtime.activeReferencePeak = Double.NaN
+          }
+        } else {
+          val enterDrawdown =
+              if (runtime.peak > 0.0) (runtime.peak - referenceValue) / runtime.peak
+              else 0.0
+          if (enterDrawdown >= runtime.config.enterDrawdownPct.coerceAtLeast(0.0)) {
+            runtime.active = true
+            runtime.activeReferencePeak = runtime.peak
+          }
+        }
       }
       updateDrawdownMarginTrigger(drawdownBuyLowRuntime)
       updateDrawdownMarginTrigger(drawdownSellHighRuntime)

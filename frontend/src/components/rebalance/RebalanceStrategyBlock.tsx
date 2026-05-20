@@ -483,13 +483,24 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               </div>
             )}
             <div className="strategy-row">
-              <label>Drawdown %</label>
+              <label>Enter DD %</label>
               <input
                 type="number"
                 min="0"
                 step="1"
-                value={value.drawdownPct}
-                onChange={e => updateDrawdownMarginTrigger(key, direction, { drawdownPct: e.target.value })}
+                value={value.enterDrawdownPct}
+                onChange={e => updateDrawdownMarginTrigger(key, direction, { enterDrawdownPct: e.target.value })}
+                onBlur={() => commit()}
+                style={{ width: '5rem' }}
+              />
+            </div>
+            <div className="strategy-row">
+              <label>Exit DD %</label>
+              <input
+                type="number"
+                step="1"
+                value={value.exitDrawdownPct}
+                onChange={e => updateDrawdownMarginTrigger(key, direction, { exitDrawdownPct: e.target.value })}
                 onBlur={() => commit()}
                 style={{ width: '5rem' }}
               />

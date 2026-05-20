@@ -1059,7 +1059,7 @@ class RebalanceStrategyServiceTest {
                 drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
                     portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
                     referenceTicker = "REF",
-                    drawdownPct = 0.1,
+                    enterDrawdownPct = 0.1,
                     triggerMargin = 0.6,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     targetMargin = 0.5,
@@ -1073,6 +1073,43 @@ class RebalanceStrategyServiceTest {
 
         assertApprox(0.5, requireNotNull(result.marginPoints)[1].value, label = "drawdown BL restores margin")
         assertTrue(result.actionPoints?.any { it.date == "2024-01-02" && it.type == "BUY_LOW" } == true)
+    }
+
+    @Test
+    fun drawdownBuyLowExitUsesPeakFromEntrySoNegativeExitCanRequireNewHigh() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 3),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 4.0)
+        val reference = mapOf(dates[0] to 1.0, dates[1] to 0.8, dates[2] to 1.3)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    enterDrawdownPct = 0.1,
+                    exitDrawdownPct = -0.25,
+                    triggerMargin = 0.6,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    targetMargin = 0.5,
+                ),
+            ),
+            null,
+            mapOf("SPY" to rising, "REF" to reference),
+            dates,
+            emptyMap(),
+        )
+
+        assertEquals(
+            listOf("2024-01-02"),
+            result.actionPoints.orEmpty().filter { it.type == "BUY_LOW" }.map { it.date },
+            "DD BL should exit when the reference is 25% above the peak captured on entry",
+        )
     }
 
     @Test
@@ -1097,7 +1134,7 @@ class RebalanceStrategyServiceTest {
                 drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
                     portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
                     referenceTicker = "REF",
-                    drawdownPct = 0.1,
+                    enterDrawdownPct = 0.1,
                     triggerMargin = 0.6,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     targetMargin = 0.5,
@@ -1134,7 +1171,7 @@ class RebalanceStrategyServiceTest {
                 drawdownSellOnHighMargin = DrawdownMarginTriggerAction(
                     portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
                     referenceTicker = "REF",
-                    drawdownPct = 0.1,
+                    enterDrawdownPct = 0.1,
                     triggerMargin = 0.4,
                     allocStrategy = MarginRebalanceMode.PROPORTIONAL,
                     targetMargin = 1.0,

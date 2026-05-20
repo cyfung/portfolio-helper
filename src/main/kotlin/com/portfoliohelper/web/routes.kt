@@ -294,9 +294,12 @@ private fun parseDrawdownMarginTriggerAction(obj: JsonObject): DrawdownMarginTri
             ?.trim()
             ?.uppercase()
             ?.takeIf { it.isNotBlank() && portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
-        drawdownPct = (obj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
-            ?: obj["enterDrawdownPct"]?.jsonPrimitive?.doubleOrNull
+        enterDrawdownPct = (obj["enterDrawdownPct"]?.jsonPrimitive?.doubleOrNull
+            ?: obj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
             ?: 0.10).coerceAtLeast(0.0),
+        exitDrawdownPct = (obj["exitDrawdownPct"]?.jsonPrimitive?.doubleOrNull
+            ?: obj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
+            ?: 0.05),
         triggerMargin = (obj["triggerMargin"]?.jsonPrimitive?.doubleOrNull
             ?: obj["deviationPct"]?.jsonPrimitive?.doubleOrNull
             ?: 0.0).coerceAtLeast(0.0),

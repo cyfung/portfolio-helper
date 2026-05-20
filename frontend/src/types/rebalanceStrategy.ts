@@ -56,7 +56,8 @@ export interface DrawdownMarginTriggerState {
   enabled: boolean
   portfolioSource: string
   referenceTicker?: string
-  drawdownPct: string
+  enterDrawdownPct: string
+  exitDrawdownPct: string
   triggerPointIndex: string
   triggerMargin: string
   allocStrategy: string
@@ -199,7 +200,8 @@ export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownM
     enabled: false,
     portfolioSource: 'REFERENCE_PORTFOLIO',
     referenceTicker: '',
-    drawdownPct: '10',
+    enterDrawdownPct: '10',
+    exitDrawdownPct: '5',
     triggerPointIndex: direction === 'buy' ? '0' : '4',
     triggerMargin: '',
     allocStrategy: 'PROPORTIONAL',
@@ -361,13 +363,15 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
   const base = emptyDrawdownMarginTrigger(direction)
   if (!configValue) return base
   const portfolioSource = configValue.portfolioSource ?? base.portfolioSource
+  const legacyDrawdownPct = configValue.drawdownPct ?? configValue.enterDrawdownPct
   return {
     ...base,
     ...configValue,
     enabled: configValue.enabled ?? false,
     portfolioSource,
     referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
-    drawdownPct: configValue.drawdownPct ?? configValue.enterDrawdownPct ?? base.drawdownPct,
+    enterDrawdownPct: configValue.enterDrawdownPct ?? configValue.drawdownPct ?? base.enterDrawdownPct,
+    exitDrawdownPct: configValue.exitDrawdownPct ?? legacyDrawdownPct ?? base.exitDrawdownPct,
     triggerPointIndex: configValue.triggerPointIndex ?? base.triggerPointIndex,
     triggerMargin: configValue.triggerMargin ?? '',
     allocStrategy: configValue.allocStrategy ?? base.allocStrategy,
@@ -449,7 +453,8 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       enabled: true,
       portfolioSource,
       referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
-      drawdownPct: pctAllowZero(cfg.drawdownPct, 10),
+      enterDrawdownPct: pctAllowZero(cfg.enterDrawdownPct, 10),
+      exitDrawdownPct: pctAllowZero(cfg.exitDrawdownPct, 5),
       triggerMargin: marginTriggerPct(cfg.triggerMargin, cfg.triggerPointIndex, direction === 'buy' ? 0 : 4),
       allocStrategy: cfg.allocStrategy || 'PROPORTIONAL',
       targetMargin: customOrPointPct(cfg.restoreMargin, cfg.restorePointIndex, 0, 2),

@@ -137,7 +137,8 @@ data class DrawdownMarginOverrideConfig(
 data class DrawdownMarginTriggerAction(
     val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
     val referenceTicker: String? = null,
-    val drawdownPct: Double = 0.10,
+    val enterDrawdownPct: Double = 0.10,
+    val exitDrawdownPct: Double = 0.05,
     val triggerMargin: Double,
     val allocStrategy: MarginRebalanceMode,
     val targetMargin: Double,
