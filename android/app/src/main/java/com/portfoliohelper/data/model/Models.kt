@@ -75,4 +75,12 @@ data class PortfolioMarginAlert(
 
 // ── Allocation modes ──────────────────────────────────────────────────────────
 
-enum class AllocMode { PROPORTIONAL, CURRENT_WEIGHT, UNDERVALUED_PRIORITY, WATERFALL }
+enum class AllocMode {
+    PROPORTIONAL,
+    CURRENT_WEIGHT,
+    HYBRID_TARGET_WATERFALL,
+    FULL_REBALANCE,
+    HYBRID_WATERFALL_FULL_REBALANCE,
+    UNDERVALUED_PRIORITY,
+    WATERFALL
+}

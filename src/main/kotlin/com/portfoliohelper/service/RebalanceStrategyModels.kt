@@ -103,13 +103,13 @@ sealed class ExecutionMethod {
 /** deviationPct == null → section disabled */
 data class MarginTriggerAction(
     val deviationPct: Double,
-    val allocStrategy: MarginRebalanceMode,
+    val allocStrategy: String,
     val targetMargin: Double,
 )
 
 data class DipSurgeConfig(
     val scope: DipSurgeScope,
-    val allocStrategy: MarginRebalanceMode?,  // required when scope = BASE_PORTFOLIO
+    val allocStrategy: String?,  // required when scope = BASE_PORTFOLIO
     val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
     val referenceTicker: String? = null,       // optional 100% reference ticker when portfolioSource = REFERENCE_PORTFOLIO
     val triggers: List<PriceMoveTrigger>,
@@ -128,9 +128,9 @@ data class DrawdownMarginOverrideConfig(
     val targetMargin: Double = 0.95,
     val rebalancePeriod: RebalancePeriodOverride = RebalancePeriodOverride.BI_MONTHLY,
     val rebalanceOnEnter: Boolean = true,
-    val allocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
-    val buyAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
-    val sellAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val allocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
+    val buyAllocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
+    val sellAllocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
     val tradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
 )
 
@@ -140,7 +140,7 @@ data class DrawdownMarginTriggerAction(
     val enterDrawdownPct: Double = 0.10,
     val exitDrawdownPct: Double = 0.05,
     val triggerMargin: Double,
-    val allocStrategy: MarginRebalanceMode,
+    val allocStrategy: String,
     val targetMargin: Double,
 )
 
@@ -154,7 +154,7 @@ data class RebalStrategyConfig(
     val portfolioRebalanceUseComfortZone: Boolean = true,
     val marginRebalanceEnabled: Boolean = true,
     val rebalancePeriod: RebalancePeriodOverride,
-    val rebalanceAllocStrategy: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+    val rebalanceAllocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
     val marginRebalanceTradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
     val marginRebalanceRestoreMargin: Double? = null,
     val drawdownMarginOverride: DrawdownMarginOverrideConfig? = null,

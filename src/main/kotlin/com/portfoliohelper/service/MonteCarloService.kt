@@ -126,14 +126,7 @@ object MonteCarloService {
         // ── Build curve configs for each portfolio ────────────────────────────
         data class CurveConfig(val label: String, val mc: MarginConfig?)
 
-        fun modeAbbr(m: MarginRebalanceMode) = when (m) {
-            MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
-            MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
-            MarginRebalanceMode.FULL_REBALANCE -> "Full"
-            MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
-            MarginRebalanceMode.WATERFALL -> "WaterFall"
-            MarginRebalanceMode.DAILY -> "Daily"
-        }
+        fun modeAbbr(m: String) = HybridAllocStrategyRegistry.modeLabel(m)
 
         val portfolioCurveConfigs: List<Pair<PortfolioConfig, List<CurveConfig>>> =
             request.portfolios.map { pConfig ->
@@ -394,7 +387,7 @@ object MonteCarloService {
             borrowed *= (1.0 + dailyLoanRate)
 
             val equity = holdings.values.sum() - borrowed
-            val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
+            val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
 
             if (isDailyMode) {
                 val newBorrowed = equity * mc.marginRatio
@@ -414,29 +407,7 @@ object MonteCarloService {
                     val newBorrowed = equity * mc.marginRatio
                     val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
                     val delta = newBorrowed - borrowed
-                    when (mode) {
-                        MarginRebalanceMode.FULL_REBALANCE -> {
-                            val newTotal = equity + newBorrowed
-                            for (ticker in tickers)
-                                holdings[ticker] = newTotal * (targetWeights[ticker] ?: 0.0)
-                        }
-                        MarginRebalanceMode.WATERFALL ->
-                            BacktestService.computeWaterfall(tickers, holdings, targetWeights, delta)
-                        MarginRebalanceMode.UNDERVALUED_PRIORITY ->
-                            BacktestService.computeUndervalueFirst(tickers, holdings, targetWeights, delta)
-                        MarginRebalanceMode.PROPORTIONAL ->
-                            for (ticker in tickers)
-                                holdings[ticker] =
-                                    (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker] ?: 0.0)
-                        MarginRebalanceMode.CURRENT_WEIGHT -> {
-                            val totalHoldings = holdings.values.sum()
-                            if (totalHoldings != 0.0)
-                                for (ticker in tickers)
-                                    holdings[ticker] =
-                                        (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
-                        }
-                        MarginRebalanceMode.DAILY -> { /* handled above */ }
-                    }
+                    BacktestService.applyAllocationMode(tickers, holdings, targetWeights, delta, mode)
                     borrowed = newBorrowed
                 }
             }

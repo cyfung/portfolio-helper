@@ -5,10 +5,11 @@ import { Settings } from 'lucide-react'
 import {
   BlockState, MarginRow, RebalanceStrategyRow, newId,
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
-  REBALANCE_OPTIONS, MARGIN_MODE_OPTIONS,
+  REBALANCE_OPTIONS,
 } from '@/types/backtest'
 import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
 import { isValidNumberInput } from '@/lib/numberInputs'
+import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 
 interface Props {
   idx: number
@@ -19,6 +20,7 @@ interface Props {
 }
 
 const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh, showTickerConfig = false }: Props) {
+  const marginModeOptions = useAllocStrategyOptions(true)
   const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
   const [tickerConfig, setTickerConfig] = useState<{
@@ -449,7 +451,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 onChange={e => commit({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, modeUpper: e.target.value } : x) })}
                 title="Rebalance action when upper band is breached"
               >
-                {MARGIN_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {marginModeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <select
                 className="mc-mode mc-mode-lower"
@@ -457,7 +459,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 onChange={e => commit({ ...localRef.current, margins: localRef.current.margins.map(x => x.id === m.id ? { ...x, modeLower: e.target.value } : x) })}
                 title="Rebalance action when lower band is breached"
               >
-                {MARGIN_MODE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {marginModeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
             </div>

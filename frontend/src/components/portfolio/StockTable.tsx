@@ -93,6 +93,7 @@ export default function StockTable() {
         marginUsd,
         marginTargetUsd,
         serverAllocDollars,
+        appConfig?.hybridAllocStrategies,
       )
     : null
 

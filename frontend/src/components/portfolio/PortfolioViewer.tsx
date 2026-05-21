@@ -455,6 +455,8 @@ export default function PortfolioViewer() {
                   stockGrossUsd,
                   marginUsd,
                   store.marginTargetUsd,
+                  undefined,
+                  store.appConfig?.hybridAllocStrategies,
                 )
                 const updated = store.stocks.map(s => {
                   const delta = result.rebalQty[s.label]

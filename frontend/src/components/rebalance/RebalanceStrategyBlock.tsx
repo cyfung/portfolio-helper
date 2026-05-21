@@ -14,9 +14,9 @@ import {
   strategyStateToSavedConfig,
   savedConfigToStrategyState,
 } from '@/types/rebalanceStrategy'
-import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
 import { isValidNumberInput } from '@/lib/numberInputs'
 import DipSurgeSection from './DipSurgeSection'
+import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 
 interface Props {
   idx: number
@@ -306,6 +306,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   { idx, value, onChange, sliderMax = 150, onSavedRefresh },
   ref,
 ) {
+  const allocOptions = useAllocStrategyOptions(false)
   const [local, setLocal] = useState<RebalStrategyState>(value)
   const [spreadTouched, setSpreadTouched] = useState(false)
   const localRef = useRef(local)
@@ -522,7 +523,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                 value={value.allocStrategy ?? 'PROPORTIONAL'}
                 onChange={e => updateDrawdownMarginTrigger(key, direction, { allocStrategy: e.target.value })}
               >
-                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                {allocOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -666,7 +667,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               <label>Alloc Strategy</label>
               <select value={s.rebalanceAllocStrategy ?? 'PROPORTIONAL'}
                 onChange={e => set({ rebalanceAllocStrategy: e.target.value })}>
-                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                {allocOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -812,7 +813,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                     value={drawdownMarginOverride.buyAllocStrategy ?? drawdownMarginOverride.allocStrategy ?? 'PROPORTIONAL'}
                     onChange={e => updateDrawdownMarginOverride({ buyAllocStrategy: e.target.value })}
                   >
-                    {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                    {allocOptions.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
@@ -823,7 +824,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                     value={drawdownMarginOverride.sellAllocStrategy ?? drawdownMarginOverride.allocStrategy ?? 'PROPORTIONAL'}
                     onChange={e => updateDrawdownMarginOverride({ sellAllocStrategy: e.target.value })}
                   >
-                    {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                    {allocOptions.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
@@ -844,7 +845,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                       : { buyAllocStrategy: e.target.value, allocStrategy: e.target.value },
                   )}
                 >
-                  {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                  {allocOptions.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
@@ -904,7 +905,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               <label>Alloc Strategy</label>
               <select value={s.buyLowAllocStrategy}
                 onChange={e => set({ buyLowAllocStrategy: e.target.value })}>
-                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                {allocOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -950,7 +951,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               <label>Alloc Strategy</label>
               <select value={s.sellHighAllocStrategy}
                 onChange={e => set({ sellHighAllocStrategy: e.target.value })}>
-                {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                {allocOptions.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>

@@ -274,12 +274,18 @@ private fun computeSimpleAllocs(
     mode: String
 ): Map<String, Double> {
     return when (mode) {
-        "PROPORTIONAL" -> stocks.associate { s ->
+        "PROPORTIONAL", "DAILY" -> stocks.associate { s ->
             s.symbol to ((s.targetWeightPct ?: 0.0) / 100.0) * delta
         }
         "CURRENT_WEIGHT" -> stocks.associate { s ->
             val w = if (stockGrossUsd > 0) (s.positionValueUsd ?: 0.0) / stockGrossUsd else 0.0
             s.symbol to w * delta
+        }
+        "FULL_REBALANCE" -> {
+            val finalTotal = stockGrossUsd + delta
+            stocks.associate { s ->
+                s.symbol to finalTotal * ((s.targetWeightPct ?: 0.0) / 100.0) - (s.positionValueUsd ?: 0.0)
+            }
         }
         "UNDERVALUED_PRIORITY" -> {
             val eligible = stocks.filter { it.targetWeightPct != null }
@@ -309,6 +315,63 @@ private fun computeSimpleAllocs(
 }
 
 // ── Group building ─────────────────────────────────────────────────────────────
+
+private fun weightedAverageAllocs(
+    a: Map<String, Double>,
+    b: Map<String, Double>,
+    stocks: List<StockDisplay>,
+    aRatio: Double,
+    bRatio: Double
+): Map<String, Double> {
+    val total = aRatio + bRatio
+    val safeA = if (total > 0.0) aRatio else 1.0
+    val safeB = if (total > 0.0) bRatio else 1.0
+    val safeTotal = safeA + safeB
+    return stocks.associate { s ->
+        s.symbol to ((a[s.symbol] ?: 0.0) * safeA + (b[s.symbol] ?: 0.0) * safeB) / safeTotal
+    }
+}
+
+private fun computeWaterfallAllocs(
+    delta: Double,
+    stocks: List<StockDisplay>,
+    rawStocks: List<Stock>
+): Map<String, Double> {
+    val twSum = stocks.sumOf { it.targetWeightPct ?: 0.0 }
+    if (twSum <= 0) return emptyMap()
+
+    val gaStocks = stocks.map { s ->
+        GaStockInput(
+            symbol = s.symbol,
+            targetWeightFrac = (s.targetWeightPct ?: 0.0) / twSum,
+            currentValUsd = s.positionValueUsd ?: 0.0
+        )
+    }
+    val currentValsUsd = gaStocks.associate { it.symbol to it.currentValUsd }
+    val gaGroups = buildGaGroups(rawStocks)
+    val totalStockValue = gaStocks.sumOf { it.currentValUsd }
+
+    val isSell = delta < 0
+    val cash = abs(delta)
+    val newTotal = totalStockValue + if (isSell) -cash else cash
+
+    val exactAllocs = gaStocks.map { s ->
+        val ideal = newTotal * s.targetWeightFrac - s.currentValUsd
+        if (isSell) max(0.0, -ideal) else max(0.0, ideal)
+    }
+    val totalNeeded = exactAllocs.sum()
+
+    val rng = Random.Default
+    val allocArr: DoubleArray = if (cash >= totalNeeded) {
+        val remaining = cash - totalNeeded
+        DoubleArray(gaStocks.size) { i -> exactAllocs[i] + remaining * gaStocks[i].targetWeightFrac }
+    } else {
+        runStepwiseGA(gaStocks, gaGroups, currentValsUsd, cash, newTotal, isSell, rng)
+    }
+
+    val sign = if (isSell) -1.0 else 1.0
+    return gaStocks.mapIndexed { i, s -> s.symbol to sign * allocArr[i] }.toMap()
+}
 
 private fun buildGaGroups(stocks: List<Stock>): List<GaGroup> {
     // groupName → (symbol → sum of targetWeight * mult)
@@ -392,47 +455,29 @@ class RebalGaService(
 
         val allocMode = if (delta >= 0) allocAddMode else allocReduceMode
 
-        if (allocMode != "WATERFALL") {
-            return RebalAllocSnapshot(portfolioId, computeSimpleAllocs(delta, stockSnap.stocks, stockGrossUsd, allocMode))
-        }
+        fun computeBase(mode: String): Map<String, Double> =
+            if (mode == "WATERFALL") {
+                computeWaterfallAllocs(delta, stockSnap.stocks, rawStocks)
+            } else {
+                computeSimpleAllocs(delta, stockSnap.stocks, stockGrossUsd, mode)
+            }
 
-        // WATERFALL: run GA
-        val twSum = stockSnap.stocks.sumOf { it.targetWeightPct ?: 0.0 }
-        if (twSum <= 0) return RebalAllocSnapshot(portfolioId, emptyMap())
-
-        val gaStocks = stockSnap.stocks.map { s ->
-            GaStockInput(
-                symbol = s.symbol,
-                targetWeightFrac = (s.targetWeightPct ?: 0.0) / twSum,
-                currentValUsd = s.positionValueUsd ?: 0.0
+        val hybrid = HybridAllocStrategyRegistry.find(allocMode)
+        val alloc = if (hybrid != null) {
+            weightedAverageAllocs(
+                computeBase(hybrid.first),
+                computeBase(hybrid.second),
+                stockSnap.stocks,
+                hybrid.firstRatio,
+                hybrid.secondRatio,
             )
-        }
-        val currentValsUsd = gaStocks.associate { it.symbol to it.currentValUsd }
-        val gaGroups = buildGaGroups(rawStocks)
-        val totalStockValue = gaStocks.sumOf { it.currentValUsd }
-
-        val isSell = delta < 0
-        val cash = abs(delta)
-        val newTotal = totalStockValue + if (isSell) -cash else cash
-
-        val exactAllocs = gaStocks.map { s ->
-            val ideal = newTotal * s.targetWeightFrac - s.currentValUsd
-            if (isSell) max(0.0, -ideal) else max(0.0, ideal)
-        }
-        val totalNeeded = exactAllocs.sum()
-
-        val rng = Random.Default
-        val allocArr: DoubleArray = if (cash >= totalNeeded) {
-            val remaining = cash - totalNeeded
-            DoubleArray(gaStocks.size) { i -> exactAllocs[i] + remaining * gaStocks[i].targetWeightFrac }
         } else {
-            runStepwiseGA(gaStocks, gaGroups, currentValsUsd, cash, newTotal, isSell, rng)
+            computeBase(allocMode)
         }
 
-        val sign = if (isSell) -1.0 else 1.0
         return RebalAllocSnapshot(
             portfolioId = portfolioId,
-            perSymbolAllocUsd = gaStocks.mapIndexed { i, s -> s.symbol to sign * allocArr[i] }.toMap()
+            perSymbolAllocUsd = alloc
         )
     }
 }

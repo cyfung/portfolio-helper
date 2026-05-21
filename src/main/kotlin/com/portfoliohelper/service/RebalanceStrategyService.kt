@@ -11,10 +11,15 @@ object RebalanceStrategyService {
     val fromDate = request.fromDate?.let { LocalDate.parse(it) }
     val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
     val effrx = BacktestService.loadEffrxSeries()
-    val neededFrom = LocalDate.of(1990, 1, 1)
+    val historyFrom = LocalDate.of(1990, 1, 1)
+    val portfolioNeededFrom = fromDate ?: historyFrom
 
     val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
+    val referenceTickerSet = referenceTickers.toSet()
     val requestedTickers = (request.portfolio.tickers.map { it.ticker } + referenceTickers).distinct()
+    fun neededFromForTicker(ticker: String) =
+        if (ticker in referenceTickerSet) historyFrom else portfolioNeededFrom
+    fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
 
     // Load LETF definitions and component series
     val letfDefs = mutableMapOf<String, LETFDefinition>()
@@ -22,10 +27,19 @@ object RebalanceStrategyService {
       BacktestService.parseLETFDefinition(ticker)?.let { letfDefs.putIfAbsent(ticker, it) }
     }
     val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-    fun cachedLoad(ticker: String) =
+    fun cachedLoad(ticker: String, neededFrom: LocalDate) =
         seriesCache.getOrPut(ticker) { BacktestService.loadNormalizedSeries(ticker, neededFrom) }
 
-    for (comp in letfDefs.values.flatMap { it.components }) cachedLoad(comp.ticker)
+    val componentNeededFrom = mutableMapOf<String, LocalDate>()
+    for ((letfTicker, def) in letfDefs) {
+      val parentNeededFrom = neededFromForTicker(letfTicker)
+      for (comp in def.components) {
+        componentNeededFrom.merge(comp.ticker, parentNeededFrom, ::earlierDate)
+      }
+    }
+    for ((ticker, neededFrom) in componentNeededFrom) {
+      cachedLoad(ticker, neededFrom)
+    }
 
     val letfComponentSeries =
         letfDefs.values.flatMap { it.components }.mapNotNull { seriesCache[it.ticker] }
@@ -49,7 +63,12 @@ object RebalanceStrategyService {
       }
     }
     for (ticker in requestedTickers) {
-      if (BacktestService.parseLETFDefinition(ticker) == null) cachedLoad(ticker)
+      if (BacktestService.parseLETFDefinition(ticker) == null) {
+        // Reference tickers need pre-fromDate history for drawdown and peak/trough triggers.
+        // Portfolio-only tickers do not; loading only from fromDate keeps synthetic tests and
+        // short local datasets from falling through to Yahoo for irrelevant older data.
+        cachedLoad(ticker, neededFromForTicker(ticker))
+      }
     }
 
     val seriesMap: Map<String, Map<LocalDate, Double>> =
@@ -335,18 +354,32 @@ object RebalanceStrategyService {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
     val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()
     val effrx = BacktestService.loadEffrxSeries()
-    val neededFrom = LocalDate.of(1990, 1, 1)
+    val historyFrom = LocalDate.of(1990, 1, 1)
+    val portfolioNeededFrom = fromDate ?: historyFrom
 
     val requestedTickers = (portfolio.tickers.map { it.ticker } + referenceTickers).distinct()
+    val referenceTickerSet = referenceTickers.toSet()
+    fun neededFromForTicker(ticker: String) =
+        if (ticker in referenceTickerSet) historyFrom else portfolioNeededFrom
+    fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
     val letfDefs = mutableMapOf<String, LETFDefinition>()
     for (ticker in requestedTickers) {
       BacktestService.parseLETFDefinition(ticker)?.let { letfDefs.putIfAbsent(ticker, it) }
     }
     val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-    fun cachedLoad(ticker: String) =
+    fun cachedLoad(ticker: String, neededFrom: LocalDate) =
         seriesCache.getOrPut(ticker) { BacktestService.loadNormalizedSeries(ticker, neededFrom) }
 
-    for (comp in letfDefs.values.flatMap { it.components }) cachedLoad(comp.ticker)
+    val componentNeededFrom = mutableMapOf<String, LocalDate>()
+    for ((letfTicker, def) in letfDefs) {
+      val parentNeededFrom = neededFromForTicker(letfTicker)
+      for (comp in def.components) {
+        componentNeededFrom.merge(comp.ticker, parentNeededFrom, ::earlierDate)
+      }
+    }
+    for ((ticker, neededFrom) in componentNeededFrom) {
+      cachedLoad(ticker, neededFrom)
+    }
 
     val letfComponentSeries =
         letfDefs.values.flatMap { it.components }.mapNotNull { seriesCache[it.ticker] }
@@ -370,7 +403,12 @@ object RebalanceStrategyService {
       }
     }
     for (ticker in requestedTickers) {
-      if (BacktestService.parseLETFDefinition(ticker) == null) cachedLoad(ticker)
+      if (BacktestService.parseLETFDefinition(ticker) == null) {
+        // Reference tickers need pre-fromDate history for drawdown and peak/trough triggers.
+        // Portfolio-only tickers do not; loading only from fromDate keeps synthetic tests and
+        // short local datasets from falling through to Yahoo for irrelevant older data.
+        cachedLoad(ticker, neededFromForTicker(ticker))
+      }
     }
 
     val rawSeriesMap: Map<String, Map<LocalDate, Double>> =
@@ -655,7 +693,7 @@ object RebalanceStrategyService {
                           grossAfter = grossAfter,
                           marginBefore = marginBefore,
                           marginAfter = marginAfter,
-                          allocStrategy = res.allocStrategy?.name,
+                          allocStrategy = res.allocStrategy,
                       )
                     } else {
                       null
@@ -921,7 +959,7 @@ object RebalanceStrategyService {
                             grossAfter = grossAfter,
                             marginBefore = marginBefore,
                             marginAfter = if (account.equity() > 0.0) account.currentMarginRatio() else 0.0,
-                            allocStrategy = effectiveAllocStrategy.name,
+                            allocStrategy = effectiveAllocStrategy,
                         )
                       } else {
                         null
@@ -1107,48 +1145,18 @@ object RebalanceStrategyService {
       account: PaperTradingPortfolio,
       targetWeights: Map<String, Double>,
       delta: Double,
-      allocStrategy: MarginRebalanceMode?,
+      allocStrategy: String?,
   ) {
-    when (allocStrategy ?: MarginRebalanceMode.PROPORTIONAL) {
-      MarginRebalanceMode.PROPORTIONAL,
-      MarginRebalanceMode.DAILY -> {
-        for (ticker in tickers) {
-          val amount = delta * (targetWeights[ticker] ?: 0.0)
-          account.applyTradeDelta(ticker, amount)
-        }
-      }
-
-      MarginRebalanceMode.CURRENT_WEIGHT -> {
-        val total = tickers.sumOf { account.holding(it) }
-        if (total == 0.0) return
-        for (ticker in tickers) {
-          val amount = delta * (account.holding(ticker) / total)
-          account.applyTradeDelta(ticker, amount)
-        }
-      }
-
-      MarginRebalanceMode.FULL_REBALANCE -> {
-        val newTotal = tickers.sumOf { account.holding(it) } + delta
-        performProportionalRebalance(newTotal, tickers, targetWeights, account)
-      }
-
-      MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
-        val temp = tickers.associateWith { account.holding(it) }.toMutableMap()
-        BacktestService.computeUndervalueFirst(tickers, temp, targetWeights, delta)
-        for (ticker in tickers) {
-          val diff = (temp[ticker] ?: 0.0) - account.holding(ticker)
-          account.applyTradeDelta(ticker, diff)
-        }
-      }
-
-      MarginRebalanceMode.WATERFALL -> {
-        val temp = tickers.associateWith { account.holding(it) }.toMutableMap()
-        BacktestService.computeWaterfall(tickers, temp, targetWeights, delta)
-        for (ticker in tickers) {
-          val diff = (temp[ticker] ?: 0.0) - account.holding(ticker)
-          account.applyTradeDelta(ticker, diff)
-        }
-      }
+    val holdings = tickers.associateWith { account.holding(it) }
+    val deltas = BacktestService.computeAllocationDeltas(
+        tickers,
+        holdings,
+        targetWeights,
+        delta,
+        allocStrategy ?: MarginRebalanceMode.PROPORTIONAL.name
+    )
+    for (ticker in tickers) {
+      account.applyTradeDelta(ticker, deltas[ticker] ?: 0.0)
     }
   }
 
@@ -1159,7 +1167,7 @@ object RebalanceStrategyService {
       targetWeights: Map<String, Double>,
       amount: Double,
       direction: Direction,
-      allocStrategy: MarginRebalanceMode?,
+      allocStrategy: String?,
   ) {
     val delta = if (direction == Direction.BUY) amount else -amount
     when (key) {
@@ -1298,7 +1306,7 @@ private fun monthBucket(date: LocalDate, monthsPerBucket: Int): Int =
 private data class DipSurgeResources(
     val checkersByKey: Map<DipSurgeKey, List<TriggerChecker>>,
     val executorsByKey: Map<DipSurgeKey, DipSurgeExecutor>,
-    val allocStrategy: MarginRebalanceMode?,
+    val allocStrategy: String?,
     val limit: Double,
     val cooldown: DipSurgeCooldown,
     val minAdjustmentPct: Double,

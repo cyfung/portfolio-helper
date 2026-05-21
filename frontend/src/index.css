@@ -882,7 +882,9 @@ h1 {
     border-bottom: none;
 }
 
-.portfolio-config-table input[type="text"] {
+.portfolio-config-table input[type="text"],
+.portfolio-config-table input[type="number"],
+.portfolio-config-table select {
     padding: var(--spacing-xs) var(--spacing-md);
     border: 1px solid var(--color-border-medium);
     border-radius: var(--radius-sm);
@@ -895,10 +897,67 @@ h1 {
     transition: border-color var(--transition-fast);
 }
 
-.portfolio-config-table input[type="text"]:focus {
+.portfolio-config-table input[type="text"]:focus,
+.portfolio-config-table input[type="number"]:focus,
+.portfolio-config-table select:focus {
     outline: none;
     border-color: var(--color-accent-primary);
     box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+}
+
+.hybrid-strategy-table {
+    table-layout: fixed;
+}
+
+.hybrid-strategy-table th,
+.hybrid-strategy-table td {
+    padding: var(--spacing-sm) 6px;
+}
+
+.hybrid-strategy-table th:nth-child(1),
+.hybrid-strategy-table .hybrid-label-cell {
+    width: 9rem;
+}
+
+.hybrid-strategy-table th:nth-child(2),
+.hybrid-strategy-table th:nth-child(4),
+.hybrid-strategy-table .hybrid-strategy-cell {
+    width: 8rem;
+}
+
+.hybrid-strategy-table th:nth-child(3),
+.hybrid-strategy-table th:nth-child(5),
+.hybrid-strategy-table .hybrid-ratio-cell {
+    width: 3.75rem;
+}
+
+.hybrid-strategy-table th:nth-child(6),
+.hybrid-strategy-table .portfolio-config-table-actions-col {
+    width: 4.5rem;
+}
+
+.hybrid-strategy-table input[type="text"],
+.hybrid-strategy-table select {
+    width: 100%;
+    min-width: 0;
+}
+
+.hybrid-strategy-table select {
+    font-family: inherit;
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-lg);
+}
+
+.hybrid-strategy-table input[type="number"] {
+    width: 3.75rem;
+    min-width: 0;
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+}
+
+.hybrid-strategy-table .management-table-remove-btn {
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
 }
 
 .portfolio-config-table-checkbox-col {

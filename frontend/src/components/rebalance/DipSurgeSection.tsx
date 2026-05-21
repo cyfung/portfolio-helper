@@ -7,7 +7,7 @@ import {
   PORTFOLIO_TRIGGER_SOURCE_OPTIONS,
   emptyTrigger, emptyDipSurge,
 } from '@/types/rebalanceStrategy'
-import { REBALANCE_MARGIN_MODE_OPTIONS } from '@/types/backtest'
+import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 
 interface Props {
   direction: 'buy' | 'sell'
@@ -101,6 +101,7 @@ export default function DipSurgeSection({
   scope,
   title = direction === 'buy' ? 'Buy the Dip' : 'Sell on Surge',
 }: Props) {
+  const allocOptions = useAllocStrategyOptions(false)
   const enabled = value !== null
   const midMarginPoint = marginPoints[2] ?? '50'
   const limitMargin = value ? (value.limit || marginValueFromLegacyPoint(marginPoints, value.limitPointIndex)) : ''
@@ -189,7 +190,7 @@ export default function DipSurgeSection({
               <div className="strategy-row">
                 <label>Allocation Strategy</label>
                 <select value={value.allocStrategy} onChange={e => update({ allocStrategy: e.target.value })}>
-                  {REBALANCE_MARGIN_MODE_OPTIONS.map(o => (
+                  {allocOptions.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>

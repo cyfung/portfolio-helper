@@ -1,15 +1,10 @@
 // ── RebalanceControls.tsx — Alloc strategy selects ───────────────────────────
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { AllocMode } from '@/types/portfolio'
-
-const ALLOC_OPTIONS: { value: AllocMode; label: string }[] = [
-  { value: 'PROPORTIONAL',       label: 'Target Wt' },
-  { value: 'CURRENT_WEIGHT',     label: 'Current Wt' },
-  { value: 'UNDERVALUED_PRIORITY', label: 'Underval First' },
-  { value: 'WATERFALL',          label: 'Waterfall' },
-]
+import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 
 export default function RebalanceControls({ showGroupBy }: { showGroupBy?: boolean }) {
+  const allocOptions = useAllocStrategyOptions(false)
   const {
     allocAddMode, allocReduceMode, portfolioId,
     setAllocAddMode, setAllocReduceMode,
@@ -56,7 +51,7 @@ export default function RebalanceControls({ showGroupBy }: { showGroupBy?: boole
             saveMode('allocAddMode', mode)
           }}
         >
-          {ALLOC_OPTIONS.map(o => (
+          {allocOptions.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
@@ -73,7 +68,7 @@ export default function RebalanceControls({ showGroupBy }: { showGroupBy?: boole
             saveMode('allocReduceMode', mode)
           }}
         >
-          {ALLOC_OPTIONS.map(o => (
+          {allocOptions.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>

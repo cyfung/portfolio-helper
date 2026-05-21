@@ -183,12 +183,8 @@ private fun parseSinglePortfolioConfig(
                 marginSpread         = mObj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
                 marginDeviationUpper = mObj["marginDeviationUpper"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
                 marginDeviationLower = mObj["marginDeviationLower"]?.jsonPrimitive?.doubleOrNull ?: 0.05,
-                upperRebalanceMode   = runCatching {
-                    MarginRebalanceMode.valueOf(mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
-                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL),
-                lowerRebalanceMode   = runCatching {
-                    MarginRebalanceMode.valueOf(mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull ?: "PROPORTIONAL")
-                }.getOrDefault(MarginRebalanceMode.PROPORTIONAL)
+                upperRebalanceMode   = parseAllocStrategyId(mObj["upperRebalanceMode"]?.jsonPrimitive?.contentOrNull),
+                lowerRebalanceMode   = parseAllocStrategyId(mObj["lowerRebalanceMode"]?.jsonPrimitive?.contentOrNull)
             )
         } ?: emptyList(),
         rebalanceStrategies = (pObj["rebalanceStrategies"] as? JsonArray)?.map { el ->
@@ -235,6 +231,9 @@ private fun parsePortfolioTriggerSource(obj: JsonObject, scopeText: String?): Po
         }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
     }
 
+private fun parseAllocStrategyId(raw: String?, default: String = MarginRebalanceMode.PROPORTIONAL.name): String =
+    raw?.trim()?.takeIf { it.isNotBlank() } ?: default
+
 private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig? {
     val scopeText = obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK"
     val scope =
@@ -244,9 +243,7 @@ private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig? {
 
     return DipSurgeConfig(
         scope         = scope,
-        allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-        },
+        allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let { parseAllocStrategyId(it) },
         portfolioSource = if (scope == DipSurgeScope.BASE_PORTFOLIO) {
             portfolioSource
         } else {
@@ -277,9 +274,7 @@ private fun parseDipSurgeConfigs(el: JsonElement?): List<DipSurgeConfig> =
 
 private fun parseMarginTriggerAction(obj: JsonObject): MarginTriggerAction = MarginTriggerAction(
     deviationPct  = obj["deviationPct"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-    allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-    } ?: MarginRebalanceMode.PROPORTIONAL,
+    allocStrategy = parseAllocStrategyId(obj["allocStrategy"]?.jsonPrimitive?.contentOrNull),
     targetMargin  = obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
 )
 
@@ -303,9 +298,7 @@ private fun parseDrawdownMarginTriggerAction(obj: JsonObject): DrawdownMarginTri
         triggerMargin = (obj["triggerMargin"]?.jsonPrimitive?.doubleOrNull
             ?: obj["deviationPct"]?.jsonPrimitive?.doubleOrNull
             ?: 0.0).coerceAtLeast(0.0),
-        allocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-        } ?: MarginRebalanceMode.PROPORTIONAL,
+        allocStrategy = parseAllocStrategyId(obj["allocStrategy"]?.jsonPrimitive?.contentOrNull),
         targetMargin = (obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5).coerceAtLeast(0.0),
     )
 }
@@ -315,9 +308,7 @@ private fun parseDrawdownMarginOverride(obj: JsonObject): DrawdownMarginOverride
     val portfolioSource = runCatching {
         PortfolioTriggerSource.valueOf(obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO")
     }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
-    val legacyAllocStrategy = obj["allocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-    } ?: MarginRebalanceMode.PROPORTIONAL
+    val legacyAllocStrategy = parseAllocStrategyId(obj["allocStrategy"]?.jsonPrimitive?.contentOrNull)
     return DrawdownMarginOverrideConfig(
         enabled = true,
         portfolioSource = portfolioSource,
@@ -333,12 +324,8 @@ private fun parseDrawdownMarginOverride(obj: JsonObject): DrawdownMarginOverride
         }.getOrDefault(RebalancePeriodOverride.BI_MONTHLY),
         rebalanceOnEnter = obj["rebalanceOnEnter"]?.jsonPrimitive?.booleanOrNull ?: true,
         allocStrategy = legacyAllocStrategy,
-        buyAllocStrategy = obj["buyAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-        } ?: legacyAllocStrategy,
-        sellAllocStrategy = obj["sellAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-            runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-        } ?: legacyAllocStrategy,
+        buyAllocStrategy = parseAllocStrategyId(obj["buyAllocStrategy"]?.jsonPrimitive?.contentOrNull, legacyAllocStrategy),
+        sellAllocStrategy = parseAllocStrategyId(obj["sellAllocStrategy"]?.jsonPrimitive?.contentOrNull, legacyAllocStrategy),
         tradeDirection = runCatching {
             MarginRebalanceTradeDirection.valueOf(obj["tradeDirection"]?.jsonPrimitive?.content ?: "BOTH")
         }.getOrDefault(MarginRebalanceTradeDirection.BOTH),
@@ -359,9 +346,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     rebalancePeriod            = runCatching {
         RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "NONE")
     }.getOrDefault(RebalancePeriodOverride.NONE),
-    rebalanceAllocStrategy     = obj["rebalanceAllocStrategy"]?.jsonPrimitive?.contentOrNull?.let {
-        runCatching { MarginRebalanceMode.valueOf(it) }.getOrNull()
-    } ?: MarginRebalanceMode.PROPORTIONAL,
+    rebalanceAllocStrategy     = parseAllocStrategyId(obj["rebalanceAllocStrategy"]?.jsonPrimitive?.contentOrNull),
     marginRebalanceTradeDirection = runCatching {
         MarginRebalanceTradeDirection.valueOf(obj["marginRebalanceTradeDirection"]?.jsonPrimitive?.content ?: "BOTH")
     }.getOrDefault(MarginRebalanceTradeDirection.BOTH),
@@ -550,7 +535,8 @@ private data class AppConfigDto(
     val isJpackageInstall: Boolean,
     val autoUpdate: Boolean,
     val privacyScalePct: String,
-    val privacyScaleEnabled: Boolean
+    val privacyScaleEnabled: Boolean,
+    val hybridAllocStrategies: List<HybridAllocStrategyConfig>
 )
 
 @Serializable
@@ -703,7 +689,8 @@ fun Application.configureRouting() {
                     isJpackageInstall = updateInfo.isJpackageInstall,
                     autoUpdate = AppConfig.autoUpdate,
                     privacyScalePct = AppConfig.get(AppConfig.KEY_PRIVACY_SCALE_PCT),
-                    privacyScaleEnabled = AppConfig.privacyScaleEnabled
+                    privacyScaleEnabled = AppConfig.privacyScaleEnabled,
+                    hybridAllocStrategies = HybridAllocStrategyRegistry.strategies()
                 )
             )
 

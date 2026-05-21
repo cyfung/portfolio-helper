@@ -25,6 +25,44 @@ class RebalanceStrategyServiceTest {
 
     private fun flatCurve(dates: List<LocalDate>) = dates.associateWith { 1.0 }
 
+    @Test
+    fun `hybrid target waterfall averages target-weight and waterfall deltas`() {
+        val tickers = listOf("A", "B")
+        val holdings = mapOf("A" to 80.0, "B" to 20.0)
+        val targetWeights = mapOf("A" to 0.5, "B" to 0.5)
+
+        val deltas = BacktestService.computeAllocationDeltas(
+            tickers,
+            holdings,
+            targetWeights,
+            20.0,
+            MarginRebalanceMode.HYBRID_TARGET_WATERFALL.name
+        )
+
+        assertApprox(5.0, deltas["A"] ?: 0.0)
+        assertApprox(15.0, deltas["B"] ?: 0.0)
+        assertApprox(20.0, deltas.values.sum())
+    }
+
+    @Test
+    fun `hybrid waterfall full rebalance averages waterfall and full rebalance deltas`() {
+        val tickers = listOf("A", "B")
+        val holdings = mapOf("A" to 80.0, "B" to 20.0)
+        val targetWeights = mapOf("A" to 0.5, "B" to 0.5)
+
+        val deltas = BacktestService.computeAllocationDeltas(
+            tickers,
+            holdings,
+            targetWeights,
+            20.0,
+            MarginRebalanceMode.HYBRID_WATERFALL_FULL_REBALANCE.name
+        )
+
+        assertApprox(-10.0, deltas["A"] ?: 0.0)
+        assertApprox(30.0, deltas["B"] ?: 0.0)
+        assertApprox(20.0, deltas.values.sum())
+    }
+
     /** V-shape: 1.0 → 0.5 at mid → 1.0. For 21 dates: mid=10, price[10]=0.5. */
     private fun vShapeCurve(dates: List<LocalDate>): Map<LocalDate, Double> {
         val n = dates.size; val mid = (n - 1) / 2
@@ -146,7 +184,7 @@ class RebalanceStrategyServiceTest {
                 marginRatio = 0.0,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
                     referenceTicker = "REF",
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
@@ -201,7 +239,7 @@ class RebalanceStrategyServiceTest {
             portfolioRebalanceUseComfortZone = true,
             marginRebalanceEnabled = true,
             rebalancePeriod = RebalancePeriodOverride.MONTHLY,
-            rebalanceAllocStrategy = MarginRebalanceMode.WATERFALL,
+            rebalanceAllocStrategy = MarginRebalanceMode.WATERFALL.name,
             marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
             marginRebalanceRestoreMargin = 0.80,
             drawdownMarginOverride = drawdownMarginOverride,
@@ -211,7 +249,7 @@ class RebalanceStrategyServiceTest {
             deviationMode = DeviationMode.ABSOLUTE,
             sellOnHighMargin = MarginTriggerAction(
                 deviationPct = 1.10,
-                allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                 targetMargin = 0.90,
             ),
             buyOnLowMargin = null,
@@ -228,7 +266,7 @@ class RebalanceStrategyServiceTest {
             label = "80-100-110",
             buyTheDip = DipSurgeConfig(
                 scope = DipSurgeScope.BASE_PORTFOLIO,
-                allocStrategy = MarginRebalanceMode.WATERFALL,
+                allocStrategy = MarginRebalanceMode.WATERFALL.name,
                 portfolioSource = PortfolioTriggerSource.STRATEGY_GROSS,
                 triggers = listOf(PriceMoveTrigger.PeakDeviation(0.10)),
                 method = ExecutionMethod.Once,
@@ -249,9 +287,9 @@ class RebalanceStrategyServiceTest {
                 targetMargin = 1.00,
                 rebalancePeriod = RebalancePeriodOverride.BI_WEEKLY,
                 rebalanceOnEnter = true,
-                allocStrategy = MarginRebalanceMode.WATERFALL,
-                buyAllocStrategy = MarginRebalanceMode.WATERFALL,
-                sellAllocStrategy = MarginRebalanceMode.WATERFALL,
+                allocStrategy = MarginRebalanceMode.WATERFALL.name,
+                buyAllocStrategy = MarginRebalanceMode.WATERFALL.name,
+                sellAllocStrategy = MarginRebalanceMode.WATERFALL.name,
                 tradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
             ),
         )
@@ -348,7 +386,7 @@ class RebalanceStrategyServiceTest {
                 portfolioRebalanceUseComfortZone = true,
                 marginRebalanceEnabled = true,
                 rebalancePeriod = RebalancePeriodOverride.MONTHLY,
-                rebalanceAllocStrategy = MarginRebalanceMode.WATERFALL,
+                rebalanceAllocStrategy = MarginRebalanceMode.WATERFALL.name,
                 marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
                 marginRebalanceRestoreMargin = 0.80,
                 cashflowImmediateInvestPct = 1.0,
@@ -357,7 +395,7 @@ class RebalanceStrategyServiceTest {
                 deviationMode = DeviationMode.ABSOLUTE,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 1.10,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.95,
                 ),
                 buyOnLowMargin = null,
@@ -368,7 +406,7 @@ class RebalanceStrategyServiceTest {
                 sellCooldownAfterBuyLowDays = 10,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.WATERFALL,
+                    allocStrategy = MarginRebalanceMode.WATERFALL.name,
                     portfolioSource = source,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(dropPct)),
                     method = ExecutionMethod.Once,
@@ -670,7 +708,7 @@ class RebalanceStrategyServiceTest {
                 marginSpread = 0.0,
                 rebalancePeriod = RebalancePeriodOverride.MONTHLY,
                 useComfortZone = false,
-            ).copy(rebalanceAllocStrategy = MarginRebalanceMode.CURRENT_WEIGHT),
+            ).copy(rebalanceAllocStrategy = MarginRebalanceMode.CURRENT_WEIGHT.name),
             null,
             series,
             dates,
@@ -780,7 +818,7 @@ class RebalanceStrategyServiceTest {
                     exitDrawdownPct = 0.05,
                     targetMargin = 0.95,
                     rebalancePeriod = RebalancePeriodOverride.DAILY,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     tradeDirection = MarginRebalanceTradeDirection.BOTH,
                 ),
             ),
@@ -835,7 +873,7 @@ class RebalanceStrategyServiceTest {
                     targetMargin = 0.95,
                     rebalancePeriod = RebalancePeriodOverride.WEEKLY,
                     rebalanceOnEnter = true,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     tradeDirection = MarginRebalanceTradeDirection.BOTH,
                 ),
             ),
@@ -887,9 +925,9 @@ class RebalanceStrategyServiceTest {
                     targetMargin = 1.0,
                     rebalancePeriod = RebalancePeriodOverride.MONTHLY,
                     rebalanceOnEnter = true,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
-                    buyAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
-                    sellAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                    buyAllocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                    sellAllocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     tradeDirection = MarginRebalanceTradeDirection.BOTH,
                 ),
             ),
@@ -950,9 +988,9 @@ class RebalanceStrategyServiceTest {
                     targetMargin = 1.0,
                     rebalancePeriod = RebalancePeriodOverride.BI_MONTHLY,
                     rebalanceOnEnter = true,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
-                    buyAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
-                    sellAllocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                    buyAllocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                    sellAllocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     tradeDirection = MarginRebalanceTradeDirection.BOTH,
                 ),
             ),
@@ -996,7 +1034,7 @@ class RebalanceStrategyServiceTest {
                 marginRebalanceTradeDirection = MarginRebalanceTradeDirection.BUY_ONLY,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.7,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
             ),
@@ -1028,7 +1066,7 @@ class RebalanceStrategyServiceTest {
                 marginRebalanceTradeDirection = MarginRebalanceTradeDirection.SELL_ONLY,
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.3,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
             ),
@@ -1061,7 +1099,7 @@ class RebalanceStrategyServiceTest {
                     referenceTicker = "REF",
                     enterDrawdownPct = 0.1,
                     triggerMargin = 0.6,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
             ),
@@ -1095,7 +1133,7 @@ class RebalanceStrategyServiceTest {
                     enterDrawdownPct = 0.1,
                     exitDrawdownPct = -0.25,
                     triggerMargin = 0.6,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
             ),
@@ -1128,7 +1166,7 @@ class RebalanceStrategyServiceTest {
                 marginRatio = 0.5,
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.9,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.3,
                 ),
                 drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
@@ -1136,7 +1174,7 @@ class RebalanceStrategyServiceTest {
                     referenceTicker = "REF",
                     enterDrawdownPct = 0.1,
                     triggerMargin = 0.6,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
             ),
@@ -1165,7 +1203,7 @@ class RebalanceStrategyServiceTest {
                 marginRatio = 0.5,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.4,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 drawdownSellOnHighMargin = DrawdownMarginTriggerAction(
@@ -1173,7 +1211,7 @@ class RebalanceStrategyServiceTest {
                     referenceTicker = "REF",
                     enterDrawdownPct = 0.1,
                     triggerMargin = 0.4,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 1.0,
                 ),
             ),
@@ -1236,8 +1274,8 @@ class RebalanceStrategyServiceTest {
                 marginSpread = 0.0,
                 marginDeviationUpper = 0.1,
                 marginDeviationLower = 0.1,
-                upperRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
-                lowerRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+                upperRebalanceMode = MarginRebalanceMode.PROPORTIONAL.name,
+                lowerRebalanceMode = MarginRebalanceMode.PROPORTIONAL.name,
             )
             val portfolio = PortfolioConfig(
                 label = "actual",
@@ -1256,12 +1294,12 @@ class RebalanceStrategyServiceTest {
                 deviationMode = DeviationMode.ABSOLUTE,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.6,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.4,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 buyTheDip = null,
@@ -1326,8 +1364,8 @@ class RebalanceStrategyServiceTest {
                 marginSpread = 0.0,
                 marginDeviationUpper = 0.1,
                 marginDeviationLower = 0.1,
-                upperRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
-                lowerRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
+                upperRebalanceMode = MarginRebalanceMode.PROPORTIONAL.name,
+                lowerRebalanceMode = MarginRebalanceMode.PROPORTIONAL.name,
             )
             val portfolio = PortfolioConfig(
                 label = "40% KMLM / 60% VT",
@@ -1346,12 +1384,12 @@ class RebalanceStrategyServiceTest {
                 deviationMode = DeviationMode.ABSOLUTE,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.6,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.4,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 buyTheDip = null,
@@ -1462,7 +1500,7 @@ class RebalanceStrategyServiceTest {
                 comfortHigh = 0.5,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.7,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 )
             ),
@@ -1512,7 +1550,7 @@ class RebalanceStrategyServiceTest {
                 comfortLow = 0.5,
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.3,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 )
             ),
@@ -1581,7 +1619,7 @@ class RebalanceStrategyServiceTest {
                     marginRatio = 0.5, marginSpread = 0.0,
                     rebalancePeriod = RebalancePeriodOverride.NONE, comfortHigh = 1.5,
                     buyTheDip = DipSurgeConfig(
-                        scope = scope, allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                        scope = scope, allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                         triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
                         method = ExecutionMethod.Once, limit = 1.5
                     )
@@ -1608,7 +1646,7 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
                     method = ExecutionMethod.Once,
                     limit = 0.5,
@@ -1637,7 +1675,7 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
                     method = ExecutionMethod.Stepped(portions = 3, additionalPct = 0.05),
                     limit = 1.5,
@@ -1671,7 +1709,7 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.4)),
                     method = ExecutionMethod.Once,
                     limit = 1.5,
@@ -1709,7 +1747,7 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     referenceTicker = "VT",
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.4)),
                     method = ExecutionMethod.Once,
@@ -1751,7 +1789,7 @@ class RebalanceStrategyServiceTest {
                     rebalancePeriod = RebalancePeriodOverride.NONE,
                     sellOnSurge = DipSurgeConfig(
                         scope = DipSurgeScope.BASE_PORTFOLIO,
-                        allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                        allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                         portfolioSource = source,
                         triggers = listOf(PriceMoveTrigger.PeakDeviation(0.05)),
                         method = ExecutionMethod.Once,
@@ -1798,7 +1836,7 @@ class RebalanceStrategyServiceTest {
                     rebalancePeriod = RebalancePeriodOverride.NONE,
                     sellOnSurge = DipSurgeConfig(
                         scope = DipSurgeScope.BASE_PORTFOLIO,
-                        allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                        allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                         portfolioSource = source,
                         triggers = listOf(PriceMoveTrigger.PeakDeviation(0.08)),
                         method = ExecutionMethod.Once,
@@ -1840,7 +1878,7 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
                     method = ExecutionMethod.Once,
                     limit = 0.51,
@@ -1873,12 +1911,12 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 1.0,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.75,
                 ),
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.VsRunningAvg(nDays = 1, pct = 0.0)),
                     method = ExecutionMethod.Once,
                     limit = 0.85,
@@ -1916,17 +1954,17 @@ class RebalanceStrategyServiceTest {
                 rebalancePeriod = RebalancePeriodOverride.NONE,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 1.0,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.75,
                 ),
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.8,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.85,
                 ),
                 buyTheDip = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.VsRunningAvg(nDays = 1, pct = 0.0)),
                     method = ExecutionMethod.Once,
                     limit = 0.85,
@@ -1966,7 +2004,7 @@ class RebalanceStrategyServiceTest {
                 useComfortZone = false,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.8,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 buyCooldownAfterSellHighDays = 10,
@@ -2005,7 +2043,7 @@ class RebalanceStrategyServiceTest {
                 useComfortZone = false,
                 sellOnHighMargin = MarginTriggerAction(
                     deviationPct = 0.8,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 drawdownMarginOverride = DrawdownMarginOverrideConfig(
@@ -2052,12 +2090,12 @@ class RebalanceStrategyServiceTest {
                 useComfortZone = false,
                 buyOnLowMargin = MarginTriggerAction(
                     deviationPct = 0.2,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     targetMargin = 0.5,
                 ),
                 sellOnSurge = DipSurgeConfig(
                     scope = DipSurgeScope.BASE_PORTFOLIO,
-                    allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                     triggers = listOf(PriceMoveTrigger.PeakDeviation(0.1)),
                     method = ExecutionMethod.Once,
                     limit = 0.15,
@@ -2115,7 +2153,7 @@ class RebalanceStrategyServiceTest {
                     marginRatio = 0.5, marginSpread = 0.0,
                     rebalancePeriod = RebalancePeriodOverride.NONE, comfortHigh = 1.5,
                     sellOnSurge = DipSurgeConfig(
-                        scope = scope, allocStrategy = MarginRebalanceMode.PROPORTIONAL,
+                        scope = scope, allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
                         triggers = listOf(PriceMoveTrigger.PeakDeviation(0.15)),
                         method = ExecutionMethod.Once, limit = 0.2
                     )

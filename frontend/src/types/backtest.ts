@@ -4,6 +4,7 @@
 
 import { savedConfigToStrategyState, strategyStateToAPI } from './rebalanceStrategy'
 import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
+import { allocOptionsFromHybridStrategies, DEFAULT_HYBRID_ALLOC_STRATEGIES } from '@/lib/allocStrategies'
 
 export interface TickerRow {
   id: string
@@ -69,14 +70,7 @@ export const REBALANCE_OPTIONS = [
   { value: 'YEARLY',         label: 'Yearly' },
 ]
 
-export const MARGIN_MODE_OPTIONS = [
-  { value: 'PROPORTIONAL', label: 'Target Weight' },
-  { value: 'CURRENT_WEIGHT', label: 'Current Weight' },
-  { value: 'FULL_REBALANCE', label: 'Full Rebal' },
-  { value: 'UNDERVALUED_PRIORITY', label: 'Underval First' },
-  { value: 'WATERFALL', label: 'Waterfall' },
-  { value: 'DAILY', label: 'Daily' },
-]
+export const MARGIN_MODE_OPTIONS = allocOptionsFromHybridStrategies(DEFAULT_HYBRID_ALLOC_STRATEGIES, true)
 
 // ── ID generation ─────────────────────────────────────────────────────────────
 

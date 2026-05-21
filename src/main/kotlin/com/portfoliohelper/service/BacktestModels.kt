@@ -17,7 +17,16 @@ enum class RebalanceStrategy {
     YEARLY
 }
 
-enum class MarginRebalanceMode { CURRENT_WEIGHT, PROPORTIONAL, FULL_REBALANCE, UNDERVALUED_PRIORITY, WATERFALL, DAILY }
+enum class MarginRebalanceMode {
+    CURRENT_WEIGHT,
+    PROPORTIONAL,
+    HYBRID_TARGET_WATERFALL,
+    FULL_REBALANCE,
+    HYBRID_WATERFALL_FULL_REBALANCE,
+    UNDERVALUED_PRIORITY,
+    WATERFALL,
+    DAILY
+}
 
 data class TickerWeight(val ticker: String, val weight: Double)
 
@@ -38,8 +47,8 @@ data class MarginConfig(
     val marginSpread: Double,       // annualised fraction e.g. 0.015
     val marginDeviationUpper: Double, // upper breach threshold e.g. 0.05
     val marginDeviationLower: Double, // lower breach threshold e.g. 0.05
-    val upperRebalanceMode: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL,
-    val lowerRebalanceMode: MarginRebalanceMode = MarginRebalanceMode.PROPORTIONAL
+    val upperRebalanceMode: String = MarginRebalanceMode.PROPORTIONAL.name,
+    val lowerRebalanceMode: String = MarginRebalanceMode.PROPORTIONAL.name
 )
 
 data class PortfolioConfig(

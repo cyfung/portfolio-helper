@@ -304,6 +304,26 @@ object PortfolioCalculator {
                 pos.symbol to w * delta
             }
 
+            AllocMode.HYBRID_TARGET_WATERFALL -> averageAllocations(
+                positions.associate { pos -> pos.symbol to (pos.targetWeight / 100.0) * delta },
+                computeWaterfall(positions, prices, totalVal, delta, scaling),
+                positions
+            )
+
+            AllocMode.FULL_REBALANCE -> computeFullRebalance(
+                positions,
+                prices,
+                totalVal,
+                delta,
+                scaling
+            )
+
+            AllocMode.HYBRID_WATERFALL_FULL_REBALANCE -> averageAllocations(
+                computeWaterfall(positions, prices, totalVal, delta, scaling),
+                computeFullRebalance(positions, prices, totalVal, delta, scaling),
+                positions
+            )
+
             AllocMode.UNDERVALUED_PRIORITY -> computeUndervaluedFirst(
                 positions,
                 prices,
@@ -314,6 +334,47 @@ object PortfolioCalculator {
 
             AllocMode.WATERFALL -> computeWaterfall(positions, prices, totalVal, delta, scaling)
         }
+    }
+
+    private fun averageAllocations(
+        a: Map<String, Double>,
+        b: Map<String, Double>,
+        positions: List<Position>
+    ): Map<String, Double> =
+        positions.associate { pos -> pos.symbol to ((a[pos.symbol] ?: 0.0) + (b[pos.symbol] ?: 0.0)) / 2.0 }
+
+    private fun computeFullRebalance(
+        positions: List<Position>,
+        prices: Map<String, YahooQuote>,
+        totalVal: Double,
+        delta: Double,
+        scaling: Int? = null
+    ): Map<String, Double> {
+        val finalTotal = totalVal + delta
+        return positions.associate { pos ->
+            val curVal = positionValueUsd(pos, prices, scaling) ?: 0.0
+            pos.symbol to finalTotal * (pos.targetWeight / 100.0) - curVal
+        }
+    }
+
+    private fun positionValueUsd(
+        pos: Position,
+        prices: Map<String, YahooQuote>,
+        scaling: Int? = null
+    ): Double? {
+        val quote = prices[pos.symbol] ?: return null
+        val currency = quote.currency ?: "USD"
+        val isPence = currency.length == 3 && currency[2].isLowerCase()
+        val normalizedCcy = if (isPence) currency.uppercase() else currency
+
+        val rate = if (normalizedCcy == "USD") 1.0 else {
+            val pair = "${normalizedCcy}USD=X"
+            prices[pair]?.let { it.regularMarketPrice ?: it.previousClose } ?: return null
+        }
+        val multiplier = if (isPence) rate / 100.0 else rate
+        val markPrice = (quote.regularMarketPrice ?: quote.previousClose ?: 0.0) * multiplier
+        val qty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
+        return markPrice * qty
     }
 
     private fun computeUndervaluedFirst(

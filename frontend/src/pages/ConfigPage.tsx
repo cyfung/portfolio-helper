@@ -5,6 +5,12 @@ import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButto
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 import { showConfirm } from '@/components/ConfirmDialog'
 import IbkrConfigDialog, { IbkrConfig } from '@/components/portfolio/IbkrConfigDialog'
+import {
+  BASE_ALLOC_OPTIONS,
+  DEFAULT_HYBRID_ALLOC_STRATEGIES,
+  parseHybridStrategies,
+  type HybridAllocStrategyConfig,
+} from '@/lib/allocStrategies'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +26,7 @@ interface ConfigValues {
   navUpdateInterval?: string
   ibkrRateInterval?: string
   dividendSafeLagDays?: string
+  hybridAllocStrategies?: string
   updateCheckInterval?: string
   autoUpdate?: string
   _version?: string
@@ -50,6 +57,63 @@ interface DeviceInfo {
   name?: string
   lastIp?: string
   pairedAt: number
+}
+
+interface HybridAllocStrategyRow {
+  id: string
+  label: string
+  first: string
+  second: string
+  firstRatio: string
+  secondRatio: string
+}
+
+function strategyToRow(strategy: HybridAllocStrategyConfig): HybridAllocStrategyRow {
+  return {
+    id: strategy.id,
+    label: strategy.label,
+    first: strategy.first,
+    second: strategy.second,
+    firstRatio: String(strategy.firstRatio),
+    secondRatio: String(strategy.secondRatio),
+  }
+}
+
+function rowToStrategy(row: HybridAllocStrategyRow): HybridAllocStrategyConfig {
+  return {
+    id: row.id.trim().toUpperCase().replace(/[^A-Z0-9_]+/g, '_'),
+    label: row.label.trim() || row.id.trim(),
+    first: row.first,
+    second: row.second,
+    firstRatio: Math.max(0, Number(row.firstRatio) || 0),
+    secondRatio: Math.max(0, Number(row.secondRatio) || 0),
+  }
+}
+
+function nextHybridStrategyId(rows: HybridAllocStrategyRow[]) {
+  const used = new Set(rows.map(row => row.id.trim().toUpperCase()))
+  let index = rows.length + 1
+  let id = `HYBRID_CUSTOM_${index}`
+  while (used.has(id)) {
+    index += 1
+    id = `HYBRID_CUSTOM_${index}`
+  }
+  return id
+}
+
+function ensureUniqueStrategyIds(strategies: HybridAllocStrategyConfig[]) {
+  const used = new Set<string>()
+  return strategies.map(strategy => {
+    const baseId = strategy.id
+    let id = baseId
+    let suffix = 2
+    while (used.has(id)) {
+      id = `${baseId}_${suffix}`
+      suffix += 1
+    }
+    used.add(id)
+    return id === strategy.id ? strategy : { ...strategy, id }
+  })
 }
 
 // ── Shared layout helpers ─────────────────────────────────────────────────────
@@ -290,6 +354,9 @@ export default function ConfigPage() {
   const [privacyFocused, setPrivacyFocused] = useState(false)
   const [ibkrConfigSlug, setIbkrConfigSlug] = useState<string | null>(null)
   const [ibkrConfigs, setIbkrConfigs] = useState<Record<string, IbkrConfig>>({})
+  const [hybridStrategies, setHybridStrategies] = useState<HybridAllocStrategyRow[]>(
+    DEFAULT_HYBRID_ALLOC_STRATEGIES.map(strategyToRow)
+  )
   const saveTimers = useRef<Map<string, number>>(new Map())
   const statusTimer = useRef<number>(0)
   const downloadPollRef = useRef<number | null>(null)
@@ -303,6 +370,7 @@ export default function ConfigPage() {
       .then(r => r.json())
       .then((data: ConfigValues) => {
         setCfg(data)
+        setHybridStrategies(parseHybridStrategies(data.hybridAllocStrategies).map(strategyToRow))
         setLoaded(true)
         setHasUpdate(data._hasUpdate === 'true')
         setLatestVersion(data._latestVersion ?? '')
@@ -363,6 +431,47 @@ export default function ConfigPage() {
       }
     }, 600))
   }, [])
+
+  function saveHybridStrategies(rows = hybridStrategies) {
+    const strategies = ensureUniqueStrategyIds(rows.map(rowToStrategy).filter(row => row.id && row.first && row.second))
+    const value = JSON.stringify(strategies)
+    setCfg(prev => ({ ...prev, hybridAllocStrategies: value }))
+    saveField('hybridAllocStrategies', value)
+  }
+
+  function commitHybridStrategies(rows: HybridAllocStrategyRow[]) {
+    setHybridStrategies(rows)
+    saveHybridStrategies(rows)
+  }
+
+  function updateHybridStrategy(index: number, patch: Partial<HybridAllocStrategyRow>) {
+    commitHybridStrategies(hybridStrategies.map((row, i) => i === index ? { ...row, ...patch } : row))
+  }
+
+  function addHybridStrategy() {
+    const id = nextHybridStrategyId(hybridStrategies)
+    commitHybridStrategies([
+      ...hybridStrategies,
+      {
+        id,
+        label: `Hybrid Custom ${hybridStrategies.length + 1}`,
+        first: 'PROPORTIONAL',
+        second: 'WATERFALL',
+        firstRatio: '1',
+        secondRatio: '1',
+      },
+    ])
+  }
+
+  function removeHybridStrategy(index: number) {
+    commitHybridStrategies(hybridStrategies.filter((_, i) => i !== index))
+  }
+
+  function restoreHybridDefaults() {
+    const rows = DEFAULT_HYBRID_ALLOC_STRATEGIES.map(strategyToRow)
+    setHybridStrategies(rows)
+    saveHybridStrategies(rows)
+  }
 
   function refreshIbkrConfig(slug: string) {
     fetch(`/api/portfolio/${slug}/ibkr-config`)
@@ -428,6 +537,7 @@ export default function ConfigPage() {
     openBrowser: 'true', navUpdateInterval: '',
     exchangeSuffixes: 'SBF=.PA,LSEETF=.L', twsHost: '127.0.0.1', twsPort: '7496',
     ibkrRateInterval: '3600', autoUpdate: 'true', updateCheckInterval: '86400',
+    hybridAllocStrategies: '',
   }
 
   async function handleRestoreDefaults() {
@@ -687,6 +797,75 @@ export default function ConfigPage() {
         </ConfigSection>
 
         {/* ── Server ──────────────────────────────────────────────────── */}
+        <ConfigSection title="Allocation Strategies">
+          <table className="portfolio-config-table hybrid-strategy-table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Strategy 1</th>
+                <th>Ratio 1</th>
+                <th>Strategy 2</th>
+                <th>Ratio 2</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {hybridStrategies.map((row, index) => (
+                <tr key={`${row.id}-${index}`}>
+                  <td className="hybrid-label-cell">
+                    <input
+                      type="text"
+                      value={row.label}
+                      onChange={e => updateHybridStrategy(index, { label: e.target.value })}
+                    />
+                  </td>
+                  <td className="hybrid-strategy-cell">
+                    <select value={row.first} onChange={e => updateHybridStrategy(index, { first: e.target.value })}>
+                      {BASE_ALLOC_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="hybrid-ratio-cell">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={row.firstRatio}
+                      onChange={e => updateHybridStrategy(index, { firstRatio: e.target.value })}
+                    />
+                  </td>
+                  <td className="hybrid-strategy-cell">
+                    <select value={row.second} onChange={e => updateHybridStrategy(index, { second: e.target.value })}>
+                      {BASE_ALLOC_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="hybrid-ratio-cell">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={row.secondRatio}
+                      onChange={e => updateHybridStrategy(index, { secondRatio: e.target.value })}
+                    />
+                  </td>
+                  <td className="portfolio-config-table-actions-col">
+                    <button
+                      type="button"
+                      className="management-table-remove-btn"
+                      onClick={() => removeHybridStrategy(index)}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="add-portfolio-form">
+            <button type="button" className="config-restore-btn" onClick={addHybridStrategy}>Add Strategy</button>
+            <button type="button" className="config-restore-btn" onClick={restoreHybridDefaults}>Restore Defaults</button>
+          </div>
+        </ConfigSection>
+
         <ConfigSection title="Server">
           <ConfigField label="Open Browser on Start" description="Automatically open the browser when the app starts." inputId="open-browser" badge="next-launch">
             <input type="checkbox" id="open-browser" defaultChecked={cfg.openBrowser !== 'false'} onChange={e => saveField('openBrowser', String(e.target.checked))} />

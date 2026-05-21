@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import okhttp3.OkHttpClient
@@ -117,20 +118,13 @@ object BacktestService {
                 )
             }
 
-            fun modeAbbr(m: MarginRebalanceMode) = when (m) {
-                MarginRebalanceMode.CURRENT_WEIGHT -> "Cur Wt"
-                MarginRebalanceMode.PROPORTIONAL -> "Tgt Wt"
-                MarginRebalanceMode.FULL_REBALANCE -> "Full"
-                MarginRebalanceMode.UNDERVALUED_PRIORITY -> "UVal"
-                MarginRebalanceMode.WATERFALL -> "WaterFall"
-                MarginRebalanceMode.DAILY -> "Daily"
-            }
+            fun modeAbbr(m: String) = HybridAllocStrategyRegistry.modeLabel(m)
 
             val marginCurves = pConfig.marginStrategies.indices.toList().parallelStream().map { mIdx ->
                 val mc = pConfig.marginStrategies[mIdx]
                 val marginResult =
-                    if (mc.upperRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT ||
-                        mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT
+                    if (mc.upperRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT.name ||
+                        mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT.name
                     )
                         applyMarginProportional(
                             pConfig, seriesMap, globalDates, effrxSeries, mc, request.startingBalance, request.cashflow
@@ -826,8 +820,8 @@ object BacktestService {
             marginSpread = def.spread,
             marginDeviationUpper = 0.0,
             marginDeviationLower = 0.0,
-            upperRebalanceMode = MarginRebalanceMode.DAILY,
-            lowerRebalanceMode = MarginRebalanceMode.DAILY
+            upperRebalanceMode = MarginRebalanceMode.DAILY.name,
+            lowerRebalanceMode = MarginRebalanceMode.DAILY.name
         )
         val result = applyMarginProportional(letfConfig, componentSeriesMap, dates, effrx, mc)
         val rawSeries = dates.zip(result.values).associate { (date, value) -> date to value }
@@ -1306,6 +1300,113 @@ object BacktestService {
         }
     }
 
+    fun computeAllocationDeltas(
+        tickers: List<String>,
+        holdings: Map<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double,
+        mode: String
+    ): Map<String, Double> {
+        val hybrid = HybridAllocStrategyRegistry.find(mode)
+        if (hybrid != null) {
+            return weightedAverageAllocationDeltas(
+                computeAllocationDeltas(tickers, holdings, targetWeights, delta, hybrid.first),
+                computeAllocationDeltas(tickers, holdings, targetWeights, delta, hybrid.second),
+                tickers,
+                hybrid.firstRatio,
+                hybrid.secondRatio,
+            )
+        }
+        val baseMode = HybridAllocStrategyRegistry.baseMode(mode) ?: MarginRebalanceMode.PROPORTIONAL
+        return computeBaseAllocationDeltas(tickers, holdings, targetWeights, delta, baseMode)
+    }
+
+    private fun computeBaseAllocationDeltas(
+        tickers: List<String>,
+        holdings: Map<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double,
+        mode: MarginRebalanceMode
+    ): Map<String, Double> =
+        when (mode) {
+            MarginRebalanceMode.PROPORTIONAL,
+            MarginRebalanceMode.HYBRID_TARGET_WATERFALL,
+            MarginRebalanceMode.HYBRID_WATERFALL_FULL_REBALANCE,
+            MarginRebalanceMode.DAILY ->
+                proportionalAllocationDeltas(tickers, targetWeights, delta)
+
+            MarginRebalanceMode.CURRENT_WEIGHT -> {
+                val total = tickers.sumOf { holdings[it] ?: 0.0 }
+                if (total == 0.0) tickers.associateWith { 0.0 }
+                else tickers.associateWith { delta * ((holdings[it] ?: 0.0) / total) }
+            }
+
+            MarginRebalanceMode.FULL_REBALANCE ->
+                fullRebalanceAllocationDeltas(tickers, holdings, targetWeights, delta)
+
+            MarginRebalanceMode.UNDERVALUED_PRIORITY ->
+                allocationDeltasViaMutable(tickers, holdings, targetWeights, delta, ::computeUndervalueFirst)
+
+            MarginRebalanceMode.WATERFALL ->
+                allocationDeltasViaMutable(tickers, holdings, targetWeights, delta, ::computeWaterfall)
+        }
+
+    fun applyAllocationMode(
+        tickers: List<String>,
+        holdings: MutableMap<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double,
+        mode: String
+    ) {
+        val deltas = computeAllocationDeltas(tickers, holdings, targetWeights, delta, mode)
+        for (ticker in tickers) {
+            holdings[ticker] = (holdings[ticker] ?: 0.0) + (deltas[ticker] ?: 0.0)
+        }
+    }
+
+    private fun proportionalAllocationDeltas(
+        tickers: List<String>,
+        targetWeights: Map<String, Double>,
+        delta: Double
+    ): Map<String, Double> =
+        tickers.associateWith { delta * (targetWeights[it] ?: 0.0) }
+
+    private fun fullRebalanceAllocationDeltas(
+        tickers: List<String>,
+        holdings: Map<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double
+    ): Map<String, Double> {
+        val finalTotal = tickers.sumOf { holdings[it] ?: 0.0 } + delta
+        return tickers.associateWith { finalTotal * (targetWeights[it] ?: 0.0) - (holdings[it] ?: 0.0) }
+    }
+
+    private fun weightedAverageAllocationDeltas(
+        a: Map<String, Double>,
+        b: Map<String, Double>,
+        tickers: List<String>,
+        aRatio: Double,
+        bRatio: Double
+    ): Map<String, Double> {
+        val total = aRatio + bRatio
+        val safeA = if (total > 0.0) aRatio else 1.0
+        val safeB = if (total > 0.0) bRatio else 1.0
+        val safeTotal = safeA + safeB
+        return tickers.associateWith { ((a[it] ?: 0.0) * safeA + (b[it] ?: 0.0) * safeB) / safeTotal }
+    }
+
+    private fun allocationDeltasViaMutable(
+        tickers: List<String>,
+        holdings: Map<String, Double>,
+        targetWeights: Map<String, Double>,
+        delta: Double,
+        allocator: (List<String>, MutableMap<String, Double>, Map<String, Double>, Double) -> Unit
+    ): Map<String, Double> {
+        val temp = tickers.associateWith { holdings[it] ?: 0.0 }.toMutableMap()
+        allocator(tickers, temp, targetWeights, delta)
+        return tickers.associateWith { (temp[it] ?: 0.0) - (holdings[it] ?: 0.0) }
+    }
+
     /**
      * Proportional margin rebalance mode: when a margin deviation triggers, only the
      * delta change in total exposure is distributed across tickers by target weight.
@@ -1338,7 +1439,7 @@ object BacktestService {
 
         val upperThreshold = mc.marginRatio + mc.marginDeviationUpper
         val lowerThreshold = mc.marginRatio - mc.marginDeviationLower
-        val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY
+        val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
         val returnRatios = buildReturnRatios(tickers, seriesMap, dates)
         val dailyLoanRates = buildDailyLoanRates(dates, effrx, dailySpread)
         var previousMarginRatio = targetRatio
@@ -1399,46 +1500,7 @@ object BacktestService {
                 if (deviationBreach) {
                     val newBorrowed = equity * targetRatio
                     val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
-                    when (mode) {
-                        MarginRebalanceMode.FULL_REBALANCE -> {
-                            // Full rebalance: reset all holdings to target weights at new total exposure
-                            val newTotalExposure = equity + newBorrowed
-                            for (ticker in tickers) {
-                                holdings[ticker] = newTotalExposure * (targetWeights[ticker] ?: 0.0)
-                            }
-                        }
-
-                        MarginRebalanceMode.WATERFALL -> {
-                            val delta = newBorrowed - borrowed
-                            computeWaterfall(tickers, holdings, targetWeights, delta)
-                        }
-
-                        MarginRebalanceMode.UNDERVALUED_PRIORITY -> {
-                            val delta = newBorrowed - borrowed
-                            computeUndervalueFirst(tickers, holdings, targetWeights, delta)
-                        }
-
-                        MarginRebalanceMode.PROPORTIONAL -> {
-                            val delta = newBorrowed - borrowed
-                            for (ticker in tickers)
-                                holdings[ticker] =
-                                    (holdings[ticker] ?: 0.0) + delta * (targetWeights[ticker]
-                                        ?: 0.0)
-                        }
-
-                        MarginRebalanceMode.CURRENT_WEIGHT -> {
-                            // Treat portfolio as a black box: buy/sell proportionally by current value
-                            val delta = newBorrowed - borrowed
-                            val totalHoldings = holdings.values.sum()
-                            if (totalHoldings != 0.0)
-                                for (ticker in tickers)
-                                    holdings[ticker] =
-                                        (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
-                        }
-
-                        MarginRebalanceMode.DAILY -> { /* handled above */
-                        }
-                    }
+                    applyAllocationMode(tickers, holdings, targetWeights, newBorrowed - borrowed, mode)
                     borrowed = newBorrowed
                 }
             }

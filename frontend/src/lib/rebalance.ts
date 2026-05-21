@@ -2,6 +2,7 @@
 // All functions are pure (no side effects) for use in React renders.
 
 import type { AllocMode } from '@/types/portfolio'
+import { DEFAULT_HYBRID_ALLOC_STRATEGIES, type HybridAllocStrategyConfig } from '@/lib/allocStrategies'
 
 export interface StockForCompute {
   symbol: string
@@ -169,6 +170,45 @@ function computeCurrentWeight(
 
 // ── Main compute ──────────────────────────────────────────────────────────────
 
+function computeFullRebalance(
+  eligible: StockForCompute[],
+  totalStockValue: number,
+  delta: number
+): Record<string, number> {
+  const alloc: Record<string, number> = {}
+  const finalTotal = totalStockValue + delta
+  const totalWeight = eligible.reduce((s, e) => s + e.targetWeight, 0)
+  if (totalWeight === 0) return alloc
+  for (const s of eligible) {
+    alloc[s.symbol] = finalTotal * (s.targetWeight / totalWeight) - s.positionValueUsd
+  }
+  return alloc
+}
+
+function ratio(value: number | undefined): number {
+  return Number.isFinite(value) && value! >= 0 ? value! : 1
+}
+
+function weightedAverageAllocs(
+  a: Record<string, number>,
+  b: Record<string, number>,
+  eligible: StockForCompute[],
+  aRatio: number | undefined,
+  bRatio: number | undefined,
+): Record<string, number> {
+  const alloc: Record<string, number> = {}
+  const rawA = ratio(aRatio)
+  const rawB = ratio(bRatio)
+  const total = rawA + rawB
+  const safeA = total > 0 ? rawA : 1
+  const safeB = total > 0 ? rawB : 1
+  const safeTotal = safeA + safeB
+  for (const s of eligible) {
+    alloc[s.symbol] = ((a[s.symbol] ?? 0) * safeA + (b[s.symbol] ?? 0) * safeB) / safeTotal
+  }
+  return alloc
+}
+
 export function computeDisplay(
   stocks: StockForCompute[],
   rebalTargetUsd: number | null,
@@ -179,6 +219,7 @@ export function computeDisplay(
   marginUsd: number,
   marginTargetUsd: number | null = null,
   serverAllocDollars?: Record<string, number>,  // from rebal-alloc SSE (waterfall)
+  hybridStrategies: HybridAllocStrategyConfig[] = DEFAULT_HYBRID_ALLOC_STRATEGIES,
 ): ComputeResult {
   const rebalDollars: Record<string, number> = {}
   const rebalQty: Record<string, number> = {}
@@ -212,16 +253,33 @@ export function computeDisplay(
 
   // Alloc columns: how to deploy the delta using the chosen strategy
   if (hasTargetWeights && Math.abs(delta) > 0.01) {
-    const sign = delta >= 0 ? 1 : -1
     const eligible = stocks.filter(s => s.targetWeight > 0)
     const mode = delta >= 0 ? allocAddMode : allocReduceMode
 
     let rawAlloc: Record<string, number> = {}
 
-    if (mode === 'WATERFALL') {
-      // Group portfolios: use GA result from server SSE; normal portfolios: compute client-side
-      if (serverAllocDollars) rawAlloc = { ...serverAllocDollars }
-      else rawAlloc = computeWaterfall(eligible, stockGross, delta)
+    const hybrid = hybridStrategies.find(s => s.id === mode)
+    const computeBase = (baseMode: string): Record<string, number> => {
+      if (baseMode === 'WATERFALL') return computeWaterfall(eligible, stockGross, delta)
+      if (baseMode === 'FULL_REBALANCE') return computeFullRebalance(eligible, stockGross, delta)
+      if (baseMode === 'UNDERVALUED_PRIORITY') return computeUndervalueFirst(eligible, stockGross, delta)
+      if (baseMode === 'CURRENT_WEIGHT') return computeCurrentWeight(eligible, stockGross, delta)
+      return computeProportional(eligible, delta)
+    }
+
+    if (serverAllocDollars && (mode === 'WATERFALL' || hybrid)) {
+      // Group portfolios: use the server GA/SSE result for the selected waterfall-based mode.
+      rawAlloc = { ...serverAllocDollars }
+    } else if (hybrid) {
+      rawAlloc = weightedAverageAllocs(
+        computeBase(hybrid.first),
+        computeBase(hybrid.second),
+        eligible,
+        hybrid.firstRatio,
+        hybrid.secondRatio,
+      )
+    } else if (mode === 'FULL_REBALANCE') {
+      rawAlloc = computeFullRebalance(eligible, stockGross, delta)
     } else if (mode === 'UNDERVALUED_PRIORITY') {
       rawAlloc = computeUndervalueFirst(eligible, stockGross, delta)
     } else if (mode === 'CURRENT_WEIGHT') {

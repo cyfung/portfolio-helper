@@ -34,6 +34,8 @@ export interface PortfolioConfig {
   dividendStartDate: string
 }
 
+import type { HybridAllocStrategyConfig } from '@/lib/allocStrategies'
+
 export interface AppConfig {
   version: string
   showStockDisplayCurrency: boolean
@@ -46,6 +48,7 @@ export interface AppConfig {
   autoUpdate: boolean
   privacyScalePct: string
   privacyScaleEnabled: boolean
+  hybridAllocStrategies: HybridAllocStrategyConfig[]
 }
 
 export interface PortfolioData {
@@ -164,11 +167,7 @@ export type SseEvent =
   | GroupAllocEvent
   | { type: 'reload' }
 
-export type AllocMode =
-  | 'PROPORTIONAL'
-  | 'CURRENT_WEIGHT'
-  | 'UNDERVALUED_PRIORITY'
-  | 'WATERFALL'
+export type AllocMode = string
 
 export type SseStatus = 'connecting' | 'live' | 'error'
 
