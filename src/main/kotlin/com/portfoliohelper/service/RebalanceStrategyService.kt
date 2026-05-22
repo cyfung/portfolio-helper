@@ -579,17 +579,35 @@ object RebalanceStrategyService {
     var deferredMarginRebalanceIndex: Int? = null
     var deferredDrawdownOverrideRebalanceIndex: Int? = null
 
-    data class DrawdownMarginTriggerRuntime(
-        val config: DrawdownMarginTriggerAction,
-        val key: DipSurgeKey.Portfolio,
-        var peak: Double,
+    data class DrawdownMarginTriggerTierRuntime(
+        val config: DrawdownMarginTriggerTier,
         var activeReferencePeak: Double = Double.NaN,
         var active: Boolean = false,
     )
 
+    data class DrawdownMarginTriggerRuntime(
+        val config: DrawdownMarginTriggerAction,
+        val key: DipSurgeKey.Portfolio,
+        var peak: Double,
+        val tiers: List<DrawdownMarginTriggerTierRuntime>,
+    ) {
+      fun activeTier(): DrawdownMarginTriggerTier? =
+          tiers
+              .filter { it.active }
+              .maxByOrNull { it.config.enterDrawdownPct }
+              ?.config
+    }
+
     fun DrawdownMarginTriggerAction.toRuntime(): DrawdownMarginTriggerRuntime {
       val key = DipSurgeKey.Portfolio(portfolioSource, normalizedReferenceTicker())
-      return DrawdownMarginTriggerRuntime(this, key, seededDrawdownPeak(key))
+      return DrawdownMarginTriggerRuntime(
+          this,
+          key,
+          seededDrawdownPeak(key),
+          effectiveTiers()
+              .sortedWith(compareBy<DrawdownMarginTriggerTier> { it.enterDrawdownPct }.thenBy { it.exitDrawdownPct })
+              .map { DrawdownMarginTriggerTierRuntime(it) },
+      )
     }
 
     val drawdownBuyLowRuntime = strategy.drawdownBuyOnLowMargin?.toRuntime()
@@ -756,27 +774,29 @@ object RebalanceStrategyService {
         if (runtime.peak.isNaN() || referenceValue > runtime.peak) {
           runtime.peak = referenceValue
         }
-        if (runtime.active) {
-          val exitPeak =
-              if (!runtime.activeReferencePeak.isNaN() && runtime.activeReferencePeak > 0.0) {
-                runtime.activeReferencePeak
-              } else {
-                runtime.peak
-              }
-          val exitDrawdown =
-              if (exitPeak > 0.0) (exitPeak - referenceValue) / exitPeak
-              else 0.0
-          if (exitDrawdown <= runtime.config.exitDrawdownPct) {
-            runtime.active = false
-            runtime.activeReferencePeak = Double.NaN
-          }
-        } else {
-          val enterDrawdown =
-              if (runtime.peak > 0.0) (runtime.peak - referenceValue) / runtime.peak
-              else 0.0
-          if (enterDrawdown >= runtime.config.enterDrawdownPct.coerceAtLeast(0.0)) {
-            runtime.active = true
-            runtime.activeReferencePeak = runtime.peak
+        for (tier in runtime.tiers) {
+          if (tier.active) {
+            val exitPeak =
+                if (!tier.activeReferencePeak.isNaN() && tier.activeReferencePeak > 0.0) {
+                  tier.activeReferencePeak
+                } else {
+                  runtime.peak
+                }
+            val exitDrawdown =
+                if (exitPeak > 0.0) (exitPeak - referenceValue) / exitPeak
+                else 0.0
+            if (exitDrawdown <= tier.config.exitDrawdownPct) {
+              tier.active = false
+              tier.activeReferencePeak = Double.NaN
+            }
+          } else {
+            val enterDrawdown =
+                if (runtime.peak > 0.0) (runtime.peak - referenceValue) / runtime.peak
+                else 0.0
+            if (enterDrawdown >= tier.config.enterDrawdownPct.coerceAtLeast(0.0)) {
+              tier.active = true
+              tier.activeReferencePeak = runtime.peak
+            }
           }
         }
       }
@@ -1002,8 +1022,8 @@ object RebalanceStrategyService {
 
           val effectiveSellHigh =
               drawdownSellHighRuntime
-                  ?.takeIf { it.active }
-                  ?.let { MarginTriggerAction(it.config.triggerMargin, it.config.allocStrategy, it.config.targetMargin) }
+                  ?.activeTier()
+                  ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
                   ?: strategy.sellOnHighMargin
           effectiveSellHigh
               ?.takeIf { it.deviationPct > 0 }
@@ -1024,8 +1044,8 @@ object RebalanceStrategyService {
 
           val effectiveBuyLow =
               drawdownBuyLowRuntime
-                  ?.takeIf { it.active }
-                  ?.let { MarginTriggerAction(it.config.triggerMargin, it.config.allocStrategy, it.config.targetMargin) }
+                  ?.activeTier()
+                  ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
                   ?: strategy.buyOnLowMargin
           effectiveBuyLow
               ?.takeIf { it.deviationPct > 0 }

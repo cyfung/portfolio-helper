@@ -63,6 +63,18 @@ export interface DrawdownMarginTriggerState {
   allocStrategy: string
   restorePointIndex: string
   restoreMargin: string
+  tiers: DrawdownMarginTriggerTierState[]
+}
+
+export interface DrawdownMarginTriggerTierState {
+  id: string
+  enterDrawdownPct: string
+  exitDrawdownPct: string
+  triggerPointIndex: string
+  triggerMargin: string
+  allocStrategy: string
+  restorePointIndex: string
+  restoreMargin: string
 }
 
 export interface RebalStrategyState {
@@ -95,7 +107,6 @@ export interface RebalStrategyState {
   buyLowAllocStrategy: string
   buyLowRestorePointIndex: string      // index into marginPoints[] for restore target; default '2'
   buyLowRestoreMargin: string
-  drawdownSellOnHighMargin: DrawdownMarginTriggerState
   drawdownBuyOnLowMargin: DrawdownMarginTriggerState
   buyTheDip: DipSurgeScopeState
   sellOnSurge: DipSurgeScopeState
@@ -195,11 +206,9 @@ export function emptyDrawdownMarginOverride(): DrawdownMarginOverrideState {
   }
 }
 
-export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownMarginTriggerState {
+export function emptyDrawdownMarginTriggerTier(direction: 'buy' | 'sell'): DrawdownMarginTriggerTierState {
   return {
-    enabled: false,
-    portfolioSource: 'REFERENCE_PORTFOLIO',
-    referenceTicker: '',
+    id: newId(),
     enterDrawdownPct: '10',
     exitDrawdownPct: '5',
     triggerPointIndex: direction === 'buy' ? '0' : '4',
@@ -207,6 +216,23 @@ export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownM
     allocStrategy: 'PROPORTIONAL',
     restorePointIndex: '2',
     restoreMargin: '',
+  }
+}
+
+export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownMarginTriggerState {
+  const tier = emptyDrawdownMarginTriggerTier(direction)
+  return {
+    enabled: false,
+    portfolioSource: 'REFERENCE_PORTFOLIO',
+    referenceTicker: '',
+    enterDrawdownPct: tier.enterDrawdownPct,
+    exitDrawdownPct: tier.exitDrawdownPct,
+    triggerPointIndex: tier.triggerPointIndex,
+    triggerMargin: tier.triggerMargin,
+    allocStrategy: tier.allocStrategy,
+    restorePointIndex: tier.restorePointIndex,
+    restoreMargin: tier.restoreMargin,
+    tiers: [tier],
   }
 }
 
@@ -241,7 +267,6 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     buyLowAllocStrategy: 'PROPORTIONAL',
     buyLowRestorePointIndex: '2',
     buyLowRestoreMargin: '',
-    drawdownSellOnHighMargin: emptyDrawdownMarginTrigger('sell'),
     drawdownBuyOnLowMargin: emptyDrawdownMarginTrigger('buy'),
     buyTheDip: emptyDipSurgeScopes(),
     sellOnSurge: emptyDipSurgeScopes(),
@@ -364,12 +389,8 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
   if (!configValue) return base
   const portfolioSource = configValue.portfolioSource ?? base.portfolioSource
   const legacyDrawdownPct = configValue.drawdownPct ?? configValue.enterDrawdownPct
-  return {
-    ...base,
-    ...configValue,
-    enabled: configValue.enabled ?? false,
-    portfolioSource,
-    referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
+  const legacyTier = {
+    id: newId(),
     enterDrawdownPct: configValue.enterDrawdownPct ?? configValue.drawdownPct ?? base.enterDrawdownPct,
     exitDrawdownPct: configValue.exitDrawdownPct ?? legacyDrawdownPct ?? base.exitDrawdownPct,
     triggerPointIndex: configValue.triggerPointIndex ?? base.triggerPointIndex,
@@ -377,6 +398,34 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
     allocStrategy: configValue.allocStrategy ?? base.allocStrategy,
     restorePointIndex: configValue.restorePointIndex ?? base.restorePointIndex,
     restoreMargin: configValue.restoreMargin ?? '',
+  }
+  const tiers = Array.isArray(configValue.tiers) && configValue.tiers.length > 0
+    ? configValue.tiers.map((tier: any) => ({
+      id: tier.id ?? newId(),
+      enterDrawdownPct: tier.enterDrawdownPct ?? tier.drawdownPct ?? legacyTier.enterDrawdownPct,
+      exitDrawdownPct: tier.exitDrawdownPct ?? tier.drawdownPct ?? legacyTier.exitDrawdownPct,
+      triggerPointIndex: tier.triggerPointIndex ?? legacyTier.triggerPointIndex,
+      triggerMargin: tier.triggerMargin ?? '',
+      allocStrategy: tier.allocStrategy ?? legacyTier.allocStrategy,
+      restorePointIndex: tier.restorePointIndex ?? legacyTier.restorePointIndex,
+      restoreMargin: tier.restoreMargin ?? '',
+    }))
+    : [legacyTier]
+  const firstTier = tiers[0] ?? legacyTier
+  return {
+    ...base,
+    ...configValue,
+    enabled: configValue.enabled ?? false,
+    portfolioSource,
+    referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
+    enterDrawdownPct: firstTier.enterDrawdownPct,
+    exitDrawdownPct: firstTier.exitDrawdownPct,
+    triggerPointIndex: firstTier.triggerPointIndex,
+    triggerMargin: firstTier.triggerMargin,
+    allocStrategy: firstTier.allocStrategy,
+    restorePointIndex: firstTier.restorePointIndex,
+    restoreMargin: firstTier.restoreMargin,
+    tiers,
   }
 }
 
@@ -387,6 +436,53 @@ export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategy
 export function normalizeStrategySpreadInput(s: RebalStrategyState): RebalStrategyState {
   const marginSpread = normalizeNumberInput(s.marginSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
   return marginSpread === s.marginSpread ? s : { ...s, marginSpread }
+}
+
+function drawdownTriggerTiers(d: DrawdownMarginTriggerState | undefined, direction: 'buy' | 'sell') {
+  const fallback = emptyDrawdownMarginTrigger(direction)
+  const cfg = d ?? fallback
+  return (cfg.tiers?.length ? cfg.tiers : [{
+    id: 'legacy',
+    enterDrawdownPct: cfg.enterDrawdownPct,
+    exitDrawdownPct: cfg.exitDrawdownPct,
+    triggerPointIndex: cfg.triggerPointIndex,
+    triggerMargin: cfg.triggerMargin,
+    allocStrategy: cfg.allocStrategy,
+    restorePointIndex: cfg.restorePointIndex,
+    restoreMargin: cfg.restoreMargin,
+  }])
+}
+
+export function drawdownMarginTriggerIssues(
+  d: DrawdownMarginTriggerState | undefined,
+  direction: 'buy' | 'sell',
+  label: string,
+): string[] {
+  if (!d?.enabled) return []
+  const tiers = drawdownTriggerTiers(d, direction)
+  if (tiers.length === 0) return [`${label}: add at least one tier.`]
+  const issues: string[] = []
+  let prevEnter: number | null = null
+  let prevExit: number | null = null
+  tiers.forEach((tier, i) => {
+    const n = i + 1
+    const enter = parseFloat(tier.enterDrawdownPct)
+    const exit = parseFloat(tier.exitDrawdownPct)
+    if (!Number.isFinite(enter) || enter < 0) issues.push(`${label} tier ${n}: enter DD must be 0 or higher.`)
+    if (!Number.isFinite(exit)) issues.push(`${label} tier ${n}: exit DD must be a number.`)
+    if (Number.isFinite(enter) && Number.isFinite(exit) && exit > enter) {
+      issues.push(`${label} tier ${n}: exit DD cannot be deeper than enter DD.`)
+    }
+    if (prevEnter != null && Number.isFinite(enter) && enter <= prevEnter) {
+      issues.push(`${label} tier ${n}: enter DD must be greater than the previous tier.`)
+    }
+    if (prevExit != null && Number.isFinite(exit) && exit < prevExit) {
+      issues.push(`${label} tier ${n}: exit DD must be equal to or greater than the previous tier.`)
+    }
+    if (Number.isFinite(enter)) prevEnter = enter
+    if (Number.isFinite(exit)) prevExit = exit
+  })
+  return issues
 }
 
 export function savedConfigToStrategyState(config: any, name: string): RebalStrategyState {
@@ -405,7 +501,6 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
     sellHighTriggerMargin: config.sellHighTriggerMargin ?? '',
     buyLowTriggerPointIndex: config.buyLowTriggerPointIndex ?? '0',
     buyLowTriggerMargin: config.buyLowTriggerMargin ?? '',
-    drawdownSellOnHighMargin: normalizeDrawdownMarginTrigger(config.drawdownSellOnHighMargin, 'sell'),
     drawdownBuyOnLowMargin: normalizeDrawdownMarginTrigger(config.drawdownBuyOnLowMargin, 'buy'),
     useComfortZone: config.useComfortZone ?? true,
     buyTheDip: normalizeDipSurgeScopes(config.buyTheDip),
@@ -449,15 +544,26 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     if (!cfg.enabled) return null
     const portfolioSource = cfg.portfolioSource || 'REFERENCE_PORTFOLIO'
     const referenceTicker = (cfg.referenceTicker ?? '').trim().toUpperCase()
+    const tiers = drawdownTriggerTiers(cfg, direction)
+      .map(tier => ({
+        enterDrawdownPct: pctAllowZero(tier.enterDrawdownPct, 10),
+        exitDrawdownPct: pctAllowZero(tier.exitDrawdownPct, 5),
+        triggerMargin: marginTriggerPct(tier.triggerMargin, tier.triggerPointIndex, direction === 'buy' ? 0 : 4),
+        allocStrategy: tier.allocStrategy || 'PROPORTIONAL',
+        targetMargin: customOrPointPct(tier.restoreMargin, tier.restorePointIndex, 0, 2),
+      }))
+      .sort((a, b) => a.enterDrawdownPct - b.enterDrawdownPct)
+    const firstTier = tiers[0]
     return {
       enabled: true,
       portfolioSource,
       referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
-      enterDrawdownPct: pctAllowZero(cfg.enterDrawdownPct, 10),
-      exitDrawdownPct: pctAllowZero(cfg.exitDrawdownPct, 5),
-      triggerMargin: marginTriggerPct(cfg.triggerMargin, cfg.triggerPointIndex, direction === 'buy' ? 0 : 4),
-      allocStrategy: cfg.allocStrategy || 'PROPORTIONAL',
-      targetMargin: customOrPointPct(cfg.restoreMargin, cfg.restorePointIndex, 0, 2),
+      enterDrawdownPct: firstTier?.enterDrawdownPct ?? pctAllowZero(cfg.enterDrawdownPct, 10),
+      exitDrawdownPct: firstTier?.exitDrawdownPct ?? pctAllowZero(cfg.exitDrawdownPct, 5),
+      triggerMargin: firstTier?.triggerMargin ?? marginTriggerPct(cfg.triggerMargin, cfg.triggerPointIndex, direction === 'buy' ? 0 : 4),
+      allocStrategy: firstTier?.allocStrategy ?? cfg.allocStrategy ?? 'PROPORTIONAL',
+      targetMargin: firstTier?.targetMargin ?? customOrPointPct(cfg.restoreMargin, cfg.restorePointIndex, 0, 2),
+      tiers,
     }
   }
 
@@ -508,7 +614,6 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
         targetMargin: customOrPointPct(s.buyLowRestoreMargin, s.buyLowRestorePointIndex),
       }
       : null,
-    drawdownSellOnHighMargin: serializeDrawdownMarginTrigger(s.drawdownSellOnHighMargin, 'sell'),
     drawdownBuyOnLowMargin: serializeDrawdownMarginTrigger(s.drawdownBuyOnLowMargin, 'buy'),
     buyTheDip: serializeDipSurgeScopes(s.buyTheDip, points),
     sellOnSurge: serializeDipSurgeScopes(s.sellOnSurge, points),

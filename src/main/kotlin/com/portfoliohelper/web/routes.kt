@@ -283,23 +283,38 @@ private fun parseDrawdownMarginTriggerAction(obj: JsonObject): DrawdownMarginTri
     val portfolioSource = runCatching {
         PortfolioTriggerSource.valueOf(obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO")
     }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
+    fun parseTier(tierObj: JsonObject): DrawdownMarginTriggerTier =
+        DrawdownMarginTriggerTier(
+            enterDrawdownPct = (tierObj["enterDrawdownPct"]?.jsonPrimitive?.doubleOrNull
+                ?: tierObj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
+                ?: 0.10).coerceAtLeast(0.0),
+            exitDrawdownPct = (tierObj["exitDrawdownPct"]?.jsonPrimitive?.doubleOrNull
+                ?: tierObj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
+                ?: 0.05),
+            triggerMargin = (tierObj["triggerMargin"]?.jsonPrimitive?.doubleOrNull
+                ?: tierObj["deviationPct"]?.jsonPrimitive?.doubleOrNull
+                ?: 0.0).coerceAtLeast(0.0),
+            allocStrategy = parseAllocStrategyId(tierObj["allocStrategy"]?.jsonPrimitive?.contentOrNull),
+            targetMargin = (tierObj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5).coerceAtLeast(0.0),
+        )
+    val legacyTier = parseTier(obj)
+    val tiers = (obj["tiers"] as? JsonArray)
+        ?.mapNotNull { it as? JsonObject }
+        ?.map(::parseTier)
+        ?.takeIf { it.isNotEmpty() }
+        ?: listOf(legacyTier)
     return DrawdownMarginTriggerAction(
         portfolioSource = portfolioSource,
         referenceTicker = obj["referenceTicker"]?.jsonPrimitive?.contentOrNull
             ?.trim()
             ?.uppercase()
             ?.takeIf { it.isNotBlank() && portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
-        enterDrawdownPct = (obj["enterDrawdownPct"]?.jsonPrimitive?.doubleOrNull
-            ?: obj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
-            ?: 0.10).coerceAtLeast(0.0),
-        exitDrawdownPct = (obj["exitDrawdownPct"]?.jsonPrimitive?.doubleOrNull
-            ?: obj["drawdownPct"]?.jsonPrimitive?.doubleOrNull
-            ?: 0.05),
-        triggerMargin = (obj["triggerMargin"]?.jsonPrimitive?.doubleOrNull
-            ?: obj["deviationPct"]?.jsonPrimitive?.doubleOrNull
-            ?: 0.0).coerceAtLeast(0.0),
-        allocStrategy = parseAllocStrategyId(obj["allocStrategy"]?.jsonPrimitive?.contentOrNull),
-        targetMargin = (obj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.5).coerceAtLeast(0.0),
+        enterDrawdownPct = legacyTier.enterDrawdownPct,
+        exitDrawdownPct = legacyTier.exitDrawdownPct,
+        triggerMargin = legacyTier.triggerMargin,
+        allocStrategy = legacyTier.allocStrategy,
+        targetMargin = legacyTier.targetMargin,
+        tiers = tiers,
     )
 }
 

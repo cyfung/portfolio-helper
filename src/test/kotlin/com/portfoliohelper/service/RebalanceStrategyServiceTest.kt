@@ -1188,6 +1188,51 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun tieredDrawdownBuyLowUsesDeepestActiveTier() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 3),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 2.0)
+        val reference = mapOf(dates[0] to 1.0, dates[1] to 0.70, dates[2] to 0.70)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.5,
+                drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    tiers = listOf(
+                        DrawdownMarginTriggerTier(
+                            enterDrawdownPct = 0.20,
+                            exitDrawdownPct = 0.15,
+                            triggerMargin = 0.6,
+                            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                            targetMargin = 0.6,
+                        ),
+                        DrawdownMarginTriggerTier(
+                            enterDrawdownPct = 0.25,
+                            exitDrawdownPct = 0.15,
+                            triggerMargin = 0.6,
+                            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                            targetMargin = 0.8,
+                        ),
+                    ),
+                ),
+            ),
+            null,
+            mapOf("SPY" to rising, "REF" to reference),
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(0.8, requireNotNull(result.marginPoints)[1].value, label = "deepest drawdown BL tier wins")
+        assertTrue(result.actionPoints?.any { it.date == "2024-01-02" && it.type == "BUY_LOW" } == true)
+    }
+
+    @Test
     fun activeDrawdownSellHighOverridesBaseSellHigh() {
         val dates = listOf(
             LocalDate.of(2024, 1, 1),

@@ -134,15 +134,36 @@ data class DrawdownMarginOverrideConfig(
     val tradeDirection: MarginRebalanceTradeDirection = MarginRebalanceTradeDirection.BOTH,
 )
 
+data class DrawdownMarginTriggerTier(
+    val enterDrawdownPct: Double = 0.10,
+    val exitDrawdownPct: Double = 0.05,
+    val triggerMargin: Double = 0.0,
+    val allocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
+    val targetMargin: Double = 0.5,
+)
+
 data class DrawdownMarginTriggerAction(
     val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
     val referenceTicker: String? = null,
     val enterDrawdownPct: Double = 0.10,
     val exitDrawdownPct: Double = 0.05,
-    val triggerMargin: Double,
-    val allocStrategy: String,
-    val targetMargin: Double,
-)
+    val triggerMargin: Double = 0.0,
+    val allocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
+    val targetMargin: Double = 0.5,
+    val tiers: List<DrawdownMarginTriggerTier> = emptyList(),
+) {
+    fun effectiveTiers(): List<DrawdownMarginTriggerTier> =
+        tiers.takeIf { it.isNotEmpty() }
+            ?: listOf(
+                DrawdownMarginTriggerTier(
+                    enterDrawdownPct = enterDrawdownPct,
+                    exitDrawdownPct = exitDrawdownPct,
+                    triggerMargin = triggerMargin,
+                    allocStrategy = allocStrategy,
+                    targetMargin = targetMargin,
+                )
+            )
+}
 
 // ── Top-level strategy config ─────────────────────────────────────────────────
 

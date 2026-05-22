@@ -8,8 +8,11 @@ import {
   PORTFOLIO_TRIGGER_SOURCE_OPTIONS,
   DrawdownMarginOverrideState,
   DrawdownMarginTriggerState,
+  DrawdownMarginTriggerTierState,
   emptyDrawdownMarginOverride,
   emptyDrawdownMarginTrigger,
+  emptyDrawdownMarginTriggerTier,
+  drawdownMarginTriggerIssues,
   normalizeStrategySpreadInput,
   strategyStateToSavedConfig,
   savedConfigToStrategyState,
@@ -94,12 +97,13 @@ function marginValueFromLegacyPoint(points: string[], index: string | undefined,
 }
 
 const MarginPercentInput = React.memo(function MarginPercentInput({
-  value, placeholder, max, ariaLabel, onChange, onCommit,
+  value, placeholder, max, ariaLabel, compact = false, onChange, onCommit,
 }: {
   value: string
   placeholder: string
   max: number
   ariaLabel: string
+  compact?: boolean
   onChange: (value: string) => void
   onCommit?: () => void
 }) {
@@ -142,8 +146,10 @@ const MarginPercentInput = React.memo(function MarginPercentInput({
   }, [stepBy])
 
   return (
-    <div className="margin-point-endpoint margin-percent-input" ref={wrapRef}>
-      <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => stepBy(-1)}>-</button>
+    <div className={`margin-point-endpoint margin-percent-input${compact ? ' margin-percent-input-compact' : ''}`} ref={wrapRef}>
+      {!compact && (
+        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => stepBy(-1)}>-</button>
+      )}
       <input
         className="margin-point-number-input"
         type="number"
@@ -156,7 +162,9 @@ const MarginPercentInput = React.memo(function MarginPercentInput({
         onChange={e => onChange(e.target.value)}
         onBlur={onCommit}
       />
-      <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => stepBy(1)}>+</button>
+      {!compact && (
+        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => stepBy(1)}>+</button>
+      )}
     </div>
   )
 })
@@ -370,7 +378,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const marginRebalanceRestoreMargin = s.marginRebalanceRestoreMargin ?? midMarginPoint
   const drawdownMarginOverride = s.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
   const drawdownBuyOnLowMargin = s.drawdownBuyOnLowMargin ?? emptyDrawdownMarginTrigger('buy')
-  const drawdownSellOnHighMargin = s.drawdownSellOnHighMargin ?? emptyDrawdownMarginTrigger('sell')
   const drawdownOverrideTargetMargin = drawdownMarginOverride.targetMargin || '95'
   const cashflowScalingMargin = s.cashflowScalingMargin ?? marginValueFromLegacyPoint(marginPoints, s.cashflowScalingPointIndex, 1)
   const buyLowTriggerMargin = s.buyLowTriggerMargin ?? marginValueFromLegacyPoint(marginPoints, s.buyLowTriggerPointIndex)
@@ -396,7 +403,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   }, [set])
 
   const updateDrawdownMarginTrigger = useCallback((
-    key: 'drawdownBuyOnLowMargin' | 'drawdownSellOnHighMargin',
+    key: 'drawdownBuyOnLowMargin',
     direction: 'buy' | 'sell',
     patch: Partial<DrawdownMarginTriggerState>,
   ) => {
@@ -404,6 +411,69 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     const next = { ...current, ...patch }
     if (next.portfolioSource !== 'REFERENCE_PORTFOLIO') next.referenceTicker = ''
     set({ [key]: next } as Partial<RebalStrategyState>)
+  }, [set])
+
+  function syncFirstDrawdownTier(
+    state: DrawdownMarginTriggerState,
+    tiers: DrawdownMarginTriggerTierState[],
+    direction: 'buy' | 'sell',
+  ): DrawdownMarginTriggerState {
+    const first = tiers[0] ?? emptyDrawdownMarginTriggerTier(direction)
+    return {
+      ...state,
+      enterDrawdownPct: first.enterDrawdownPct,
+      exitDrawdownPct: first.exitDrawdownPct,
+      triggerPointIndex: first.triggerPointIndex,
+      triggerMargin: first.triggerMargin,
+      allocStrategy: first.allocStrategy,
+      restorePointIndex: first.restorePointIndex,
+      restoreMargin: first.restoreMargin,
+      tiers,
+    }
+  }
+
+  const updateDrawdownMarginTriggerTier = useCallback((
+    key: 'drawdownBuyOnLowMargin',
+    direction: 'buy' | 'sell',
+    tierId: string,
+    patch: Partial<DrawdownMarginTriggerTierState>,
+  ) => {
+    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
+    const tiers = (current.tiers?.length ? current.tiers : [emptyDrawdownMarginTriggerTier(direction)])
+      .map(tier => tier.id === tierId ? { ...tier, ...patch } : tier)
+    set({ [key]: syncFirstDrawdownTier(current, tiers, direction) } as Partial<RebalStrategyState>)
+  }, [set])
+
+  const addDrawdownMarginTriggerTier = useCallback((
+    key: 'drawdownBuyOnLowMargin',
+    direction: 'buy' | 'sell',
+  ) => {
+    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
+    const tiers = current.tiers?.length ? current.tiers : [emptyDrawdownMarginTriggerTier(direction)]
+    const prev = tiers[tiers.length - 1]
+    const prevEnter = parseFloat(prev?.enterDrawdownPct ?? '')
+    const prevExit = parseFloat(prev?.exitDrawdownPct ?? '')
+    const nextEnter = Number.isFinite(prevEnter) ? prevEnter + 5 : 10
+    const nextExit = Number.isFinite(prevExit) ? prevExit : Math.max(0, nextEnter - 5)
+    const tier = {
+      ...(prev ?? emptyDrawdownMarginTriggerTier(direction)),
+      id: emptyDrawdownMarginTriggerTier(direction).id,
+      enterDrawdownPct: String(nextEnter),
+      exitDrawdownPct: String(nextExit),
+    }
+    const nextTiers = [...tiers, tier]
+    set({ [key]: syncFirstDrawdownTier(current, nextTiers, direction) } as Partial<RebalStrategyState>)
+  }, [set])
+
+  const removeDrawdownMarginTriggerTier = useCallback((
+    key: 'drawdownBuyOnLowMargin',
+    direction: 'buy' | 'sell',
+    tierId: string,
+  ) => {
+    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
+    if ((current.tiers?.length ?? 0) <= 1) return
+    const nextTiers = (current.tiers ?? []).filter(tier => tier.id !== tierId)
+    set({ [key]: syncFirstDrawdownTier(current, nextTiers, direction) } as Partial<RebalStrategyState>)
   }, [set])
 
   async function handleSave(overwrite: boolean) {
@@ -435,12 +505,14 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   }
 
   function renderDrawdownMarginTrigger(
-    key: 'drawdownBuyOnLowMargin' | 'drawdownSellOnHighMargin',
+    key: 'drawdownBuyOnLowMargin',
     direction: 'buy' | 'sell',
     title: string,
     value: DrawdownMarginTriggerState,
     triggerPlaceholder: string,
   ) {
+    const tiers = value.tiers?.length ? value.tiers : [emptyDrawdownMarginTriggerTier(direction)]
+    const issues = drawdownMarginTriggerIssues(value, direction, title)
     return (
       <details open={value.enabled} className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
@@ -483,61 +555,84 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                 />
               </div>
             )}
-            <div className="strategy-row">
-              <label>Enter DD %</label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={value.enterDrawdownPct}
-                onChange={e => updateDrawdownMarginTrigger(key, direction, { enterDrawdownPct: e.target.value })}
-                onBlur={() => commit()}
-                style={{ width: '5rem' }}
-              />
+            <div className="drawdown-tier-table">
+              <div className="drawdown-tier-header">
+                <span title="Enter drawdown percent">DD In</span>
+                <span title="Exit drawdown percent">Out</span>
+                <span>Trigger</span>
+                <span>Restore</span>
+                <span>Alloc</span>
+                <span />
+              </div>
+              {tiers.map(tier => (
+                <div key={tier.id} className="drawdown-tier-row">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={tier.enterDrawdownPct}
+                    aria-label={`${title} tier enter drawdown`}
+                    onChange={e => updateDrawdownMarginTriggerTier(key, direction, tier.id, { enterDrawdownPct: e.target.value })}
+                    onBlur={() => commit()}
+                  />
+                  <input
+                    type="number"
+                    step="1"
+                    value={tier.exitDrawdownPct}
+                    aria-label={`${title} tier exit drawdown`}
+                    onChange={e => updateDrawdownMarginTriggerTier(key, direction, tier.id, { exitDrawdownPct: e.target.value })}
+                    onBlur={() => commit()}
+                  />
+                  <MarginPercentInput
+                    value={tier.triggerMargin}
+                    placeholder={triggerPlaceholder}
+                    max={sliderMax}
+                    compact
+                    ariaLabel={`${title} tier trigger margin`}
+                    onChange={margin => updateDrawdownMarginTriggerTier(key, direction, tier.id, { triggerMargin: margin, triggerPointIndex: '' })}
+                    onCommit={() => commit()}
+                  />
+                  <MarginPercentInput
+                    value={tier.restoreMargin}
+                    placeholder={midMarginPoint}
+                    max={sliderMax}
+                    compact
+                    ariaLabel={`${title} tier restore margin`}
+                    onChange={margin => updateDrawdownMarginTriggerTier(key, direction, tier.id, { restoreMargin: margin, restorePointIndex: '' })}
+                    onCommit={() => commit()}
+                  />
+                  <select
+                    value={tier.allocStrategy ?? 'PROPORTIONAL'}
+                    aria-label={`${title} tier allocation strategy`}
+                    onChange={e => updateDrawdownMarginTriggerTier(key, direction, tier.id, { allocStrategy: e.target.value })}
+                  >
+                    {allocOptions.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="remove-ticker-btn drawdown-tier-remove-btn"
+                    title="Remove tier"
+                    aria-label={`Remove ${title} tier`}
+                    disabled={tiers.length <= 1}
+                    onClick={() => removeDrawdownMarginTriggerTier(key, direction, tier.id)}
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
             </div>
+            {issues.length > 0 && <div className="strategy-hint input-error-text">{issues[0]}</div>}
             <div className="strategy-row">
-              <label>Exit DD %</label>
-              <input
-                type="number"
-                step="1"
-                value={value.exitDrawdownPct}
-                onChange={e => updateDrawdownMarginTrigger(key, direction, { exitDrawdownPct: e.target.value })}
-                onBlur={() => commit()}
-                style={{ width: '5rem' }}
-              />
-            </div>
-            <div className="strategy-row">
-              <label>Trigger At</label>
-              <MarginPercentInput
-                value={value.triggerMargin}
-                placeholder={triggerPlaceholder}
-                max={sliderMax}
-                ariaLabel={`${title} trigger margin`}
-                onChange={margin => updateDrawdownMarginTrigger(key, direction, { triggerMargin: margin, triggerPointIndex: '' })}
-                onCommit={() => commit()}
-              />
-            </div>
-            <div className="strategy-row">
-              <label>Alloc Strategy</label>
-              <select
-                value={value.allocStrategy ?? 'PROPORTIONAL'}
-                onChange={e => updateDrawdownMarginTrigger(key, direction, { allocStrategy: e.target.value })}
+              <label />
+              <button
+                type="button"
+                className="add-ticker-btn"
+                onClick={() => addDrawdownMarginTriggerTier(key, direction)}
               >
-                {allocOptions.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className="strategy-row">
-              <label>Restore To</label>
-              <MarginPercentInput
-                value={value.restoreMargin}
-                placeholder={midMarginPoint}
-                max={sliderMax}
-                ariaLabel={`${title} restore margin`}
-                onChange={margin => updateDrawdownMarginTrigger(key, direction, { restoreMargin: margin, restorePointIndex: '' })}
-                onCommit={() => commit()}
-              />
+                + Add Tier
+              </button>
             </div>
           </div>
         )}
@@ -977,14 +1072,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         'BL on Drawdown',
         drawdownBuyOnLowMargin,
         marginPoints[0] ?? DEFAULT_POINTS[0],
-      )}
-
-      {renderDrawdownMarginTrigger(
-        'drawdownSellOnHighMargin',
-        'sell',
-        'SH on Drawdown',
-        drawdownSellOnHighMargin,
-        marginPoints[4] ?? DEFAULT_POINTS[4],
       )}
 
       <div className="strategy-subsection">

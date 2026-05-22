@@ -257,7 +257,6 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const sos = strategy.sellOnSurge
     const dmo = strategy.drawdownMarginOverride
     const ddBl = strategy.drawdownBuyOnLowMargin
-    const ddSh = strategy.drawdownSellOnHighMargin
     return {
       row,
       low: points[0] ?? '40',
@@ -270,10 +269,6 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       ddBlSgp: ddBl?.enabled && ddBl.portfolioSource === 'STRATEGY_GROSS',
       ddBlPv: ddBl?.enabled && ddBl.portfolioSource === 'STRATEGY_VALUE',
       ddBlR: ddBl?.enabled && ddBl.portfolioSource !== 'STRATEGY_GROSS' && ddBl.portfolioSource !== 'STRATEGY_VALUE',
-      ddSh: ddSh?.enabled,
-      ddShSgp: ddSh?.enabled && ddSh.portfolioSource === 'STRATEGY_GROSS',
-      ddShPv: ddSh?.enabled && ddSh.portfolioSource === 'STRATEGY_VALUE',
-      ddShR: ddSh?.enabled && ddSh.portfolioSource !== 'STRATEGY_GROSS' && ddSh.portfolioSource !== 'STRATEGY_VALUE',
       ddMr: dmo?.enabled,
       ddMrSgp: dmo?.enabled && dmo.portfolioSource === 'STRATEGY_GROSS',
       ddMrPv: dmo?.enabled && dmo.portfolioSource === 'STRATEGY_VALUE',
@@ -464,7 +459,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
             </div>
           ))}
-          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, ddBl, ddBlSgp, ddBlPv, ddBlR, ddSh, ddShSgp, ddShPv, ddShR, ddMr, ddMrSgp, ddMrPv, ddMrR, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
+          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, ddBl, ddBlSgp, ddBlPv, ddBlR, ddMr, ddMrSgp, ddMrPv, ddMrR, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
             <div key={row.id} className="margin-config-row rebalance-strategy-margin-row">
               <span className="margin-drag-handle" aria-hidden="true">S</span>
               <div className="strategy-margin-info">
@@ -483,10 +478,6 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 {ddBlSgp && <span>DD-BL-SGP</span>}
                 {ddBlPv && <span>DD-BL-PV</span>}
                 {ddBlR && <span>DD-BL-R</span>}
-                {ddSh && <span>DD-SH</span>}
-                {ddShSgp && <span>DD-SH-SGP</span>}
-                {ddShPv && <span>DD-SH-PV</span>}
-                {ddShR && <span>DD-SH-R</span>}
                 {bdSgp && <span>BD-SGP</span>}
                 {bdPv && <span>BD-PV</span>}
                 {bdR && <span>BD-R</span>}
