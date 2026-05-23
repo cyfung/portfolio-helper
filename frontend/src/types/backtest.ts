@@ -245,9 +245,10 @@ export interface BacktestCurve {
   points: { date: string; value: number }[]
   stats: BacktestCurveStats
   marginPoints?: { date: string; value: number }[]
+  vmTimingPoints?: { date: string; cape: number; valueFactor: number }[]
   actionPoints?: {
     date: string
-    type: 'SELL_HIGH' | 'BUY_LOW' | 'BUY_DIP' | 'SELL_SURGE' | 'PORTFOLIO_REBALANCE' | 'MARGIN_REBALANCE' | 'DRAWDOWN_MR' | 'DRAWDOWN_MR_EXIT'
+    type: 'SELL_HIGH' | 'BUY_LOW' | 'BUY_DIP' | 'SELL_SURGE' | 'PORTFOLIO_REBALANCE' | 'MARGIN_REBALANCE' | 'VM_TIMING_MR' | 'DRAWDOWN_MR' | 'DRAWDOWN_MR_EXIT'
     detail?: {
       tradingDayIndex?: number | null
       key?: string | null

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Download } from 'lucide-react'
 import {
   Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -52,6 +53,20 @@ interface HoldDipResponse {
   error?: string
 }
 
+interface WorldCapePoint {
+  date: string
+  worldCape: number
+  sourceMethod: string
+}
+
+interface UsCapePoint {
+  date: string
+  usCape: number
+}
+
+const WORLD_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/world-cape-history.csv`
+const US_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/us-cape-history.csv`
+
 function parseDrawdownPercents(value: string) {
   return value
     .split(/[,\s]+/)
@@ -65,6 +80,38 @@ function formatDays(days?: number | null) {
   if (days == null || !Number.isFinite(days)) return '-'
   if (days < 365) return `${Math.round(days)}d`
   return `${fmt2(days / 365.25)}y`
+}
+
+function splitCsvLine(line: string) {
+  const fields: string[] = []
+  let field = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        field += '"'
+        i++
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(field)
+      field = ''
+    } else {
+      field += ch
+    }
+  }
+  fields.push(field)
+  return fields
+}
+
+function sourceMethodLabel(method: string) {
+  if (method === 'US_SHILLER_PROXY') return 'US Shiller proxy'
+  if (method.startsWith('SYNTHETIC_EP_BLEND')) return 'Synthetic world CAPE'
+  if (method === 'SIBLIS_FREE_ANCHOR') return 'Siblis world CAPE'
+  if (method === 'RA_CURRENT_REFERENCE') return 'RA current reference'
+  return method
 }
 
 export default function HoldDipPage() {
@@ -84,6 +131,10 @@ export default function HoldDipPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [results, setResults] = useState<HoldDipResponse | null>(null)
+  const [worldCapePoints, setWorldCapePoints] = useState<WorldCapePoint[]>([])
+  const [worldCapeError, setWorldCapeError] = useState('')
+  const [usCapePoints, setUsCapePoints] = useState<UsCapePoint[]>([])
+  const [usCapeError, setUsCapeError] = useState('')
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const theme = useChartTheme()
 
@@ -98,6 +149,53 @@ export default function HoldDipPage() {
         if (req.portfolios?.[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
       })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch(WORLD_CAPE_CSV_URL)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.text()
+      })
+      .then(text => {
+        const rows = text
+          .trim()
+          .split(/\r?\n/)
+          .slice(1)
+          .map(splitCsvLine)
+          .map(cols => ({
+            date: cols[0],
+            worldCape: Number(cols[1]),
+            sourceMethod: cols[8],
+          }))
+          .filter(row => row.date && Number.isFinite(row.worldCape))
+        setWorldCapePoints(rows)
+        setWorldCapeError('')
+      })
+      .catch(() => setWorldCapeError('World CAPE CSV could not be loaded'))
+  }, [])
+
+  useEffect(() => {
+    fetch(US_CAPE_CSV_URL)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.text()
+      })
+      .then(text => {
+        const rows = text
+          .trim()
+          .split(/\r?\n/)
+          .slice(1)
+          .map(splitCsvLine)
+          .map(cols => ({
+            date: cols[0],
+            usCape: Number(cols[1]),
+          }))
+          .filter(row => row.date && Number.isFinite(row.usCape))
+        setUsCapePoints(rows)
+        setUsCapeError('')
+      })
+      .catch(() => setUsCapeError('US CAPE CSV could not be loaded'))
   }, [])
 
   function refreshSaved() {
@@ -202,7 +300,50 @@ export default function HoldDipPage() {
     return { rows }
   }, [results])
 
+  const worldCapeChartData = useMemo(() => worldCapePoints.map(point => ({
+    x: point.date,
+    usProxyCape: point.sourceMethod === 'US_SHILLER_PROXY' ? point.worldCape : undefined,
+    syntheticCape: point.sourceMethod.startsWith('SYNTHETIC_EP_BLEND') ? point.worldCape : undefined,
+    siblisCape: point.sourceMethod === 'SIBLIS_FREE_ANCHOR' ? point.worldCape : undefined,
+    currentReferenceCape: point.sourceMethod === 'RA_CURRENT_REFERENCE' ? point.worldCape : undefined,
+    source: sourceMethodLabel(point.sourceMethod),
+  })), [worldCapePoints])
+
+  const worldCapeSummary = useMemo(() => {
+    if (!worldCapePoints.length) return null
+    const values = worldCapePoints.map(p => p.worldCape)
+    const latest = worldCapePoints[worldCapePoints.length - 1]
+    return {
+      latest,
+      startDate: worldCapePoints[0].date,
+      endDate: latest.date,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      count: worldCapePoints.length,
+    }
+  }, [worldCapePoints])
+
+  const usCapeChartData = useMemo(() => usCapePoints.map(point => ({
+    x: point.date,
+    usCape: point.usCape,
+  })), [usCapePoints])
+
+  const usCapeSummary = useMemo(() => {
+    if (!usCapePoints.length) return null
+    const values = usCapePoints.map(p => p.usCape)
+    const latest = usCapePoints[usCapePoints.length - 1]
+    return {
+      latest,
+      startDate: usCapePoints[0].date,
+      endDate: latest.date,
+      min: Math.min(...values),
+      max: Math.max(...values),
+      count: usCapePoints.length,
+    }
+  }, [usCapePoints])
+
   const tooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => money(v)), [theme])
+  const capeTooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => fmt2(v)), [theme])
 
   return (
     <div className="container">
@@ -357,6 +498,125 @@ export default function HoldDipPage() {
                     type="monotone"
                   />
                 ))}
+                <Brush dataKey="x" height={26} stroke={theme.gridColor} fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {worldCapeError && <div className="backtest-error">{worldCapeError}</div>}
+
+      {worldCapeSummary && worldCapeChartData.length > 0 && (
+        <>
+          <div className="backtest-chart-heading world-cape-heading">
+            <div className="backtest-chart-title">World CAPE History</div>
+            <a className="h-btn subtle world-cape-download" href={WORLD_CAPE_CSV_URL} download>
+              <Download size={14} aria-hidden="true" />
+              <span>CSV</span>
+            </a>
+          </div>
+          <div className="world-cape-meta" aria-label="World CAPE dataset summary">
+            <span>{worldCapeSummary.startDate} to {worldCapeSummary.endDate}</span>
+            <span>{worldCapeSummary.count} observations</span>
+            <span>Latest {fmt2(worldCapeSummary.latest.worldCape)} on {worldCapeSummary.latest.date}</span>
+            <span>Range {fmt2(worldCapeSummary.min)}-{fmt2(worldCapeSummary.max)}</span>
+          </div>
+          <div className="backtest-chart-container world-cape-chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={worldCapeChartData} syncId="world-cape" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
+                <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(worldCapeChartData.length / 10))} />
+                <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => Number(v).toFixed(0)} width={48} />
+                <Tooltip content={capeTooltip} />
+                <Legend />
+                <Line
+                  dataKey="usProxyCape"
+                  name="US Shiller proxy"
+                  stroke={theme.textColor}
+                  strokeWidth={1.8}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  type="monotone"
+                />
+                <Line
+                  dataKey="syntheticCape"
+                  name="Synthetic world CAPE"
+                  stroke={PALETTE[0][0]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  type="monotone"
+                />
+                <Line
+                  dataKey="siblisCape"
+                  name="Siblis world CAPE"
+                  stroke={PALETTE[2][0]}
+                  strokeWidth={2.4}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  type="monotone"
+                />
+                <Line
+                  dataKey="currentReferenceCape"
+                  name="RA current reference"
+                  stroke={PALETTE[4 % PALETTE.length][0]}
+                  strokeWidth={0}
+                  dot={{ r: 4, strokeWidth: 2 }}
+                  activeDot={{ r: 5 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  type="monotone"
+                />
+                <Brush dataKey="x" height={26} stroke={theme.gridColor} fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      {usCapeError && <div className="backtest-error">{usCapeError}</div>}
+
+      {usCapeSummary && usCapeChartData.length > 0 && (
+        <>
+          <div className="backtest-chart-heading world-cape-heading">
+            <div className="backtest-chart-title">US CAPE History</div>
+            <a className="h-btn subtle world-cape-download" href={US_CAPE_CSV_URL} download>
+              <Download size={14} aria-hidden="true" />
+              <span>CSV</span>
+            </a>
+          </div>
+          <div className="world-cape-meta" aria-label="US CAPE dataset summary">
+            <span>{usCapeSummary.startDate} to {usCapeSummary.endDate}</span>
+            <span>{usCapeSummary.count} observations</span>
+            <span>Latest {fmt2(usCapeSummary.latest.usCape)} on {usCapeSummary.latest.date}</span>
+            <span>Range {fmt2(usCapeSummary.min)}-{fmt2(usCapeSummary.max)}</span>
+          </div>
+          <div className="backtest-chart-container world-cape-chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={usCapeChartData} syncId="us-cape" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
+                <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(usCapeChartData.length / 10))} />
+                <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => Number(v).toFixed(0)} width={48} />
+                <Tooltip content={capeTooltip} />
+                <Legend />
+                <Line
+                  dataKey="usCape"
+                  name="US Shiller CAPE"
+                  stroke={PALETTE[1 % PALETTE.length][0]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  type="monotone"
+                />
                 <Brush dataKey="x" height={26} stroke={theme.gridColor} fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
               </LineChart>
             </ResponsiveContainer>

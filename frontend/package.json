@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:world-cape": "node scripts/generate-world-cape-history.mjs",
+    "generate:us-cape": "node scripts/generate-us-cape-history.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",

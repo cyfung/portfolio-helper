@@ -1,0 +1,497 @@
+date,world_cape,us_cape,dm_ex_us_cape,em_cape,us_weight,dm_ex_us_weight,em_weight,source_method,calibration_multiplier,source_note
+1900-03-31,18.78,18.78,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1900-06-30,17.99,17.99,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1900-09-30,17.34,17.34,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1900-12-31,20.74,20.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1901-03-31,22.35,22.35,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1901-06-30,25.24,25.24,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1901-09-30,22.59,22.59,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1901-12-31,21.68,21.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1902-03-31,22.41,22.41,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1902-06-30,21.96,21.96,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1902-09-30,22.86,22.86,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1902-12-31,19.63,19.63,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1903-03-31,19.88,19.88,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1903-06-30,17.82,17.82,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1903-09-30,15.65,15.65,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1903-12-31,16.04,16.04,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1904-03-31,15.08,15.08,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1904-06-30,15.47,15.47,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1904-09-30,16.74,16.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1904-12-31,18.16,18.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1905-03-31,19.83,19.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1905-06-30,18.74,18.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1905-09-30,19.74,19.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1905-12-31,19.58,19.58,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1906-03-31,19.26,19.26,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1906-06-30,18.17,18.17,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1906-09-30,19.20,19.20,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1906-12-31,17.66,17.66,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1907-03-31,14.69,14.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1907-06-30,13.14,13.14,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1907-09-30,12.33,12.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1907-12-31,11.33,11.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1908-03-31,11.98,11.98,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1908-06-30,13.05,13.05,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1908-09-30,13.70,13.70,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1908-12-31,14.58,14.58,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1909-03-31,14.34,14.34,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1909-06-30,15.04,15.04,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1909-09-30,15.25,15.25,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1909-12-31,14.75,14.75,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1910-03-31,14.05,14.05,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1910-06-30,13.02,13.02,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1910-09-30,12.94,12.94,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1910-12-31,13.74,13.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1911-03-31,14.37,14.37,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1911-06-30,15.33,15.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1911-09-30,13.00,13.00,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1911-12-31,13.93,13.93,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1912-03-31,13.64,13.64,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1912-06-30,13.79,13.79,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1912-09-30,13.93,13.93,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1912-12-31,13.39,13.39,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1913-03-31,12.44,12.44,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1913-06-30,11.49,11.49,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1913-09-30,11.84,11.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1913-12-31,11.17,11.17,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1914-03-31,11.69,11.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1914-06-30,11.43,11.43,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1914-09-30,10.50,10.50,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1914-12-31,10.17,10.17,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1915-03-31,10.71,10.71,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1915-06-30,11.15,11.15,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1915-09-30,12.01,12.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1915-12-31,12.88,12.88,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1916-03-31,12.18,12.18,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1916-06-30,12.00,12.00,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1916-09-30,11.94,11.94,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1916-12-31,11.41,11.41,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1917-03-31,10.33,10.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1917-06-30,9.15,9.15,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1917-09-30,7.95,7.95,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1917-12-31,6.41,6.41,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1918-03-31,6.69,6.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1918-06-30,6.50,6.50,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1918-09-30,6.15,6.15,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1918-12-31,6.13,6.13,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1919-03-31,6.36,6.36,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1919-06-30,7.02,7.02,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1919-09-30,6.56,6.56,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1919-12-31,6.16,6.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1920-03-31,5.80,5.80,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1920-06-30,5.04,5.04,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1920-09-30,5.30,5.30,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1920-12-31,4.78,4.78,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1921-03-31,5.19,5.19,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1921-06-30,5.22,5.22,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1921-09-30,5.38,5.38,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1921-12-31,6.11,6.11,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1922-03-31,6.82,6.82,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1922-06-30,7.56,7.56,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1922-09-30,8.27,8.27,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1922-12-31,7.96,7.96,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1923-03-31,8.70,8.70,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1923-06-30,7.67,7.67,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1923-09-30,7.46,7.46,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1923-12-31,7.81,7.81,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1924-03-31,8.06,8.06,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1924-06-30,8.05,8.05,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1924-09-30,8.58,8.58,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1924-12-31,9.31,9.31,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1925-03-31,9.52,9.52,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1925-06-30,9.80,9.80,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1925-09-30,10.36,10.36,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1925-12-31,11.15,11.15,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1926-03-31,10.71,10.71,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1926-06-30,11.20,11.20,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1926-09-30,12.69,12.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1926-12-31,13.01,13.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1927-03-31,14.03,14.03,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1927-06-30,15.12,15.12,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1927-09-30,17.82,17.82,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1927-12-31,18.65,18.65,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1928-03-31,19.94,19.94,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1928-06-30,20.91,20.91,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1928-09-30,23.00,23.00,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1928-12-31,25.30,25.30,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1929-03-31,27.68,27.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1929-06-30,27.94,27.94,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1929-09-30,32.56,32.56,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1929-12-31,22.01,22.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1930-03-31,24.59,24.59,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1930-06-30,21.87,21.87,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1930-09-30,21.07,21.07,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1930-12-31,16.06,16.06,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1931-03-31,18.58,18.58,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1931-06-30,15.06,15.06,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1931-09-30,12.82,12.82,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1931-12-31,9.31,9.31,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1932-03-31,9.41,9.41,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1932-06-30,5.57,5.57,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1932-09-30,9.76,9.76,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1932-12-31,8.26,8.26,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1933-03-31,7.87,7.87,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1933-06-30,13.10,13.10,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1933-09-30,12.92,12.92,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1933-12-31,12.28,12.28,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1934-03-31,13.25,13.25,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1934-06-30,12.29,12.29,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1934-09-30,10.91,10.91,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1934-12-31,11.64,11.64,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1935-03-31,10.40,10.40,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1935-06-30,12.54,12.54,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1935-09-30,14.42,14.42,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1935-12-31,16.16,16.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1936-03-31,18.66,18.66,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1936-06-30,18.39,18.39,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1936-09-30,19.86,19.86,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1936-12-31,21.13,21.13,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1937-03-31,22.04,22.04,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1937-06-30,18.71,18.71,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1937-09-30,16.85,16.85,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1937-12-31,13.01,13.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1938-03-31,12.38,12.38,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1938-06-30,12.29,12.29,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1938-09-30,14.28,14.28,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1938-12-31,15.76,15.76,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1939-03-31,15.73,15.73,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1939-06-30,14.83,14.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1939-09-30,16.45,16.45,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1939-12-31,16.28,16.28,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1940-03-31,16.17,16.17,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1940-06-30,12.84,12.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1940-09-30,14.21,14.21,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1940-12-31,13.91,13.91,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1941-03-31,12.96,12.96,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1941-06-30,12.16,12.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1941-09-30,12.28,12.28,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1941-12-31,10.09,10.09,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1942-03-31,9.00,9.00,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1942-06-30,8.91,8.91,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1942-09-30,9.08,9.08,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1942-12-31,9.62,9.62,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1943-03-31,10.85,10.85,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1943-06-30,11.52,11.52,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1943-09-30,11.34,11.34,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1943-12-31,10.74,10.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1944-03-31,11.22,11.22,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1944-06-30,11.53,11.53,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1944-09-30,11.33,11.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1944-12-31,11.64,11.64,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1945-03-31,12.32,12.32,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1945-06-30,13.13,13.13,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1945-09-30,13.80,13.80,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1945-12-31,15.02,15.02,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1946-03-31,15.13,15.13,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1946-06-30,15.77,15.77,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1946-09-30,11.84,11.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1946-12-31,11.37,11.37,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1947-03-31,11.29,11.29,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1947-06-30,11.08,11.08,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1947-09-30,10.83,10.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1947-12-31,10.68,10.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1948-03-31,10.19,10.19,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1948-06-30,11.58,11.58,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1948-09-30,10.55,10.55,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1948-12-31,10.16,10.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1949-03-31,9.90,9.90,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1949-06-30,9.07,9.07,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1949-09-30,9.88,9.88,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1949-12-31,10.53,10.53,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1950-03-31,10.91,10.91,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1950-06-30,11.55,11.55,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1950-09-30,11.34,11.34,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1950-12-31,11.31,11.31,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1951-03-31,11.84,11.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1951-06-30,11.62,11.62,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1951-09-30,12.44,12.44,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1951-12-31,12.15,12.15,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1952-03-31,12.36,12.36,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1952-06-30,12.45,12.45,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1952-09-30,12.43,12.43,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1952-12-31,12.93,12.93,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1953-03-31,12.83,12.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1953-06-30,11.62,11.62,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1953-09-30,11.14,11.14,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1953-12-31,11.75,11.75,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1954-03-31,12.42,12.42,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1954-06-30,13.36,13.36,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1954-09-30,14.36,14.36,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1954-12-31,15.79,15.79,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1955-03-31,16.22,16.22,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1955-06-30,17.37,17.37,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1955-09-30,18.84,18.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1955-12-31,18.94,18.94,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1956-03-31,19.37,19.37,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1956-06-30,18.16,18.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1956-09-30,17.84,17.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1956-12-31,17.20,17.20,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1957-03-31,15.90,15.90,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1957-06-30,16.73,16.73,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1957-09-30,15.16,15.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1957-12-31,13.67,13.67,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1958-03-31,13.93,13.93,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1958-06-30,14.64,14.64,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1958-09-30,15.93,15.93,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1958-12-31,17.36,17.36,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1959-03-31,18.20,18.20,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1959-06-30,18.45,18.45,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1959-09-30,18.12,18.12,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1959-12-31,18.62,18.62,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1960-03-31,17.29,17.29,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1960-06-30,17.82,17.82,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1960-09-30,17.05,17.05,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1960-12-31,17.56,17.56,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1961-03-31,19.84,19.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1961-06-30,20.33,20.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1961-09-30,20.71,20.71,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1961-12-31,22.04,22.04,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1962-03-31,21.44,21.44,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1962-06-30,16.83,16.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1962-09-30,17.32,17.32,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1962-12-31,18.59,18.59,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1963-03-31,19.29,19.29,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1963-06-30,20.38,20.38,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1963-09-30,20.96,20.96,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1963-12-31,21.04,21.04,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1964-03-31,22.17,22.17,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1964-06-30,22.30,22.30,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1964-09-30,22.89,22.89,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1964-12-31,22.75,22.75,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1965-03-31,23.25,23.25,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1965-06-30,22.39,22.39,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1965-09-30,23.37,23.37,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1965-12-31,23.69,23.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1966-03-31,22.61,22.61,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1966-06-30,21.56,21.56,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1966-09-30,19.16,19.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1966-12-31,19.74,19.74,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1967-03-31,21.44,21.44,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1967-06-30,21.55,21.55,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1967-09-30,22.22,22.22,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1967-12-31,21.75,21.75,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1968-03-31,19.93,19.93,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1968-06-30,22.00,22.00,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1968-09-30,21.68,21.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1968-12-31,22.28,22.28,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1969-03-31,20.20,20.20,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1969-06-30,19.71,19.71,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1969-09-30,18.40,18.40,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1969-12-31,17.33,17.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1970-03-31,16.53,16.53,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1970-06-30,13.80,13.80,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1970-09-30,14.84,14.84,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1970-12-31,15.87,15.87,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1971-03-31,17.40,17.40,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1971-06-30,17.08,17.08,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1971-09-30,16.86,16.86,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1971-12-31,16.60,16.60,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1972-03-31,17.81,17.81,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1972-06-30,17.64,17.64,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1972-09-30,17.61,17.61,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1972-12-31,18.65,18.65,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1973-03-31,17.41,17.41,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1973-06-30,15.81,15.81,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1973-09-30,15.48,15.48,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1973-12-31,13.49,13.49,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1974-03-31,13.31,13.31,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1974-06-30,11.89,11.89,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1974-09-30,8.68,8.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1974-12-31,8.29,8.29,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1975-03-31,10.16,10.16,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1975-06-30,11.01,11.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1975-09-30,9.92,9.92,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1975-12-31,10.25,10.25,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1976-03-31,11.63,11.63,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1976-06-30,11.54,11.54,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1976-09-30,11.81,11.81,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1976-12-31,11.60,11.60,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1977-03-31,10.90,10.90,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1977-06-30,10.53,10.53,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1977-09-30,10.07,10.07,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1977-12-31,9.68,9.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1978-03-31,8.95,8.95,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1978-06-30,9.55,9.55,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1978-09-30,9.94,9.94,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1978-12-31,9.01,9.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1979-03-31,9.07,9.07,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1979-06-30,8.85,8.85,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1979-09-30,9.11,9.11,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1979-12-31,8.75,8.75,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1980-03-31,8.08,8.08,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1980-06-30,8.51,8.51,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1980-09-30,9.20,9.20,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1980-12-31,9.39,9.39,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1981-03-31,9.08,9.08,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1981-06-30,8.77,8.77,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1981-09-30,7.58,7.58,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1981-12-31,7.83,7.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1982-03-31,6.95,6.95,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1982-06-30,6.69,6.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1982-09-30,7.40,7.40,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1982-12-31,8.47,8.47,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1983-03-31,9.23,9.23,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1983-06-30,10.00,10.00,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1983-09-30,9.98,9.98,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1983-12-31,9.82,9.82,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1984-03-31,9.33,9.33,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1984-06-30,9.01,9.01,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1984-09-30,9.69,9.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1984-12-31,9.60,9.60,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1985-03-31,10.37,10.37,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1985-06-30,10.81,10.81,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1985-09-30,10.47,10.47,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1985-12-31,11.69,11.69,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1986-03-31,13.19,13.19,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1986-06-30,13.89,13.89,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1986-09-30,13.47,13.47,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1986-12-31,14.09,14.09,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1987-03-31,16.43,16.43,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1987-06-30,16.83,16.83,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1987-09-30,17.68,17.68,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1987-12-31,13.39,13.39,,,1.0000,0.0000,0.0000,US_SHILLER_PROXY,,US Shiller CAPE used as world proxy before practical free global coverage.
+1988-03-31,14.44,14.67,15.40,8.07,0.4200,0.5300,0.0500,SYNTHETIC_EP_BLEND_CALIBRATED,1.0000,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1988-06-30,14.53,14.77,15.51,8.12,0.4200,0.5300,0.0500,SYNTHETIC_EP_BLEND_CALIBRATED,0.9995,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1988-09-30,14.13,14.37,15.09,7.90,0.4200,0.5300,0.0500,SYNTHETIC_EP_BLEND_CALIBRATED,0.9989,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1988-12-31,14.45,14.70,15.44,8.09,0.4200,0.5300,0.0500,SYNTHETIC_EP_BLEND_CALIBRATED,0.9983,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1989-03-31,15.00,15.30,16.07,8.42,0.4245,0.5232,0.0523,SYNTHETIC_EP_BLEND_CALIBRATED,0.9978,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1989-06-30,16.30,16.64,17.47,9.15,0.4245,0.5232,0.0523,SYNTHETIC_EP_BLEND_CALIBRATED,0.9973,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1989-09-30,17.34,17.71,18.60,9.74,0.4245,0.5232,0.0523,SYNTHETIC_EP_BLEND_CALIBRATED,0.9967,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1989-12-31,17.27,17.65,18.53,9.71,0.4245,0.5232,0.0523,SYNTHETIC_EP_BLEND_CALIBRATED,0.9961,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1990-03-31,16.43,16.83,17.67,9.26,0.4290,0.5165,0.0545,SYNTHETIC_EP_BLEND_CALIBRATED,0.9956,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1990-06-30,17.38,17.82,18.71,9.80,0.4290,0.5165,0.0545,SYNTHETIC_EP_BLEND_CALIBRATED,0.9950,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1990-09-30,14.92,15.30,16.07,8.42,0.4290,0.5165,0.0545,SYNTHETIC_EP_BLEND_CALIBRATED,0.9945,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1990-12-31,15.44,15.85,16.64,8.72,0.4290,0.5165,0.0545,SYNTHETIC_EP_BLEND_CALIBRATED,0.9939,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1991-03-31,17.32,17.82,18.71,9.80,0.4335,0.5097,0.0568,SYNTHETIC_EP_BLEND_CALIBRATED,0.9934,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1991-06-30,17.50,18.02,18.92,9.91,0.4335,0.5097,0.0568,SYNTHETIC_EP_BLEND_CALIBRATED,0.9928,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1991-09-30,17.82,18.36,19.28,10.10,0.4335,0.5097,0.0568,SYNTHETIC_EP_BLEND_CALIBRATED,0.9923,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1991-12-31,17.89,18.44,19.36,10.14,0.4335,0.5097,0.0568,SYNTHETIC_EP_BLEND_CALIBRATED,0.9917,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1992-03-31,17.78,19.28,18.32,10.60,0.4381,0.5029,0.0590,SYNTHETIC_EP_BLEND_CALIBRATED,0.9912,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1992-06-30,17.81,19.32,18.35,10.63,0.4381,0.5029,0.0590,SYNTHETIC_EP_BLEND_CALIBRATED,0.9906,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1992-09-30,18.16,19.71,18.72,10.84,0.4381,0.5029,0.0590,SYNTHETIC_EP_BLEND_CALIBRATED,0.9901,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1992-12-31,18.83,20.45,19.43,11.25,0.4381,0.5029,0.0590,SYNTHETIC_EP_BLEND_CALIBRATED,0.9895,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1993-03-31,18.93,20.86,19.31,11.47,0.4426,0.4961,0.0613,SYNTHETIC_EP_BLEND_CALIBRATED,0.9890,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1993-06-30,18.69,20.61,19.08,11.34,0.4426,0.4961,0.0613,SYNTHETIC_EP_BLEND_CALIBRATED,0.9884,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1993-09-30,19.02,20.99,19.43,11.54,0.4426,0.4961,0.0613,SYNTHETIC_EP_BLEND_CALIBRATED,0.9879,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1993-12-31,19.17,21.16,19.59,11.64,0.4426,0.4961,0.0613,SYNTHETIC_EP_BLEND_CALIBRATED,0.9873,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1994-03-31,18.59,20.83,18.78,11.46,0.4471,0.4894,0.0635,SYNTHETIC_EP_BLEND_CALIBRATED,0.9868,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1994-06-30,18.10,20.29,18.29,11.16,0.4471,0.4894,0.0635,SYNTHETIC_EP_BLEND_CALIBRATED,0.9862,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1994-09-30,18.35,20.58,18.55,11.32,0.4471,0.4894,0.0635,SYNTHETIC_EP_BLEND_CALIBRATED,0.9857,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1994-12-31,17.74,19.91,17.95,10.95,0.4471,0.4894,0.0635,SYNTHETIC_EP_BLEND_CALIBRATED,0.9851,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1995-03-31,18.57,21.15,18.55,11.63,0.4516,0.4826,0.0658,SYNTHETIC_EP_BLEND_CALIBRATED,0.9846,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1995-06-30,19.94,22.72,19.93,12.50,0.4516,0.4826,0.0658,SYNTHETIC_EP_BLEND_CALIBRATED,0.9840,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1995-09-30,21.00,23.95,21.01,13.17,0.4516,0.4826,0.0658,SYNTHETIC_EP_BLEND_CALIBRATED,0.9835,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1995-12-31,21.94,25.03,21.95,13.77,0.4516,0.4826,0.0658,SYNTHETIC_EP_BLEND_CALIBRATED,0.9829,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1996-03-31,22.13,25.63,21.86,14.10,0.4561,0.4758,0.0681,SYNTHETIC_EP_BLEND_CALIBRATED,0.9824,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1996-06-30,22.41,25.97,22.15,14.28,0.4561,0.4758,0.0681,SYNTHETIC_EP_BLEND_CALIBRATED,0.9818,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1996-09-30,22.15,25.68,21.90,14.12,0.4561,0.4758,0.0681,SYNTHETIC_EP_BLEND_CALIBRATED,0.9813,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1996-12-31,23.89,27.72,23.64,15.25,0.4561,0.4758,0.0681,SYNTHETIC_EP_BLEND_CALIBRATED,0.9807,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1997-03-31,24.45,28.80,23.86,15.84,0.4606,0.4690,0.0703,SYNTHETIC_EP_BLEND_CALIBRATED,0.9802,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1997-06-30,26.52,31.26,25.90,17.19,0.4606,0.4690,0.0703,SYNTHETIC_EP_BLEND_CALIBRATED,0.9796,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1997-09-30,27.70,32.67,27.07,17.97,0.4606,0.4690,0.0703,SYNTHETIC_EP_BLEND_CALIBRATED,0.9791,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1997-12-31,27.99,33.03,27.37,18.17,0.4606,0.4690,0.0703,SYNTHETIC_EP_BLEND_CALIBRATED,0.9785,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1998-03-31,30.29,36.30,29.20,19.96,0.4652,0.4623,0.0726,SYNTHETIC_EP_BLEND_CALIBRATED,0.9780,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1998-06-30,30.69,36.80,29.60,20.24,0.4652,0.4623,0.0726,SYNTHETIC_EP_BLEND_CALIBRATED,0.9774,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1998-09-30,27.95,33.53,26.97,18.44,0.4652,0.4623,0.0726,SYNTHETIC_EP_BLEND_CALIBRATED,0.9769,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1998-12-31,32.34,38.82,31.22,21.35,0.4652,0.4623,0.0726,SYNTHETIC_EP_BLEND_CALIBRATED,0.9763,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1999-03-31,33.92,41.36,32.26,22.75,0.4697,0.4555,0.0748,SYNTHETIC_EP_BLEND_CALIBRATED,0.9758,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1999-06-30,34.58,42.18,32.90,23.20,0.4697,0.4555,0.0748,SYNTHETIC_EP_BLEND_CALIBRATED,0.9752,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1999-09-30,33.85,41.32,32.23,22.73,0.4697,0.4555,0.0748,SYNTHETIC_EP_BLEND_CALIBRATED,0.9747,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+1999-12-31,36.19,44.20,34.48,24.31,0.4697,0.4555,0.0748,SYNTHETIC_EP_BLEND_CALIBRATED,0.9741,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2000-03-31,34.00,43.22,31.12,23.77,0.4742,0.4487,0.0771,SYNTHETIC_EP_BLEND_CALIBRATED,0.9736,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2000-06-30,33.83,42.78,30.80,23.53,0.4742,0.4487,0.0771,SYNTHETIC_EP_BLEND_CALIBRATED,0.9787,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2000-09-30,33.31,41.90,30.17,23.05,0.4742,0.4487,0.0771,SYNTHETIC_EP_BLEND_CALIBRATED,0.9839,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2000-12-31,29.79,37.27,26.83,20.50,0.4742,0.4487,0.0771,SYNTHETIC_EP_BLEND_CALIBRATED,0.9891,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2001-03-31,26.06,32.33,23.28,18.24,0.4787,0.4419,0.0794,SYNTHETIC_EP_BLEND_CALIBRATED,0.9942,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2001-06-30,26.80,33.07,23.81,18.66,0.4787,0.4419,0.0794,SYNTHETIC_EP_BLEND_CALIBRATED,0.9993,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2001-09-30,22.54,27.67,19.92,15.61,0.4787,0.4419,0.0794,SYNTHETIC_EP_BLEND_CALIBRATED,1.0045,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2001-12-31,24.97,30.50,21.96,17.21,0.4787,0.4419,0.0794,SYNTHETIC_EP_BLEND_CALIBRATED,1.0097,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2002-03-31,25.02,30.29,21.81,17.52,0.4832,0.4352,0.0816,SYNTHETIC_EP_BLEND_CALIBRATED,1.0147,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2002-06-30,21.91,26.39,19.00,15.27,0.4832,0.4352,0.0816,SYNTHETIC_EP_BLEND_CALIBRATED,1.0199,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2002-09-30,18.66,22.37,16.11,12.94,0.4832,0.4352,0.0816,SYNTHETIC_EP_BLEND_CALIBRATED,1.0251,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2002-12-31,19.37,23.10,16.63,13.37,0.4832,0.4352,0.0816,SYNTHETIC_EP_BLEND_CALIBRATED,1.0302,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2003-03-31,18.02,21.31,15.34,12.63,0.4877,0.4284,0.0839,SYNTHETIC_EP_BLEND_CALIBRATED,1.0353,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2003-06-30,21.10,24.83,17.88,14.72,0.4877,0.4284,0.0839,SYNTHETIC_EP_BLEND_CALIBRATED,1.0404,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2003-09-30,21.56,25.24,18.17,14.96,0.4877,0.4284,0.0839,SYNTHETIC_EP_BLEND_CALIBRATED,1.0456,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2003-12-31,22.87,26.64,19.18,15.79,0.4877,0.4284,0.0839,SYNTHETIC_EP_BLEND_CALIBRATED,1.0508,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2004-03-31,23.28,26.89,19.36,16.33,0.4923,0.4216,0.0861,SYNTHETIC_EP_BLEND_CALIBRATED,1.0560,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2004-06-30,22.97,26.40,19.01,16.03,0.4923,0.4216,0.0861,SYNTHETIC_EP_BLEND_CALIBRATED,1.0611,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2004-09-30,22.44,25.67,18.48,15.59,0.4923,0.4216,0.0861,SYNTHETIC_EP_BLEND_CALIBRATED,1.0663,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2004-12-31,23.84,27.14,19.54,16.48,0.4923,0.4216,0.0861,SYNTHETIC_EP_BLEND_CALIBRATED,1.0715,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2005-03-31,23.33,26.34,18.96,16.37,0.4968,0.4148,0.0884,SYNTHETIC_EP_BLEND_CALIBRATED,1.0765,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2005-06-30,23.21,26.07,18.77,16.20,0.4968,0.4148,0.0884,SYNTHETIC_EP_BLEND_CALIBRATED,1.0817,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2005-09-30,23.01,25.73,18.53,15.99,0.4968,0.4148,0.0884,SYNTHETIC_EP_BLEND_CALIBRATED,1.0869,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2005-12-31,23.76,26.44,19.04,16.43,0.4968,0.4148,0.0884,SYNTHETIC_EP_BLEND_CALIBRATED,1.0920,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2006-03-31,23.86,26.33,18.96,16.74,0.5013,0.4081,0.0906,SYNTHETIC_EP_BLEND_CALIBRATED,1.0971,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2006-06-30,22.53,24.75,17.82,15.73,0.5013,0.4081,0.0906,SYNTHETIC_EP_BLEND_CALIBRATED,1.1023,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2006-09-30,23.45,25.64,18.46,16.30,0.5013,0.4081,0.0906,SYNTHETIC_EP_BLEND_CALIBRATED,1.1074,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2006-12-31,25.07,27.28,19.64,17.34,0.5013,0.4081,0.0906,SYNTHETIC_EP_BLEND_CALIBRATED,1.1126,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2007-03-31,24.31,26.23,18.89,17.05,0.5058,0.4013,0.0929,SYNTHETIC_EP_BLEND_CALIBRATED,1.1177,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2007-06-30,25.53,27.42,19.74,17.82,0.5058,0.4013,0.0929,SYNTHETIC_EP_BLEND_CALIBRATED,1.1228,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2007-09-30,25.00,26.73,19.25,17.37,0.5058,0.4013,0.0929,SYNTHETIC_EP_BLEND_CALIBRATED,1.1280,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2007-12-31,23.81,25.96,18.69,16.87,0.5058,0.4013,0.0929,SYNTHETIC_EP_BLEND_CALIBRATED,1.1060,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2008-03-31,20.35,22.61,16.28,14.70,0.5103,0.3945,0.0952,SYNTHETIC_EP_BLEND_CALIBRATED,1.0842,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2008-06-30,19.77,22.42,16.14,14.57,0.5103,0.3945,0.0952,SYNTHETIC_EP_BLEND_CALIBRATED,1.0623,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2008-09-30,17.58,20.36,14.66,13.23,0.5103,0.3945,0.0952,SYNTHETIC_EP_BLEND_CALIBRATED,1.0403,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2008-12-31,13.00,15.38,11.07,10.00,0.5103,0.3945,0.0952,SYNTHETIC_EP_BLEND_CALIBRATED,1.0182,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2009-03-31,13.00,13.32,9.59,8.52,0.5148,0.3877,0.0974,SYNTHETIC_EP_BLEND_CALIBRATED,1.1766,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2009-06-30,15.93,16.38,11.79,10.48,0.5148,0.3877,0.0974,SYNTHETIC_EP_BLEND_CALIBRATED,1.1725,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2009-09-30,18.25,18.83,13.56,12.05,0.5148,0.3877,0.0974,SYNTHETIC_EP_BLEND_CALIBRATED,1.1683,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2009-12-31,19.62,20.32,14.63,13.00,0.5148,0.3877,0.0974,SYNTHETIC_EP_BLEND_CALIBRATED,1.1641,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2010-03-31,20.19,21.00,15.12,13.23,0.5194,0.3810,0.0997,SYNTHETIC_EP_BLEND_CALIBRATED,1.1601,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2010-06-30,18.91,19.74,14.21,12.44,0.5194,0.3810,0.0997,SYNTHETIC_EP_BLEND_CALIBRATED,1.1559,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2010-09-30,19.45,20.38,14.67,12.84,0.5194,0.3810,0.0997,SYNTHETIC_EP_BLEND_CALIBRATED,1.1518,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2010-12-31,21.30,22.40,16.13,14.11,0.5194,0.3810,0.0997,SYNTHETIC_EP_BLEND_CALIBRATED,1.1476,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2011-03-31,21.68,22.90,16.49,14.20,0.5239,0.3742,0.1019,SYNTHETIC_EP_BLEND_CALIBRATED,1.1435,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2011-06-30,20.84,22.10,15.91,13.70,0.5239,0.3742,0.1019,SYNTHETIC_EP_BLEND_CALIBRATED,1.1394,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2011-09-30,18.51,19.70,14.18,12.21,0.5239,0.3742,0.1019,SYNTHETIC_EP_BLEND_CALIBRATED,1.1352,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2011-12-31,19.21,20.52,14.77,12.72,0.5239,0.3742,0.1019,SYNTHETIC_EP_BLEND_CALIBRATED,1.1310,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2012-03-31,20.54,22.05,15.88,13.45,0.5284,0.3674,0.1042,SYNTHETIC_EP_BLEND_CALIBRATED,1.1269,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2012-06-30,19.08,20.55,14.80,12.54,0.5284,0.3674,0.1042,SYNTHETIC_EP_BLEND_CALIBRATED,1.1228,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2012-09-30,20.14,21.78,15.68,13.29,0.5284,0.3674,0.1042,SYNTHETIC_EP_BLEND_CALIBRATED,1.1186,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2012-12-31,19.57,21.24,15.29,12.96,0.5284,0.3674,0.1042,SYNTHETIC_EP_BLEND_CALIBRATED,1.1144,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2013-03-31,20.55,22.42,16.14,13.45,0.5329,0.3606,0.1065,SYNTHETIC_EP_BLEND_CALIBRATED,1.1103,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2013-06-30,20.94,22.93,16.51,13.76,0.5329,0.3606,0.1065,SYNTHETIC_EP_BLEND_CALIBRATED,1.1062,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2013-09-30,21.33,23.44,16.88,14.06,0.5329,0.3606,0.1065,SYNTHETIC_EP_BLEND_CALIBRATED,1.1020,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2013-12-31,22.53,24.86,17.90,14.92,0.5329,0.3606,0.1065,SYNTHETIC_EP_BLEND_CALIBRATED,1.0979,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2014-03-31,22.50,24.96,17.97,14.73,0.5374,0.3539,0.1087,SYNTHETIC_EP_BLEND_CALIBRATED,1.0938,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2014-06-30,22.96,25.56,18.40,15.08,0.5374,0.3539,0.1087,SYNTHETIC_EP_BLEND_CALIBRATED,1.0897,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2014-09-30,23.19,25.92,18.66,15.29,0.5374,0.3539,0.1087,SYNTHETIC_EP_BLEND_CALIBRATED,1.0855,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2014-12-31,23.88,26.79,19.29,15.81,0.5374,0.3539,0.1087,SYNTHETIC_EP_BLEND_CALIBRATED,1.0813,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2015-03-31,23.69,26.73,19.25,15.50,0.5419,0.3471,0.1110,SYNTHETIC_EP_BLEND_CALIBRATED,1.0772,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2015-06-30,23.40,26.50,19.08,15.37,0.5419,0.3471,0.1110,SYNTHETIC_EP_BLEND_CALIBRATED,1.0731,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2015-09-30,21.55,24.50,17.64,14.21,0.5419,0.3471,0.1110,SYNTHETIC_EP_BLEND_CALIBRATED,1.0689,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2015-12-31,22.75,25.97,18.70,15.06,0.5419,0.3471,0.1110,SYNTHETIC_EP_BLEND_CALIBRATED,1.0647,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2016-03-31,22.16,25.37,18.27,14.71,0.5465,0.3403,0.1132,SYNTHETIC_EP_BLEND_CALIBRATED,1.0606,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2016-06-30,22.48,25.84,18.60,14.99,0.5465,0.3403,0.1132,SYNTHETIC_EP_BLEND_CALIBRATED,1.0565,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2016-09-30,23.16,26.73,19.25,15.50,0.5465,0.3403,0.1132,SYNTHETIC_EP_BLEND_CALIBRATED,1.0523,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2016-12-31,24.06,27.87,20.07,16.16,0.5465,0.3403,0.1132,SYNTHETIC_EP_BLEND_CALIBRATED,1.0481,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2017-03-31,25.03,29.09,20.94,16.87,0.5510,0.3335,0.1155,SYNTHETIC_EP_BLEND_CALIBRATED,1.0441,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2017-06-30,25.50,29.75,21.42,17.25,0.5510,0.3335,0.1155,SYNTHETIC_EP_BLEND_CALIBRATED,1.0399,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2017-09-30,25.75,30.17,21.72,17.50,0.5510,0.3335,0.1155,SYNTHETIC_EP_BLEND_CALIBRATED,1.0358,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2017-12-31,27.28,32.09,23.10,18.61,0.5510,0.3335,0.1155,SYNTHETIC_EP_BLEND_CALIBRATED,1.0316,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2018-03-31,26.96,31.81,22.90,18.45,0.5555,0.3268,0.1177,SYNTHETIC_EP_BLEND_CALIBRATED,1.0275,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2018-06-30,26.70,31.63,22.77,18.35,0.5555,0.3268,0.1177,SYNTHETIC_EP_BLEND_CALIBRATED,1.0234,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2018-09-30,27.42,32.62,23.49,18.92,0.5555,0.3268,0.1177,SYNTHETIC_EP_BLEND_CALIBRATED,1.0192,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2018-12-31,23.69,28.29,20.37,16.41,0.5555,0.3268,0.1177,SYNTHETIC_EP_BLEND_CALIBRATED,1.0150,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2019-03-31,24.69,29.58,21.30,17.16,0.5600,0.3200,0.1200,SYNTHETIC_EP_BLEND_CALIBRATED,1.0109,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2019-06-30,24.34,29.28,21.08,16.98,0.5600,0.3200,0.1200,SYNTHETIC_EP_BLEND_CALIBRATED,1.0068,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2019-09-30,24.19,29.23,21.05,16.95,0.5600,0.3200,0.1200,SYNTHETIC_EP_BLEND_CALIBRATED,1.0026,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2019-12-31,25.00,30.33,21.84,17.59,0.5600,0.3200,0.1200,SYNTHETIC_EP_BLEND_CALIBRATED,0.9985,"Synthetic earnings-yield blend calibrated to public sanity anchors for 2000, 2007, 2009, and the pre-2020 Siblis splice."
+2020-12-31,24.35,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 646.27.
+2021-06-30,26.35,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 719.97.
+2021-12-31,26.40,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 754.83.
+2022-06-30,19.68,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 596.77.
+2022-12-31,19.24,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 605.38.
+2023-06-30,21.08,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 682.84.
+2023-12-31,21.91,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 727.00.
+2024-03-31,23.28,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 783.58.
+2024-06-30,23.56,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 802.01.
+2024-09-30,24.84,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 851.78.
+2024-12-31,24.25,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 841.33.
+2025-03-31,23.49,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 827.16.
+2025-06-30,25.84,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 917.89.
+2025-09-30,27.28,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 984.78.
+2025-12-31,27.71,,,,,,,SIBLIS_FREE_ANCHOR,,Siblis free Global Stock Market CAPE table; price level 1014.62.
+2026-05-23,29.40,,,,,,,RA_CURRENT_REFERENCE,,"User-supplied Research Affiliates AAI Global Total current snapshot; included as a current reference, not as a historical time series. Historical median reference: 23."

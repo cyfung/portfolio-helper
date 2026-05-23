@@ -3670,6 +3670,35 @@ a.loan-calc-link:hover {
     position: relative;
 }
 
+.world-cape-heading {
+    margin-top: 1.25rem;
+}
+
+.world-cape-download {
+    text-decoration: none;
+}
+
+.world-cape-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.8rem;
+    margin: -0.1rem 0 0.5rem;
+    padding-left: 0.25rem;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.world-cape-meta span + span {
+    padding-left: 0.8rem;
+    border-left: 1px solid var(--color-border-subtle);
+}
+
+.world-cape-chart-container {
+    height: 360px;
+}
+
 .chart-scale-toggle {
     position: absolute;
     top: 8px;
@@ -4301,6 +4330,13 @@ input.input-error,
     border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     margin-top: 0.5rem;
     padding-top: 0.25rem;
+}
+
+.strategy-derived-card {
+    border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
 }
 
 .strategy-section-body {

@@ -151,6 +151,9 @@ data class ActionPointDetail(
 data class ActionPoint(val date: String, val type: String, val detail: ActionPointDetail? = null)
 
 @Serializable
+data class VmTimingPoint(val date: String, val cape: Double, val valueFactor: Double)
+
+@Serializable
 data class BacktestStats(
     val cagr: Double,
     val maxDrawdown: Double,
@@ -170,7 +173,8 @@ data class CurveResult(
     val points: List<DataPoint>,
     val stats: BacktestStats,
     val marginPoints: List<DataPoint>? = null,
-    val actionPoints: List<ActionPoint>? = null
+    val actionPoints: List<ActionPoint>? = null,
+    val vmTimingPoints: List<VmTimingPoint>? = null
 )
 
 @Serializable

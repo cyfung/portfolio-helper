@@ -56,6 +56,7 @@ export interface DrawdownMarginTriggerState {
   enabled: boolean
   portfolioSource: string
   referenceTicker?: string
+  momentumLookbackMonths?: string
   enterDrawdownPct: string
   exitDrawdownPct: string
   triggerPointIndex: string
@@ -75,6 +76,54 @@ export interface DrawdownMarginTriggerTierState {
   allocStrategy: string
   restorePointIndex: string
   restoreMargin: string
+}
+
+export type CapeSource = 'US' | 'WORLD'
+
+export interface VmTimingMrState {
+  enabled: boolean
+  capeSource: CapeSource
+  lowerMargin: string
+  upperMargin: string
+  momentumSource: string
+  momentumReferenceTicker: string
+  momentumLookbackMonths: string
+  rebalancePeriod: string
+  allocStrategy: string
+}
+
+export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP'
+
+export interface DerivedTargetStepState {
+  id: string
+  referenceMargin: string
+  targetMargin: string
+}
+
+export interface DerivedTargetScaleState {
+  function: DerivedTargetScaleFunction
+  referenceLower: string
+  referenceUpper: string
+  targetLower: string
+  targetUpper: string
+  sigmoidSteepness: string
+  stepBaseTarget: string
+  steps: DerivedTargetStepState[]
+}
+
+export interface DerivedSubStrategyState {
+  id: string
+  label: string
+  enabled: boolean
+  scale: DerivedTargetScaleState
+  absoluteDeviationPct: string
+  buyDeviationPct: string
+  sellDeviationPct: string
+  timeoutDays: string
+  maxMargin: string
+  allocStrategy?: string
+  buyAllocStrategy: string
+  sellAllocStrategy: string
 }
 
 export interface RebalStrategyState {
@@ -108,6 +157,7 @@ export interface RebalStrategyState {
   buyLowRestorePointIndex: string      // index into marginPoints[] for restore target; default '2'
   buyLowRestoreMargin: string
   drawdownBuyOnLowMargin: DrawdownMarginTriggerState
+  vmTimingMr: VmTimingMrState
   buyTheDip: DipSurgeScopeState
   sellOnSurge: DipSurgeScopeState
   useComfortZone: boolean
@@ -115,6 +165,7 @@ export interface RebalStrategyState {
   comfortZoneHigh: string
   buyCooldownAfterSellHighDays: string
   sellCooldownAfterBuyLowDays: string
+  derivedSubStrategies: DerivedSubStrategyState[]
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -225,6 +276,7 @@ export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownM
     enabled: false,
     portfolioSource: 'REFERENCE_PORTFOLIO',
     referenceTicker: '',
+    momentumLookbackMonths: '',
     enterDrawdownPct: tier.enterDrawdownPct,
     exitDrawdownPct: tier.exitDrawdownPct,
     triggerPointIndex: tier.triggerPointIndex,
@@ -233,6 +285,58 @@ export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownM
     restorePointIndex: tier.restorePointIndex,
     restoreMargin: tier.restoreMargin,
     tiers: [tier],
+  }
+}
+
+export function emptyVmTimingMr(): VmTimingMrState {
+  return {
+    enabled: false,
+    capeSource: 'WORLD',
+    lowerMargin: '-50',
+    upperMargin: '50',
+    momentumSource: 'REFERENCE_PORTFOLIO',
+    momentumReferenceTicker: '',
+    momentumLookbackMonths: '12',
+    rebalancePeriod: 'MONTHLY',
+    allocStrategy: 'PROPORTIONAL',
+  }
+}
+
+export function emptyDerivedTargetScale(): DerivedTargetScaleState {
+  return {
+    function: 'SIGMOID',
+    referenceLower: '50',
+    referenceUpper: '100',
+    targetLower: '30',
+    targetUpper: '100',
+    sigmoidSteepness: '8',
+    stepBaseTarget: '50',
+    steps: [emptyDerivedTargetStep(0)],
+  }
+}
+
+export function emptyDerivedTargetStep(idx: number): DerivedTargetStepState {
+  return {
+    id: newId(),
+    referenceMargin: String(60 + idx * 10),
+    targetMargin: String(50 + idx * 10),
+  }
+}
+
+export function emptyDerivedSubStrategy(idx: number): DerivedSubStrategyState {
+  return {
+    id: newId(),
+    label: `Derived ${idx + 1}`,
+    enabled: true,
+    scale: emptyDerivedTargetScale(),
+    absoluteDeviationPct: '5',
+    buyDeviationPct: '5',
+    sellDeviationPct: '5',
+    timeoutDays: '10',
+    maxMargin: '',
+    allocStrategy: 'PROPORTIONAL',
+    buyAllocStrategy: 'PROPORTIONAL',
+    sellAllocStrategy: 'PROPORTIONAL',
   }
 }
 
@@ -268,6 +372,7 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     buyLowRestorePointIndex: '2',
     buyLowRestoreMargin: '',
     drawdownBuyOnLowMargin: emptyDrawdownMarginTrigger('buy'),
+    vmTimingMr: emptyVmTimingMr(),
     buyTheDip: emptyDipSurgeScopes(),
     sellOnSurge: emptyDipSurgeScopes(),
     useComfortZone: true,
@@ -275,6 +380,7 @@ export function emptyStrategy(idx: number): RebalStrategyState {
     comfortZoneHigh: '0',
     buyCooldownAfterSellHighDays: '10',
     sellCooldownAfterBuyLowDays: '10',
+    derivedSubStrategies: [],
   }
 }
 
@@ -418,6 +524,7 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
     enabled: configValue.enabled ?? false,
     portfolioSource,
     referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
+    momentumLookbackMonths: configValue.momentumLookbackMonths == null ? '' : String(configValue.momentumLookbackMonths),
     enterDrawdownPct: firstTier.enterDrawdownPct,
     exitDrawdownPct: firstTier.exitDrawdownPct,
     triggerPointIndex: firstTier.triggerPointIndex,
@@ -427,6 +534,68 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
     restoreMargin: firstTier.restoreMargin,
     tiers,
   }
+}
+
+function normalizeVmTimingMr(configValue: any): VmTimingMrState {
+  const base = emptyVmTimingMr()
+  if (!configValue) return base
+  const marginText = (value: any, fallback: string) => {
+    if (value == null) return fallback
+    const n = Number(value)
+    if (!Number.isFinite(n)) return String(value)
+    return String(Math.abs(n) <= 2 ? n * 100 : n)
+  }
+  return {
+    ...base,
+    ...configValue,
+    enabled: configValue.enabled ?? false,
+    capeSource: configValue.capeSource === 'US' ? 'US' : 'WORLD',
+    lowerMargin: marginText(configValue.lowerMargin ?? configValue.lowerMarginPct, base.lowerMargin),
+    upperMargin: marginText(configValue.upperMargin ?? configValue.upperMarginPct, base.upperMargin),
+    momentumSource: configValue.momentumSource ?? configValue.portfolioSource ?? base.momentumSource,
+    momentumReferenceTicker: configValue.momentumSource === 'REFERENCE_PORTFOLIO' || configValue.portfolioSource === 'REFERENCE_PORTFOLIO'
+      ? (configValue.momentumReferenceTicker ?? configValue.referenceTicker ?? '')
+      : '',
+    momentumLookbackMonths: String(configValue.momentumLookbackMonths ?? base.momentumLookbackMonths),
+    rebalancePeriod: configValue.rebalancePeriod === 'INHERIT' ? 'MONTHLY' : (configValue.rebalancePeriod ?? base.rebalancePeriod),
+    allocStrategy: configValue.allocStrategy ?? base.allocStrategy,
+  }
+}
+
+function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyState[] {
+  const items = Array.isArray(configValue) ? configValue : []
+  return items.map((item: any, i: number) => ({
+    ...emptyDerivedSubStrategy(i),
+    ...item,
+    id: item.id ?? newId(),
+    enabled: item.enabled ?? true,
+    scale: {
+      ...emptyDerivedTargetScale(),
+      ...(item.scale ?? {}),
+      function: item.scale?.function === 'STEP'
+        ? 'STEP'
+        : (
+          item.scale?.function === 'LINEAR' || item.scale?.function === 'Z_SHAPED'
+            ? 'LINEAR'
+            : (item.scale?.function === 'ADAPTIVE_LOW_SIGMOID' ? 'ADAPTIVE_LOW_SIGMOID' : 'SIGMOID')
+        ),
+      steps: Array.isArray(item.scale?.steps) && item.scale.steps.length > 0
+        ? item.scale.steps.map((step: any, stepIdx: number) => ({
+          ...emptyDerivedTargetStep(stepIdx),
+          ...step,
+          id: step.id ?? newId(),
+        }))
+        : [emptyDerivedTargetStep(0)],
+    },
+    absoluteDeviationPct: item.absoluteDeviationPct ?? '5',
+    buyDeviationPct: item.buyDeviationPct ?? item.absoluteDeviationPct ?? '5',
+    sellDeviationPct: item.sellDeviationPct ?? item.absoluteDeviationPct ?? '5',
+    timeoutDays: item.timeoutDays ?? '10',
+    maxMargin: item.maxMargin ?? '',
+    allocStrategy: item.allocStrategy ?? 'PROPORTIONAL',
+    buyAllocStrategy: item.buyAllocStrategy ?? item.allocStrategy ?? 'PROPORTIONAL',
+    sellAllocStrategy: item.sellAllocStrategy ?? item.allocStrategy ?? 'PROPORTIONAL',
+  }))
 }
 
 export function strategyStateToSavedConfig(s: RebalStrategyState): RebalStrategyState {
@@ -462,6 +631,10 @@ export function drawdownMarginTriggerIssues(
   const tiers = drawdownTriggerTiers(d, direction)
   if (tiers.length === 0) return [`${label}: add at least one tier.`]
   const issues: string[] = []
+  const momentumLookbackMonths = parseInt(d.momentumLookbackMonths ?? '', 10)
+  if ((d.momentumLookbackMonths ?? '').trim() !== '' && (!Number.isFinite(momentumLookbackMonths) || momentumLookbackMonths < 1)) {
+    issues.push(`${label}: momentum months must be 1 or higher.`)
+  }
   let prevEnter: number | null = null
   let prevExit: number | null = null
   tiers.forEach((tier, i) => {
@@ -502,11 +675,13 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
     buyLowTriggerPointIndex: config.buyLowTriggerPointIndex ?? '0',
     buyLowTriggerMargin: config.buyLowTriggerMargin ?? '',
     drawdownBuyOnLowMargin: normalizeDrawdownMarginTrigger(config.drawdownBuyOnLowMargin, 'buy'),
+    vmTimingMr: normalizeVmTimingMr(config.vmTimingMr),
     useComfortZone: config.useComfortZone ?? true,
     buyTheDip: normalizeDipSurgeScopes(config.buyTheDip),
     sellOnSurge: normalizeDipSurgeScopes(config.sellOnSurge),
     buyCooldownAfterSellHighDays: config.buyCooldownAfterSellHighDays ?? '10',
     sellCooldownAfterBuyLowDays: config.sellCooldownAfterBuyLowDays ?? '10',
+    derivedSubStrategies: normalizeDerivedSubStrategies(config.derivedSubStrategies),
   }
 }
 
@@ -535,6 +710,39 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
   const sellCooldownAfterBuyLowDays = parseInt(s.sellCooldownAfterBuyLowDays ?? '', 10)
   const drawdownOverride = s.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
   const drawdownReferenceTicker = (drawdownOverride.referenceTicker ?? '').trim().toUpperCase()
+  const vmTimingMr = s.vmTimingMr ?? emptyVmTimingMr()
+  const vmMomentumReferenceTicker = (vmTimingMr.momentumReferenceTicker ?? '').trim().toUpperCase()
+  const serializeDerivedSubStrategy = (d: DerivedSubStrategyState) => {
+    const scale = d.scale ?? emptyDerivedTargetScale()
+    const steepness = parseFloat(scale.sigmoidSteepness)
+    const timeoutDays = parseInt(d.timeoutDays ?? '', 10)
+    const serializeStep = (step: DerivedTargetStepState) => ({
+      referenceMargin: pctAllowZero(step.referenceMargin, 60),
+      targetMargin: pctAllowZero(step.targetMargin, 50),
+    })
+    return {
+      label: d.label.trim() || 'Derived',
+      enabled: d.enabled ?? true,
+      scale: {
+        function: scale.function || 'SIGMOID',
+        referenceLower: pctAllowZero(scale.referenceLower, 50),
+        referenceUpper: pctAllowZero(scale.referenceUpper, 100),
+        targetLower: pctAllowZero(scale.targetLower, 30),
+        targetUpper: pctAllowZero(scale.targetUpper, 100),
+        sigmoidSteepness: Number.isFinite(steepness) ? steepness : 8,
+        stepBaseTarget: pctAllowZero(scale.stepBaseTarget, 50),
+        steps: (scale.steps?.length ? scale.steps : [emptyDerivedTargetStep(0)]).map(serializeStep),
+      },
+      absoluteDeviationPct: pctAllowZero(d.absoluteDeviationPct, 5),
+      buyDeviationPct: pctAllowZero(d.buyDeviationPct ?? d.absoluteDeviationPct, 5),
+      sellDeviationPct: pctAllowZero(d.sellDeviationPct ?? d.absoluteDeviationPct, 5),
+      timeoutDays: Number.isFinite(timeoutDays) ? Math.max(0, timeoutDays) : 10,
+      maxMargin: customOrPointPct(d.maxMargin, undefined, 0, 4),
+      allocStrategy: d.buyAllocStrategy || d.allocStrategy || 'PROPORTIONAL',
+      buyAllocStrategy: d.buyAllocStrategy || d.allocStrategy || 'PROPORTIONAL',
+      sellAllocStrategy: d.sellAllocStrategy || d.allocStrategy || 'PROPORTIONAL',
+    }
+  }
   const serializeDrawdownMarginTrigger = (
     d: DrawdownMarginTriggerState | undefined,
     direction: 'buy' | 'sell',
@@ -544,6 +752,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     if (!cfg.enabled) return null
     const portfolioSource = cfg.portfolioSource || 'REFERENCE_PORTFOLIO'
     const referenceTicker = (cfg.referenceTicker ?? '').trim().toUpperCase()
+    const momentumLookbackMonths = parseInt(cfg.momentumLookbackMonths ?? '', 10)
     const tiers = drawdownTriggerTiers(cfg, direction)
       .map(tier => ({
         enterDrawdownPct: pctAllowZero(tier.enterDrawdownPct, 10),
@@ -558,6 +767,9 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       enabled: true,
       portfolioSource,
       referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
+      momentumLookbackMonths: direction === 'buy' && Number.isFinite(momentumLookbackMonths) && momentumLookbackMonths > 0
+        ? momentumLookbackMonths
+        : null,
       enterDrawdownPct: firstTier?.enterDrawdownPct ?? pctAllowZero(cfg.enterDrawdownPct, 10),
       exitDrawdownPct: firstTier?.exitDrawdownPct ?? pctAllowZero(cfg.exitDrawdownPct, 5),
       triggerMargin: firstTier?.triggerMargin ?? marginTriggerPct(cfg.triggerMargin, cfg.triggerPointIndex, direction === 'buy' ? 0 : 4),
@@ -615,6 +827,19 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       }
       : null,
     drawdownBuyOnLowMargin: serializeDrawdownMarginTrigger(s.drawdownBuyOnLowMargin, 'buy'),
+    vmTimingMr: vmTimingMr.enabled
+      ? {
+        enabled: true,
+        capeSource: vmTimingMr.capeSource === 'US' ? 'US' : 'WORLD',
+        lowerMargin: pctAllowZero(vmTimingMr.lowerMargin, -50),
+        upperMargin: pctAllowZero(vmTimingMr.upperMargin, 50),
+        momentumSource: vmTimingMr.momentumSource || 'REFERENCE_PORTFOLIO',
+        momentumReferenceTicker: vmTimingMr.momentumSource === 'REFERENCE_PORTFOLIO' && vmMomentumReferenceTicker ? vmMomentumReferenceTicker : null,
+        momentumLookbackMonths: Math.max(1, parseInt(vmTimingMr.momentumLookbackMonths || '12', 10) || 12),
+        rebalancePeriod: vmTimingMr.rebalancePeriod === 'INHERIT' ? 'MONTHLY' : (vmTimingMr.rebalancePeriod || 'MONTHLY'),
+        allocStrategy: vmTimingMr.allocStrategy || 'PROPORTIONAL',
+      }
+      : null,
     buyTheDip: serializeDipSurgeScopes(s.buyTheDip, points),
     sellOnSurge: serializeDipSurgeScopes(s.sellOnSurge, points),
     useComfortZone: s.useComfortZone ?? true,
@@ -622,5 +847,6 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     comfortZoneHigh: highComfort / 100,
     buyCooldownAfterSellHighDays: Number.isFinite(buyCooldownAfterSellHighDays) ? Math.max(0, buyCooldownAfterSellHighDays) : 10,
     sellCooldownAfterBuyLowDays: Number.isFinite(sellCooldownAfterBuyLowDays) ? Math.max(0, sellCooldownAfterBuyLowDays) : 10,
+    derivedSubStrategies: (s.derivedSubStrategies ?? []).map(serializeDerivedSubStrategy),
   }
 }

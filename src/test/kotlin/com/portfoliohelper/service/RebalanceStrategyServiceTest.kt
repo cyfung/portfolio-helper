@@ -104,6 +104,7 @@ class RebalanceStrategyServiceTest {
         buyOnLowMargin: MarginTriggerAction? = null,
         drawdownSellOnHighMargin: DrawdownMarginTriggerAction? = null,
         drawdownBuyOnLowMargin: DrawdownMarginTriggerAction? = null,
+        vmTimingMr: VmTimingMrConfig? = null,
         buyTheDip: DipSurgeConfig? = null,
         sellOnSurge: DipSurgeConfig? = null,
         drawdownMarginOverride: DrawdownMarginOverrideConfig? = null,
@@ -129,6 +130,7 @@ class RebalanceStrategyServiceTest {
         buyOnLowMargin = buyOnLowMargin,
         drawdownSellOnHighMargin = drawdownSellOnHighMargin,
         drawdownBuyOnLowMargin = drawdownBuyOnLowMargin,
+        vmTimingMr = vmTimingMr,
         buyTheDip = buyTheDip,
         sellOnSurge = sellOnSurge,
         useComfortZone = useComfortZone,
@@ -170,6 +172,39 @@ class RebalanceStrategyServiceTest {
         cooldown.recordFire(bbb, 2)
         assertFalse(cooldown.shouldFire(bbb, 12, rawTriggered = true), "BBB should still block its own tenth day")
         assertTrue(cooldown.shouldFire(bbb, 13, rawTriggered = true), "BBB should fire after its own cooldown")
+    }
+
+    @Test
+    fun vmTimingMr_usesReferenceTickerHistoryBeforeBacktestStart() {
+        val dates = days(LocalDate.of(2024, 1, 15), 20)
+        val spy = flatCurve(dates)
+        val refDates = listOf(LocalDate.of(2023, 10, 31)) + dates
+        val ref = refDates.associateWith { date -> if (date < dates.first()) 1.0 else 1.1 }
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.1,
+                vmTimingMr = VmTimingMrConfig(
+                    enabled = true,
+                    capeSource = CapeSource.US,
+                    lowerMargin = 0.5,
+                    upperMargin = 0.5,
+                    momentumSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    momentumReferenceTicker = "REF",
+                    momentumLookbackMonths = 3,
+                    rebalancePeriod = RebalancePeriodOverride.MONTHLY,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                ),
+            ),
+            null,
+            mapOf("SPY" to spy, "REF" to ref),
+            dates,
+            emptyMap(),
+        )
+
+        assertTrue(result.actionPoints.orEmpty().any { it.date == "2024-02-01" && it.type == "VM_TIMING_MR" })
+        assertApprox(0.5, requireNotNull(result.marginPoints)[17].value, label = "VM timing MR applies first monthly target")
     }
 
     @Test
@@ -1049,6 +1084,38 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun normalPortfolioRebalanceDoesNotBlockMarginTriggers() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 30),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 1),
+        )
+        val falling = mapOf(dates[0] to 1.0, dates[1] to 0.5, dates[2] to 0.5)
+
+        val result = RebalanceStrategyService.runStrategyResultForTest(
+            singleStockPortfolio(rebalance = RebalanceStrategy.MONTHLY),
+            strategy(
+                marginRatio = 0.5,
+                useComfortZone = false,
+                sellOnHighMargin = MarginTriggerAction(
+                    deviationPct = 0.7,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                    targetMargin = 0.3,
+                ),
+            ),
+            null,
+            mapOf("SPY" to falling),
+            dates,
+            emptyMap(),
+        )
+
+        val actions = result.actionPoints.orEmpty().filter { it.date == "2024-02-01" }.map { it.type }
+        assertTrue("PORTFOLIO_REBALANCE" in actions)
+        assertTrue("SELL_HIGH" in actions)
+        assertApprox(0.3, requireNotNull(result.marginPoints)[2].value, label = "sell high can run after normal rebalance")
+    }
+
+    @Test
     fun marginRebalance_sellOnlyStillAllowsBuyOnLowMarginTrigger() {
         val dates = listOf(
             LocalDate.of(2024, 1, 30),
@@ -1111,6 +1178,54 @@ class RebalanceStrategyServiceTest {
 
         assertApprox(0.5, requireNotNull(result.marginPoints)[1].value, label = "drawdown BL restores margin")
         assertTrue(result.actionPoints?.any { it.date == "2024-01-02" && it.type == "BUY_LOW" } == true)
+    }
+
+    @Test
+    fun drawdownBuyLowMomentumLookbackRequiresPositiveMomentum() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 3),
+        )
+        val rising = mapOf(dates[0] to 1.0, dates[1] to 2.0, dates[2] to 2.0)
+        val lookbackDate = LocalDate.of(2023, 12, 2)
+
+        fun runWithLookbackReference(lookbackValue: Double): CurveResult {
+            val reference = mapOf(
+                lookbackDate to lookbackValue,
+                dates[0] to 1.0,
+                dates[1] to 0.8,
+                dates[2] to 0.8,
+            )
+            return RebalanceStrategyService.runStrategyResultForTest(
+                singleStockPortfolio(),
+                strategy(
+                    marginRatio = 0.5,
+                    drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
+                        portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                        referenceTicker = "REF",
+                        momentumLookbackMonths = 1,
+                        enterDrawdownPct = 0.1,
+                        triggerMargin = 0.6,
+                        allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                        targetMargin = 0.5,
+                    ),
+                ),
+                null,
+                mapOf("SPY" to rising, "REF" to reference),
+                dates,
+                emptyMap(),
+            )
+        }
+
+        assertFalse(
+            runWithLookbackReference(0.9).actionPoints.orEmpty().any { it.type == "BUY_LOW" },
+            "DD BL should not buy when configured momentum is negative",
+        )
+        assertTrue(
+            runWithLookbackReference(0.7).actionPoints.orEmpty().any { it.date == "2024-01-02" && it.type == "BUY_LOW" },
+            "DD BL should buy when configured momentum is positive",
+        )
     }
 
     @Test
@@ -2209,5 +2324,73 @@ class RebalanceStrategyServiceTest {
             requireNotNull(r.marginPoints)
                 .forEachIndexed { i, p -> assertApprox(expMargins[i], p.value, label = "$scope margin[$i]") }
         }
+    }
+
+    @Test
+    fun derivedStrategy_usesOnlyPriorBaseMarginWhenComputingTarget() {
+        val dates = days(LocalDate.of(2024, 1, 2), 3)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                referenceLower = 0.0,
+                referenceUpper = 1.0,
+                targetLower = 0.0,
+                targetUpper = 1.0,
+                sigmoidSteepness = 100.0,
+            ),
+            absoluteDeviationPct = 0.10,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.5, 0.5, 1.0),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        assertFalse(
+            result.actionPoints.orEmpty().any { it.type == "BUY_LOW" },
+            "derived BL must not see the base margin value recorded at the same day's close",
+        )
+        requireNotNull(result.marginPoints)
+            .forEach { assertApprox(0.5, it.value, label = it.date) }
+    }
+
+    @Test
+    fun derivedStrategy_adaptiveLowSigmoidUsesCurrentBaseMarginAsLowerAnchor() {
+        val dates = days(LocalDate.of(2024, 1, 2), 2)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID,
+                referenceLower = 0.50,
+                referenceUpper = 1.00,
+                targetLower = 0.40,
+                targetUpper = 1.00,
+                sigmoidSteepness = 100.0,
+            ),
+            absoluteDeviationPct = 0.10,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.30, 0.30),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        assertApprox(0.30, requireNotNull(result.marginPoints).first().value, eps = 1e-6)
     }
 }

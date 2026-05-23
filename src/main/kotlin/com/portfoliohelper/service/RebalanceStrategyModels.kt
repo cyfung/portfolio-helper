@@ -28,6 +28,10 @@ enum class Direction { BUY, SELL }
 
 enum class MarginRebalanceTradeDirection { BOTH, BUY_ONLY, SELL_ONLY }
 
+enum class CapeSource { US, WORLD }
+
+enum class DerivedTargetScaleFunction { SIGMOID, ADAPTIVE_LOW_SIGMOID, LINEAR, STEP }
+
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 
 sealed class DipSurgeKey {
@@ -145,6 +149,7 @@ data class DrawdownMarginTriggerTier(
 data class DrawdownMarginTriggerAction(
     val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
     val referenceTicker: String? = null,
+    val momentumLookbackMonths: Int? = null,
     val enterDrawdownPct: Double = 0.10,
     val exitDrawdownPct: Double = 0.05,
     val triggerMargin: Double = 0.0,
@@ -166,6 +171,48 @@ data class DrawdownMarginTriggerAction(
 }
 
 // ── Top-level strategy config ─────────────────────────────────────────────────
+
+data class VmTimingMrConfig(
+    val enabled: Boolean = false,
+    val capeSource: CapeSource = CapeSource.WORLD,
+    val lowerMargin: Double = -0.50,
+    val upperMargin: Double = 0.50,
+    val momentumSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+    val momentumReferenceTicker: String? = null,
+    val momentumLookbackMonths: Int = 12,
+    val rebalancePeriod: RebalancePeriodOverride = RebalancePeriodOverride.MONTHLY,
+    val allocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
+)
+
+data class DerivedTargetStepConfig(
+    val referenceMargin: Double = 0.60,
+    val targetMargin: Double = 0.50,
+)
+
+data class DerivedTargetScaleConfig(
+    val function: DerivedTargetScaleFunction = DerivedTargetScaleFunction.SIGMOID,
+    val referenceLower: Double = 0.50,
+    val referenceUpper: Double = 1.00,
+    val targetLower: Double = 0.30,
+    val targetUpper: Double = 1.00,
+    val sigmoidSteepness: Double = 8.0,
+    val stepBaseTarget: Double = 0.50,
+    val steps: List<DerivedTargetStepConfig> = listOf(DerivedTargetStepConfig()),
+)
+
+data class DerivedSubStrategyConfig(
+    val label: String,
+    val enabled: Boolean = true,
+    val scale: DerivedTargetScaleConfig = DerivedTargetScaleConfig(),
+    val absoluteDeviationPct: Double = 0.05,
+    val buyDeviationPct: Double = absoluteDeviationPct,
+    val sellDeviationPct: Double = absoluteDeviationPct,
+    val timeoutDays: Int = 10,
+    val maxMargin: Double = 1.0,
+    val allocStrategy: String = MarginRebalanceMode.PROPORTIONAL.name,
+    val buyAllocStrategy: String = allocStrategy,
+    val sellAllocStrategy: String = allocStrategy,
+)
 
 data class RebalStrategyConfig(
     val label: String,
@@ -189,6 +236,7 @@ data class RebalStrategyConfig(
     val buyOnLowMargin: MarginTriggerAction?,
     val drawdownSellOnHighMargin: DrawdownMarginTriggerAction? = null,
     val drawdownBuyOnLowMargin: DrawdownMarginTriggerAction? = null,
+    val vmTimingMr: VmTimingMrConfig? = null,
     // Sections 5 & 6
     val buyTheDip: DipSurgeConfig?,
     val sellOnSurge: DipSurgeConfig?,
@@ -199,6 +247,7 @@ data class RebalStrategyConfig(
     val comfortZoneHigh: Double = 0.0,
     val buyCooldownAfterSellHighDays: Int = 10,
     val sellCooldownAfterBuyLowDays: Int = 10,
+    val derivedSubStrategies: List<DerivedSubStrategyConfig> = emptyList(),
 )
 
 data class RebalanceStrategyRequest(

@@ -75,6 +75,7 @@ const ACTION_MARKERS: Record<string, { label: string; short: string; color: stri
   SELL_SURGE:          { label: 'Sell surge',         short: 'SS', color: '#e67700' },
   PORTFOLIO_REBALANCE: { label: 'Portfolio rebalance', short: 'RB', color: '#7950f2', defaultVisible: false },
   MARGIN_REBALANCE:    { label: 'Margin rebalance',    short: 'MR', color: '#0ca678', defaultVisible: false },
+  VM_TIMING_MR:        { label: 'VM timing MR',        short: 'VM', color: '#0b7285', defaultVisible: false },
   DRAWDOWN_MR:          { label: 'Drawdown MR',         short: 'DD-MR', color: '#6741d9', defaultVisible: false },
   DRAWDOWN_MR_EXIT:     { label: 'Drawdown MR exit',    short: 'DD-X', color: '#868e96', defaultVisible: false },
 }
@@ -323,6 +324,42 @@ export default function RebalanceStrategyPage() {
       ?.filter(point => point.detail)
       .slice(0, 250) ?? []
   ), [selectedStrategyCurve])
+  const vmTimingChartData = useMemo(() => {
+    const labels = chartData?.labels ?? []
+    if (!results || labels.length === 0) return null
+    const rows: Record<string, any>[] = labels.map(x => ({ x }))
+    const datasets: {
+      dataKey: string
+      label: string
+      color: string
+      yAxisId: 'cape' | 'factor'
+      strokeDasharray?: string
+    }[] = []
+
+    results.portfolios.forEach((portfolio, pi) => {
+      const palette = PALETTE[pi % PALETTE.length]
+      portfolio.curves.forEach((curve, ci) => {
+        const key = `${pi}-${ci}`
+        if (selected.size > 0 && !selected.has(key)) return
+        if (!curve.vmTimingPoints?.length) return
+        const baseColor = palette[ci % palette.length]
+        const capeKey = `vmCape${pi}-${ci}`
+        const factorKey = `vmFactor${pi}-${ci}`
+        const byDate = new Map(curve.vmTimingPoints.map(point => [point.date, point]))
+        labels.forEach((date, i) => {
+          const point = byDate.get(date)
+          if (!point) return
+          rows[i][capeKey] = point.cape
+          rows[i][factorKey] = point.valueFactor
+        })
+        const label = `${portfolio.label} - ${curve.label}`
+        datasets.push({ dataKey: capeKey, label: `${label} CAPE`, color: baseColor, yAxisId: 'cape' })
+        datasets.push({ dataKey: factorKey, label: `${label} Value factor`, color: baseColor, yAxisId: 'factor', strokeDasharray: '5 4' })
+      })
+    })
+
+    return datasets.length > 0 ? { rows, datasets } : null
+  }, [chartData?.labels, results, selected])
 
   function toggleCurve(key: string, checked: boolean) {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
@@ -560,6 +597,7 @@ export default function RebalanceStrategyPage() {
                   <th title="# sell-high action points">SH</th>
                   <th title="# buy-dip action points">BD</th>
                   <th title="# sell-surge action points">SS</th>
+                  <th title="# VM timing margin rebalance action points">VM</th>
                 </tr>
               </thead>
               <tbody>
@@ -587,6 +625,7 @@ export default function RebalanceStrategyPage() {
                         <td>{actionPointCount(curve.actionPoints, 'SELL_HIGH')}</td>
                         <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
                         <td>{actionPointCount(curve.actionPoints, 'SELL_SURGE')}</td>
+                        <td>{actionPointCount(curve.actionPoints, 'VM_TIMING_MR')}</td>
                       </tr>
                     )
                   })
@@ -763,6 +802,40 @@ export default function RebalanceStrategyPage() {
                         stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
                     ))}
                     {renderActionMarkers(chartData.marginData.rows, 'margin')}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {vmTimingChartData && (
+            <>
+              <div className="backtest-chart-heading">
+                <div className="backtest-chart-title">VM Timing Debug</div>
+              </div>
+              <div className="backtest-chart-container">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={vmTimingChartData.rows} syncId="rs-backtest"
+                    margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                    <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
+                      interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
+                    <YAxis yAxisId="cape" domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
+                      tickFormatter={v => Number(v).toFixed(0)} width={54} />
+                    <YAxis yAxisId="factor" orientation="right" domain={[0, 1]} tick={{ fill: textColor, fontSize: 11 }}
+                      tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'} width={54} />
+                    <Tooltip
+                      formatter={(value: any, name: any, item: any) => {
+                        const n = Number(value)
+                        const dataKey = String(item?.dataKey ?? '')
+                        return [dataKey.includes('Factor') ? (n * 100).toFixed(2) + '%' : n.toFixed(2), name]
+                      }}
+                    />
+                    <Legend content={renderLegend} />
+                    {vmTimingChartData.datasets.map(ds => (
+                      <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
+                        yAxisId={ds.yAxisId} stroke={ds.color} strokeWidth={2} strokeDasharray={ds.strokeDasharray} />
+                    ))}
                   </LineChart>
                 </ResponsiveContainer>
               </div>

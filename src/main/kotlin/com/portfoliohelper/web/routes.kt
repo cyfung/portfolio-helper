@@ -309,6 +309,7 @@ private fun parseDrawdownMarginTriggerAction(obj: JsonObject): DrawdownMarginTri
             ?.trim()
             ?.uppercase()
             ?.takeIf { it.isNotBlank() && portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
+        momentumLookbackMonths = obj["momentumLookbackMonths"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1),
         enterDrawdownPct = legacyTier.enterDrawdownPct,
         exitDrawdownPct = legacyTier.exitDrawdownPct,
         triggerMargin = legacyTier.triggerMargin,
@@ -347,6 +348,88 @@ private fun parseDrawdownMarginOverride(obj: JsonObject): DrawdownMarginOverride
     )
 }
 
+private fun parseVmTimingMrConfig(obj: JsonObject): VmTimingMrConfig? {
+    if (obj["enabled"]?.jsonPrimitive?.booleanOrNull != true) return null
+    val momentumSource = runCatching {
+        PortfolioTriggerSource.valueOf(obj["momentumSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO")
+    }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
+    return VmTimingMrConfig(
+        enabled = true,
+        capeSource = runCatching {
+            CapeSource.valueOf(obj["capeSource"]?.jsonPrimitive?.content ?: "WORLD")
+        }.getOrDefault(CapeSource.WORLD),
+        lowerMargin = obj["lowerMargin"]?.jsonPrimitive?.doubleOrNull ?: -0.50,
+        upperMargin = obj["upperMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
+        momentumSource = momentumSource,
+        momentumReferenceTicker = obj["momentumReferenceTicker"]?.jsonPrimitive?.contentOrNull
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() && momentumSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
+        momentumLookbackMonths = (obj["momentumLookbackMonths"]?.jsonPrimitive?.intOrNull ?: 12).coerceAtLeast(1),
+        rebalancePeriod = runCatching {
+            RebalancePeriodOverride.valueOf(obj["rebalancePeriod"]?.jsonPrimitive?.content ?: "MONTHLY")
+        }.getOrDefault(RebalancePeriodOverride.MONTHLY),
+        allocStrategy = parseAllocStrategyId(obj["allocStrategy"]?.jsonPrimitive?.contentOrNull),
+    )
+}
+
+private fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleConfig =
+    DerivedTargetScaleConfig(
+        function = when (obj["function"]?.jsonPrimitive?.content) {
+            "STEP" -> DerivedTargetScaleFunction.STEP
+            "LINEAR", "Z_SHAPED" -> DerivedTargetScaleFunction.LINEAR
+            "ADAPTIVE_LOW_SIGMOID" -> DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID
+            "SIGMOID" -> DerivedTargetScaleFunction.SIGMOID
+            else -> DerivedTargetScaleFunction.SIGMOID
+        },
+        referenceLower = obj["referenceLower"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
+        referenceUpper = obj["referenceUpper"]?.jsonPrimitive?.doubleOrNull ?: 1.00,
+        targetLower = obj["targetLower"]?.jsonPrimitive?.doubleOrNull ?: 0.30,
+        targetUpper = obj["targetUpper"]?.jsonPrimitive?.doubleOrNull ?: 1.00,
+        sigmoidSteepness = obj["sigmoidSteepness"]?.jsonPrimitive?.doubleOrNull ?: 8.0,
+        stepBaseTarget = obj["stepBaseTarget"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
+        steps = (obj["steps"] as? JsonArray)
+            ?.mapNotNull { it as? JsonObject }
+            ?.map { stepObj ->
+                DerivedTargetStepConfig(
+                    referenceMargin = stepObj["referenceMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.60,
+                    targetMargin = stepObj["targetMargin"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
+                )
+            }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf(DerivedTargetStepConfig()),
+    )
+
+private fun parseDerivedSubStrategies(el: JsonElement?): List<DerivedSubStrategyConfig> =
+    (el as? JsonArray)
+        ?.mapIndexedNotNull { index, item ->
+            val obj = item as? JsonObject ?: return@mapIndexedNotNull null
+            val legacyDeviation = (obj["absoluteDeviationPct"]?.jsonPrimitive?.doubleOrNull ?: 0.05).coerceAtLeast(0.0)
+            val legacyAllocStrategy = parseAllocStrategyId(obj["allocStrategy"]?.jsonPrimitive?.contentOrNull)
+            DerivedSubStrategyConfig(
+                label = obj["label"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: "Derived ${index + 1}",
+                enabled = obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true,
+                scale = (obj["scale"] as? JsonObject)?.let { parseDerivedTargetScaleConfig(it) }
+                    ?: DerivedTargetScaleConfig(),
+                absoluteDeviationPct = legacyDeviation,
+                buyDeviationPct = (obj["buyDeviationPct"]?.jsonPrimitive?.doubleOrNull ?: legacyDeviation).coerceAtLeast(0.0),
+                sellDeviationPct = (obj["sellDeviationPct"]?.jsonPrimitive?.doubleOrNull ?: legacyDeviation).coerceAtLeast(0.0),
+                timeoutDays = (obj["timeoutDays"]?.jsonPrimitive?.intOrNull ?: 10).coerceAtLeast(0),
+                maxMargin = (obj["maxMargin"]?.jsonPrimitive?.doubleOrNull ?: 1.0).coerceAtLeast(0.0),
+                allocStrategy = legacyAllocStrategy,
+                buyAllocStrategy = parseAllocStrategyId(
+                    obj["buyAllocStrategy"]?.jsonPrimitive?.contentOrNull,
+                    legacyAllocStrategy,
+                ),
+                sellAllocStrategy = parseAllocStrategyId(
+                    obj["sellAllocStrategy"]?.jsonPrimitive?.contentOrNull,
+                    legacyAllocStrategy,
+                ),
+            )
+        }
+        ?: emptyList()
+
 private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = RebalStrategyConfig(
     label                      = obj["label"]?.jsonPrimitive?.contentOrNull ?: "Strategy",
     marginRatio                = obj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
@@ -379,6 +462,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     buyOnLowMargin             = (obj["buyOnLowMargin"] as? JsonObject)?.let { parseMarginTriggerAction(it) },
     drawdownSellOnHighMargin   = (obj["drawdownSellOnHighMargin"] as? JsonObject)?.let { parseDrawdownMarginTriggerAction(it) },
     drawdownBuyOnLowMargin     = (obj["drawdownBuyOnLowMargin"] as? JsonObject)?.let { parseDrawdownMarginTriggerAction(it) },
+    vmTimingMr                 = (obj["vmTimingMr"] as? JsonObject)?.let { parseVmTimingMrConfig(it) },
     buyTheDip                  = null,
     sellOnSurge                = null,
     buyTheDipConfigs           = parseDipSurgeConfigs(obj["buyTheDip"]),
@@ -388,6 +472,7 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     comfortZoneHigh             = obj["comfortZoneHigh"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     buyCooldownAfterSellHighDays = obj["buyCooldownAfterSellHighDays"]?.jsonPrimitive?.intOrNull ?: 10,
     sellCooldownAfterBuyLowDays = obj["sellCooldownAfterBuyLowDays"]?.jsonPrimitive?.intOrNull ?: 10,
+    derivedSubStrategies        = parseDerivedSubStrategies(obj["derivedSubStrategies"]),
 )
 
 private suspend fun ApplicationCall.respondOk() =

@@ -3,9 +3,114 @@ package com.portfoliohelper.service
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.time.temporal.IsoFields
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.math.exp
 import kotlin.math.max
 
 object RebalanceStrategyService {
+  private data class CapePoint(val date: LocalDate, val cape: Double)
+  private data class CapeHistory(val points: List<CapePoint>) {
+    fun valuationFactor(date: LocalDate): Pair<Double, Double>? {
+      val usable = points.filter { it.date <= date }
+      if (usable.isEmpty()) return null
+      val current = usable.last().cape
+      if (current <= 0.0) return null
+      val earningsYields = usable.mapNotNull { point ->
+        if (point.cape > 0.0) 1.0 / point.cape else null
+      }.sorted()
+      if (earningsYields.isEmpty()) return null
+
+      fun percentile(p: Double): Double {
+        if (earningsYields.size == 1) return earningsYields.first()
+        val pos = p.coerceIn(0.0, 1.0) * (earningsYields.lastIndex)
+        val lowerIndex = pos.toInt()
+        val upperIndex = kotlin.math.ceil(pos).toInt()
+        val lower = earningsYields[lowerIndex]
+        val upper = earningsYields[upperIndex]
+        return lower + (upper - lower) * (pos - lowerIndex)
+      }
+
+      val p5 = percentile(0.05)
+      val median = percentile(0.50)
+      val p95 = percentile(0.95)
+      val spread = p95 - p5
+      if (spread <= 0.0) return null
+
+      val trimmedEp = (1.0 / current).coerceIn(p5, p95)
+      val equityWeight = (1.0 + (trimmedEp - median) / spread).coerceIn(0.5, 1.5)
+      return (equityWeight - 0.5).coerceIn(0.0, 1.0) to current
+    }
+  }
+
+  private val capeCache = mutableMapOf<CapeSource, CapeHistory>()
+
+  private fun loadCapeHistory(source: CapeSource): CapeHistory =
+      synchronized(capeCache) { capeCache[source] } ?: synchronized(capeCache) {
+        capeCache[source] ?: run {
+          val fileName =
+              when (source) {
+                CapeSource.US -> "us-cape-history.csv"
+                CapeSource.WORLD -> "world-cape-history.csv"
+              }
+          val valueColumn =
+              when (source) {
+                CapeSource.US -> "us_cape"
+                CapeSource.WORLD -> "world_cape"
+              }
+          val candidatePaths =
+              listOf(
+                  Path.of("frontend", "public", "data", fileName),
+                  Path.of("build", "generated", "frontend", "static", "data", fileName),
+                  Path.of("static", "data", fileName),
+              )
+          val text =
+              candidatePaths.firstOrNull { Files.exists(it) }?.let { Files.readString(it) }
+                  ?: Thread.currentThread().contextClassLoader
+                      .getResource("static/data/$fileName")
+                      ?.readText()
+                  ?: error("CAPE history CSV not found: $fileName")
+          val lines = text.trim().lineSequence().filter { it.isNotBlank() }.toList()
+          val headers = lines.first().split(",")
+          val dateIndex = headers.indexOf("date")
+          val capeIndex = headers.indexOf(valueColumn)
+          if (dateIndex < 0 || capeIndex < 0) error("Invalid CAPE CSV header: $fileName")
+          val points =
+              lines.drop(1).mapNotNull { line ->
+                val cols = splitCsvLine(line)
+                val date = cols.getOrNull(dateIndex)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                val cape = cols.getOrNull(capeIndex)?.toDoubleOrNull()
+                if (date != null && cape != null && cape > 0.0) CapePoint(date, cape) else null
+              }.sortedBy { it.date }
+          if (points.isEmpty()) error("No CAPE rows loaded from $fileName")
+          CapeHistory(points).also { capeCache[source] = it }
+        }
+      }
+
+  private fun splitCsvLine(line: String): List<String> {
+    val fields = mutableListOf<String>()
+    val field = StringBuilder()
+    var inQuotes = false
+    var i = 0
+    while (i < line.length) {
+      val ch = line[i]
+      when {
+        ch == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> {
+          field.append('"')
+          i++
+        }
+        ch == '"' -> inQuotes = !inQuotes
+        ch == ',' && !inQuotes -> {
+          fields.add(field.toString())
+          field.clear()
+        }
+        else -> field.append(ch)
+      }
+      i++
+    }
+    fields.add(field.toString())
+    return fields
+  }
 
   fun run(request: RebalanceStrategyRequest): MultiBacktestResult {
     val fromDate = request.fromDate?.let { LocalDate.parse(it) }
@@ -105,7 +210,41 @@ object RebalanceStrategyService {
                   request.startingBalance,
                   request.includeActionDiagnostics,
               )
-          PortfolioResult(request.portfolio.label, listOf(curve))
+          val derivedCurves =
+              strategy.derivedSubStrategies
+                  .filter { it.enabled }
+                  .map { derived ->
+                    val baseMargins =
+                        curve.marginPoints?.map { it.value }
+                            ?: List(dates.size) { strategy.marginRatio }
+                    val derivedCurve =
+                        runStrategy(
+                            strategyPortfolio,
+                            strategy.copy(
+                                label = "${strategy.label} / ${derived.label}",
+                                sellOnHighMargin = null,
+                                buyOnLowMargin = null,
+                                drawdownSellOnHighMargin = null,
+                                drawdownBuyOnLowMargin = null,
+                                vmTimingMr = null,
+                                buyTheDip = null,
+                                sellOnSurge = null,
+                                buyTheDipConfigs = emptyList(),
+                                sellOnSurgeConfigs = emptyList(),
+                                derivedSubStrategies = emptyList(),
+                            ),
+                            request.cashflow,
+                            seriesMap,
+                            dates,
+                            effrx,
+                            request.startingBalance,
+                            request.includeActionDiagnostics,
+                            derived,
+                            baseMargins,
+                        )
+                    derivedCurve
+                  }
+          PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
         }
     return MultiBacktestResult(baseResult.portfolios + strategyResults)
   }
@@ -334,6 +473,13 @@ object RebalanceStrategyService {
         null
       }
 
+  private fun VmTimingMrConfig.normalizedReferenceTicker(): String? =
+      if (momentumSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO) {
+        normalizeReferenceTicker(momentumReferenceTicker)
+      } else {
+        null
+      }
+
   private fun RebalStrategyConfig.referenceTickers(): Set<String> =
       ((listOfNotNull(buyTheDip, sellOnSurge) + buyTheDipConfigs + sellOnSurgeConfigs)
           .mapNotNull { it.normalizedReferenceTicker() } +
@@ -341,8 +487,42 @@ object RebalanceStrategyService {
               drawdownMarginOverride?.normalizedReferenceTicker(),
               drawdownBuyOnLowMargin?.normalizedReferenceTicker(),
               drawdownSellOnHighMargin?.normalizedReferenceTicker(),
+              vmTimingMr?.normalizedReferenceTicker(),
           ))
           .toSet()
+
+  private fun DerivedTargetScaleConfig.scale(baseMargin: Double): Double {
+    if (function == DerivedTargetScaleFunction.STEP) {
+      var target = stepBaseTarget
+      for (step in steps.sortedBy { it.referenceMargin }) {
+        if (baseMargin >= step.referenceMargin) target = step.targetMargin
+      }
+      return target.coerceAtLeast(0.0)
+    }
+
+    val configuredRefLow = minOf(referenceLower, referenceUpper)
+    val refHigh = maxOf(referenceLower, referenceUpper)
+    val configuredTargetLow = minOf(targetLower, targetUpper)
+    val targetHigh = maxOf(targetLower, targetUpper)
+    val adaptiveLow = function == DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID
+    val refLow = if (adaptiveLow && baseMargin < configuredRefLow) baseMargin else configuredRefLow
+    val targetLow = if (adaptiveLow && baseMargin < configuredTargetLow) baseMargin else configuredTargetLow
+    val refSpan = refHigh - refLow
+    val normalized =
+        if (refSpan > 0.0) ((baseMargin - refLow) / refSpan).coerceIn(0.0, 1.0)
+        else 0.5
+    val shaped =
+        when (function) {
+          DerivedTargetScaleFunction.SIGMOID,
+          DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID -> {
+            val k = sigmoidSteepness.takeIf { it.isFinite() && it > 0.0 } ?: 8.0
+            1.0 / (1.0 + exp(-k * (normalized - 0.5)))
+          }
+          DerivedTargetScaleFunction.LINEAR -> normalized
+          DerivedTargetScaleFunction.STEP -> normalized
+        }
+    return targetLow + shaped * (targetHigh - targetLow)
+  }
 
   private fun prepareRunContext(
       fromDateText: String?,
@@ -453,6 +633,31 @@ object RebalanceStrategyService {
   ): CurveResult =
       runStrategy(portfolio, strategy, cashflow, seriesMap, dates, effrx, startingBalance, includeActionDiagnostics)
 
+  internal fun runDerivedStrategyResultForTest(
+      portfolio: PortfolioConfig,
+      strategy: RebalStrategyConfig,
+      derivedSubStrategy: DerivedSubStrategyConfig,
+      baseMarginSeries: List<Double>,
+      cashflow: CashflowConfig?,
+      seriesMap: Map<String, Map<LocalDate, Double>>,
+      dates: List<LocalDate>,
+      effrx: Map<LocalDate, Double>,
+      startingBalance: Double = 10_000.0,
+      includeActionDiagnostics: Boolean = false,
+  ): CurveResult =
+      runStrategy(
+          portfolio,
+          strategy,
+          cashflow,
+          seriesMap,
+          dates,
+          effrx,
+          startingBalance,
+          includeActionDiagnostics,
+          derivedSubStrategy,
+          baseMarginSeries,
+      )
+
   // ── Core simulation ───────────────────────────────────────────────────────
 
   private fun runStrategy(
@@ -464,15 +669,29 @@ object RebalanceStrategyService {
       effrx: Map<LocalDate, Double>,
       startingBalance: Double = 10_000.0,
       includeActionDiagnostics: Boolean = false,
+      derivedSubStrategy: DerivedSubStrategyConfig? = null,
+      baseMarginSeries: List<Double>? = null,
   ): CurveResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
     val marginRebalance =
         if (strategy.marginRebalanceEnabled) strategy.rebalancePeriod.toMarginRebalanceStrategy()
         else RebalanceStrategy.NONE
+    val vmTimingMr = strategy.vmTimingMr?.takeIf { it.enabled }
+    val vmTimingRebalance =
+        vmTimingMr?.rebalancePeriod?.toMarginRebalanceStrategy() ?: RebalanceStrategy.NONE
+    val vmTimingCapeHistory = vmTimingMr?.let { loadCapeHistory(it.capeSource) }
     val drawdownMarginOverride =
         strategy.drawdownMarginOverride?.takeIf { strategy.marginRebalanceEnabled && it.enabled }
-    val marginTarget = strategy.marginRatio
+    fun derivedTargetAt(recordedIndex: Int): Double? {
+      val derived = derivedSubStrategy ?: return null
+      val baseMargins = baseMarginSeries ?: return null
+      if (baseMargins.isEmpty()) return null
+      val baseMargin = baseMargins.getOrNull(recordedIndex.coerceIn(0, baseMargins.lastIndex)) ?: return null
+      return derived.scale.scale(baseMargin)
+    }
+
+    val marginTarget = derivedTargetAt(0) ?: strategy.marginRatio
     val comfortLowBound = strategy.comfortZoneLow
     val comfortHighBound = strategy.comfortZoneHigh
     val globalCooldown =
@@ -493,6 +712,7 @@ object RebalanceStrategyService {
                 drawdownMarginOverride?.normalizedReferenceTicker(),
                 strategy.drawdownBuyOnLowMargin?.normalizedReferenceTicker(),
                 strategy.drawdownSellOnHighMargin?.normalizedReferenceTicker(),
+                vmTimingMr?.normalizedReferenceTicker(),
             )).distinct()
     val returnRatios = BacktestService.buildReturnRatios(tickers, seriesMap, dates)
     val singleTickerReferenceReturnRatios =
@@ -528,7 +748,7 @@ object RebalanceStrategyService {
       return values.map { it / last }
     }
 
-    fun baseReferenceHistoryValues(): List<Double> {
+    fun baseReferenceHistoryPoints(): List<Pair<LocalDate, Double>> {
       val historyDates = BacktestService.intersectDates(
           tickers.mapNotNull { seriesMap[it] },
           null,
@@ -548,9 +768,14 @@ object RebalanceStrategyService {
         }
         values.add(total)
       }
-      val last = values.lastOrNull()?.takeIf { it > 0.0 } ?: return values
-      return values.map { it / last }
+      val last = values.lastOrNull()?.takeIf { it > 0.0 } ?: return emptyList()
+      return historyDates.zip(values.map { it / last })
     }
+
+    val baseReferencePreStartHistory = baseReferenceHistoryPoints()
+
+    fun baseReferenceHistoryValues(): List<Double> =
+        baseReferencePreStartHistory.map { it.second }
 
     fun portfolioReferenceHistoryValues(key: DipSurgeKey.Portfolio): List<Double> =
         when (key.source) {
@@ -616,6 +841,19 @@ object RebalanceStrategyService {
     val values = mutableListOf(startingBalance)
     val marginUtils = mutableListOf(marginTarget)
     val actionPoints = mutableListOf<ActionPoint>()
+    val baseReferenceValues = mutableListOf(dailyBaseReferenceValue)
+    val strategyGrossValues = mutableListOf(account.grossStockValue())
+    val strategyEquityValues = mutableListOf(account.equity())
+    val vmTimingPoints = mutableListOf<VmTimingPoint>()
+    var lastDerivedActionIndex: Int? = null
+
+    fun recordVmTimingPoint(date: LocalDate) {
+      val valuation = vmTimingCapeHistory?.valuationFactor(date) ?: return
+      val (valueFactor, capeValue) = valuation
+      vmTimingPoints.add(VmTimingPoint(date.toString(), capeValue, valueFactor))
+    }
+
+    if (vmTimingMr != null) recordVmTimingPoint(firstDate)
 
     // ── Pre-loop: build trigger checkers and executors ────────────────────
     fun DipSurgeConfig.buildResources(): DipSurgeResources {
@@ -657,6 +895,89 @@ object RebalanceStrategyService {
     }
     dipResources.forEach { advanceInitialCheckers(it) }
     surgeResources.forEach { advanceInitialCheckers(it) }
+
+    fun dateIndexOnOrBefore(targetDate: LocalDate, maxIndex: Int): Int {
+      var lo = 0
+      var hi = maxIndex.coerceAtMost(dates.lastIndex)
+      var result = -1
+      while (lo <= hi) {
+        val mid = (lo + hi) ushr 1
+        if (dates[mid] <= targetDate) {
+          result = mid
+          lo = mid + 1
+        } else {
+          hi = mid - 1
+        }
+      }
+      return result
+    }
+
+    fun valueOnOrBefore(points: List<Pair<LocalDate, Double>>, targetDate: LocalDate): Double? {
+      var result: Double? = null
+      for ((date, value) in points) {
+        if (date > targetDate) break
+        result = value
+      }
+      return result
+    }
+
+    fun seriesValueOnOrBefore(ticker: String, targetDate: LocalDate): Double? =
+        seriesMap[ticker]
+            ?.entries
+            ?.asSequence()
+            ?.filter { it.key <= targetDate }
+            ?.maxByOrNull { it.key }
+            ?.value
+
+    fun portfolioMomentumReturn(
+        key: DipSurgeKey.Portfolio,
+        lookbackMonths: Int,
+        curIndex: Int,
+        curDate: LocalDate,
+    ): Double? {
+      val lookbackDate = curDate.minusMonths(lookbackMonths.coerceAtLeast(1).toLong())
+      val currentValue: Double
+      val startValue: Double
+      when (key.source) {
+        PortfolioTriggerSource.STRATEGY_GROSS -> {
+          currentValue = account.grossStockValue()
+          val lookbackIndex = dateIndexOnOrBefore(lookbackDate, minOf(curIndex - 1, strategyGrossValues.lastIndex))
+          if (lookbackIndex < 0) return null
+          startValue = strategyGrossValues.getOrNull(lookbackIndex)?.takeIf { it > 0.0 } ?: return null
+        }
+        PortfolioTriggerSource.STRATEGY_VALUE -> {
+          currentValue = account.equity()
+          val lookbackIndex = dateIndexOnOrBefore(lookbackDate, minOf(curIndex - 1, strategyEquityValues.lastIndex))
+          if (lookbackIndex < 0) return null
+          startValue = strategyEquityValues.getOrNull(lookbackIndex)?.takeIf { it > 0.0 } ?: return null
+        }
+        PortfolioTriggerSource.REFERENCE_PORTFOLIO -> {
+          if (key.referenceTicker != null) {
+            val referenceTicker = key.referenceTicker
+            currentValue = seriesValueOnOrBefore(referenceTicker, curDate)?.takeIf { it > 0.0 } ?: return null
+            startValue = seriesValueOnOrBefore(referenceTicker, lookbackDate)?.takeIf { it > 0.0 } ?: return null
+          } else {
+            currentValue = dailyBaseReferenceValue
+            startValue =
+                if (lookbackDate < firstDate) {
+                  valueOnOrBefore(baseReferencePreStartHistory, lookbackDate)
+                } else {
+                  val lookbackIndex = dateIndexOnOrBefore(lookbackDate, minOf(curIndex - 1, baseReferenceValues.lastIndex))
+                  baseReferenceValues.getOrNull(lookbackIndex)
+                }?.takeIf { it > 0.0 } ?: return null
+          }
+        }
+      }
+      if (currentValue <= 0.0) return null
+      return currentValue / startValue - 1.0
+    }
+
+    fun vmMomentumFactor(config: VmTimingMrConfig, curIndex: Int, curDate: LocalDate): Pair<Double, Double>? {
+      val key = DipSurgeKey.Portfolio(config.momentumSource, config.normalizedReferenceTicker())
+      val momentumReturn =
+          portfolioMomentumReturn(key, config.momentumLookbackMonths, curIndex, curDate) ?: return null
+      return (if (momentumReturn >= 0.0) 1.0 else 0.0) to momentumReturn
+    }
 
     // ── Per-day helper: check triggers and drive executors for one config ─
     fun processConfig(
@@ -749,6 +1070,7 @@ object RebalanceStrategyService {
         dailyBaseReferenceHoldings[ticker] = dailyBaseReferenceTotal * (targetWeights[ticker] ?: 0.0)
       }
       dailyBaseReferenceValue = dailyBaseReferenceTotal
+      baseReferenceValues.add(dailyBaseReferenceValue)
 
       // Step 2: Accrue margin interest on debt
       account.accrueMarginInterest(dailyLoanRates[i])
@@ -812,7 +1134,22 @@ object RebalanceStrategyService {
         drawdownOverrideAnchorIndex = i
       }
 
+      // BL/SH decisions use the same pre-day account snapshot as the existing triggers,
+      // so the derived reference also uses the base strategy's previous recorded margin.
+      val dynamicTargetMargin = derivedTargetAt(i - 1) ?: marginTarget
+      val dynamicDeviation = derivedSubStrategy?.absoluteDeviationPct?.coerceAtLeast(0.0)
+
       fun comfortZoneMargin(useComfortZone: Boolean): Double {
+        if (dynamicDeviation != null) {
+          val currentRatio = account.currentMarginRatio()
+          val low = (dynamicTargetMargin - dynamicDeviation).coerceAtLeast(0.0)
+          val high = dynamicTargetMargin + dynamicDeviation
+          return when {
+            currentRatio > high -> high
+            currentRatio < low -> low
+            else -> currentRatio
+          }
+        }
         if (!useComfortZone) return marginTarget
         val currentRatio = account.currentMarginRatio()
         return when {
@@ -891,8 +1228,9 @@ object RebalanceStrategyService {
             shouldRebalance(marginRebalance, anchor, curDate)
           } ?: shouldRebalance(marginRebalance, prevDate, curDate)
       val marginRebalanceDay =
-          !normalRebalanceDay &&
-              if (activeDrawdownOverride != null) drawdownOverrideCheckpointDay else normalMarginRebalanceDue
+          if (activeDrawdownOverride != null) drawdownOverrideCheckpointDay else normalMarginRebalanceDue
+      val vmTimingRebalanceDay =
+          vmTimingMr != null && shouldRebalance(vmTimingRebalance, prevDate, curDate)
 
       // Step 3: Normal portfolio rebalance first.
       if (normalRebalanceDay) {
@@ -902,168 +1240,260 @@ object RebalanceStrategyService {
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)
           actionPoints.add(ActionPoint(curDate.toString(), "PORTFOLIO_REBALANCE"))
         }
-      } else {
-        if (marginRebalanceDay) {
-          // Step 4: Scheduled margin rebalance only runs on days without normal rebalance.
-          val drawdownOverrideRebalanceDay = activeDrawdownOverride != null
-          var scheduledRebalanceDeferredByCooldown = false
-          if (activeDrawdownOverride == null && marginRebalanceResumeAnchorDate != null) {
-            marginRebalanceResumeAnchorDate = curDate
-          }
-          val eq = account.equity()
-          if (eq > 0) {
-            val tradeDirection =
-                activeDrawdownOverride?.tradeDirection ?: strategy.marginRebalanceTradeDirection
-            val targetMargin =
-                activeDrawdownOverride?.targetMargin ?: if (tradeDirection == MarginRebalanceTradeDirection.BOTH)
-                  comfortZoneMargin(strategy.useComfortZone)
-                else
-                  strategy.marginRebalanceRestoreMargin ?: marginTarget
-            val targetTotal = eq * (1.0 + targetMargin)
-            val delta = targetTotal - account.grossStockValue()
-            val directionAllowed =
-                when (tradeDirection) {
-                  MarginRebalanceTradeDirection.BOTH -> true
-                  MarginRebalanceTradeDirection.BUY_ONLY -> delta > 0.0
-                  MarginRebalanceTradeDirection.SELL_ONLY -> delta < 0.0
-                }
-            if (directionAllowed) {
-              val direction =
-                  if (delta > 0.0) Direction.BUY else if (delta < 0.0) Direction.SELL else null
-              val deferredUntilIndex = direction?.let { globalCooldown.nextAllowedIndex(it, i) }
-              if (deferredUntilIndex != null) {
-                scheduledRebalanceDeferredByCooldown = true
-                if (activeDrawdownOverride != null) {
-                  deferredDrawdownOverrideRebalanceIndex = maxOf(i, deferredUntilIndex)
-                } else {
-                  deferredMarginRebalanceIndex = maxOf(i, deferredUntilIndex)
-                }
+      }
+      if (marginRebalanceDay) {
+        // Step 4: Scheduled margin rebalance.
+        val drawdownOverrideRebalanceDay = activeDrawdownOverride != null
+        var scheduledRebalanceDeferredByCooldown = false
+        if (activeDrawdownOverride == null && marginRebalanceResumeAnchorDate != null) {
+          marginRebalanceResumeAnchorDate = curDate
+        }
+        val eq = account.equity()
+        if (eq > 0) {
+          val tradeDirection =
+              activeDrawdownOverride?.tradeDirection ?: strategy.marginRebalanceTradeDirection
+          val targetMargin =
+              activeDrawdownOverride?.targetMargin ?: if (tradeDirection == MarginRebalanceTradeDirection.BOTH)
+                comfortZoneMargin(strategy.useComfortZone)
+              else
+                strategy.marginRebalanceRestoreMargin ?: dynamicTargetMargin
+          val targetTotal = eq * (1.0 + targetMargin)
+          val delta = targetTotal - account.grossStockValue()
+          val directionAllowed =
+              when (tradeDirection) {
+                MarginRebalanceTradeDirection.BOTH -> true
+                MarginRebalanceTradeDirection.BUY_ONLY -> delta > 0.0
+                MarginRebalanceTradeDirection.SELL_ONLY -> delta < 0.0
               }
-              if (direction == null || deferredUntilIndex == null) {
-                val grossBefore = account.grossStockValue()
-                val marginBefore = if (account.equity() > 0.0) account.currentMarginRatio() else 0.0
-                val effectiveAllocStrategy =
-                    when {
-                      activeDrawdownOverride == null -> strategy.rebalanceAllocStrategy
-                      delta >= 0.0 -> activeDrawdownOverride.buyAllocStrategy
-                      else -> activeDrawdownOverride.sellAllocStrategy
-                    }
-                applyAllocDelta(
-                    tickers,
-                    account,
-                    targetWeights,
-                    delta,
-                    effectiveAllocStrategy,
-                )
-                if (direction != null && tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
-                  val grossAfter = account.grossStockValue()
-                  val detail =
-                      if (includeActionDiagnostics) {
-                        ActionPointDetail(
-                            tradingDayIndex = i,
-                            key = if (activeDrawdownOverride != null) {
-                              drawdownOverrideKey?.diagnosticLabel() ?: "DD-MR"
-                            } else {
-                              "MR"
-                            },
-                            direction = direction.name,
-                            triggerValue = drawdownOverrideKey?.let { portfolioTriggerValue(it) },
-                            daysSincePrevious = if (activeDrawdownOverride != null) {
-                              drawdownOverrideLastRebalanceIndex?.let { i - it }
-                                  ?: drawdownOverrideAnchorIndex?.let { anchor -> i - anchor }
-                            } else {
-                              null
-                            },
-                            amount = kotlin.math.abs(delta),
-                            grossBefore = grossBefore,
-                            grossAfter = grossAfter,
-                            marginBefore = marginBefore,
-                            marginAfter = if (account.equity() > 0.0) account.currentMarginRatio() else 0.0,
-                            allocStrategy = effectiveAllocStrategy,
-                        )
-                      } else {
-                        null
-                      }
-                  actionPoints.add(
-                      ActionPoint(
-                          curDate.toString(),
-                          if (activeDrawdownOverride != null) "DRAWDOWN_MR" else "MARGIN_REBALANCE",
-                          detail,
+          if (directionAllowed) {
+            val direction =
+                if (delta > 0.0) Direction.BUY else if (delta < 0.0) Direction.SELL else null
+            val deferredUntilIndex = direction?.let { globalCooldown.nextAllowedIndex(it, i) }
+            if (deferredUntilIndex != null) {
+              scheduledRebalanceDeferredByCooldown = true
+              if (activeDrawdownOverride != null) {
+                deferredDrawdownOverrideRebalanceIndex = maxOf(i, deferredUntilIndex)
+              } else {
+                deferredMarginRebalanceIndex = maxOf(i, deferredUntilIndex)
+              }
+            }
+            if (direction == null || deferredUntilIndex == null) {
+              val grossBefore = account.grossStockValue()
+              val marginBefore = if (account.equity() > 0.0) account.currentMarginRatio() else 0.0
+              val effectiveAllocStrategy =
+                  when {
+                    activeDrawdownOverride == null -> strategy.rebalanceAllocStrategy
+                    delta >= 0.0 -> activeDrawdownOverride.buyAllocStrategy
+                    else -> activeDrawdownOverride.sellAllocStrategy
+                  }
+              applyAllocDelta(
+                  tickers,
+                  account,
+                  targetWeights,
+                  delta,
+                  effectiveAllocStrategy,
+              )
+              if (direction != null && tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
+                val grossAfter = account.grossStockValue()
+                val detail =
+                    if (includeActionDiagnostics) {
+                      ActionPointDetail(
+                          tradingDayIndex = i,
+                          key = if (activeDrawdownOverride != null) {
+                            drawdownOverrideKey?.diagnosticLabel() ?: "DD-MR"
+                          } else {
+                            "MR"
+                          },
+                          direction = direction.name,
+                          triggerValue = drawdownOverrideKey?.let { portfolioTriggerValue(it) },
+                          daysSincePrevious = if (activeDrawdownOverride != null) {
+                            drawdownOverrideLastRebalanceIndex?.let { i - it }
+                                ?: drawdownOverrideAnchorIndex?.let { anchor -> i - anchor }
+                          } else {
+                            null
+                          },
+                          amount = kotlin.math.abs(delta),
+                          grossBefore = grossBefore,
+                          grossAfter = grossAfter,
+                          marginBefore = marginBefore,
+                          marginAfter = if (account.equity() > 0.0) account.currentMarginRatio() else 0.0,
+                          allocStrategy = effectiveAllocStrategy,
                       )
+                    } else {
+                      null
+                    }
+                actionPoints.add(
+                    ActionPoint(
+                        curDate.toString(),
+                        if (activeDrawdownOverride != null) "DRAWDOWN_MR" else "MARGIN_REBALANCE",
+                        detail,
+                    )
+                )
+                if (activeDrawdownOverride == null) marginRebalanceResumeAnchorDate = curDate
+                if (activeDrawdownOverride != null) {
+                  deferredDrawdownOverrideRebalanceIndex = null
+                } else {
+                  deferredMarginRebalanceIndex = null
+                }
+              }
+            }
+          }
+        }
+        if (!scheduledRebalanceDeferredByCooldown) {
+          if (activeDrawdownOverride != null) {
+            deferredDrawdownOverrideRebalanceIndex = null
+          } else {
+            deferredMarginRebalanceIndex = null
+          }
+        }
+        if (drawdownOverrideRebalanceDay && !scheduledRebalanceDeferredByCooldown) {
+          drawdownOverrideLastRebalanceDate = curDate
+          drawdownOverrideLastRebalanceIndex = i
+        }
+      }
+
+      if (vmTimingRebalanceDay) {
+        val activeVmTimingMr = requireNotNull(vmTimingMr)
+        val activeVmTimingCapeHistory = requireNotNull(vmTimingCapeHistory)
+        val eq = account.equity()
+        val valuation = activeVmTimingCapeHistory.valuationFactor(curDate)
+        val momentum = vmMomentumFactor(activeVmTimingMr, i, curDate)
+        if (eq > 0 && valuation != null && momentum != null) {
+          val (valuationFactor, capeValue) = valuation
+          val (momentumFactor, _) = momentum
+          val vmFactor = ((valuationFactor + momentumFactor) / 2.0).coerceIn(0.0, 1.0)
+          val lower = minOf(activeVmTimingMr.lowerMargin, activeVmTimingMr.upperMargin)
+          val upper = maxOf(activeVmTimingMr.lowerMargin, activeVmTimingMr.upperMargin)
+          val targetMargin = lower + vmFactor * (upper - lower)
+          val targetTotal = eq * (1.0 + targetMargin)
+          val delta = targetTotal - account.grossStockValue()
+          val direction =
+              if (delta > 0.0) Direction.BUY else if (delta < 0.0) Direction.SELL else null
+          val grossBefore = account.grossStockValue()
+          val marginBefore = if (account.equity() > 0.0) account.netMarginRatio() else 0.0
+          applyAllocDelta(tickers, account, targetWeights, delta, activeVmTimingMr.allocStrategy)
+          if (direction != null && tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), direction)) {
+            val detail =
+                if (includeActionDiagnostics) {
+                  ActionPointDetail(
+                      tradingDayIndex = i,
+                      key = "VM:${activeVmTimingMr.capeSource.name}:${activeVmTimingMr.momentumLookbackMonths}M",
+                      direction = direction.name,
+                      triggerValue = capeValue,
+                      amount = kotlin.math.abs(delta),
+                      grossBefore = grossBefore,
+                      grossAfter = account.grossStockValue(),
+                      marginBefore = marginBefore,
+                      marginAfter = if (account.equity() > 0.0) account.netMarginRatio() else 0.0,
+                      allocStrategy = activeVmTimingMr.allocStrategy,
                   )
-                  if (activeDrawdownOverride == null) marginRebalanceResumeAnchorDate = curDate
-                  if (activeDrawdownOverride != null) {
-                    deferredDrawdownOverrideRebalanceIndex = null
-                  } else {
-                    deferredMarginRebalanceIndex = null
+                } else {
+                  null
+                }
+            actionPoints.add(ActionPoint(curDate.toString(), "VM_TIMING_MR", detail))
+          }
+        }
+      }
+
+      // Step 5: Margin deviation triggers (sell on high / buy on low margin).
+      // These explicit trigger sections are independent of the scheduled margin
+      // rebalance trade-direction filter above.
+      if (equityBefore > 0) {
+        val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
+        val derivedTimeoutBlocked =
+            derivedSubStrategy
+                ?.let { derived ->
+                  lastDerivedActionIndex?.let { last -> i - last <= derived.timeoutDays.coerceAtLeast(0) }
+                }
+                ?: false
+        val derivedMaxSell =
+            derivedSubStrategy?.takeIf { currentRatio > it.maxMargin.coerceAtLeast(0.0) }
+
+        val effectiveSellHigh =
+            drawdownSellHighRuntime
+                ?.activeTier()
+                ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
+                ?: derivedMaxSell?.let {
+                  MarginTriggerAction(
+                      it.maxMargin.coerceAtLeast(0.0),
+                      it.sellAllocStrategy,
+                      dynamicTargetMargin,
+                  )
+                }
+                ?: derivedSubStrategy?.let {
+                  MarginTriggerAction(
+                      dynamicTargetMargin + it.sellDeviationPct.coerceAtLeast(0.0),
+                      it.sellAllocStrategy,
+                      dynamicTargetMargin,
+                  )
+                }
+                ?: strategy.sellOnHighMargin
+        effectiveSellHigh
+            ?.takeIf { it.deviationPct > 0 }
+            ?.let { cfg ->
+              val forcedDerivedSell = derivedMaxSell != null
+              if ((forcedDerivedSell || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.SELL, i))) &&
+                  currentRatio > cfg.deviationPct
+              ) {
+                val targetCashBalance = -account.equity() * cfg.targetMargin
+                if (account.cashBalance() < targetCashBalance) {
+                  val excess = targetCashBalance - account.cashBalance()
+                  val grossBefore = account.grossStockValue()
+                  applyAllocDelta(tickers, account, targetWeights, -excess, cfg.allocStrategy)
+                  if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.SELL)) {
+                    globalCooldown.recordSellHigh(i)
+                    if (derivedSubStrategy != null) lastDerivedActionIndex = i
+                    actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
                   }
                 }
               }
             }
-          }
-          if (!scheduledRebalanceDeferredByCooldown) {
-            if (activeDrawdownOverride != null) {
-              deferredDrawdownOverrideRebalanceIndex = null
+
+        val activeDrawdownBuyLowTier = drawdownBuyLowRuntime?.activeTier()
+        val activeDrawdownBuyLowRuntime = drawdownBuyLowRuntime?.takeIf { activeDrawdownBuyLowTier != null }
+        val drawdownBuyLowMomentumAllowed =
+            if (activeDrawdownBuyLowRuntime == null) {
+              true
             } else {
-              deferredMarginRebalanceIndex = null
+              activeDrawdownBuyLowRuntime.config.momentumLookbackMonths
+                  ?.let { months ->
+                    portfolioMomentumReturn(activeDrawdownBuyLowRuntime.key, months, i, curDate)
+                        ?.let { it > 0.0 } == true
+                  }
+                  ?: true
             }
-          }
-          if (drawdownOverrideRebalanceDay && !scheduledRebalanceDeferredByCooldown) {
-            drawdownOverrideLastRebalanceDate = curDate
-            drawdownOverrideLastRebalanceIndex = i
-          }
-        }
-
-        // Step 5: Margin deviation triggers (sell on high / buy on low margin).
-        // These explicit trigger sections are independent of the scheduled margin
-        // rebalance trade-direction filter above.
-        if (equityBefore > 0) {
-          val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
-
-          val effectiveSellHigh =
-              drawdownSellHighRuntime
-                  ?.activeTier()
-                  ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
-                  ?: strategy.sellOnHighMargin
-          effectiveSellHigh
-              ?.takeIf { it.deviationPct > 0 }
-              ?.let { cfg ->
-                if (!globalCooldown.isBlocked(Direction.SELL, i) && currentRatio > cfg.deviationPct) {
-                  val targetCashBalance = -account.equity() * cfg.targetMargin
-                  if (account.cashBalance() < targetCashBalance) {
-                    val excess = targetCashBalance - account.cashBalance()
-                    val grossBefore = account.grossStockValue()
-                    applyAllocDelta(tickers, account, targetWeights, -excess, cfg.allocStrategy)
-                    if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.SELL)) {
-                      globalCooldown.recordSellHigh(i)
-                      actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
-                    }
+        val effectiveBuyLow =
+            activeDrawdownBuyLowTier
+                ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
+                ?: derivedSubStrategy?.let {
+                  MarginTriggerAction(
+                      (dynamicTargetMargin - it.buyDeviationPct.coerceAtLeast(0.0)).coerceAtLeast(0.0),
+                      it.buyAllocStrategy,
+                      dynamicTargetMargin,
+                  )
+                }
+                ?: strategy.buyOnLowMargin
+        effectiveBuyLow
+            ?.takeIf { it.deviationPct > 0 }
+            ?.let { cfg ->
+              if (drawdownBuyLowMomentumAllowed &&
+                  !derivedTimeoutBlocked &&
+                  !globalCooldown.isBlocked(Direction.BUY, i) &&
+                  currentRatio < cfg.deviationPct
+              ) {
+                val targetCashBalance = -account.equity() * cfg.targetMargin
+                if (account.cashBalance() > targetCashBalance) {
+                  val deficit = account.cashBalance() - targetCashBalance
+                  val grossBefore = account.grossStockValue()
+                  applyAllocDelta(tickers, account, targetWeights, deficit, cfg.allocStrategy)
+                  if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.BUY)) {
+                    globalCooldown.recordBuyLow(i)
+                    if (derivedSubStrategy != null) lastDerivedActionIndex = i
+                    actionPoints.add(ActionPoint(curDate.toString(), "BUY_LOW"))
                   }
                 }
               }
-
-          val effectiveBuyLow =
-              drawdownBuyLowRuntime
-                  ?.activeTier()
-                  ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
-                  ?: strategy.buyOnLowMargin
-          effectiveBuyLow
-              ?.takeIf { it.deviationPct > 0 }
-              ?.let { cfg ->
-                if (!globalCooldown.isBlocked(Direction.BUY, i) && currentRatio < cfg.deviationPct) {
-                  val targetCashBalance = -account.equity() * cfg.targetMargin
-                  if (account.cashBalance() > targetCashBalance) {
-                    val deficit = account.cashBalance() - targetCashBalance
-                    val grossBefore = account.grossStockValue()
-                    applyAllocDelta(tickers, account, targetWeights, deficit, cfg.allocStrategy)
-                    if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.BUY)) {
-                      globalCooldown.recordBuyLow(i)
-                      actionPoints.add(ActionPoint(curDate.toString(), "BUY_LOW"))
-                    }
-                  }
-                }
-              }
-        }
+            }
       }
 
       // Step 6: Cashflow injection (if due)
@@ -1074,7 +1504,7 @@ object RebalanceStrategyService {
         val scaleFactor =
             strategy.cashflowScalingMargin?.let { 1.0 + it }
                 ?: when (strategy.cashflowScaling) {
-                  CashflowScaling.SCALED_BY_TARGET_MARGIN -> 1.0 + marginTarget
+                  CashflowScaling.SCALED_BY_TARGET_MARGIN -> 1.0 + dynamicTargetMargin
                   CashflowScaling.SCALED_BY_CURRENT_MARGIN -> 1.0 + currentMarginRatio
                   CashflowScaling.NO_SCALING -> 1.0
                 }
@@ -1106,9 +1536,12 @@ object RebalanceStrategyService {
       // Step 10: Record equity
       val equity = max(0.0, account.equity())
       marginUtils.add(
-          if (equity > 0.0) (-account.cashBalance()).coerceAtLeast(0.0) / equity else 0.0
+          if (equity > 0.0) account.netMarginRatio() else 0.0
       )
       values.add(equity)
+      strategyGrossValues.add(account.grossStockValue())
+      strategyEquityValues.add(account.equity())
+      if (vmTimingMr != null) recordVmTimingPoint(curDate)
     }
 
     val points = dates.mapIndexed { i, d -> DataPoint(d.toString(), values[i]) }
@@ -1116,7 +1549,14 @@ object RebalanceStrategyService {
         if (marginTarget > 0.0) dates.mapIndexed { i, d -> DataPoint(d.toString(), marginUtils[i]) }
         else null
     val stats = BacktestService.computeBacktestStats(values, dates, effrx)
-    return CurveResult(strategy.label, points, stats, marginPoints, actionPoints.takeIf { it.isNotEmpty() })
+    return CurveResult(
+        strategy.label,
+        points,
+        stats,
+        marginPoints,
+        actionPoints.takeIf { it.isNotEmpty() },
+        vmTimingPoints.takeIf { it.isNotEmpty() },
+    )
   }
 
   // ── Eligible amount calculation ───────────────────────────────────────────
@@ -1390,4 +1830,9 @@ private class ReverseDirectionCooldown(
 private fun PaperTradingPortfolio.applyTradeDelta(ticker: String, amount: Double) {
   if (amount > 0.0) buy(ticker, amount)
   else if (amount < 0.0) sell(ticker, -amount)
+}
+
+private fun PaperTradingPortfolio.netMarginRatio(): Double {
+  val eq = equity()
+  return if (eq > 0.0) -cashBalance() / eq else 0.0
 }
