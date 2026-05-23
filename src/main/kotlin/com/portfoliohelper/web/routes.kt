@@ -578,18 +578,27 @@ private fun createSavedJsonConfig(
     val takenNames = table.selectAll()
         .map { it[nameColumn] }
         .toSet()
-    var finalName = name
-    var counter = 2
-    while (finalName in takenNames) {
-        finalName = "$name ($counter)"
-        counter++
-    }
+    val finalName = uniqueSavedJsonConfigName(name, takenNames)
     table.insert {
         it[nameColumn] = finalName
         it[configColumn] = config.toString()
         it[createdAtColumn] = System.currentTimeMillis()
     }
     SavedJsonConfig(finalName, config)
+}
+
+internal fun uniqueSavedJsonConfigName(name: String, takenNames: Set<String>): String {
+    if (name !in takenNames) return name
+
+    val match = Regex("""^(.*?) \((\d+)\)$""").matchEntire(name)
+    val baseName = match?.groupValues?.get(1) ?: name
+    var counter = match?.groupValues?.get(2)?.toIntOrNull()?.plus(1) ?: 2
+    var candidate: String
+    do {
+        candidate = "$baseName ($counter)"
+        counter++
+    } while (candidate in takenNames)
+    return candidate
 }
 
 @Serializable
