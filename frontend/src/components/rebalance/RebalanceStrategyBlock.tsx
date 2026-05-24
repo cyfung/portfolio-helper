@@ -9,6 +9,7 @@ import {
   DrawdownMarginOverrideState,
   DrawdownMarginTriggerState,
   DrawdownMarginTriggerTierState,
+  emptyDipSurge,
   emptyDrawdownMarginOverride,
   emptyDrawdownMarginTrigger,
   emptyDrawdownMarginTriggerTier,
@@ -40,6 +41,56 @@ export interface RebalanceStrategyBlockRef {
 }
 
 const DEFAULT_POINTS = ['40', '45', '50', '55', '60']
+
+type OptionalStrategySectionKey =
+  | 'marginRebalance'
+  | 'drawdownMarginOverride'
+  | 'vmTimingMr'
+  | 'buyLow'
+  | 'sellHigh'
+  | 'drawdownBuyOnLowMargin'
+  | 'buyTheDipPortfolio'
+  | 'buyTheDipIndividual'
+  | 'sellOnSurgePortfolio'
+  | 'sellOnSurgeIndividual'
+
+const OPTIONAL_STRATEGY_SECTIONS: { key: OptionalStrategySectionKey; label: string }[] = [
+  { key: 'marginRebalance', label: 'Margin Rebalance' },
+  { key: 'drawdownMarginOverride', label: 'Drawdown MR Override' },
+  { key: 'vmTimingMr', label: 'VM-timing-MR' },
+  { key: 'buyLow', label: 'BL' },
+  { key: 'sellHigh', label: 'SH' },
+  { key: 'drawdownBuyOnLowMargin', label: 'BL on Drawdown' },
+  { key: 'buyTheDipPortfolio', label: 'Buy the Dip - Portfolio Trigger' },
+  { key: 'buyTheDipIndividual', label: 'Buy the Dip - Individual Stocks' },
+  { key: 'sellOnSurgePortfolio', label: 'Sell on Surge - Portfolio Trigger' },
+  { key: 'sellOnSurgeIndividual', label: 'Sell on Surge - Individual Stocks' },
+]
+
+function isOptionalStrategySectionEnabled(s: RebalStrategyState, key: OptionalStrategySectionKey) {
+  switch (key) {
+    case 'marginRebalance':
+      return s.marginRebalanceEnabled ?? true
+    case 'drawdownMarginOverride':
+      return (s.marginRebalanceEnabled ?? true) && (s.drawdownMarginOverride?.enabled ?? false)
+    case 'vmTimingMr':
+      return s.vmTimingMr?.enabled ?? false
+    case 'buyLow':
+      return s.buyLowEnabled
+    case 'sellHigh':
+      return s.sellHighEnabled
+    case 'drawdownBuyOnLowMargin':
+      return s.drawdownBuyOnLowMargin?.enabled ?? false
+    case 'buyTheDipPortfolio':
+      return s.buyTheDip?.basePortfolio != null
+    case 'buyTheDipIndividual':
+      return s.buyTheDip?.individualStock != null
+    case 'sellOnSurgePortfolio':
+      return s.sellOnSurge?.basePortfolio != null
+    case 'sellOnSurgeIndividual':
+      return s.sellOnSurge?.individualStock != null
+  }
+}
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
@@ -392,6 +443,13 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const sellHighRestoreMargin = s.sellHighRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.sellHighRestorePointIndex)
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const availableOptionalSections = useMemo(
+    () => OPTIONAL_STRATEGY_SECTIONS.filter(section => {
+      if (section.key === 'drawdownMarginOverride' && !(s.marginRebalanceEnabled ?? true)) return false
+      return !isOptionalStrategySectionEnabled(s, section.key)
+    }),
+    [s],
+  )
 
   const updateDipSurgeScope = useCallback((
     key: 'buyTheDip' | 'sellOnSurge',
@@ -422,6 +480,88 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const updateVmTimingMr = useCallback((patch: Partial<VmTimingMrState>) => {
     const current = localRef.current.vmTimingMr ?? emptyVmTimingMr()
     set({ vmTimingMr: { ...current, ...patch } })
+  }, [set])
+
+  const addOptionalStrategySection = useCallback((key: OptionalStrategySectionKey) => {
+    const current = localRef.current
+    switch (key) {
+      case 'marginRebalance':
+        set({ marginRebalanceEnabled: true })
+        break
+      case 'drawdownMarginOverride':
+        set({
+          marginRebalanceEnabled: true,
+          drawdownMarginOverride: { ...(current.drawdownMarginOverride ?? emptyDrawdownMarginOverride()), enabled: true },
+        })
+        break
+      case 'vmTimingMr':
+        set({ vmTimingMr: { ...(current.vmTimingMr ?? emptyVmTimingMr()), enabled: true } })
+        break
+      case 'buyLow':
+        set({ buyLowEnabled: true })
+        break
+      case 'sellHigh':
+        set({ sellHighEnabled: true })
+        break
+      case 'drawdownBuyOnLowMargin':
+        set({
+          drawdownBuyOnLowMargin: { ...(current.drawdownBuyOnLowMargin ?? emptyDrawdownMarginTrigger('buy')), enabled: true },
+        })
+        break
+      case 'buyTheDipPortfolio':
+        set({ buyTheDip: { ...current.buyTheDip, basePortfolio: current.buyTheDip.basePortfolio ?? emptyDipSurge('BASE_PORTFOLIO') } })
+        break
+      case 'buyTheDipIndividual':
+        set({ buyTheDip: { ...current.buyTheDip, individualStock: current.buyTheDip.individualStock ?? emptyDipSurge('INDIVIDUAL_STOCK') } })
+        break
+      case 'sellOnSurgePortfolio':
+        set({ sellOnSurge: { ...current.sellOnSurge, basePortfolio: current.sellOnSurge.basePortfolio ?? emptyDipSurge('BASE_PORTFOLIO') } })
+        break
+      case 'sellOnSurgeIndividual':
+        set({ sellOnSurge: { ...current.sellOnSurge, individualStock: current.sellOnSurge.individualStock ?? emptyDipSurge('INDIVIDUAL_STOCK') } })
+        break
+    }
+  }, [set])
+
+  const removeOptionalStrategySection = useCallback((key: OptionalStrategySectionKey) => {
+    const current = localRef.current
+    switch (key) {
+      case 'marginRebalance':
+        set({
+          marginRebalanceEnabled: false,
+          drawdownMarginOverride: { ...(current.drawdownMarginOverride ?? emptyDrawdownMarginOverride()), enabled: false },
+        })
+        break
+      case 'drawdownMarginOverride':
+        set({ drawdownMarginOverride: { ...(current.drawdownMarginOverride ?? emptyDrawdownMarginOverride()), enabled: false } })
+        break
+      case 'vmTimingMr':
+        set({ vmTimingMr: { ...(current.vmTimingMr ?? emptyVmTimingMr()), enabled: false } })
+        break
+      case 'buyLow':
+        set({ buyLowEnabled: false })
+        break
+      case 'sellHigh':
+        set({ sellHighEnabled: false })
+        break
+      case 'drawdownBuyOnLowMargin':
+        set({
+          drawdownBuyOnLowMargin: { ...(current.drawdownBuyOnLowMargin ?? emptyDrawdownMarginTrigger('buy')), enabled: false },
+        })
+        break
+      case 'buyTheDipPortfolio':
+        set({ buyTheDip: { ...current.buyTheDip, basePortfolio: null } })
+        break
+      case 'buyTheDipIndividual':
+        set({ buyTheDip: { ...current.buyTheDip, individualStock: null } })
+        break
+      case 'sellOnSurgePortfolio':
+        set({ sellOnSurge: { ...current.sellOnSurge, basePortfolio: null } })
+        break
+      case 'sellOnSurgeIndividual':
+        set({ sellOnSurge: { ...current.sellOnSurge, individualStock: null } })
+        break
+    }
   }, [set])
 
   const updateDerivedSubStrategy = useCallback((id: string, patch: Partial<DerivedSubStrategyState>) => {
@@ -576,6 +716,23 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     }
   }
 
+  function renderRemoveSectionButton(key: OptionalStrategySectionKey, label: string) {
+    return (
+      <button
+        type="button"
+        className="btn-remove strategy-section-remove"
+        title={`Remove ${label}`}
+        aria-label={`Remove ${label}`}
+        onClick={e => {
+          e.stopPropagation()
+          removeOptionalStrategySection(key)
+        }}
+      >
+        x
+      </button>
+    )
+  }
+
   function renderDrawdownMarginTrigger(
     key: 'drawdownBuyOnLowMargin',
     direction: 'buy' | 'sell',
@@ -586,20 +743,12 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     const tiers = value.tiers?.length ? value.tiers : [emptyDrawdownMarginTriggerTier(direction)]
     const issues = drawdownMarginTriggerIssues(value, direction, title)
     return (
-      <details open={value.enabled} className="strategy-subsection">
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           {title}
-          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              checked={value.enabled}
-              onChange={e => updateDrawdownMarginTrigger(key, direction, { enabled: e.target.checked })}
-            />
-            {' '}Enable
-          </label>
+          {renderRemoveSectionButton(key, title)}
         </summary>
-        {value.enabled && (
-          <div className="strategy-section-body">
+        <div className="strategy-section-body">
             <div className="strategy-row">
               <label>Reference</label>
               <select
@@ -722,7 +871,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               </button>
             </div>
           </div>
-        )}
       </details>
     )
   }
@@ -1078,17 +1226,34 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
       </details>
 
-      <details open={s.marginRebalanceEnabled ?? true} className="strategy-subsection">
+      {availableOptionalSections.length > 0 && (
+        <div className="strategy-subsection">
+          <div className="strategy-row strategy-section-picker">
+            <label>Add Section</label>
+            <select
+              value=""
+              aria-label="Add strategy section"
+              onChange={e => {
+                const key = e.target.value as OptionalStrategySectionKey
+                if (key) addOptionalStrategySection(key)
+              }}
+            >
+              <option value="" disabled>Choose section...</option>
+              {availableOptionalSections.map(section => (
+                <option key={section.key} value={section.key}>{section.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {(s.marginRebalanceEnabled ?? true) && (
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           Margin Rebalance
-          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-            <input type="checkbox" checked={s.marginRebalanceEnabled ?? true}
-              onChange={e => set({ marginRebalanceEnabled: e.target.checked })} />
-            {' '}Enable
-          </label>
+          {renderRemoveSectionButton('marginRebalance', 'Margin Rebalance')}
         </summary>
-        {(s.marginRebalanceEnabled ?? true) && (
-          <div className="strategy-section-body">
+        <div className="strategy-section-body">
             <div className="strategy-row">
               <label>Margin Rebalance</label>
               <select value={s.rebalancePeriod} onChange={e => set({ rebalancePeriod: e.target.value })}>
@@ -1138,24 +1303,16 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               </div>
             )}
           </div>
-        )}
       </details>
+      )}
 
-      <details open={drawdownMarginOverride.enabled} className="strategy-subsection">
+      {drawdownMarginOverride.enabled && (s.marginRebalanceEnabled ?? true) && (
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           Drawdown MR Override
-          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              checked={drawdownMarginOverride.enabled}
-              disabled={!(s.marginRebalanceEnabled ?? true)}
-              onChange={e => updateDrawdownMarginOverride({ enabled: e.target.checked })}
-            />
-            {' '}Enable
-          </label>
+          {renderRemoveSectionButton('drawdownMarginOverride', 'Drawdown MR Override')}
         </summary>
-        {drawdownMarginOverride.enabled && (s.marginRebalanceEnabled ?? true) && (
-          <div className="strategy-section-body">
+        <div className="strategy-section-body">
             <div className="strategy-row">
               <label>Trigger Source</label>
               <select
@@ -1295,23 +1452,16 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               </div>
             )}
           </div>
-        )}
       </details>
+      )}
 
-      <details open={vmTimingMr.enabled} className="strategy-subsection">
+      {vmTimingMr.enabled && (
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           VM-timing-MR
-          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              checked={vmTimingMr.enabled}
-              onChange={e => updateVmTimingMr({ enabled: e.target.checked })}
-            />
-            {' '}Enable
-          </label>
+          {renderRemoveSectionButton('vmTimingMr', 'VM-timing-MR')}
         </summary>
-        {vmTimingMr.enabled && (
-          <div className="strategy-section-body">
+        <div className="strategy-section-body">
             <div className="strategy-row">
               <label>CAPE Source</label>
               <select
@@ -1411,8 +1561,8 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               </select>
             </div>
           </div>
-        )}
       </details>
+      )}
 
       <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>Cashflow</summary>
@@ -1438,17 +1588,13 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
       </details>
 
-      <details open={s.buyLowEnabled} className="strategy-subsection">
+      {s.buyLowEnabled && (
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           BL
-          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-            <input type="checkbox" checked={s.buyLowEnabled}
-              onChange={e => set({ buyLowEnabled: e.target.checked })} />
-            {' '}Enable
-          </label>
+          {renderRemoveSectionButton('buyLow', 'BL')}
         </summary>
-        {s.buyLowEnabled && (
-          <div className="strategy-section-body">
+        <div className="strategy-section-body">
             <div className="strategy-row">
               <label>Trigger At</label>
               <MarginPercentInput
@@ -1481,20 +1627,16 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               />
             </div>
           </div>
-        )}
       </details>
+      )}
 
-      <details open={s.sellHighEnabled} className="strategy-subsection">
+      {s.sellHighEnabled && (
+      <details open className="strategy-subsection">
         <summary className="strategy-section-title" onClick={keepSectionOpen}>
           SH
-          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-            <input type="checkbox" checked={s.sellHighEnabled}
-              onChange={e => set({ sellHighEnabled: e.target.checked })} />
-            {' '}Enable
-          </label>
+          {renderRemoveSectionButton('sellHigh', 'SH')}
         </summary>
-        {s.sellHighEnabled && (
-          <div className="strategy-section-body">
+        <div className="strategy-section-body">
             <div className="strategy-row">
               <label>Trigger At</label>
               <MarginPercentInput
@@ -1527,10 +1669,10 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               />
             </div>
           </div>
-        )}
       </details>
+      )}
 
-      {renderDrawdownMarginTrigger(
+      {drawdownBuyOnLowMargin.enabled && renderDrawdownMarginTrigger(
         'drawdownBuyOnLowMargin',
         'buy',
         'BL on Drawdown',
@@ -1538,46 +1680,62 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         marginPoints[0] ?? DEFAULT_POINTS[0],
       )}
 
-      <div className="strategy-subsection">
-        <DipSurgeSection
-          direction="buy"
-          title="Buy the Dip - Portfolio Trigger"
-          scope="BASE_PORTFOLIO"
-          value={s.buyTheDip.basePortfolio}
-          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'basePortfolio', v)}
-          marginPoints={marginPoints}
-          sliderMax={sliderMax}
-        />
-        <DipSurgeSection
-          direction="buy"
-          title="Buy the Dip - Individual Stocks"
-          scope="INDIVIDUAL_STOCK"
-          value={s.buyTheDip.individualStock}
-          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'individualStock', v)}
-          marginPoints={marginPoints}
-          sliderMax={sliderMax}
-        />
-      </div>
-      <div className="strategy-subsection">
-        <DipSurgeSection
-          direction="sell"
-          title="Sell on Surge - Portfolio Trigger"
-          scope="BASE_PORTFOLIO"
-          value={s.sellOnSurge.basePortfolio}
-          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'basePortfolio', v)}
-          marginPoints={marginPoints}
-          sliderMax={sliderMax}
-        />
-        <DipSurgeSection
-          direction="sell"
-          title="Sell on Surge - Individual Stocks"
-          scope="INDIVIDUAL_STOCK"
-          value={s.sellOnSurge.individualStock}
-          onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'individualStock', v)}
-          marginPoints={marginPoints}
-          sliderMax={sliderMax}
-        />
-      </div>
+      {(s.buyTheDip.basePortfolio || s.buyTheDip.individualStock) && (
+        <div className="strategy-subsection">
+          {s.buyTheDip.basePortfolio && (
+            <DipSurgeSection
+              direction="buy"
+              title="Buy the Dip - Portfolio Trigger"
+              scope="BASE_PORTFOLIO"
+              value={s.buyTheDip.basePortfolio}
+              onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'basePortfolio', v)}
+              marginPoints={marginPoints}
+              sliderMax={sliderMax}
+              removable
+            />
+          )}
+          {s.buyTheDip.individualStock && (
+            <DipSurgeSection
+              direction="buy"
+              title="Buy the Dip - Individual Stocks"
+              scope="INDIVIDUAL_STOCK"
+              value={s.buyTheDip.individualStock}
+              onChange={(v: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'individualStock', v)}
+              marginPoints={marginPoints}
+              sliderMax={sliderMax}
+              removable
+            />
+          )}
+        </div>
+      )}
+      {(s.sellOnSurge.basePortfolio || s.sellOnSurge.individualStock) && (
+        <div className="strategy-subsection">
+          {s.sellOnSurge.basePortfolio && (
+            <DipSurgeSection
+              direction="sell"
+              title="Sell on Surge - Portfolio Trigger"
+              scope="BASE_PORTFOLIO"
+              value={s.sellOnSurge.basePortfolio}
+              onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'basePortfolio', v)}
+              marginPoints={marginPoints}
+              sliderMax={sliderMax}
+              removable
+            />
+          )}
+          {s.sellOnSurge.individualStock && (
+            <DipSurgeSection
+              direction="sell"
+              title="Sell on Surge - Individual Stocks"
+              scope="INDIVIDUAL_STOCK"
+              value={s.sellOnSurge.individualStock}
+              onChange={(v: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'individualStock', v)}
+              marginPoints={marginPoints}
+              sliderMax={sliderMax}
+              removable
+            />
+          )}
+        </div>
+      )}
       {renderDerivedSubStrategies()}
     </div>
   )

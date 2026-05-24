@@ -4324,12 +4324,20 @@ input.input-error,
     align-items: center;
 }
 
+.strategy-section-remove {
+    margin-left: auto;
+}
+
 .strategy-section-title::-webkit-details-marker { display: none; }
 
 .strategy-subsection {
     border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     margin-top: 0.5rem;
     padding-top: 0.25rem;
+}
+
+.strategy-section-picker select {
+    min-width: 12rem;
 }
 
 .strategy-derived-card {

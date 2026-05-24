@@ -17,6 +17,7 @@ interface Props {
   sliderMax?: number
   scope?: 'INDIVIDUAL_STOCK' | 'BASE_PORTFOLIO'
   title?: string
+  removable?: boolean
 }
 
 const triggerLabels: Record<string, (d: string) => string> = {
@@ -100,6 +101,7 @@ export default function DipSurgeSection({
   sliderMax = 150,
   scope,
   title = direction === 'buy' ? 'Buy the Dip' : 'Sell on Surge',
+  removable = false,
 }: Props) {
   const allocOptions = useAllocStrategyOptions(false)
   const enabled = value !== null
@@ -142,10 +144,25 @@ export default function DipSurgeSection({
     <details open={enabled}>
       <summary className="strategy-section-title">
         {title}
-        <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
-          <input type="checkbox" checked={enabled} onChange={e => e.target.checked ? enable() : onChange(null)} />
-          {' '}Enable
-        </label>
+        {removable ? (
+          <button
+            type="button"
+            className="btn-remove strategy-section-remove"
+            title={`Remove ${title}`}
+            aria-label={`Remove ${title}`}
+            onClick={e => {
+              e.stopPropagation()
+              onChange(null)
+            }}
+          >
+            x
+          </button>
+        ) : (
+          <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={enabled} onChange={e => e.target.checked ? enable() : onChange(null)} />
+            {' '}Enable
+          </label>
+        )}
       </summary>
 
       {enabled && value && (
