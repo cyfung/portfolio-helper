@@ -12,7 +12,7 @@ const BacktestPage         = lazy(() => import('@/pages/BacktestPage'))
 const PortfolioBuilderPage = lazy(() => import('@/pages/PortfolioBuilderPage'))
 const MonteCarloPage            = lazy(() => import('@/pages/MonteCarloPage'))
 const RebalanceStrategyPage     = lazy(() => import('@/pages/RebalanceStrategyPage'))
-const HoldDipPage               = lazy(() => import('@/pages/HoldDipPage'))
+const MarketTimingPage          = lazy(() => import('@/pages/MarketTimingPage'))
 const ConfigPage                = lazy(() => import('@/pages/ConfigPage'))
 
 export default function App() {
@@ -51,7 +51,7 @@ export default function App() {
       <Route path="/portfolio-builder" element={<PortfolioBuilderPage />} />
       <Route path="/montecarlo" element={<MonteCarloPage />} />
       <Route path="/rebalance-strategy" element={<RebalanceStrategyPage />} />
-      <Route path="/hold-dip" element={<HoldDipPage />} />
+      <Route path="/market-timing" element={<MarketTimingPage />} />
       <Route path="/config" element={<ConfigPage />} />
     </Routes>
     </Suspense>

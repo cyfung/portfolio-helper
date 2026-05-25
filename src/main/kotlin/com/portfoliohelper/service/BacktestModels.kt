@@ -67,8 +67,8 @@ data class CashflowConfig(
     val frequency: CashflowFrequency
 )
 
-enum class HoldDipReferenceSource { PORTFOLIO, TICKER }
-enum class HoldDipInterestMode { SPREAD, FIXED }
+enum class MarketTimingReferenceSource { PORTFOLIO, TICKER }
+enum class MarketTimingInterestMode { SPREAD, FIXED }
 
 data class MultiBacktestRequest(
     val fromDate: String?,
@@ -78,14 +78,14 @@ data class MultiBacktestRequest(
     val startingBalance: Double = 10_000.0
 )
 
-data class HoldDipRequest(
+data class MarketTimingRequest(
     val fromDate: String?,
     val toDate: String?,
     val portfolio: PortfolioConfig,
     val drawdownPcts: List<Double>,
-    val referenceSource: HoldDipReferenceSource,
+    val referenceSource: MarketTimingReferenceSource,
     val referenceTicker: String? = null,
-    val interestMode: HoldDipInterestMode,
+    val interestMode: MarketTimingInterestMode,
     val annualSpread: Double? = null,
     val fixedAnnualRate: Double? = null,
     val startingBalance: Double = 10_000.0
@@ -95,7 +95,7 @@ data class HoldDipRequest(
 data class DataPoint(val date: String, val value: Double)
 
 @Serializable
-data class HoldDipPoint(
+data class MarketTimingPoint(
     val date: String,
     val value: Double? = null,
     val triggerDate: String? = null,
@@ -104,7 +104,7 @@ data class HoldDipPoint(
 )
 
 @Serializable
-data class HoldDipSummary(
+data class MarketTimingSummary(
     val totalPoints: Int,
     val triggeredPoints: Int,
     val bestValue: Double? = null,
@@ -116,17 +116,17 @@ data class HoldDipSummary(
 )
 
 @Serializable
-data class HoldDipResult(
+data class MarketTimingResult(
     val drawdownPct: Double,
-    val points: List<HoldDipPoint>,
-    val summary: HoldDipSummary,
+    val points: List<MarketTimingPoint>,
+    val summary: MarketTimingSummary,
 )
 
 @Serializable
-data class HoldDipMultiResult(
+data class MarketTimingMultiResult(
     val referenceLabel: String,
     val referencePoints: List<DataPoint>,
-    val results: List<HoldDipResult>,
+    val results: List<MarketTimingResult>,
 )
 
 @Serializable

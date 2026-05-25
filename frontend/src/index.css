@@ -3492,12 +3492,14 @@ a.loan-calc-link:hover {
 
 .backtest-section input,
 .backtest-section select {
+    height: 2.125rem;
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
     background: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
+    line-height: 1.25;
     font-family: var(--font-family-mono), monospace;
     width: 100%;
     box-sizing: border-box;
@@ -3656,6 +3658,88 @@ a.loan-calc-link:hover {
 
 .backtest-chart-heading .backtest-chart-title {
     margin-bottom: 0;
+}
+
+.market-timing-config {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.market-timing-config-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.75rem 1rem;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.market-timing-field {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.market-timing-field input,
+.market-timing-field select {
+    width: 100%;
+}
+
+.market-timing-field-interest {
+    width: 18rem;
+}
+
+.market-timing-field-rate {
+    width: 10rem;
+}
+
+@media (max-width: 900px) {
+    .market-timing-config,
+    .market-timing-config-row {
+        width: 100%;
+    }
+}
+
+@media (max-width: 600px) {
+    .market-timing-config,
+    .market-timing-config-row {
+        width: 100%;
+    }
+
+    .market-timing-field,
+    .market-timing-field-interest,
+    .market-timing-field-rate {
+        width: 100%;
+    }
+}
+
+.market-timing-pl-note {
+    margin: -0.25rem 0 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-accent-primary) 5%, var(--color-bg-elevated));
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.market-timing-pl-positive {
+    color: var(--color-positive);
+    font-weight: 600;
+}
+
+.market-timing-pl-emphasis {
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+.market-timing-pl-negative {
+    color: var(--color-negative);
+    font-weight: 600;
 }
 
 /* Chart container */
@@ -3906,6 +3990,13 @@ a.loan-calc-link:hover {
         grid-template-columns: repeat(2, 1fr);
         width: 100%;
     }
+}
+
+.mc-params-grid input,
+.mc-params-grid select {
+    height: 2.125rem;
+    box-sizing: border-box;
+    line-height: 1.25;
 }
 
 .mc-params-grid input {
@@ -4370,13 +4461,16 @@ input.input-error,
 .strategy-row input[type="number"],
 .strategy-row input[type="text"],
 .strategy-row select {
+    height: 1.75rem;
     padding: 0.2rem 0.375rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
     background: var(--color-bg-primary);
     color: var(--color-text-primary);
     font-size: var(--font-size-xs);
+    line-height: 1.2;
     font-family: var(--font-family-mono), monospace;
+    box-sizing: border-box;
 }
 
 .strategy-row input[type="number"]:focus,

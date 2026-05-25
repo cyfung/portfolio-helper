@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Download } from 'lucide-react'
 import {
   Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -21,7 +21,7 @@ import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/po
 type InterestMode = 'SPREAD' | 'FIXED'
 type ReferenceSource = 'PORTFOLIO' | 'TICKER'
 
-interface HoldDipPoint {
+interface MarketTimingPoint {
   date: string
   value?: number | null
   triggerDate?: string | null
@@ -29,7 +29,7 @@ interface HoldDipPoint {
   referenceDrawdown?: number | null
 }
 
-interface HoldDipSummary {
+interface MarketTimingSummary {
   totalPoints: number
   triggeredPoints: number
   bestValue?: number | null
@@ -40,16 +40,16 @@ interface HoldDipSummary {
   averageDaysToTrigger?: number | null
 }
 
-interface HoldDipResult {
+interface MarketTimingResult {
   drawdownPct: number
-  points: HoldDipPoint[]
-  summary: HoldDipSummary
+  points: MarketTimingPoint[]
+  summary: MarketTimingSummary
 }
 
-interface HoldDipResponse {
+interface MarketTimingResponse {
   referenceLabel: string
   referencePoints: { date: string; value: number }[]
-  results: HoldDipResult[]
+  results: MarketTimingResult[]
   error?: string
 }
 
@@ -114,7 +114,41 @@ function sourceMethodLabel(method: string) {
   return method
 }
 
-export default function HoldDipPage() {
+function makeMarketTimingTooltip(
+  { isDark, gridColor, textColor }: ReturnType<typeof useChartTheme>,
+) {
+  const contentStyle: CSSProperties = {
+    background: isDark ? '#1e1e1e' : '#ffffff',
+    border: `1px solid ${gridColor}`,
+    borderRadius: 4,
+    padding: '6px 10px',
+    fontSize: '0.78em',
+  }
+
+  return ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div style={contentStyle}>
+        <div style={{ color: textColor, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+        {payload.map((item: any) => {
+          const value = Number(item.value)
+          const formatted = item.dataKey === 'reference' ? money(value) : pct(value)
+          return (
+            <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 16, height: 2, background: item.color, flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ color: textColor, opacity: 0.9 }}>{item.name}</span>
+              </div>
+              <span style={{ color: textColor, fontWeight: 600, textAlign: 'right' }}>{formatted}</span>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+}
+
+export default function MarketTimingPage() {
   const [portfolio, setPortfolio] = useState<BlockState>(emptyBlock(0))
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -130,7 +164,7 @@ export default function HoldDipPage() {
   const [configError, setConfigError] = useState('')
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
-  const [results, setResults] = useState<HoldDipResponse | null>(null)
+  const [results, setResults] = useState<MarketTimingResponse | null>(null)
   const [worldCapePoints, setWorldCapePoints] = useState<WorldCapePoint[]>([])
   const [worldCapeError, setWorldCapeError] = useState('')
   const [usCapePoints, setUsCapePoints] = useState<UsCapePoint[]>([])
@@ -266,7 +300,7 @@ export default function HoldDipPage() {
         annualSpread: interestMode === 'SPREAD' ? percentInputToFraction(runAnnualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 }) : undefined,
         fixedAnnualRate: interestMode === 'FIXED' ? (parseFloat(fixedAnnualRate) || 0) / 100 : undefined,
       }
-      const res = await fetch('/api/hold-dip/run', {
+      const res = await fetch('/api/market-timing/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -342,21 +376,21 @@ export default function HoldDipPage() {
     }
   }, [usCapePoints])
 
-  const tooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => money(v)), [theme])
+  const tooltip = useMemo(() => makeMarketTimingTooltip(theme), [theme])
   const capeTooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => fmt2(v)), [theme])
 
   return (
     <div className="container">
-      <BacktestPageHeader active="/hold-dip" />
+      <BacktestPageHeader active="/market-timing" />
 
       <div className="backtest-form-card">
         <div className="backtest-section backtest-config-row">
-          <DateFieldWithQuickSelect label="From Date" inputId="hold-dip-from-date" value={fromDate} onChange={setFromDate} />
-          <DateFieldWithQuickSelect label="To Date" inputId="hold-dip-to-date" value={toDate} onChange={setToDate} />
+          <DateFieldWithQuickSelect label="From Date" inputId="market-timing-from-date" value={fromDate} onChange={setFromDate} />
+          <DateFieldWithQuickSelect label="To Date" inputId="market-timing-to-date" value={toDate} onChange={setToDate} />
           <div className="backtest-config-controls">
-            <label htmlFor="hold-dip-import-code">Config Code</label>
+            <label htmlFor="market-timing-import-code">Config Code</label>
             <div className="backtest-config-group">
-              <input id="hold-dip-import-code" type="text" spellCheck={false} placeholder="Paste code..." value={importCode} onChange={e => setImportCode(e.target.value)} />
+              <input id="market-timing-import-code" type="text" spellCheck={false} placeholder="Paste code..." value={importCode} onChange={e => setImportCode(e.target.value)} />
               <button className="backtest-config-btn" type="button" onClick={handleImport}>Import</button>
               <button className="backtest-config-btn" type="button" onClick={handleExport}>Export</button>
               {configError && <div className="backtest-config-error">{configError}</div>}
@@ -364,48 +398,52 @@ export default function HoldDipPage() {
           </div>
         </div>
 
-        <div className="backtest-section backtest-config-row">
-          <div>
-            <label htmlFor="hold-dip-starting-balance">Notional</label>
-            <input id="hold-dip-starting-balance" type="number" min="0" step="100" value={startingBalance} onChange={e => setStartingBalance(e.target.value)} />
-          </div>
-          <div>
-            <label htmlFor="hold-dip-dd-pcts">Drawdown %</label>
-            <input id="hold-dip-dd-pcts" type="text" value={drawdownPcts} onChange={e => setDrawdownPcts(e.target.value)} />
-          </div>
-          <div>
-            <label htmlFor="hold-dip-reference-source">Reference</label>
-            <select id="hold-dip-reference-source" value={referenceSource} onChange={e => setReferenceSource(e.target.value as ReferenceSource)}>
-              <option value="PORTFOLIO">Portfolio</option>
-              <option value="TICKER">Ticker</option>
-            </select>
-          </div>
-          {referenceSource === 'TICKER' && (
-            <div>
-              <label htmlFor="hold-dip-reference-ticker">Ticker</label>
-              <input id="hold-dip-reference-ticker" type="text" value={referenceTicker} onChange={e => setReferenceTicker(e.target.value)} />
+        <div className="backtest-section market-timing-config">
+          <div className="market-timing-config-row">
+            <div className="market-timing-field market-timing-field-notional">
+              <label htmlFor="market-timing-starting-balance">Notional</label>
+              <input id="market-timing-starting-balance" type="number" min="0" step="100" value={startingBalance} onChange={e => setStartingBalance(e.target.value)} />
             </div>
-          )}
-          <div>
-            <label htmlFor="hold-dip-interest-mode">Interest</label>
-            <select id="hold-dip-interest-mode" value={interestMode} onChange={e => setInterestMode(e.target.value as InterestMode)}>
-              <option value="SPREAD">EFFR + spread</option>
-              <option value="FIXED">Fixed rate</option>
-            </select>
+            <div className="market-timing-field market-timing-field-drawdown">
+              <label htmlFor="market-timing-dd-pcts">Drawdown %</label>
+              <input id="market-timing-dd-pcts" type="text" value={drawdownPcts} onChange={e => setDrawdownPcts(e.target.value)} />
+            </div>
+            <div className="market-timing-field market-timing-field-reference">
+              <label htmlFor="market-timing-reference-source">Reference</label>
+              <select id="market-timing-reference-source" value={referenceSource} onChange={e => setReferenceSource(e.target.value as ReferenceSource)}>
+                <option value="PORTFOLIO">Portfolio</option>
+                <option value="TICKER">Ticker</option>
+              </select>
+            </div>
+            {referenceSource === 'TICKER' && (
+              <div className="market-timing-field market-timing-field-ticker">
+                <label htmlFor="market-timing-reference-ticker">Ticker</label>
+                <input id="market-timing-reference-ticker" type="text" value={referenceTicker} onChange={e => setReferenceTicker(e.target.value)} />
+              </div>
+            )}
           </div>
-          <div>
-            <label htmlFor="hold-dip-interest-rate">{interestMode === 'SPREAD' ? 'Spread %' : 'Fixed %'}</label>
-            <input
-              id="hold-dip-interest-rate"
-              type="number"
-              step="0.05"
-              value={interestMode === 'SPREAD' ? annualSpread : fixedAnnualRate}
-              onChange={e => interestMode === 'SPREAD' ? setAnnualSpread(e.target.value) : setFixedAnnualRate(e.target.value)}
-              onBlur={() => { if (interestMode === 'SPREAD') setAnnualSpreadTouched(true) }}
-              className={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 }) ? 'input-error' : undefined}
-              aria-invalid={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 })}
-              title={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 }) ? 'Enter a valid non-negative spread percent' : undefined}
-            />
+          <div className="market-timing-config-row market-timing-config-row-interest">
+            <div className="market-timing-field market-timing-field-interest">
+              <label htmlFor="market-timing-interest-mode">Interest</label>
+              <select id="market-timing-interest-mode" value={interestMode} onChange={e => setInterestMode(e.target.value as InterestMode)}>
+                <option value="SPREAD">EFFR + spread</option>
+                <option value="FIXED">Fixed rate</option>
+              </select>
+            </div>
+            <div className="market-timing-field market-timing-field-rate">
+              <label htmlFor="market-timing-interest-rate">{interestMode === 'SPREAD' ? 'Spread %' : 'Fixed %'}</label>
+              <input
+                id="market-timing-interest-rate"
+                type="number"
+                step="0.05"
+                value={interestMode === 'SPREAD' ? annualSpread : fixedAnnualRate}
+                onChange={e => interestMode === 'SPREAD' ? setAnnualSpread(e.target.value) : setFixedAnnualRate(e.target.value)}
+                onBlur={() => { if (interestMode === 'SPREAD') setAnnualSpreadTouched(true) }}
+                className={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 }) ? 'input-error' : undefined}
+                aria-invalid={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 })}
+                title={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 }) ? 'Enter a valid non-negative spread percent' : undefined}
+              />
+            </div>
           </div>
         </div>
 
@@ -414,7 +452,7 @@ export default function HoldDipPage() {
           <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
         </div>
 
-        <RunButton label="Run Hold the Dip" running={running} disabled={running} onClick={handleRun} />
+        <RunButton label="Run Market Timing" running={running} disabled={running} onClick={handleRun} />
       </div>
 
       {error && <div className="backtest-error">{error}</div>}
@@ -427,10 +465,10 @@ export default function HoldDipPage() {
                 <tr>
                   <th>DD</th>
                   <th>Triggered</th>
-                  <th>Avg P/L</th>
-                  <th>Median P/L</th>
-                  <th>Best</th>
-                  <th>Worst</th>
+                  <th>Avg P/L %</th>
+                  <th>Median P/L %</th>
+                  <th>Best P/L %</th>
+                  <th>Worst P/L %</th>
                   <th title="Wins divided by wins plus losses. Neutral zero P/L cases are excluded.">Win/Loss Rate</th>
                   <th>Avg Wait</th>
                 </tr>
@@ -440,10 +478,10 @@ export default function HoldDipPage() {
                   <tr key={result.drawdownPct}>
                     <td>{pct(result.drawdownPct)}</td>
                     <td>{result.summary.triggeredPoints}/{result.summary.totalPoints}</td>
-                    <td>{result.summary.averageValue == null ? '-' : money(result.summary.averageValue)}</td>
-                    <td>{result.summary.medianValue == null ? '-' : money(result.summary.medianValue)}</td>
-                    <td>{result.summary.bestValue == null ? '-' : money(result.summary.bestValue)}</td>
-                    <td>{result.summary.worstValue == null ? '-' : money(result.summary.worstValue)}</td>
+                    <td>{result.summary.averageValue == null ? '-' : pct(result.summary.averageValue)}</td>
+                    <td>{result.summary.medianValue == null ? '-' : pct(result.summary.medianValue)}</td>
+                    <td>{result.summary.bestValue == null ? '-' : pct(result.summary.bestValue)}</td>
+                    <td>{result.summary.worstValue == null ? '-' : pct(result.summary.worstValue)}</td>
                     <td>{result.summary.winRate == null ? '-' : pct(result.summary.winRate)}</td>
                     <td>{formatDays(result.summary.averageDaysToTrigger)}</td>
                   </tr>
@@ -452,15 +490,23 @@ export default function HoldDipPage() {
             </table>
           </div>
 
+          <div className="market-timing-pl-note" role="note">
+            P/L is the percentage advantage at the dip trigger for <span className="market-timing-pl-emphasis">buy and hold from the start date</span> against
+            <span className="market-timing-pl-emphasis"> waiting for the drawdown trigger, then buying and holding</span>.
+            After the trigger, both strategies hold the same portfolio, so later returns are a common multiplier.
+            <span className="market-timing-pl-positive"> Positive P/L</span> means buying immediately is ahead.
+            <span className="market-timing-pl-negative"> Negative P/L</span> means waiting for the dip is ahead.
+          </div>
+
           <div className="backtest-chart-heading">
-            <div className="backtest-chart-title">Buy and Hold P/L Until Reference Drawdown</div>
+            <div className="backtest-chart-title">Buy Now vs Wait for Dip P/L %</div>
           </div>
           <div className="backtest-chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData.rows} syncId="hold-dip" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+              <LineChart data={chartData.rows} syncId="market-timing" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
                 <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(chartData.rows.length / 8))} />
-                <YAxis yAxisId="pnl" tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => '$' + Number(v).toFixed(0)} width={72} />
+                <YAxis yAxisId="pnl" tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
                 <YAxis
                   yAxisId="reference"
                   orientation="right"

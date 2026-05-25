@@ -2,7 +2,7 @@
 
 This project ships a local CSV at `frontend/public/data/us-cape-history.csv`.
 It is designed as a US valuation reference next to the world CAPE history on
-the Hold the Dip page.
+the Market Timing page.
 
 Regenerate it with:
 

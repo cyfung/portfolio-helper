@@ -178,7 +178,7 @@ object BacktestService {
         return MultiBacktestResult(portfolioResults)
     }
 
-    fun runHoldDip(request: HoldDipRequest): HoldDipMultiResult {
+    fun runMarketTiming(request: MarketTimingRequest): MarketTimingMultiResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         val effrxSeries = loadEffrxSeries()
@@ -187,10 +187,10 @@ object BacktestService {
         val referenceTicker = request.referenceTicker
             ?.trim()
             ?.uppercase()
-            ?.takeIf { it.isNotBlank() && request.referenceSource == HoldDipReferenceSource.TICKER }
+            ?.takeIf { it.isNotBlank() && request.referenceSource == MarketTimingReferenceSource.TICKER }
 
         if (portfolio.tickers.isEmpty()) throw IllegalArgumentException("Portfolio must contain at least one ticker")
-        if (request.referenceSource == HoldDipReferenceSource.TICKER && referenceTicker == null) {
+        if (request.referenceSource == MarketTimingReferenceSource.TICKER && referenceTicker == null) {
             throw IllegalArgumentException("Reference ticker is required")
         }
 
@@ -277,12 +277,12 @@ object BacktestService {
         val referenceValues = referenceRawValues.map { it / referenceDisplayStart * request.startingBalance }
 
         val annualRate = when (request.interestMode) {
-            HoldDipInterestMode.SPREAD -> request.annualSpread ?: 0.0
-            HoldDipInterestMode.FIXED -> request.fixedAnnualRate ?: 0.0
+            MarketTimingInterestMode.SPREAD -> request.annualSpread ?: 0.0
+            MarketTimingInterestMode.FIXED -> request.fixedAnnualRate ?: 0.0
         }.coerceAtLeast(0.0)
         val dailyLoanRates = when (request.interestMode) {
-            HoldDipInterestMode.SPREAD -> buildDailyLoanRates(dates, effrxSeries, annualRate / 252.0)
-            HoldDipInterestMode.FIXED -> DoubleArray(dates.size) { i -> if (i == 0) 0.0 else annualRate / 252.0 }
+            MarketTimingInterestMode.SPREAD -> buildDailyLoanRates(dates, effrxSeries, annualRate / 252.0)
+            MarketTimingInterestMode.FIXED -> DoubleArray(dates.size) { i -> if (i == 0) 0.0 else annualRate / 252.0 }
         }
         val debtIndex = DoubleArray(dates.size) { 1.0 }
         for (i in 1 until dates.size) debtIndex[i] = debtIndex[i - 1] * (1.0 + dailyLoanRates[i])
@@ -300,7 +300,7 @@ object BacktestService {
                 .zip(referenceHistoryDrawdowns)
                 .firstOrNull { (_, drawdown) -> drawdown <= -drawdownPct }
                 ?.first
-            buildHoldDipResult(
+            buildMarketTimingResult(
                 drawdownPct,
                 dates,
                 portfolioValues,
@@ -312,14 +312,14 @@ object BacktestService {
             )
         }
 
-        return HoldDipMultiResult(
+        return MarketTimingMultiResult(
             referenceLabel = referenceTicker ?: portfolio.label,
             referencePoints = dates.mapIndexed { i, date -> DataPoint(date.toString(), referenceValues[i]) },
             results = results,
         )
     }
 
-    private fun buildHoldDipResult(
+    private fun buildMarketTimingResult(
         drawdownPct: Double,
         dates: List<LocalDate>,
         portfolioValues: List<Double>,
@@ -328,11 +328,11 @@ object BacktestService {
         drawdownIndex: ReferenceRangeIndex,
         startingBalance: Double,
         firstTriggerDate: LocalDate?,
-    ): HoldDipResult {
+    ): MarketTimingResult {
         val n = dates.size
         val triggerIndex = arrayOfNulls<Int>(n)
         for (i in n - 1 downTo 0) {
-            triggerIndex[i] = if (firstTriggerDate == null || dates[i] < firstTriggerDate) {
+            triggerIndex[i] = if (firstTriggerDate == null) {
                 null
             } else if (referenceDrawdowns[i] <= -drawdownPct) {
                 i
@@ -344,9 +344,9 @@ object BacktestService {
         val points = dates.mapIndexed { i, date ->
             val j = triggerIndex[i]
             if (j == null || portfolioValues[i] <= 0.0 || debtIndex[i] <= 0.0) {
-                HoldDipPoint(date.toString())
+                MarketTimingPoint(date.toString())
             } else if (j == i) {
-                HoldDipPoint(
+                MarketTimingPoint(
                     date = date.toString(),
                     value = 0.0,
                     triggerDate = date.toString(),
@@ -355,10 +355,10 @@ object BacktestService {
                 )
             } else {
                 val buyHoldValue = startingBalance * (portfolioValues[j] / portfolioValues[i])
-                val debtValue = startingBalance * (debtIndex[j] / debtIndex[i])
-                HoldDipPoint(
+                val waitCapitalAtTrigger = startingBalance * (debtIndex[j] / debtIndex[i])
+                MarketTimingPoint(
                     date = date.toString(),
-                    value = buyHoldValue - debtValue,
+                    value = buyHoldValue / waitCapitalAtTrigger - 1.0,
                     triggerDate = dates[j].toString(),
                     daysToTrigger = (dates[j].toEpochDay() - date.toEpochDay()).toInt(),
                     referenceDrawdown = referenceDrawdowns[j],
@@ -369,7 +369,7 @@ object BacktestService {
         val triggered = points.filter { it.value != null }
         val values = triggered.mapNotNull { it.value }.sorted()
         val summary = if (values.isEmpty()) {
-            HoldDipSummary(totalPoints = points.size, triggeredPoints = 0)
+            MarketTimingSummary(totalPoints = points.size, triggeredPoints = 0)
         } else {
             val median = if (values.size % 2 == 1) {
                 values[values.size / 2]
@@ -377,7 +377,7 @@ object BacktestService {
                 (values[values.size / 2 - 1] + values[values.size / 2]) / 2.0
             }
             val decisiveValues = values.filter { abs(it) > 1e-9 }
-            HoldDipSummary(
+            MarketTimingSummary(
                 totalPoints = points.size,
                 triggeredPoints = triggered.size,
                 bestValue = values.last(),
@@ -391,7 +391,7 @@ object BacktestService {
             )
         }
 
-        return HoldDipResult(drawdownPct, points, summary)
+        return MarketTimingResult(drawdownPct, points, summary)
     }
 
     private fun computeReferenceDrawdowns(values: List<Double>): List<Double> {

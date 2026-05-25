@@ -934,7 +934,7 @@ fun Application.configureRouting() {
             }
         }
 
-        post("/api/hold-dip/run") {
+        post("/api/market-timing/run") {
             try {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
@@ -952,18 +952,18 @@ fun Application.configureRouting() {
                     else -> listOfNotNull(json["drawdownPct"]?.jsonPrimitive?.doubleOrNull)
                 }
                 val referenceSource = runCatching {
-                    HoldDipReferenceSource.valueOf(
+                    MarketTimingReferenceSource.valueOf(
                         json["referenceSource"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "PORTFOLIO"
                     )
-                }.getOrDefault(HoldDipReferenceSource.PORTFOLIO)
+                }.getOrDefault(MarketTimingReferenceSource.PORTFOLIO)
                 val interestMode = runCatching {
-                    HoldDipInterestMode.valueOf(
+                    MarketTimingInterestMode.valueOf(
                         json["interestMode"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "SPREAD"
                     )
-                }.getOrDefault(HoldDipInterestMode.SPREAD)
+                }.getOrDefault(MarketTimingInterestMode.SPREAD)
 
-                val result = BacktestService.runHoldDip(
-                    HoldDipRequest(
+                val result = BacktestService.runMarketTiming(
+                    MarketTimingRequest(
                         fromDate = fromDate,
                         toDate = toDate,
                         portfolio = portfolio,

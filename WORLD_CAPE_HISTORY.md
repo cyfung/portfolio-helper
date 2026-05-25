@@ -1,7 +1,7 @@
 # World CAPE History Dataset
 
 This project ships a local CSV at `frontend/public/data/world-cape-history.csv`.
-It is designed as a valuation-timing reference for the Hold the Dip page. It is
+It is designed as a valuation-timing reference for the Market Timing page. It is
 not a single official world CAPE download.
 
 Regenerate it with:
