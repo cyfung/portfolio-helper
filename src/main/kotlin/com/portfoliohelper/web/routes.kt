@@ -947,9 +947,26 @@ fun Application.configureRouting() {
                 val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
                     ?: throw IllegalArgumentException("Missing portfolio")
 
-                val drawdownPcts = when (val el = json["drawdownPcts"]) {
-                    is JsonArray -> el.mapNotNull { it.jsonPrimitive.doubleOrNull }
-                    else -> listOfNotNull(json["drawdownPct"]?.jsonPrimitive?.doubleOrNull)
+                val drawdownConfigs = when (val el = json["drawdownConfigs"]) {
+                    is JsonArray -> el.mapNotNull { item ->
+                        val obj = item as? JsonObject
+                        val pct = obj?.get("drawdownPct")?.jsonPrimitive?.doubleOrNull
+                            ?: runCatching { item.jsonPrimitive.doubleOrNull }.getOrNull()
+                        pct?.let {
+                            MarketTimingDrawdownConfig(
+                                drawdownPct = it,
+                                zeroWindowMonths = obj?.get("zeroWindowMonths")?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0,
+                            )
+                        }
+                    }
+                    else -> when (val legacy = json["drawdownPcts"]) {
+                        is JsonArray -> legacy.mapNotNull { pct ->
+                            pct.jsonPrimitive.doubleOrNull?.let { MarketTimingDrawdownConfig(it) }
+                        }
+                        else -> listOfNotNull(
+                            json["drawdownPct"]?.jsonPrimitive?.doubleOrNull?.let { MarketTimingDrawdownConfig(it) }
+                        )
+                    }
                 }
                 val referenceSource = runCatching {
                     MarketTimingReferenceSource.valueOf(
@@ -967,7 +984,7 @@ fun Application.configureRouting() {
                         fromDate = fromDate,
                         toDate = toDate,
                         portfolio = portfolio,
-                        drawdownPcts = drawdownPcts,
+                        drawdownConfigs = drawdownConfigs,
                         referenceSource = referenceSource,
                         referenceTicker = json["referenceTicker"]?.jsonPrimitive?.contentOrNull,
                         interestMode = interestMode,

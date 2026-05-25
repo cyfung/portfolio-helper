@@ -287,19 +287,35 @@ object BacktestService {
         val debtIndex = DoubleArray(dates.size) { 1.0 }
         for (i in 1 until dates.size) debtIndex[i] = debtIndex[i - 1] * (1.0 + dailyLoanRates[i])
 
-        val thresholds = request.drawdownPcts
-            .map { if (it > 1.0) it / 100.0 else it }
-            .filter { it > 0.0 && it < 1.0 }
-            .distinct()
-            .sorted()
-            .ifEmpty { listOf(0.05, 0.10, 0.15, 0.20, 0.25) }
+        val thresholds = request.drawdownConfigs
+            .mapNotNull { config ->
+                val drawdownPct = if (config.drawdownPct > 1.0) config.drawdownPct / 100.0 else config.drawdownPct
+                if (drawdownPct > 0.0 && drawdownPct < 1.0) {
+                    MarketTimingDrawdownConfig(drawdownPct, config.zeroWindowMonths.coerceAtLeast(0))
+                } else {
+                    null
+                }
+            }
+            .distinctBy { it.drawdownPct to it.zeroWindowMonths }
+            .sortedBy { it.drawdownPct }
+            .ifEmpty {
+                listOf(0.05, 0.10, 0.15, 0.20, 0.25).map { MarketTimingDrawdownConfig(it) }
+            }
 
         val drawdownIndex = ReferenceRangeIndex(referenceDrawdowns)
-        val results = thresholds.map { drawdownPct ->
+        val results = thresholds.map { threshold ->
+            val drawdownPct = threshold.drawdownPct
             val firstTriggerDate = referenceHistoryDates
                 .zip(referenceHistoryDrawdowns)
                 .firstOrNull { (_, drawdown) -> drawdown <= -drawdownPct }
                 ?.first
+            val zeroedByRecentDrawdown = buildMarketTimingZeroWindow(
+                drawdownPct,
+                dates,
+                referenceHistoryDates,
+                referenceHistoryDrawdowns,
+                threshold.zeroWindowMonths,
+            )
             buildMarketTimingResult(
                 drawdownPct,
                 dates,
@@ -309,6 +325,8 @@ object BacktestService {
                 drawdownIndex,
                 request.startingBalance,
                 firstTriggerDate,
+                threshold.zeroWindowMonths,
+                zeroedByRecentDrawdown,
             )
         }
 
@@ -328,13 +346,15 @@ object BacktestService {
         drawdownIndex: ReferenceRangeIndex,
         startingBalance: Double,
         firstTriggerDate: LocalDate?,
+        zeroWindowMonths: Int,
+        zeroedByRecentDrawdown: BooleanArray,
     ): MarketTimingResult {
         val n = dates.size
         val triggerIndex = arrayOfNulls<Int>(n)
         for (i in n - 1 downTo 0) {
             triggerIndex[i] = if (firstTriggerDate == null) {
                 null
-            } else if (referenceDrawdowns[i] <= -drawdownPct) {
+            } else if (zeroedByRecentDrawdown[i]) {
                 i
             } else {
                 drawdownIndex.firstAtOrBelow(i + 1, -drawdownPct)
@@ -377,6 +397,13 @@ object BacktestService {
                 (values[values.size / 2 - 1] + values[values.size / 2]) / 2.0
             }
             val decisiveValues = values.filter { abs(it) > 1e-9 }
+            val decisiveMedian = decisiveValues.takeIf { it.isNotEmpty() }?.let { decisive ->
+                if (decisive.size % 2 == 1) {
+                    decisive[decisive.size / 2]
+                } else {
+                    (decisive[decisive.size / 2 - 1] + decisive[decisive.size / 2]) / 2.0
+                }
+            }
             MarketTimingSummary(
                 totalPoints = points.size,
                 triggeredPoints = triggered.size,
@@ -384,6 +411,8 @@ object BacktestService {
                 worstValue = values.first(),
                 averageValue = values.average(),
                 medianValue = median,
+                nonZeroAverageValue = decisiveValues.takeIf { it.isNotEmpty() }?.average(),
+                nonZeroMedianValue = decisiveMedian,
                 winRate = decisiveValues
                     .takeIf { it.isNotEmpty() }
                     ?.let { decisive -> decisive.count { it > 0.0 }.toDouble() / decisive.size },
@@ -391,7 +420,32 @@ object BacktestService {
             )
         }
 
-        return MarketTimingResult(drawdownPct, points, summary)
+        return MarketTimingResult(drawdownPct, zeroWindowMonths, points, summary)
+    }
+
+    private fun buildMarketTimingZeroWindow(
+        drawdownPct: Double,
+        dates: List<LocalDate>,
+        referenceHistoryDates: List<LocalDate>,
+        referenceHistoryDrawdowns: List<Double>,
+        zeroWindowMonths: Int,
+    ): BooleanArray {
+        val flags = BooleanArray(dates.size)
+        var historyIndex = 0
+        var lastQualifyingDrawdownDate: LocalDate? = null
+        for ((dateIndex, date) in dates.withIndex()) {
+            while (historyIndex < referenceHistoryDates.size && !referenceHistoryDates[historyIndex].isAfter(date)) {
+                if (referenceHistoryDrawdowns[historyIndex] <= -drawdownPct) {
+                    lastQualifyingDrawdownDate = referenceHistoryDates[historyIndex]
+                }
+                historyIndex++
+            }
+            flags[dateIndex] = lastQualifyingDrawdownDate
+                ?.plusMonths(zeroWindowMonths.toLong())
+                ?.let { zeroUntil -> !date.isAfter(zeroUntil) }
+                ?: false
+        }
+        return flags
     }
 
     private fun computeReferenceDrawdowns(values: List<Double>): List<Double> {

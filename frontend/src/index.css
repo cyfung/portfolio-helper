@@ -3688,6 +3688,10 @@ a.loan-calc-link:hover {
     width: 100%;
 }
 
+.market-timing-field-drawdown {
+    width: 27rem;
+}
+
 .market-timing-field-interest {
     width: 18rem;
 }
@@ -3710,6 +3714,7 @@ a.loan-calc-link:hover {
     }
 
     .market-timing-field,
+    .market-timing-field-drawdown,
     .market-timing-field-interest,
     .market-timing-field-rate {
         width: 100%;
@@ -3752,6 +3757,10 @@ a.loan-calc-link:hover {
     padding: 1rem;
     box-sizing: border-box;
     position: relative;
+}
+
+.market-timing-reference-drawdown-chart {
+    height: 260px;
 }
 
 .world-cape-heading {

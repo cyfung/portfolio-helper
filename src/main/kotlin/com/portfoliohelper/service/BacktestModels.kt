@@ -82,13 +82,18 @@ data class MarketTimingRequest(
     val fromDate: String?,
     val toDate: String?,
     val portfolio: PortfolioConfig,
-    val drawdownPcts: List<Double>,
+    val drawdownConfigs: List<MarketTimingDrawdownConfig>,
     val referenceSource: MarketTimingReferenceSource,
     val referenceTicker: String? = null,
     val interestMode: MarketTimingInterestMode,
     val annualSpread: Double? = null,
     val fixedAnnualRate: Double? = null,
     val startingBalance: Double = 10_000.0
+)
+
+data class MarketTimingDrawdownConfig(
+    val drawdownPct: Double,
+    val zeroWindowMonths: Int = 0,
 )
 
 @Serializable
@@ -111,6 +116,8 @@ data class MarketTimingSummary(
     val worstValue: Double? = null,
     val averageValue: Double? = null,
     val medianValue: Double? = null,
+    val nonZeroAverageValue: Double? = null,
+    val nonZeroMedianValue: Double? = null,
     val winRate: Double? = null,
     val averageDaysToTrigger: Double? = null,
 )
@@ -118,6 +125,7 @@ data class MarketTimingSummary(
 @Serializable
 data class MarketTimingResult(
     val drawdownPct: Double,
+    val zeroWindowMonths: Int = 0,
     val points: List<MarketTimingPoint>,
     val summary: MarketTimingSummary,
 )

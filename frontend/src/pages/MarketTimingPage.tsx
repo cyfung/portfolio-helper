@@ -13,8 +13,7 @@ import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { fmt2, money, pct } from '@/lib/statsFormatters'
 import { DEFAULT_SPREAD_PERCENT, isValidNumberInput, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 import {
-  blockStateToAPIPortfolio, cashflowStateFromSettings, configToBlockState, emptyBlock, PALETTE,
-  startingBalanceToPayload, type BlockState,
+  blockStateToAPIPortfolio, configToBlockState, emptyBlock, PALETTE, type BlockState,
 } from '@/types/backtest'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -36,12 +35,15 @@ interface MarketTimingSummary {
   worstValue?: number | null
   averageValue?: number | null
   medianValue?: number | null
+  nonZeroAverageValue?: number | null
+  nonZeroMedianValue?: number | null
   winRate?: number | null
   averageDaysToTrigger?: number | null
 }
 
 interface MarketTimingResult {
   drawdownPct: number
+  zeroWindowMonths?: number | null
   points: MarketTimingPoint[]
   summary: MarketTimingSummary
 }
@@ -64,16 +66,31 @@ interface UsCapePoint {
   usCape: number
 }
 
+interface DrawdownConfigInput {
+  drawdownPct: number
+  zeroWindowMonths: number
+}
+
 const WORLD_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/world-cape-history.csv`
 const US_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/us-cape-history.csv`
 
-function parseDrawdownPercents(value: string) {
+function parseDrawdownConfigs(value: string): DrawdownConfigInput[] {
   return value
-    .split(/[,\s]+/)
-    .map(s => parseFloat(s.trim()))
-    .filter(Number.isFinite)
-    .filter(v => v > 0 && v < 100)
-    .map(v => v / 100)
+    .split(/[,\n;]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(entry => {
+      const match = entry.match(/^(\d+(?:\.\d+)?)\s*(?:[-:/]\s*(\d+(?:\.\d+)?))?$/)
+      if (!match) return null
+      const drawdown = parseFloat(match[1])
+      const zeroWindow = match[2] == null ? 0 : Math.floor(parseFloat(match[2]))
+      if (!Number.isFinite(drawdown) || drawdown <= 0 || drawdown >= 100) return null
+      return {
+        drawdownPct: drawdown / 100,
+        zeroWindowMonths: Number.isFinite(zeroWindow) ? Math.max(0, zeroWindow) : 0,
+      }
+    })
+    .filter((config): config is DrawdownConfigInput => config != null)
 }
 
 function formatDays(days?: number | null) {
@@ -152,8 +169,7 @@ export default function MarketTimingPage() {
   const [portfolio, setPortfolio] = useState<BlockState>(emptyBlock(0))
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [startingBalance, setStartingBalance] = useState('10000')
-  const [drawdownPcts, setDrawdownPcts] = useState('5, 10, 15, 20, 25')
+  const [drawdownConfigs, setDrawdownConfigs] = useState('5-0, 10-0, 15-0, 20-0, 25-0')
   const [referenceSource, setReferenceSource] = useState<ReferenceSource>('PORTFOLIO')
   const [referenceTicker, setReferenceTicker] = useState('VT')
   const [interestMode, setInterestMode] = useState<InterestMode>('SPREAD')
@@ -178,8 +194,6 @@ export default function MarketTimingPage() {
       .then((req: any) => {
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate) setToDate(req.toDate)
-        const cashflowState = cashflowStateFromSettings(req)
-        if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
         if (req.portfolios?.[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
       })
       .catch(() => {})
@@ -241,8 +255,7 @@ export default function MarketTimingPage() {
     const payload = {
       fromDate,
       toDate,
-      startingBalance,
-      drawdownPcts,
+      drawdownConfigs,
       referenceSource,
       referenceTicker,
       interestMode,
@@ -260,8 +273,7 @@ export default function MarketTimingPage() {
       if (!payload?.portfolio) throw new Error('Invalid config')
       setFromDate(payload.fromDate ?? '')
       setToDate(payload.toDate ?? '')
-      setStartingBalance(String(payload.startingBalance ?? '10000'))
-      setDrawdownPcts(String(payload.drawdownPcts ?? '5, 10, 15, 20, 25'))
+      setDrawdownConfigs(String(payload.drawdownConfigs ?? payload.drawdownPcts ?? '5-0, 10-0, 15-0, 20-0, 25-0'))
       setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
       setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
       setInterestMode(payload.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
@@ -279,8 +291,8 @@ export default function MarketTimingPage() {
     setError('')
     setResults(null)
     try {
-      const thresholds = parseDrawdownPercents(drawdownPcts)
-      if (thresholds.length === 0) throw new Error('Enter at least one drawdown percent')
+      const thresholds = parseDrawdownConfigs(drawdownConfigs)
+      if (thresholds.length === 0) throw new Error('Enter at least one drawdown config')
       const savedPortfolios = await fetchSavedPortfolios()
       const apiPortfolio = resolvedBlockStateToAPIPortfolio(portfolio, 0, savedPortfolios)
       const runAnnualSpread = interestMode === 'SPREAD'
@@ -291,9 +303,8 @@ export default function MarketTimingPage() {
         saveSettings: false,
         fromDate,
         toDate,
-        startingBalance: startingBalanceToPayload(startingBalance),
         portfolio: { ...apiPortfolio, marginStrategies: [], rebalanceStrategies: [] },
-        drawdownPcts: thresholds,
+        drawdownConfigs: thresholds,
         referenceSource,
         referenceTicker: referenceSource === 'TICKER' ? referenceTicker.trim().toUpperCase() : undefined,
         interestMode,
@@ -332,6 +343,23 @@ export default function MarketTimingPage() {
       return row
     })
     return { rows }
+  }, [results])
+
+  const referenceDrawdownChartData = useMemo(() => {
+    if (!results?.referencePoints.length) return []
+    let peak = Number.NEGATIVE_INFINITY
+    return results.referencePoints
+      .map(point => {
+        const value = point.value
+        if (!Number.isFinite(value) || value <= 0) {
+          return { x: point.date, referenceDrawdown: undefined }
+        }
+        peak = Math.max(peak, value)
+        return {
+          x: point.date,
+          referenceDrawdown: peak > 0 ? value / peak - 1 : undefined,
+        }
+      })
   }, [results])
 
   const worldCapeChartData = useMemo(() => worldCapePoints.map(point => ({
@@ -378,6 +406,18 @@ export default function MarketTimingPage() {
 
   const tooltip = useMemo(() => makeMarketTimingTooltip(theme), [theme])
   const capeTooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => fmt2(v)), [theme])
+  const marketTimingLineStyles = useMemo(() => {
+    if (!results?.results.length) return []
+    return results.results.map((_, i) => {
+      const groupIndex = i % PALETTE.length
+      const variantIndex = Math.floor(i / PALETTE.length)
+      const palette = PALETTE[groupIndex % PALETTE.length]
+      return {
+        stroke: palette[variantIndex % palette.length],
+        strokeWidth: Math.max(1.4, 2.4 - variantIndex * 0.25),
+      }
+    })
+  }, [results])
 
   return (
     <div className="container">
@@ -400,13 +440,15 @@ export default function MarketTimingPage() {
 
         <div className="backtest-section market-timing-config">
           <div className="market-timing-config-row">
-            <div className="market-timing-field market-timing-field-notional">
-              <label htmlFor="market-timing-starting-balance">Notional</label>
-              <input id="market-timing-starting-balance" type="number" min="0" step="100" value={startingBalance} onChange={e => setStartingBalance(e.target.value)} />
-            </div>
             <div className="market-timing-field market-timing-field-drawdown">
-              <label htmlFor="market-timing-dd-pcts">Drawdown %</label>
-              <input id="market-timing-dd-pcts" type="text" value={drawdownPcts} onChange={e => setDrawdownPcts(e.target.value)} />
+              <label htmlFor="market-timing-dd-pcts">Drawdown % - Zero Window (month)</label>
+              <input
+                id="market-timing-dd-pcts"
+                type="text"
+                value={drawdownConfigs}
+                onChange={e => setDrawdownConfigs(e.target.value)}
+                title="Use comma-separated drawdown-window pairs, e.g. 5-0, 10-36."
+              />
             </div>
             <div className="market-timing-field market-timing-field-reference">
               <label htmlFor="market-timing-reference-source">Reference</label>
@@ -463,10 +505,12 @@ export default function MarketTimingPage() {
             <table className="backtest-stats-table">
               <thead>
                 <tr>
-                  <th>DD</th>
+                  <th>DD - Window</th>
                   <th>Triggered</th>
                   <th>Avg P/L %</th>
                   <th>Median P/L %</th>
+                  <th>Avg Non-Zero P/L %</th>
+                  <th>Median Non-Zero P/L %</th>
                   <th>Best P/L %</th>
                   <th>Worst P/L %</th>
                   <th title="Wins divided by wins plus losses. Neutral zero P/L cases are excluded.">Win/Loss Rate</th>
@@ -475,11 +519,13 @@ export default function MarketTimingPage() {
               </thead>
               <tbody>
                 {results.results.map(result => (
-                  <tr key={result.drawdownPct}>
-                    <td>{pct(result.drawdownPct)}</td>
+                  <tr key={`${result.drawdownPct}-${result.zeroWindowMonths ?? 0}`}>
+                    <td>{pct(result.drawdownPct)} - {result.zeroWindowMonths ?? 0}m</td>
                     <td>{result.summary.triggeredPoints}/{result.summary.totalPoints}</td>
                     <td>{result.summary.averageValue == null ? '-' : pct(result.summary.averageValue)}</td>
                     <td>{result.summary.medianValue == null ? '-' : pct(result.summary.medianValue)}</td>
+                    <td>{result.summary.nonZeroAverageValue == null ? '-' : pct(result.summary.nonZeroAverageValue)}</td>
+                    <td>{result.summary.nonZeroMedianValue == null ? '-' : pct(result.summary.nonZeroMedianValue)}</td>
                     <td>{result.summary.bestValue == null ? '-' : pct(result.summary.bestValue)}</td>
                     <td>{result.summary.worstValue == null ? '-' : pct(result.summary.worstValue)}</td>
                     <td>{result.summary.winRate == null ? '-' : pct(result.summary.winRate)}</td>
@@ -534,9 +580,9 @@ export default function MarketTimingPage() {
                     key={result.drawdownPct}
                     yAxisId="pnl"
                     dataKey={`dd${i}`}
-                    name={`${pct(result.drawdownPct)} DD`}
-                    stroke={PALETTE[i % PALETTE.length][0]}
-                    strokeWidth={2}
+                    name={`${pct(result.drawdownPct)} DD - ${result.zeroWindowMonths ?? 0}m`}
+                    stroke={marketTimingLineStyles[i]?.stroke ?? PALETTE[0][0]}
+                    strokeWidth={marketTimingLineStyles[i]?.strokeWidth ?? 2}
                     dot={false}
                     activeDot={{ r: 4 }}
                     connectNulls={false}
@@ -624,6 +670,36 @@ export default function MarketTimingPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {referenceDrawdownChartData.length > 0 && (
+            <>
+              <div className="backtest-chart-heading">
+                <div className="backtest-chart-title">Reference Drawdown %</div>
+              </div>
+              <div className="backtest-chart-container market-timing-reference-drawdown-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={referenceDrawdownChartData} syncId="market-timing" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
+                    <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(referenceDrawdownChartData.length / 8))} />
+                    <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
+                    <Tooltip content={tooltip} />
+                    <Legend />
+                    <Line
+                      dataKey="referenceDrawdown"
+                      name={`Reference Drawdown - ${results.referenceLabel || 'Portfolio'}`}
+                      stroke={PALETTE[1 % PALETTE.length][0]}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                      connectNulls={false}
+                      isAnimationActive={false}
+                      type="monotone"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
         </>
       )}
 
