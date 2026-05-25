@@ -51,18 +51,27 @@ function labelKey(label: string) {
   return label.trim().toLocaleLowerCase()
 }
 
+function uniqueSavedJsonConfigName(name: string, takenNames: Set<string>) {
+  if (!takenNames.has(labelKey(name))) return name
+
+  const match = /^(.*?) \((\d+)\)$/.exec(name)
+  const baseName = match?.[1] ?? name
+  let counter = match?.[2] ? parseInt(match[2], 10) + 1 : 2
+  let candidate = ''
+  do {
+    candidate = `${baseName} (${counter})`
+    counter += 1
+  } while (takenNames.has(labelKey(candidate)))
+  return candidate
+}
+
 function makeUniqueStrategyLabels(strategies: RebalStrategyState[], portfolioLabel: string) {
   const taken = new Set<string>()
   if (portfolioLabel.trim()) taken.add(labelKey(portfolioLabel))
 
   return strategies.map((strategy, i) => {
     const base = strategy.label.trim() || `Strategy ${i + 1}`
-    let label = base
-    let suffix = 2
-    while (taken.has(labelKey(label))) {
-      label = `${base} (${suffix})`
-      suffix += 1
-    }
+    const label = uniqueSavedJsonConfigName(base, taken)
     taken.add(labelKey(label))
     return label === strategy.label ? strategy : { ...strategy, label }
   })

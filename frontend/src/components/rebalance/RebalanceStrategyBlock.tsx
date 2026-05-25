@@ -905,15 +905,28 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                 <label>Scale Function</label>
                 <select
                   value={derived.scale.function ?? 'SIGMOID'}
-                  onChange={e => updateDerivedScale(derived.id, { function: e.target.value as DerivedSubStrategyState['scale']['function'] })}
+                  onChange={e => {
+                    const fn = e.target.value as DerivedSubStrategyState['scale']['function']
+                    const refHigh = parseFloat(derived.scale.referenceUpper)
+                    const currentReset = parseFloat(derived.scale.stepBaseTarget ?? '')
+                    const isHysteresis = fn === 'HYSTERESIS_STEP' || fn === 'HYSTERESIS_STAIRS'
+                    updateDerivedScale(derived.id, {
+                      function: fn,
+                      ...(isHysteresis && (!Number.isFinite(currentReset) || currentReset <= refHigh)
+                        ? { stepBaseTarget: String(Math.min(sliderMax, Math.max(0, Math.round((Number.isFinite(refHigh) ? refHigh : 100) + 10)))) }
+                        : {}),
+                    })
+                  }}
                 >
                   <option value="SIGMOID">Sigmoid</option>
                   <option value="ADAPTIVE_LOW_SIGMOID">Adaptive Low Sigmoid</option>
                   <option value="LINEAR">Linear</option>
                   <option value="STEP">Step</option>
+                  <option value="HYSTERESIS_STEP">Hysteresis Step</option>
+                  <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
                 </select>
               </div>
-              {(derived.scale.function ?? 'SIGMOID') !== 'STEP' && (
+              {!['STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID') && (
                 <>
                   <div className="strategy-row">
                     <label>Ref Low</label>
@@ -965,6 +978,34 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                   </div>
                 </>
               )}
+              {(['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID')) && (
+                <div className="strategy-row">
+                  <label>Reset Above</label>
+                  <MarginPercentInput
+                    value={derived.scale.stepBaseTarget ?? ''}
+                    placeholder="110"
+                    max={sliderMax}
+                    compact
+                    ariaLabel={`Derived strategy ${derivedIdx + 1} reset threshold`}
+                    onChange={value => updateDerivedScale(derived.id, { stepBaseTarget: value })}
+                    onCommit={() => commit()}
+                  />
+                </div>
+              )}
+              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
+                <div className="strategy-row">
+                  <label>Reset Target</label>
+                  <MarginPercentInput
+                    value={derived.scale.targetUpper}
+                    placeholder="100"
+                    max={sliderMax}
+                    compact
+                    ariaLabel={`Derived strategy ${derivedIdx + 1} reset target margin`}
+                    onChange={value => updateDerivedScale(derived.id, { targetUpper: value })}
+                    onCommit={() => commit()}
+                  />
+                </div>
+              )}
               {(['SIGMOID', 'ADAPTIVE_LOW_SIGMOID'].includes(derived.scale.function ?? 'SIGMOID')) && (
                 <div className="strategy-row">
                   <label>Sigmoid K</label>
@@ -979,24 +1020,26 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                   />
                 </div>
               )}
-              {(derived.scale.function ?? 'SIGMOID') === 'STEP' && (
+              {(['STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID')) && (
                 <>
-                  <div className="strategy-row">
-                    <label>Base Target</label>
-                    <MarginPercentInput
-                      value={derived.scale.stepBaseTarget ?? '50'}
-                      placeholder={midMarginPoint}
-                      max={sliderMax}
-                      compact
-                      ariaLabel={`Derived strategy ${derivedIdx + 1} base target margin`}
-                      onChange={value => updateDerivedScale(derived.id, { stepBaseTarget: value })}
-                      onCommit={() => commit()}
-                    />
-                  </div>
+                  {(derived.scale.function ?? 'SIGMOID') === 'STEP' && (
+                    <div className="strategy-row">
+                      <label>Base Target</label>
+                      <MarginPercentInput
+                        value={derived.scale.stepBaseTarget ?? '50'}
+                        placeholder={midMarginPoint}
+                        max={sliderMax}
+                        compact
+                        ariaLabel={`Derived strategy ${derivedIdx + 1} base target margin`}
+                        onChange={value => updateDerivedScale(derived.id, { stepBaseTarget: value })}
+                        onCommit={() => commit()}
+                      />
+                    </div>
+                  )}
                   {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
                     <React.Fragment key={step.id}>
                       <div className="strategy-row">
-                        <label>Step {stepIdx + 1} Above</label>
+                        <label>{(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}</label>
                         <MarginPercentInput
                           value={step.referenceMargin}
                           placeholder={String(60 + stepIdx * 10)}
@@ -1008,7 +1051,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                         />
                       </div>
                       <div className="strategy-row">
-                        <label>Step {stepIdx + 1} Target</label>
+                        <label>{(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}</label>
                         <MarginPercentInput
                           value={step.targetMargin}
                           placeholder={String(50 + stepIdx * 10)}

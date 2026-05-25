@@ -373,9 +373,11 @@ private fun parseVmTimingMrConfig(obj: JsonObject): VmTimingMrConfig? {
     )
 }
 
-private fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleConfig =
+internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleConfig =
     DerivedTargetScaleConfig(
         function = when (obj["function"]?.jsonPrimitive?.content) {
+            "HYSTERESIS_STAIRS" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
+            "HYSTERESIS_STEP" -> DerivedTargetScaleFunction.HYSTERESIS_STEP
             "STEP" -> DerivedTargetScaleFunction.STEP
             "LINEAR", "Z_SHAPED" -> DerivedTargetScaleFunction.LINEAR
             "ADAPTIVE_LOW_SIGMOID" -> DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID

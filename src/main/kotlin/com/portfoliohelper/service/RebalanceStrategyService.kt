@@ -491,39 +491,6 @@ object RebalanceStrategyService {
           ))
           .toSet()
 
-  private fun DerivedTargetScaleConfig.scale(baseMargin: Double): Double {
-    if (function == DerivedTargetScaleFunction.STEP) {
-      var target = stepBaseTarget
-      for (step in steps.sortedBy { it.referenceMargin }) {
-        if (baseMargin >= step.referenceMargin) target = step.targetMargin
-      }
-      return target.coerceAtLeast(0.0)
-    }
-
-    val configuredRefLow = minOf(referenceLower, referenceUpper)
-    val refHigh = maxOf(referenceLower, referenceUpper)
-    val configuredTargetLow = minOf(targetLower, targetUpper)
-    val targetHigh = maxOf(targetLower, targetUpper)
-    val adaptiveLow = function == DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID
-    val refLow = if (adaptiveLow && baseMargin < configuredRefLow) baseMargin else configuredRefLow
-    val targetLow = if (adaptiveLow && baseMargin < configuredTargetLow) baseMargin else configuredTargetLow
-    val refSpan = refHigh - refLow
-    val normalized =
-        if (refSpan > 0.0) ((baseMargin - refLow) / refSpan).coerceIn(0.0, 1.0)
-        else 0.5
-    val shaped =
-        when (function) {
-          DerivedTargetScaleFunction.SIGMOID,
-          DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID -> {
-            val k = sigmoidSteepness.takeIf { it.isFinite() && it > 0.0 } ?: 8.0
-            1.0 / (1.0 + exp(-k * (normalized - 0.5)))
-          }
-          DerivedTargetScaleFunction.LINEAR -> normalized
-          DerivedTargetScaleFunction.STEP -> normalized
-        }
-    return targetLow + shaped * (targetHigh - targetLow)
-  }
-
   private fun prepareRunContext(
       fromDateText: String?,
       toDateText: String?,
@@ -683,15 +650,23 @@ object RebalanceStrategyService {
     val vmTimingCapeHistory = vmTimingMr?.let { loadCapeHistory(it.capeSource) }
     val drawdownMarginOverride =
         strategy.drawdownMarginOverride?.takeIf { strategy.marginRebalanceEnabled && it.enabled }
-    fun derivedTargetAt(recordedIndex: Int): Double? {
+    val derivedTargetRuntime = derivedSubStrategy?.let { DerivedTargetRuntime.from(it.scale) }
+    fun baseMarginAt(recordedIndex: Int): Double? {
       val derived = derivedSubStrategy ?: return null
       val baseMargins = baseMarginSeries ?: return null
       if (baseMargins.isEmpty()) return null
-      val baseMargin = baseMargins.getOrNull(recordedIndex.coerceIn(0, baseMargins.lastIndex)) ?: return null
-      return derived.scale.scale(baseMargin)
+      return baseMargins.getOrNull(recordedIndex.coerceIn(0, baseMargins.lastIndex))
+    }
+    fun initialDerivedTargetAt(recordedIndex: Int): Double? {
+      val baseMargin = baseMarginAt(recordedIndex) ?: return null
+      return derivedTargetRuntime?.initialTarget(baseMargin)
+    }
+    fun dynamicDerivedTargetAt(recordedIndex: Int): DerivedTargetSignal? {
+      val baseMargin = baseMarginAt(recordedIndex) ?: return null
+      return derivedTargetRuntime?.target(baseMargin)
     }
 
-    val marginTarget = derivedTargetAt(0) ?: strategy.marginRatio
+    val marginTarget = initialDerivedTargetAt(0) ?: strategy.marginRatio
     val comfortLowBound = strategy.comfortZoneLow
     val comfortHighBound = strategy.comfortZoneHigh
     val globalCooldown =
@@ -1134,12 +1109,16 @@ object RebalanceStrategyService {
         drawdownOverrideAnchorIndex = i
       }
 
-      // BL/SH decisions use the same pre-day account snapshot as the existing triggers,
-      // so the derived reference also uses the base strategy's previous recorded margin.
-      val dynamicTargetMargin = derivedTargetAt(i - 1) ?: marginTarget
+      val derivedReferenceIndex = derivedTargetRuntime?.targetReferenceIndex(i) ?: (i - 1)
+      val dynamicTargetSignal = dynamicDerivedTargetAt(derivedReferenceIndex)
+      val derivedTargetPaused = dynamicTargetSignal?.adjustmentPaused == true
+      val derivedExactTarget = dynamicTargetSignal?.forceExactTarget == true
+      val dynamicTargetMargin = dynamicTargetSignal?.targetMargin ?: marginTarget
       val dynamicDeviation = derivedSubStrategy?.absoluteDeviationPct?.coerceAtLeast(0.0)
 
       fun comfortZoneMargin(useComfortZone: Boolean): Double {
+        if (derivedTargetPaused) return account.currentMarginRatio()
+        if (derivedExactTarget) return dynamicTargetMargin
         if (dynamicDeviation != null) {
           val currentRatio = account.currentMarginRatio()
           val low = (dynamicTargetMargin - dynamicDeviation).coerceAtLeast(0.0)
@@ -1229,6 +1208,8 @@ object RebalanceStrategyService {
           } ?: shouldRebalance(marginRebalance, prevDate, curDate)
       val marginRebalanceDay =
           if (activeDrawdownOverride != null) drawdownOverrideCheckpointDay else normalMarginRebalanceDue
+      val scheduledMarginRebalancePaused =
+          derivedTargetPaused && activeDrawdownOverride == null
       val vmTimingRebalanceDay =
           vmTimingMr != null && shouldRebalance(vmTimingRebalance, prevDate, curDate)
 
@@ -1241,7 +1222,7 @@ object RebalanceStrategyService {
           actionPoints.add(ActionPoint(curDate.toString(), "PORTFOLIO_REBALANCE"))
         }
       }
-      if (marginRebalanceDay) {
+      if (marginRebalanceDay && !scheduledMarginRebalancePaused) {
         // Step 4: Scheduled margin rebalance.
         val drawdownOverrideRebalanceDay = activeDrawdownOverride != null
         var scheduledRebalanceDeferredByCooldown = false
@@ -1406,34 +1387,45 @@ object RebalanceStrategyService {
                   lastDerivedActionIndex?.let { last -> i - last <= derived.timeoutDays.coerceAtLeast(0) }
                 }
                 ?: false
+        val derivedUsesPostPriceMargin = derivedTargetRuntime?.usesPostPriceMarginForTriggers == true
+        val triggerCurrentRatio =
+            if (derivedUsesPostPriceMargin) account.currentMarginRatio() else currentRatio
         val derivedMaxSell =
-            derivedSubStrategy?.takeIf { currentRatio > it.maxMargin.coerceAtLeast(0.0) }
+            derivedSubStrategy?.takeIf {
+              !derivedTargetPaused && triggerCurrentRatio > it.maxMargin.coerceAtLeast(0.0)
+            }
 
         val effectiveSellHigh =
             drawdownSellHighRuntime
                 ?.activeTier()
                 ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
-                ?: derivedMaxSell?.let {
-                  MarginTriggerAction(
-                      it.maxMargin.coerceAtLeast(0.0),
-                      it.sellAllocStrategy,
-                      dynamicTargetMargin,
-                  )
+                ?: if (derivedSubStrategy != null) {
+                  if (derivedTargetPaused) {
+                    null
+                  } else {
+                    derivedMaxSell?.let {
+                      MarginTriggerAction(
+                          it.maxMargin.coerceAtLeast(0.0),
+                          it.sellAllocStrategy,
+                          dynamicTargetMargin,
+                      )
+                    }
+                        ?: MarginTriggerAction(
+                            if (derivedExactTarget) dynamicTargetMargin
+                            else dynamicTargetMargin + derivedSubStrategy.sellDeviationPct.coerceAtLeast(0.0),
+                            derivedSubStrategy.sellAllocStrategy,
+                            dynamicTargetMargin,
+                        )
+                  }
+                } else {
+                  strategy.sellOnHighMargin
                 }
-                ?: derivedSubStrategy?.let {
-                  MarginTriggerAction(
-                      dynamicTargetMargin + it.sellDeviationPct.coerceAtLeast(0.0),
-                      it.sellAllocStrategy,
-                      dynamicTargetMargin,
-                  )
-                }
-                ?: strategy.sellOnHighMargin
         effectiveSellHigh
             ?.takeIf { it.deviationPct > 0 }
             ?.let { cfg ->
               val forcedDerivedSell = derivedMaxSell != null
-              if ((forcedDerivedSell || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.SELL, i))) &&
-                  currentRatio > cfg.deviationPct
+              if ((forcedDerivedSell || derivedExactTarget || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.SELL, i))) &&
+                  triggerCurrentRatio > cfg.deviationPct
               ) {
                 val targetCashBalance = -account.equity() * cfg.targetMargin
                 if (account.cashBalance() < targetCashBalance) {
@@ -1465,21 +1457,26 @@ object RebalanceStrategyService {
         val effectiveBuyLow =
             activeDrawdownBuyLowTier
                 ?.let { MarginTriggerAction(it.triggerMargin, it.allocStrategy, it.targetMargin) }
-                ?: derivedSubStrategy?.let {
-                  MarginTriggerAction(
-                      (dynamicTargetMargin - it.buyDeviationPct.coerceAtLeast(0.0)).coerceAtLeast(0.0),
-                      it.buyAllocStrategy,
-                      dynamicTargetMargin,
-                  )
+                ?: if (derivedSubStrategy != null) {
+                  if (derivedTargetPaused) {
+                    null
+                  } else {
+                    MarginTriggerAction(
+                        if (derivedExactTarget) dynamicTargetMargin
+                        else (dynamicTargetMargin - derivedSubStrategy.buyDeviationPct.coerceAtLeast(0.0)).coerceAtLeast(0.0),
+                        derivedSubStrategy.buyAllocStrategy,
+                        dynamicTargetMargin,
+                    )
+                  }
+                } else {
+                  strategy.buyOnLowMargin
                 }
-                ?: strategy.buyOnLowMargin
         effectiveBuyLow
             ?.takeIf { it.deviationPct > 0 }
             ?.let { cfg ->
               if (drawdownBuyLowMomentumAllowed &&
-                  !derivedTimeoutBlocked &&
-                  !globalCooldown.isBlocked(Direction.BUY, i) &&
-                  currentRatio < cfg.deviationPct
+                  (derivedExactTarget || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.BUY, i))) &&
+                  triggerCurrentRatio < cfg.deviationPct
               ) {
                 val targetCashBalance = -account.equity() * cfg.targetMargin
                 if (account.cashBalance() > targetCashBalance) {
@@ -1504,7 +1501,8 @@ object RebalanceStrategyService {
         val scaleFactor =
             strategy.cashflowScalingMargin?.let { 1.0 + it }
                 ?: when (strategy.cashflowScaling) {
-                  CashflowScaling.SCALED_BY_TARGET_MARGIN -> 1.0 + dynamicTargetMargin
+                  CashflowScaling.SCALED_BY_TARGET_MARGIN ->
+                      1.0 + if (derivedTargetPaused) currentMarginRatio else dynamicTargetMargin
                   CashflowScaling.SCALED_BY_CURRENT_MARGIN -> 1.0 + currentMarginRatio
                   CashflowScaling.NO_SCALING -> 1.0
                 }
@@ -1762,6 +1760,221 @@ private fun monthBucket(date: LocalDate, monthsPerBucket: Int): Int =
     date.year * 12 + (date.monthValue - 1) / monthsPerBucket
 
 // ── Pre-loop resources ────────────────────────────────────────────────────────
+
+private data class DerivedTargetSignal(
+    val targetMargin: Double?,
+    val adjustmentPaused: Boolean = false,
+    val forceExactTarget: Boolean = false,
+)
+
+private sealed interface DerivedTargetRuntime {
+  val usesPostPriceMarginForTriggers: Boolean
+    get() = false
+
+  fun initialTarget(baseMargin: Double): Double
+
+  fun target(baseMargin: Double): DerivedTargetSignal
+
+  fun targetReferenceIndex(currentIndex: Int): Int = currentIndex - 1
+
+  companion object {
+    fun from(scale: DerivedTargetScaleConfig): DerivedTargetRuntime =
+        when (scale.function) {
+          DerivedTargetScaleFunction.SIGMOID -> SigmoidDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID -> AdaptiveLowSigmoidDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.LINEAR -> LinearDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.STEP -> StepDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.HYSTERESIS_STEP -> HysteresisStepDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.HYSTERESIS_STAIRS -> HysteresisStairsDerivedTargetRuntime(scale)
+        }
+  }
+}
+
+private abstract class DerivedTargetRuntimeBase(
+    protected val scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntime {
+  override fun initialTarget(baseMargin: Double): Double =
+      requireNotNull(target(baseMargin).targetMargin)
+}
+
+private abstract class InterpolatedDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  private val configuredRefLow = minOf(scale.referenceLower, scale.referenceUpper)
+  private val refHigh = maxOf(scale.referenceLower, scale.referenceUpper)
+  private val configuredTargetLow = minOf(scale.targetLower, scale.targetUpper)
+  private val targetHigh = maxOf(scale.targetLower, scale.targetUpper)
+
+  protected open fun refLow(baseMargin: Double): Double = configuredRefLow
+
+  protected open fun targetLow(baseMargin: Double): Double = configuredTargetLow
+
+  protected abstract fun shape(normalized: Double): Double
+
+  override fun target(baseMargin: Double): DerivedTargetSignal {
+    val lowRef = refLow(baseMargin)
+    val lowTarget = targetLow(baseMargin)
+    val refSpan = refHigh - lowRef
+    val normalized =
+        if (refSpan > 0.0) ((baseMargin - lowRef) / refSpan).coerceIn(0.0, 1.0)
+        else 0.5
+    return DerivedTargetSignal(lowTarget + shape(normalized) * (targetHigh - lowTarget))
+  }
+}
+
+private open class SigmoidDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : InterpolatedDerivedTargetRuntime(scale) {
+  override fun shape(normalized: Double): Double {
+    val k = scale.sigmoidSteepness.takeIf { it.isFinite() && it > 0.0 } ?: 8.0
+    return 1.0 / (1.0 + exp(-k * (normalized - 0.5)))
+  }
+}
+
+private class AdaptiveLowSigmoidDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : SigmoidDerivedTargetRuntime(scale) {
+  private val configuredRefLow = minOf(scale.referenceLower, scale.referenceUpper)
+  private val configuredTargetLow = minOf(scale.targetLower, scale.targetUpper)
+
+  override fun refLow(baseMargin: Double): Double =
+      if (baseMargin < configuredRefLow) baseMargin else configuredRefLow
+
+  override fun targetLow(baseMargin: Double): Double =
+      if (baseMargin < configuredTargetLow) baseMargin else configuredTargetLow
+}
+
+private class LinearDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : InterpolatedDerivedTargetRuntime(scale) {
+  override fun shape(normalized: Double): Double = normalized
+}
+
+private class StepDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  override fun target(baseMargin: Double): DerivedTargetSignal {
+    var target = scale.stepBaseTarget
+    for (step in scale.steps.sortedBy { it.referenceMargin }) {
+      if (baseMargin >= step.referenceMargin) target = step.targetMargin
+    }
+    return DerivedTargetSignal(target.coerceAtLeast(0.0))
+  }
+}
+
+private class HysteresisStepDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  private enum class Stage { TARGET_HIGH, NO_TARGET, TARGET_LOW }
+
+  override val usesPostPriceMarginForTriggers: Boolean = true
+
+  private var stage = Stage.TARGET_HIGH
+
+  override fun initialTarget(baseMargin: Double): Double = highTarget
+
+  override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
+
+  override fun target(baseMargin: Double): DerivedTargetSignal {
+    if (stage != Stage.TARGET_HIGH && baseMargin > resetThreshold) {
+      stage = Stage.TARGET_HIGH
+      return DerivedTargetSignal(highTarget)
+    }
+
+    return when (stage) {
+      Stage.TARGET_HIGH -> targetFromHighStage(baseMargin)
+      Stage.NO_TARGET -> targetFromNoTargetStage(baseMargin)
+      Stage.TARGET_LOW -> DerivedTargetSignal(fixedTarget)
+    }
+  }
+
+  private fun targetFromHighStage(baseMargin: Double): DerivedTargetSignal =
+      when {
+        baseMargin < exitThreshold -> {
+          stage = Stage.TARGET_LOW
+          DerivedTargetSignal(fixedTarget)
+        }
+        baseMargin < enterThreshold -> {
+          stage = Stage.NO_TARGET
+          noTargetSignal()
+        }
+        else -> DerivedTargetSignal(highTarget)
+      }
+
+  private fun targetFromNoTargetStage(baseMargin: Double): DerivedTargetSignal =
+      if (baseMargin < exitThreshold) {
+        stage = Stage.TARGET_LOW
+        DerivedTargetSignal(fixedTarget)
+      } else {
+        noTargetSignal()
+      }
+
+  private fun noTargetSignal(): DerivedTargetSignal =
+      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+
+  private val enterThreshold = maxOf(scale.referenceLower, scale.referenceUpper)
+  private val exitThreshold = minOf(scale.referenceLower, scale.referenceUpper)
+  private val resetThreshold =
+      if (scale.stepBaseTarget.isFinite() && scale.stepBaseTarget > enterThreshold) {
+        scale.stepBaseTarget
+      } else {
+        Double.POSITIVE_INFINITY
+      }
+  private val highTarget = scale.targetUpper.coerceAtLeast(0.0)
+  private val fixedTarget = scale.targetLower.coerceAtLeast(0.0)
+}
+
+private class HysteresisStairsDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  private data class Stair(val referenceMargin: Double, val targetMargin: Double)
+
+  override val usesPostPriceMarginForTriggers: Boolean = true
+
+  private val stairs =
+      scale.steps
+          .filter { it.referenceMargin.isFinite() && it.targetMargin.isFinite() }
+          .sortedByDescending { it.referenceMargin }
+          .map { Stair(it.referenceMargin, it.targetMargin.coerceAtLeast(0.0)) }
+  private val highestReference = stairs.firstOrNull()?.referenceMargin ?: Double.NEGATIVE_INFINITY
+  private val resetThreshold =
+      if (scale.stepBaseTarget.isFinite() && scale.stepBaseTarget > highestReference) {
+        scale.stepBaseTarget
+      } else {
+        Double.POSITIVE_INFINITY
+      }
+  private val highTarget = scale.targetUpper.coerceAtLeast(0.0)
+  private var nextStairIndex = 0
+
+  override fun initialTarget(baseMargin: Double): Double = highTarget
+
+  override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
+
+  override fun target(baseMargin: Double): DerivedTargetSignal {
+    if (nextStairIndex > 0 && baseMargin > resetThreshold) {
+      nextStairIndex = 0
+      return DerivedTargetSignal(highTarget, forceExactTarget = true)
+    }
+
+    val crossedIndex =
+        stairs
+            .withIndex()
+            .drop(nextStairIndex)
+            .lastOrNull { (_, stair) -> baseMargin < stair.referenceMargin }
+            ?.index
+
+    if (crossedIndex != null) {
+      nextStairIndex = crossedIndex + 1
+      return DerivedTargetSignal(stairs[crossedIndex].targetMargin, forceExactTarget = true)
+    }
+
+    return if (nextStairIndex == 0) {
+      DerivedTargetSignal(highTarget)
+    } else {
+      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+    }
+  }
+}
 
 private data class DipSurgeResources(
     val checkersByKey: Map<DipSurgeKey, List<TriggerChecker>>,
