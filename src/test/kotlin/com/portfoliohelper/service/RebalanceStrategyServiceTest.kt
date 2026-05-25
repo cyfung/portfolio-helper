@@ -2395,6 +2395,71 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_canUseStandaloneTickerMarginFromSameBaseStrategy() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-derived-standalone-margin-test")
+        AppDirs.dataDir = tempDataDir
+        try {
+            val dates = days(LocalDate.of(2024, 1, 2), 3)
+            val tickerDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
+            val today = LocalDate.now()
+            BacktestService.writeSimCsv(
+                tickerDir.resolve("DRVMA-$today.csv"),
+                dates.zip(listOf(100.0, 50.0, 50.0)).toMap() + (today to 50.0),
+            )
+            BacktestService.writeSimCsv(
+                tickerDir.resolve("DRVMB-$today.csv"),
+                dates.zip(listOf(100.0, 150.0, 150.0)).toMap() + (today to 150.0),
+            )
+
+            val derived = DerivedSubStrategyConfig(
+                label = "standalone",
+                marginReferenceSource = DerivedMarginReferenceSource.STANDALONE_TICKER,
+                marginReferenceTicker = "DRVMA",
+                scale = DerivedTargetScaleConfig(
+                    function = DerivedTargetScaleFunction.STEP,
+                    stepBaseTarget = 0.50,
+                    steps = listOf(DerivedTargetStepConfig(referenceMargin = 1.00, targetMargin = 0.20)),
+                ),
+                absoluteDeviationPct = 0.0,
+                buyDeviationPct = 0.0,
+                sellDeviationPct = 0.0,
+                timeoutDays = 0,
+                maxMargin = 2.0,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+            )
+            val portfolio = PortfolioConfig(
+                label = "test",
+                tickers = listOf(TickerWeight("DRVMA", 0.5), TickerWeight("DRVMB", 0.5)),
+                rebalanceStrategy = RebalanceStrategy.NONE,
+                marginStrategies = emptyList(),
+            )
+            val strategy = strategy(marginRatio = 0.5, marginSpread = 0.0)
+                .copy(derivedSubStrategies = listOf(derived))
+
+            val result = RebalanceStrategyService.run(
+                RebalanceStrategyRequest(
+                    fromDate = dates.first().toString(),
+                    toDate = dates.last().toString(),
+                    portfolio = portfolio,
+                    cashflow = null,
+                    strategies = listOf(strategy),
+                    startingBalance = 10_000.0,
+                )
+            )
+
+            val curves = result.portfolios.last().curves
+            val baseMargins = requireNotNull(curves[0].marginPoints).map { it.value }
+            val derivedMargins = requireNotNull(curves[1].marginPoints).map { it.value }
+            assertApprox(0.5, baseMargins[2], eps = 1e-3, label = "parent base margin stays balanced")
+            assertApprox(0.2, derivedMargins[2], eps = 1e-6, label = "variant follows standalone ticker margin")
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun derivedStrategy_hysteresisStepSkipsAdjustmentBetweenRefHighAndRefLowAndResetsAboveThreshold() {
         val dates = days(LocalDate.of(2024, 1, 2), 9)
         val prices = dates.mapIndexed { i, date ->

@@ -111,10 +111,14 @@ export interface DerivedTargetScaleState {
   steps: DerivedTargetStepState[]
 }
 
+export type DerivedMarginReferenceSource = 'BASE_STRATEGY' | 'STANDALONE_TICKER'
+
 export interface DerivedSubStrategyState {
   id: string
   label: string
   enabled: boolean
+  marginReferenceSource: DerivedMarginReferenceSource
+  marginReferenceTicker: string
   scale: DerivedTargetScaleState
   absoluteDeviationPct: string
   buyDeviationPct: string
@@ -328,6 +332,8 @@ export function emptyDerivedSubStrategy(idx: number): DerivedSubStrategyState {
     id: newId(),
     label: `Derived ${idx + 1}`,
     enabled: true,
+    marginReferenceSource: 'BASE_STRATEGY',
+    marginReferenceTicker: '',
     scale: emptyDerivedTargetScale(),
     absoluteDeviationPct: '5',
     buyDeviationPct: '5',
@@ -594,6 +600,8 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
     absoluteDeviationPct: item.absoluteDeviationPct ?? '5',
     buyDeviationPct: item.buyDeviationPct ?? item.absoluteDeviationPct ?? '5',
     sellDeviationPct: item.sellDeviationPct ?? item.absoluteDeviationPct ?? '5',
+    marginReferenceSource: item.marginReferenceSource === 'STANDALONE_TICKER' ? 'STANDALONE_TICKER' : 'BASE_STRATEGY',
+    marginReferenceTicker: item.marginReferenceTicker ?? '',
     timeoutDays: item.timeoutDays ?? '10',
     maxMargin: item.maxMargin ?? '',
     allocStrategy: item.allocStrategy ?? 'PROPORTIONAL',
@@ -727,6 +735,10 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     return {
       label: d.label.trim() || 'Derived',
       enabled: d.enabled ?? true,
+      marginReferenceSource: d.marginReferenceSource === 'STANDALONE_TICKER' ? 'STANDALONE_TICKER' : 'BASE_STRATEGY',
+      marginReferenceTicker: d.marginReferenceSource === 'STANDALONE_TICKER'
+        ? d.marginReferenceTicker.trim().toUpperCase()
+        : null,
       scale: {
         function: scale.function || 'SIGMOID',
         referenceLower: pctAllowZero(scale.referenceLower, 50),

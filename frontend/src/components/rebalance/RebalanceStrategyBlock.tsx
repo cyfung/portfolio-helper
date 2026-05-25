@@ -902,6 +902,36 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                 />
               </div>
               <div className="strategy-row">
+                <label>Ref Margin</label>
+                <select
+                  value={derived.marginReferenceSource ?? 'BASE_STRATEGY'}
+                  onChange={e => {
+                    const source = e.target.value as DerivedSubStrategyState['marginReferenceSource']
+                    updateDerivedSubStrategy(derived.id, {
+                      marginReferenceSource: source,
+                      ...(source === 'BASE_STRATEGY' ? { marginReferenceTicker: '' } : {}),
+                    })
+                  }}
+                >
+                  <option value="BASE_STRATEGY">Base Strategy</option>
+                  <option value="STANDALONE_TICKER">Standalone Ticker</option>
+                </select>
+              </div>
+              {(derived.marginReferenceSource ?? 'BASE_STRATEGY') === 'STANDALONE_TICKER' && (
+                <div className="strategy-row">
+                  <label>Ref Ticker</label>
+                  <input
+                    type="text"
+                    value={derived.marginReferenceTicker ?? ''}
+                    placeholder="SPY"
+                    aria-label={`Derived strategy ${derivedIdx + 1} reference margin ticker`}
+                    onChange={e => updateDerivedSubStrategy(derived.id, { marginReferenceTicker: e.target.value.toUpperCase() })}
+                    onBlur={() => commit()}
+                    style={{ width: '6rem' }}
+                  />
+                </div>
+              )}
+              <div className="strategy-row">
                 <label>Scale Function</label>
                 <select
                   value={derived.scale.function ?? 'SIGMOID'}

@@ -412,6 +412,15 @@ private fun parseDerivedSubStrategies(el: JsonElement?): List<DerivedSubStrategy
                 label = obj["label"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                     ?: "Derived ${index + 1}",
                 enabled = obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true,
+                marginReferenceSource = runCatching {
+                    DerivedMarginReferenceSource.valueOf(
+                        obj["marginReferenceSource"]?.jsonPrimitive?.content ?: "BASE_STRATEGY"
+                    )
+                }.getOrDefault(DerivedMarginReferenceSource.BASE_STRATEGY),
+                marginReferenceTicker = obj["marginReferenceTicker"]?.jsonPrimitive?.contentOrNull
+                    ?.trim()
+                    ?.uppercase()
+                    ?.takeIf { it.isNotBlank() },
                 scale = (obj["scale"] as? JsonObject)?.let { parseDerivedTargetScaleConfig(it) }
                     ?: DerivedTargetScaleConfig(),
                 absoluteDeviationPct = legacyDeviation,
