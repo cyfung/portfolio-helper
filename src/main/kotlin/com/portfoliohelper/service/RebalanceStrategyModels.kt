@@ -150,6 +150,8 @@ data class DrawdownMarginTriggerAction(
     val portfolioSource: PortfolioTriggerSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
     val referenceTicker: String? = null,
     val momentumLookbackMonths: Int? = null,
+    val exitExtensionMonths: Int = 0,
+    val exitTargetMargin: Double? = null,
     val enterDrawdownPct: Double = 0.10,
     val exitDrawdownPct: Double = 0.05,
     val triggerMargin: Double = 0.0,

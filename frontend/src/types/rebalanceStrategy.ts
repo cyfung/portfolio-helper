@@ -57,6 +57,8 @@ export interface DrawdownMarginTriggerState {
   portfolioSource: string
   referenceTicker?: string
   momentumLookbackMonths?: string
+  exitExtensionMonths?: string
+  exitTargetMargin?: string
   enterDrawdownPct: string
   exitDrawdownPct: string
   triggerPointIndex: string
@@ -281,6 +283,8 @@ export function emptyDrawdownMarginTrigger(direction: 'buy' | 'sell'): DrawdownM
     portfolioSource: 'REFERENCE_PORTFOLIO',
     referenceTicker: '',
     momentumLookbackMonths: '',
+    exitExtensionMonths: '',
+    exitTargetMargin: '',
     enterDrawdownPct: tier.enterDrawdownPct,
     exitDrawdownPct: tier.exitDrawdownPct,
     triggerPointIndex: tier.triggerPointIndex,
@@ -524,6 +528,12 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
     }))
     : [legacyTier]
   const firstTier = tiers[0] ?? legacyTier
+  const exitTargetMargin = (() => {
+    if (configValue.exitTargetMargin == null || String(configValue.exitTargetMargin).trim() === '') return ''
+    const n = Number(configValue.exitTargetMargin)
+    if (!Number.isFinite(n)) return String(configValue.exitTargetMargin)
+    return String(Math.abs(n) <= 2 ? n * 100 : n)
+  })()
   return {
     ...base,
     ...configValue,
@@ -531,6 +541,8 @@ function normalizeDrawdownMarginTrigger(configValue: any, direction: 'buy' | 'se
     portfolioSource,
     referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' ? (configValue.referenceTicker ?? '') : '',
     momentumLookbackMonths: configValue.momentumLookbackMonths == null ? '' : String(configValue.momentumLookbackMonths),
+    exitExtensionMonths: configValue.exitExtensionMonths == null ? '' : String(configValue.exitExtensionMonths),
+    exitTargetMargin,
     enterDrawdownPct: firstTier.enterDrawdownPct,
     exitDrawdownPct: firstTier.exitDrawdownPct,
     triggerPointIndex: firstTier.triggerPointIndex,
@@ -646,6 +658,14 @@ export function drawdownMarginTriggerIssues(
   const momentumLookbackMonths = parseInt(d.momentumLookbackMonths ?? '', 10)
   if ((d.momentumLookbackMonths ?? '').trim() !== '' && (!Number.isFinite(momentumLookbackMonths) || momentumLookbackMonths < 1)) {
     issues.push(`${label}: momentum months must be 1 or higher.`)
+  }
+  const exitExtensionMonths = parseInt(d.exitExtensionMonths ?? '', 10)
+  if ((d.exitExtensionMonths ?? '').trim() !== '' && (!Number.isFinite(exitExtensionMonths) || exitExtensionMonths < 0)) {
+    issues.push(`${label}: exit extension months must be 0 or higher.`)
+  }
+  const exitTargetMargin = parseFloat(d.exitTargetMargin ?? '')
+  if ((d.exitTargetMargin ?? '').trim() !== '' && (!Number.isFinite(exitTargetMargin) || exitTargetMargin < 0)) {
+    issues.push(`${label}: exit target margin must be 0 or higher.`)
   }
   let prevEnter: number | null = null
   let prevExit: number | null = null
@@ -769,6 +789,8 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     const portfolioSource = cfg.portfolioSource || 'REFERENCE_PORTFOLIO'
     const referenceTicker = (cfg.referenceTicker ?? '').trim().toUpperCase()
     const momentumLookbackMonths = parseInt(cfg.momentumLookbackMonths ?? '', 10)
+    const exitExtensionMonths = parseInt(cfg.exitExtensionMonths ?? '', 10)
+    const exitTargetMargin = parseFloat(cfg.exitTargetMargin ?? '')
     const tiers = drawdownTriggerTiers(cfg, direction)
       .map(tier => ({
         enterDrawdownPct: pctAllowZero(tier.enterDrawdownPct, 10),
@@ -785,6 +807,12 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       referenceTicker: portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
       momentumLookbackMonths: direction === 'buy' && Number.isFinite(momentumLookbackMonths) && momentumLookbackMonths > 0
         ? momentumLookbackMonths
+        : null,
+      exitExtensionMonths: direction === 'buy' && Number.isFinite(exitExtensionMonths) && exitExtensionMonths > 0
+        ? exitExtensionMonths
+        : 0,
+      exitTargetMargin: direction === 'buy' && Number.isFinite(exitTargetMargin)
+        ? Math.max(0, exitTargetMargin) / 100
         : null,
       enterDrawdownPct: firstTier?.enterDrawdownPct ?? pctAllowZero(cfg.enterDrawdownPct, 10),
       exitDrawdownPct: firstTier?.exitDrawdownPct ?? pctAllowZero(cfg.exitDrawdownPct, 5),

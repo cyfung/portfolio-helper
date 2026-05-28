@@ -777,19 +777,46 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
               </div>
             )}
             {direction === 'buy' && (
-              <div className="strategy-row">
-                <label>Momentum Months</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={value.momentumLookbackMonths ?? ''}
-                  placeholder="Optional"
-                  aria-label={`${title} momentum lookback months`}
-                  onChange={e => updateDrawdownMarginTrigger(key, direction, { momentumLookbackMonths: e.target.value })}
-                  onBlur={() => commit()}
-                />
-              </div>
+              <>
+                <div className="strategy-row">
+                  <label>Momentum Months</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={value.momentumLookbackMonths ?? ''}
+                    placeholder="Optional"
+                    aria-label={`${title} momentum lookback months`}
+                    onChange={e => updateDrawdownMarginTrigger(key, direction, { momentumLookbackMonths: e.target.value })}
+                    onBlur={() => commit()}
+                  />
+                </div>
+                <div className="strategy-row">
+                  <label>Extend Exit Months</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={value.exitExtensionMonths ?? ''}
+                    placeholder="0"
+                    aria-label={`${title} exit extension months`}
+                    onChange={e => updateDrawdownMarginTrigger(key, direction, { exitExtensionMonths: e.target.value })}
+                    onBlur={() => commit()}
+                  />
+                </div>
+                <div className="strategy-row">
+                  <label>Exit Target Margin</label>
+                  <MarginPercentInput
+                    value={value.exitTargetMargin ?? ''}
+                    placeholder="Optional"
+                    max={sliderMax}
+                    compact
+                    ariaLabel={`${title} exit target margin`}
+                    onChange={margin => updateDrawdownMarginTrigger(key, direction, { exitTargetMargin: margin })}
+                    onCommit={() => commit()}
+                  />
+                </div>
+              </>
             )}
             <div className="drawdown-tier-table">
               <div className="drawdown-tier-header">

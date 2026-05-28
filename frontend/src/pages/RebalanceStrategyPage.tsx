@@ -1,6 +1,6 @@
 // ── RebalanceStrategyPage.tsx ─────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush, ReferenceDot,
@@ -13,7 +13,6 @@ import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/bac
 import RebalanceStrategyBlock, { type RebalanceStrategyBlockRef } from '@/components/rebalance/RebalanceStrategyBlock'
 import SavedStrategiesBar, { type SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { useChartTheme } from '@/lib/chartTheme'
-import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
@@ -22,7 +21,7 @@ import {
   cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import {
-  buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
+  buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR, type RechartsChartData,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import {
@@ -136,14 +135,153 @@ function visibleActionPointGroups(
   return { markers, denseGroups }
 }
 
-function actionPointCount(actionPoints: { type: string }[] | undefined, type: string) {
-  return actionPoints?.filter(point => point.type === type).length ?? 0
-}
-
 function averageMarginUtilization(points: { value: number }[] | undefined) {
   const values = points?.map(p => p.value).filter(Number.isFinite) ?? []
   return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
 }
+
+const CHART_MARGIN = { top: 8, right: 16, bottom: 8, left: 8 }
+const ACTIVE_DOT = { r: 4 }
+
+function formatMoneyAxis(v: any) { return '$' + Number(v).toFixed(0) }
+function formatMoneyTooltip(v: number) { return '$' + v.toFixed(2) }
+function formatDrawdownAxis(v: any) { return (Number(v) * 100).toFixed(1) + '%' }
+function formatPercentAxis(v: any) { return (Number(v) * 100).toFixed(0) + '%' }
+function formatPercentTooltip(v: number) { return (v * 100).toFixed(2) + '%' }
+function formatRecoverAxis(v: any) { return Number(v).toFixed(2) + 'x' }
+function formatRecoverTooltip(v: number) { return v.toFixed(2) + 'x' }
+function formatVmCapeAxis(v: any) { return Number(v).toFixed(0) }
+
+type RebalanceChartKind = 'money' | 'drawdown' | 'recover' | 'margin'
+
+const CHART_FORMATTERS: Record<RebalanceChartKind, {
+  axis: (v: any) => string
+  tooltip: (v: number) => string
+  width: number
+}> = {
+  money: { axis: formatMoneyAxis, tooltip: formatMoneyTooltip, width: 72 },
+  drawdown: { axis: formatDrawdownAxis, tooltip: formatPercentTooltip, width: 60 },
+  recover: { axis: formatRecoverAxis, tooltip: formatRecoverTooltip, width: 60 },
+  margin: { axis: formatPercentAxis, tooltip: formatPercentTooltip, width: 60 },
+}
+
+type CommonLineProps = {
+  type: 'monotone'
+  dot: false
+  activeDot: { r: number }
+  connectNulls: false
+  isAnimationActive: false
+}
+
+type RebalanceLineChartProps = {
+  chartData: RechartsChartData
+  labelsLength: number
+  gridColor: string
+  textColor: string
+  commonLineProps: CommonLineProps
+  makeTooltip: (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) => ReactNode
+  renderLegend: (props: any) => ReactNode
+  renderActionMarkers: (rows: Record<string, any>[], chart: ActionPointChartKey) => ReactNode
+  actionChart: ActionPointChartKey
+  kind: RebalanceChartKind
+  logScale?: boolean
+  brushFill?: string
+}
+
+const RebalanceLineChart = memo(function RebalanceLineChart({
+  chartData,
+  labelsLength,
+  gridColor,
+  textColor,
+  commonLineProps,
+  makeTooltip,
+  renderLegend,
+  renderActionMarkers,
+  actionChart,
+  kind,
+  logScale = false,
+  brushFill,
+}: RebalanceLineChartProps) {
+  const format = CHART_FORMATTERS[kind]
+  const isMoney = kind === 'money'
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={chartData.rows} syncId="rs-backtest" margin={CHART_MARGIN}>
+        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+        <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
+          interval={Math.max(1, Math.floor(labelsLength / 8))} />
+        <YAxis scale={isMoney && logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
+          allowDataOverflow={isMoney && logScale} tick={{ fill: textColor, fontSize: 11 }}
+          tickFormatter={format.axis} width={format.width} />
+        <Tooltip content={makeTooltip(format.tooltip)} />
+        <Legend content={renderLegend} />
+        {chartData.datasets.map(ds => (
+          <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
+            stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
+        ))}
+        {renderActionMarkers(chartData.rows, actionChart)}
+        {brushFill && (
+          <Brush dataKey="x" height={26} stroke={gridColor}
+            fill={brushFill} travellerWidth={6} />
+        )}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+})
+
+type VmTimingChartData = {
+  rows: Record<string, any>[]
+  datasets: {
+    dataKey: string
+    label: string
+    color: string
+    yAxisId: 'cape' | 'factor'
+    strokeDasharray?: string
+  }[]
+}
+
+const VmTimingLineChart = memo(function VmTimingLineChart({
+  chartData,
+  labelsLength,
+  gridColor,
+  textColor,
+  commonLineProps,
+  renderLegend,
+}: {
+  chartData: VmTimingChartData
+  labelsLength: number
+  gridColor: string
+  textColor: string
+  commonLineProps: CommonLineProps
+  renderLegend: (props: any) => ReactNode
+}) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={chartData.rows} syncId="rs-backtest" margin={CHART_MARGIN}>
+        <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+        <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
+          interval={Math.max(1, Math.floor(labelsLength / 8))} />
+        <YAxis yAxisId="cape" domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
+          tickFormatter={formatVmCapeAxis} width={54} />
+        <YAxis yAxisId="factor" orientation="right" domain={[0, 1]} tick={{ fill: textColor, fontSize: 11 }}
+          tickFormatter={formatPercentAxis} width={54} />
+        <Tooltip
+          formatter={(value: any, name: any, item: any) => {
+            const n = Number(value)
+            const dataKey = String(item?.dataKey ?? '')
+            return [dataKey.includes('Factor') ? formatPercentTooltip(n) : n.toFixed(2), name]
+          }}
+        />
+        <Legend content={renderLegend} />
+        {chartData.datasets.map(ds => (
+          <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
+            yAxisId={ds.yAxisId} stroke={ds.color} strokeWidth={2} strokeDasharray={ds.strokeDasharray} />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+})
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -175,7 +313,6 @@ export default function RebalanceStrategyPage() {
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
   const strategyBlockRefs = useRef<(RebalanceStrategyBlockRef | null)[]>([])
-  const { chartWidth, chartContainerRef } = useChartContainerWidth()
 
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
@@ -309,10 +446,12 @@ export default function RebalanceStrategyPage() {
     return { labels, mainData, ddData, rtrData, marginData }
   }, [results, selected])
 
-  const allKeys    = results ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`)) : []
+  const allKeys = useMemo(
+    () => results ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`)) : [],
+    [results],
+  )
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
   const anyChecked = selected.size > 0
-  const showLine   = (key: string) => selected.size === 0 || selected.has(key)
 
   const selectedStrategyCurve = useMemo(() => {
     if (!results || selected.size !== 1) return null
@@ -370,23 +509,44 @@ export default function RebalanceStrategyPage() {
     return datasets.length > 0 ? { rows, datasets } : null
   }, [chartData?.labels, results, selected])
 
-  function toggleCurve(key: string, checked: boolean) {
+  const statsRows = useMemo(() => (
+    results?.portfolios.flatMap((portfolio, pi) =>
+      portfolio.curves.map((curve, ci) => {
+        const actionCounts: Record<string, number> = {}
+        curve.actionPoints?.forEach(point => {
+          actionCounts[point.type] = (actionCounts[point.type] ?? 0) + 1
+        })
+        return {
+          key: `${pi}-${ci}`,
+          label: `${portfolio.label} – ${curve.label}`,
+          color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length],
+          stats: curve.stats,
+          avgMargin: averageMarginUtilization(curve.marginPoints),
+          actionCounts,
+        }
+      })
+    ) ?? []
+  ), [results])
+
+  const toggleCurve = useCallback((key: string, checked: boolean) => {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
-  }
-  function toggleAll(checked: boolean) { setSelected(checked ? new Set(allKeys) : new Set()) }
-  function toggleActionPointType(type: string, checked: boolean) {
+  }, [])
+  const toggleAll = useCallback((checked: boolean) => {
+    setSelected(checked ? new Set(allKeys) : new Set())
+  }, [allKeys])
+  const toggleActionPointType = useCallback((type: string, checked: boolean) => {
     setVisibleActionPointTypes(prev => {
       const next = new Set(prev)
       checked ? next.add(type) : next.delete(type)
       return next
     })
-  }
-  function toggleActionPointChart(chart: ActionPointChartKey, checked: boolean) {
+  }, [])
+  const toggleActionPointChart = useCallback((chart: ActionPointChartKey, checked: boolean) => {
     setActionPointChartVisibility(prev => ({ ...prev, [chart]: checked }))
-  }
-  function toggleForceActionPointChartDots(chart: ActionPointChartKey, checked: boolean) {
+  }, [])
+  const toggleForceActionPointChartDots = useCallback((chart: ActionPointChartKey, checked: boolean) => {
     setForceActionPointChartDots(prev => ({ ...prev, [chart]: checked }))
-  }
+  }, [])
 
   const strategyHandlers = useMemo(
     () => [0, 1].map(i => (s: RebalStrategyState) =>
@@ -397,18 +557,18 @@ export default function RebalanceStrategyPage() {
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
   const refreshSavedStrategies = useCallback(() => savedStrategiesBarRef.current?.refresh(), [])
 
-  const numPoints      = chartData?.labels.length ?? 2
-  const pixelsPerPoint = chartWidth / Math.max(numPoints - 1, 1)
+  const makeTooltip = useCallback(
+    (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
+      makeRechartsTooltip(theme, valueFmt, labelFmt),
+    [theme],
+  )
 
-  const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
-    makeRechartsTooltip(theme, valueFmt, labelFmt)
-
-  const commonLineProps = {
+  const commonLineProps = useMemo<CommonLineProps>(() => ({
     type: 'monotone' as const, dot: false as const,
-    activeDot: { r: 4 }, connectNulls: false, isAnimationActive: false,
-  }
+    activeDot: ACTIVE_DOT, connectNulls: false, isAnimationActive: false,
+  }), [])
 
-  const renderActionDotControls = (chart: ActionPointChartKey) => {
+  const renderActionDotControls = useCallback((chart: ActionPointChartKey) => {
     if (!selectedStrategyCurve) return null
     const dotsEnabled = actionPointChartVisibility[chart]
     const hasDenseGroups = selectedActionPointGroups.denseGroups.length > 0
@@ -434,9 +594,16 @@ export default function RebalanceStrategyPage() {
         )}
       </div>
     )
-  }
+  }, [
+    actionPointChartVisibility,
+    forceActionPointChartDots,
+    selectedActionPointGroups.denseGroups.length,
+    selectedStrategyCurve,
+    toggleActionPointChart,
+    toggleForceActionPointChartDots,
+  ])
 
-  const renderActionMarkers = (rows: Record<string, any>[], chart: ActionPointChartKey) => {
+  const renderActionMarkers = useCallback((rows: Record<string, any>[], chart: ActionPointChartKey) => {
     if (!selectedStrategyCurve || !actionPointChartVisibility[chart]) return null
     const points = forceActionPointChartDots[chart]
       ? selectedActionPointGroups.markers.concat(selectedActionPointGroups.denseGroups.flatMap(group => group.points))
@@ -463,9 +630,15 @@ export default function RebalanceStrategyPage() {
         />
       )
     })
-  }
+  }, [
+    actionPointChartVisibility,
+    forceActionPointChartDots,
+    selectedActionPointGroups,
+    selectedStrategyCurve,
+    theme.isDark,
+  ])
 
-  const renderDenseActionStrips = (chart: ActionPointChartKey) => {
+  const renderDenseActionStrips = useCallback((chart: ActionPointChartKey) => {
     if (
       !chartData?.labels.length ||
       !actionPointChartVisibility[chart] ||
@@ -494,9 +667,14 @@ export default function RebalanceStrategyPage() {
         })}
       </div>
     )
-  }
+  }, [
+    actionPointChartVisibility,
+    chartData?.labels,
+    forceActionPointChartDots,
+    selectedActionPointGroups.denseGroups,
+  ])
 
-  const renderLegend = (props: any) => {
+  const renderLegend = useCallback((props: any) => {
     const { payload } = props
     if (!payload?.length) return null
     return (
@@ -509,7 +687,7 @@ export default function RebalanceStrategyPage() {
         ))}
       </div>
     )
-  }
+  }, [textColor])
 
   return (
     <div className="container">
@@ -610,16 +788,13 @@ export default function RebalanceStrategyPage() {
                 </tr>
               </thead>
               <tbody>
-                {results.portfolios.flatMap((portfolio, pi) =>
-                  portfolio.curves.map((curve, ci) => {
-                    const key = `${pi}-${ci}`
-                    const s = curve.stats
-                    const avgMargin = averageMarginUtilization(curve.marginPoints)
+                {statsRows.map(row => {
+                    const s = row.stats
                     return (
-                      <tr key={key}>
-                        <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
-                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>
-                          {portfolio.label} – {curve.label}
+                      <tr key={row.key}>
+                        <td><input type="checkbox" checked={selected.has(row.key)} onChange={e => toggleCurve(row.key, e.target.checked)} /></td>
+                        <td style={{ color: row.color }}>
+                          {row.label}
                         </td>
                         <td>{money(s.endingValue)}</td>
                         <td>{pct(s.cagr)}</td>
@@ -629,16 +804,15 @@ export default function RebalanceStrategyPage() {
                         <td>{fmt2(s.sharpe)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
-                        <td>{avgMargin == null ? '–' : pct(avgMargin)}</td>
-                        <td>{actionPointCount(curve.actionPoints, 'BUY_LOW')}</td>
-                        <td>{actionPointCount(curve.actionPoints, 'SELL_HIGH')}</td>
-                        <td>{actionPointCount(curve.actionPoints, 'BUY_DIP')}</td>
-                        <td>{actionPointCount(curve.actionPoints, 'SELL_SURGE')}</td>
-                        <td>{actionPointCount(curve.actionPoints, 'VM_TIMING_MR')}</td>
+                        <td>{row.avgMargin == null ? '–' : pct(row.avgMargin)}</td>
+                        <td>{row.actionCounts.BUY_LOW ?? 0}</td>
+                        <td>{row.actionCounts.SELL_HIGH ?? 0}</td>
+                        <td>{row.actionCounts.BUY_DIP ?? 0}</td>
+                        <td>{row.actionCounts.SELL_SURGE ?? 0}</td>
+                        <td>{row.actionCounts.VM_TIMING_MR ?? 0}</td>
                       </tr>
                     )
-                  })
-                )}
+                  })}
               </tbody>
             </table>
           </div>
@@ -712,27 +886,21 @@ export default function RebalanceStrategyPage() {
               style={{ position: 'static' }} onClick={() => setLogScale(l => !l)}>Log</button>
           </div>
           {renderDenseActionStrips('main')}
-          <div className="backtest-chart-container" ref={chartContainerRef}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData.mainData.rows} syncId="rs-backtest"
-                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
-                  interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
-                <YAxis scale={logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
-                  allowDataOverflow={logScale} tick={{ fill: textColor, fontSize: 11 }}
-                  tickFormatter={v => '$' + Number(v).toFixed(0)} width={72} />
-                <Tooltip content={makeTooltip(v => '$' + v.toFixed(2))} />
-                <Legend content={renderLegend} />
-                {chartData.mainData.datasets.map(ds => (
-                  <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
-                    stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
-                ))}
-                {renderActionMarkers(chartData.mainData.rows, 'main')}
-                <Brush dataKey="x" height={26} stroke={gridColor}
-                  fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="backtest-chart-container">
+            <RebalanceLineChart
+              chartData={chartData.mainData}
+              labelsLength={chartData.labels.length}
+              gridColor={gridColor}
+              textColor={textColor}
+              commonLineProps={commonLineProps}
+              makeTooltip={makeTooltip}
+              renderLegend={renderLegend}
+              renderActionMarkers={renderActionMarkers}
+              actionChart="main"
+              kind="money"
+              logScale={logScale}
+              brushFill={theme.isDark ? '#1a1a1a' : '#f8f8f8'}
+            />
           </div>
 
           {/* Drawdown chart */}
@@ -742,23 +910,18 @@ export default function RebalanceStrategyPage() {
           </div>
           {renderDenseActionStrips('drawdown')}
           <div className="backtest-chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData.ddData.rows} syncId="rs-backtest"
-                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
-                  interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
-                <YAxis domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
-                  tickFormatter={v => (Number(v) * 100).toFixed(1) + '%'} width={60} />
-                <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
-                <Legend content={renderLegend} />
-                {chartData.ddData.datasets.map(ds => (
-                  <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
-                    stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
-                ))}
-                {renderActionMarkers(chartData.ddData.rows, 'drawdown')}
-              </LineChart>
-            </ResponsiveContainer>
+            <RebalanceLineChart
+              chartData={chartData.ddData}
+              labelsLength={chartData.labels.length}
+              gridColor={gridColor}
+              textColor={textColor}
+              commonLineProps={commonLineProps}
+              makeTooltip={makeTooltip}
+              renderLegend={renderLegend}
+              renderActionMarkers={renderActionMarkers}
+              actionChart="drawdown"
+              kind="drawdown"
+            />
           </div>
 
           {/* RTR chart */}
@@ -768,23 +931,18 @@ export default function RebalanceStrategyPage() {
           </div>
           {renderDenseActionStrips('recover')}
           <div className="backtest-chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData.rtrData.rows} syncId="rs-backtest"
-                margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
-                  interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
-                <YAxis domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
-                  tickFormatter={v => Number(v).toFixed(2) + 'x'} width={60} />
-                <Tooltip content={makeTooltip(v => v.toFixed(2) + 'x')} />
-                <Legend content={renderLegend} />
-                {chartData.rtrData.datasets.map(ds => (
-                  <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
-                    stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
-                ))}
-                {renderActionMarkers(chartData.rtrData.rows, 'recover')}
-              </LineChart>
-            </ResponsiveContainer>
+            <RebalanceLineChart
+              chartData={chartData.rtrData}
+              labelsLength={chartData.labels.length}
+              gridColor={gridColor}
+              textColor={textColor}
+              commonLineProps={commonLineProps}
+              makeTooltip={makeTooltip}
+              renderLegend={renderLegend}
+              renderActionMarkers={renderActionMarkers}
+              actionChart="recover"
+              kind="recover"
+            />
           </div>
 
           {/* Margin Utilization chart */}
@@ -796,23 +954,18 @@ export default function RebalanceStrategyPage() {
               </div>
               {renderDenseActionStrips('margin')}
               <div className="backtest-chart-container">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData.marginData.rows} syncId="rs-backtest"
-                    margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                    <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
-                      interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
-                      tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'} width={60} />
-                    <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
-                    <Legend content={renderLegend} />
-                    {chartData.marginData.datasets.map(ds => (
-                      <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
-                        stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} />
-                    ))}
-                    {renderActionMarkers(chartData.marginData.rows, 'margin')}
-                  </LineChart>
-                </ResponsiveContainer>
+                <RebalanceLineChart
+                  chartData={chartData.marginData}
+                  labelsLength={chartData.labels.length}
+                  gridColor={gridColor}
+                  textColor={textColor}
+                  commonLineProps={commonLineProps}
+                  makeTooltip={makeTooltip}
+                  renderLegend={renderLegend}
+                  renderActionMarkers={renderActionMarkers}
+                  actionChart="margin"
+                  kind="margin"
+                />
               </div>
             </>
           )}
@@ -823,30 +976,14 @@ export default function RebalanceStrategyPage() {
                 <div className="backtest-chart-title">VM Timing Debug</div>
               </div>
               <div className="backtest-chart-container">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={vmTimingChartData.rows} syncId="rs-backtest"
-                    margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                    <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
-                      interval={Math.max(1, Math.floor(chartData.labels.length / 8))} />
-                    <YAxis yAxisId="cape" domain={['auto', 'auto']} tick={{ fill: textColor, fontSize: 11 }}
-                      tickFormatter={v => Number(v).toFixed(0)} width={54} />
-                    <YAxis yAxisId="factor" orientation="right" domain={[0, 1]} tick={{ fill: textColor, fontSize: 11 }}
-                      tickFormatter={v => (Number(v) * 100).toFixed(0) + '%'} width={54} />
-                    <Tooltip
-                      formatter={(value: any, name: any, item: any) => {
-                        const n = Number(value)
-                        const dataKey = String(item?.dataKey ?? '')
-                        return [dataKey.includes('Factor') ? (n * 100).toFixed(2) + '%' : n.toFixed(2), name]
-                      }}
-                    />
-                    <Legend content={renderLegend} />
-                    {vmTimingChartData.datasets.map(ds => (
-                      <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label}
-                        yAxisId={ds.yAxisId} stroke={ds.color} strokeWidth={2} strokeDasharray={ds.strokeDasharray} />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                <VmTimingLineChart
+                  chartData={vmTimingChartData}
+                  labelsLength={chartData.labels.length}
+                  gridColor={gridColor}
+                  textColor={textColor}
+                  commonLineProps={commonLineProps}
+                  renderLegend={renderLegend}
+                />
               </div>
             </>
           )}

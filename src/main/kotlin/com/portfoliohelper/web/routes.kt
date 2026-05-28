@@ -310,6 +310,8 @@ private fun parseDrawdownMarginTriggerAction(obj: JsonObject): DrawdownMarginTri
             ?.uppercase()
             ?.takeIf { it.isNotBlank() && portfolioSource == PortfolioTriggerSource.REFERENCE_PORTFOLIO },
         momentumLookbackMonths = obj["momentumLookbackMonths"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(1),
+        exitExtensionMonths = obj["exitExtensionMonths"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0,
+        exitTargetMargin = obj["exitTargetMargin"]?.jsonPrimitive?.doubleOrNull?.coerceAtLeast(0.0),
         enterDrawdownPct = legacyTier.enterDrawdownPct,
         exitDrawdownPct = legacyTier.exitDrawdownPct,
         triggerMargin = legacyTier.triggerMargin,

@@ -828,6 +828,7 @@ object RebalanceStrategyService {
         val config: DrawdownMarginTriggerTier,
         var activeReferencePeak: Double = Double.NaN,
         var active: Boolean = false,
+        var exitExtensionUntil: LocalDate? = null,
     )
 
     data class DrawdownMarginTriggerRuntime(
@@ -1109,14 +1110,34 @@ object RebalanceStrategyService {
           }
         }
       }
-      fun updateDrawdownMarginTrigger(runtime: DrawdownMarginTriggerRuntime?) {
-        if (runtime == null) return
+      fun updateDrawdownMarginTrigger(runtime: DrawdownMarginTriggerRuntime?): Boolean {
+        if (runtime == null) return false
         val referenceValue = portfolioTriggerValue(runtime.key)
-        if (referenceValue.isNaN()) return
+        if (referenceValue.isNaN()) return false
+        val exitExtensionMonths = runtime.config.exitExtensionMonths.coerceAtLeast(0)
+        val wasActive = runtime.tiers.any { it.active }
+        var deactivatedAny = false
         if (runtime.peak.isNaN() || referenceValue > runtime.peak) {
           runtime.peak = referenceValue
         }
         for (tier in runtime.tiers) {
+          val enterDrawdown =
+              if (runtime.peak > 0.0) (runtime.peak - referenceValue) / runtime.peak
+              else 0.0
+          if (
+              tier.active &&
+              tier.exitExtensionUntil != null &&
+              enterDrawdown >= tier.config.enterDrawdownPct.coerceAtLeast(0.0)
+          ) {
+            tier.activeReferencePeak = runtime.peak
+            tier.exitExtensionUntil = null
+          }
+          if (tier.active && tier.exitExtensionUntil?.let { curDate > it } == true) {
+            tier.active = false
+            tier.activeReferencePeak = Double.NaN
+            tier.exitExtensionUntil = null
+            deactivatedAny = true
+          }
           if (tier.active) {
             val exitPeak =
                 if (!tier.activeReferencePeak.isNaN() && tier.activeReferencePeak > 0.0) {
@@ -1128,22 +1149,44 @@ object RebalanceStrategyService {
                 if (exitPeak > 0.0) (exitPeak - referenceValue) / exitPeak
                 else 0.0
             if (exitDrawdown <= tier.config.exitDrawdownPct) {
-              tier.active = false
-              tier.activeReferencePeak = Double.NaN
+              if (exitExtensionMonths > 0) {
+                tier.exitExtensionUntil = tier.exitExtensionUntil ?: curDate.plusMonths(exitExtensionMonths.toLong())
+              } else {
+                tier.active = false
+                tier.activeReferencePeak = Double.NaN
+                tier.exitExtensionUntil = null
+                deactivatedAny = true
+              }
             }
           } else {
-            val enterDrawdown =
-                if (runtime.peak > 0.0) (runtime.peak - referenceValue) / runtime.peak
-                else 0.0
             if (enterDrawdown >= tier.config.enterDrawdownPct.coerceAtLeast(0.0)) {
               tier.active = true
               tier.activeReferencePeak = runtime.peak
+              tier.exitExtensionUntil = null
+            }
+          }
+        }
+        return wasActive && deactivatedAny && runtime.tiers.none { it.active }
+      }
+      val exitedAllDrawdownBuyLow = updateDrawdownMarginTrigger(drawdownBuyLowRuntime)
+      updateDrawdownMarginTrigger(drawdownSellHighRuntime)
+      var drawdownBuyLowExitSellFired = false
+      if (exitedAllDrawdownBuyLow) {
+        val exitTargetMargin = drawdownBuyLowRuntime?.config?.exitTargetMargin?.coerceAtLeast(0.0)
+        if (exitTargetMargin != null && exitTargetMargin.isFinite() && account.equity() > 0.0) {
+          val targetCashBalance = -account.equity() * exitTargetMargin
+          if (account.cashBalance() < targetCashBalance) {
+            val excess = targetCashBalance - account.cashBalance()
+            val grossBefore = account.grossStockValue()
+            applyAllocDelta(tickers, account, targetWeights, -excess, MarginRebalanceMode.PROPORTIONAL.name)
+            if (tradeMovedGrossInDirection(grossBefore, account.grossStockValue(), Direction.SELL)) {
+              globalCooldown.recordSellHigh(i)
+              actionPoints.add(ActionPoint(curDate.toString(), "SELL_HIGH"))
+              drawdownBuyLowExitSellFired = true
             }
           }
         }
       }
-      updateDrawdownMarginTrigger(drawdownBuyLowRuntime)
-      updateDrawdownMarginTrigger(drawdownSellHighRuntime)
       val enteredDrawdownOverride =
           !drawdownOverrideActive &&
               drawdownMarginOverride?.let { cfg ->
@@ -1424,7 +1467,7 @@ object RebalanceStrategyService {
       // Step 5: Margin deviation triggers (sell on high / buy on low margin).
       // These explicit trigger sections are independent of the scheduled margin
       // rebalance trade-direction filter above.
-      if (equityBefore > 0) {
+      if (equityBefore > 0 && !drawdownBuyLowExitSellFired) {
         val currentRatio = (-cashBalanceBefore).coerceAtLeast(0.0) / equityBefore
         val derivedTimeoutBlocked =
             derivedSubStrategy
@@ -1488,6 +1531,8 @@ object RebalanceStrategyService {
 
         val activeDrawdownBuyLowTier = drawdownBuyLowRuntime?.activeTier()
         val activeDrawdownBuyLowRuntime = drawdownBuyLowRuntime?.takeIf { activeDrawdownBuyLowTier != null }
+        val buyCooldownBlocked =
+            activeDrawdownBuyLowRuntime == null && globalCooldown.isBlocked(Direction.BUY, i)
         val drawdownBuyLowMomentumAllowed =
             if (activeDrawdownBuyLowRuntime == null) {
               true
@@ -1520,7 +1565,7 @@ object RebalanceStrategyService {
             ?.takeIf { it.deviationPct > 0 }
             ?.let { cfg ->
               if (drawdownBuyLowMomentumAllowed &&
-                  (derivedExactTarget || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.BUY, i))) &&
+                  (derivedExactTarget || (!derivedTimeoutBlocked && !buyCooldownBlocked)) &&
                   triggerCurrentRatio < cfg.deviationPct
               ) {
                 val targetCashBalance = -account.equity() * cfg.targetMargin
