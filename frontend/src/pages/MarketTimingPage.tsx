@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Download } from 'lucide-react'
 import {
-  Brush, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { BacktestPageHeader, RunButton } from '@/components/backtest/CommonBacktestSections'
 import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
@@ -23,9 +23,13 @@ type ReferenceSource = 'PORTFOLIO' | 'TICKER'
 interface MarketTimingPoint {
   date: string
   value?: number | null
+  basePortfolioReturn?: number | null
+  marginExcessReturn?: number | null
   triggerDate?: string | null
   daysToTrigger?: number | null
   referenceDrawdown?: number | null
+  zeroingWindow?: boolean | null
+  nonZeroWindowId?: number | null
 }
 
 interface MarketTimingSummary {
@@ -73,6 +77,10 @@ interface DrawdownConfigInput {
 
 const WORLD_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/world-cape-history.csv`
 const US_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/us-cape-history.csv`
+const MAX_MARKET_TIMING_CHART_ROWS = 1_600
+const MAX_WINDOW_AVERAGE_CHART_ROWS = 1_200
+const MAX_CAPE_CHART_ROWS = 1_200
+const MARGIN_COMPARISON_LEVELS = Array.from({ length: 11 }, (_, i) => i * 10)
 
 function parseDrawdownConfigs(value: string): DrawdownConfigInput[] {
   return value
@@ -131,6 +139,350 @@ function sourceMethodLabel(method: string) {
   return method
 }
 
+function marketTimingResultLabel(result: MarketTimingResult) {
+  return `${pct(result.drawdownPct)} DD - ${result.zeroWindowMonths ?? 0}m`
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+interface DateParts {
+  year: number
+  month: number
+  day: number
+}
+
+function parseIsoDateParts(value: string): DateParts | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  }
+}
+
+function datePartsToUtcMs(parts: DateParts) {
+  return Date.UTC(parts.year, parts.month - 1, parts.day)
+}
+
+function wholeCalendarMonthsBetween(earlier: DateParts, later: DateParts) {
+  let months = (later.year - earlier.year) * 12 + later.month - earlier.month
+  if (later.day < earlier.day) months -= 1
+  return Math.max(0, months)
+}
+
+function monthOffsetFromAnchor(anchorDate: string, pointDate: string) {
+  const anchor = parseIsoDateParts(anchorDate)
+  const point = parseIsoDateParts(pointDate)
+  if (!anchor || !point) return null
+  const anchorMs = datePartsToUtcMs(anchor)
+  const pointMs = datePartsToUtcMs(point)
+  if (pointMs === anchorMs) return 0
+  if (pointMs > anchorMs) return wholeCalendarMonthsBetween(anchor, point) + 1
+  return -(wholeCalendarMonthsBetween(point, anchor) + 1)
+}
+
+function downsampleChartRows<T extends Record<string, any>>(
+  rows: T[],
+  dataKeys: string[],
+  maxRows: number,
+  keepRow: (row: T, index: number) => boolean = () => false,
+) {
+  if (rows.length <= maxRows) return rows
+
+  const keepIndexes = new Set<number>([0, rows.length - 1])
+  rows.forEach((row, index) => {
+    if (keepRow(row, index)) keepIndexes.add(index)
+  })
+
+  dataKeys.forEach(key => {
+    for (let i = 1; i < rows.length; i++) {
+      const previousDefined = finiteNumber(rows[i - 1][key])
+      const currentDefined = finiteNumber(rows[i][key])
+      if (previousDefined !== currentDefined) {
+        keepIndexes.add(i - 1)
+        keepIndexes.add(i)
+      }
+    }
+  })
+
+  const remainingBudget = maxRows - keepIndexes.size
+  if (remainingBudget > 0) {
+    if (remainingBudget === 1) {
+      keepIndexes.add(Math.floor((rows.length - 1) / 2))
+    } else {
+      for (let i = 0; i < remainingBudget; i++) {
+        keepIndexes.add(Math.round((i * (rows.length - 1)) / (remainingBudget - 1)))
+      }
+    }
+  }
+
+  return Array.from(keepIndexes)
+    .sort((a, b) => a - b)
+    .map(index => rows[index])
+}
+
+interface WaitAdvantageWindow {
+  anchorIndex: number
+  leftBoundaryIndex: number
+  rightBoundaryIndex: number
+}
+
+function isZeroingWindowPoint(point: MarketTimingPoint) {
+  return point.zeroingWindow === true || point.daysToTrigger === 0
+}
+
+function findWaitAdvantageWindows(points: MarketTimingPoint[]): WaitAdvantageWindow[] {
+  const windows: WaitAdvantageWindow[] = []
+  const hasBackendWindowIds = points.some(point => finiteNumber(point.nonZeroWindowId))
+  if (hasBackendWindowIds) {
+    let currentWindowId: number | null = null
+    let windowStartIndex: number | null = null
+    let bestIndex: number | null = null
+    let bestValue = Number.POSITIVE_INFINITY
+
+    function closeWindow(endExclusiveIndex: number) {
+      if (windowStartIndex != null && bestIndex != null && endExclusiveIndex > windowStartIndex) {
+        windows.push({
+          anchorIndex: bestIndex,
+          leftBoundaryIndex: windowStartIndex,
+          rightBoundaryIndex: endExclusiveIndex - 1,
+        })
+      }
+      currentWindowId = null
+      windowStartIndex = null
+      bestIndex = null
+      bestValue = Number.POSITIVE_INFINITY
+    }
+
+    points.forEach((point, index) => {
+      const value = point.value
+      const windowId = point.nonZeroWindowId
+      if (!finiteNumber(value) || !finiteNumber(windowId)) {
+        closeWindow(index)
+        return
+      }
+      if (currentWindowId !== windowId) {
+        closeWindow(index)
+        currentWindowId = windowId
+        windowStartIndex = index
+      }
+      if (value < bestValue) {
+        bestValue = value
+        bestIndex = index
+      }
+    })
+    closeWindow(points.length)
+    return windows
+  }
+
+  let windowStartIndex: number | null = null
+  let bestIndex: number | null = null
+  let bestValue = Number.POSITIVE_INFINITY
+
+  function closeWindow(endExclusiveIndex: number) {
+    if (windowStartIndex != null && bestIndex != null && endExclusiveIndex > windowStartIndex) {
+      windows.push({
+        anchorIndex: bestIndex,
+        leftBoundaryIndex: windowStartIndex,
+        rightBoundaryIndex: endExclusiveIndex - 1,
+      })
+    }
+    windowStartIndex = null
+    bestIndex = null
+    bestValue = Number.POSITIVE_INFINITY
+  }
+
+  points.forEach((point, index) => {
+    const value = point.value
+    if (!finiteNumber(value) || isZeroingWindowPoint(point)) {
+      closeWindow(index)
+      return
+    }
+    if (windowStartIndex == null) windowStartIndex = index
+    if (value < bestValue) {
+      bestValue = value
+      bestIndex = index
+    }
+  })
+  closeWindow(points.length)
+
+  return windows
+}
+
+function windowMonthlyValues(
+  points: MarketTimingPoint[],
+  window: WaitAdvantageWindow,
+  normalizeDayZero: boolean,
+) {
+  const anchorPoint = points[window.anchorIndex]
+  const anchorValue = anchorPoint?.value
+  if (!anchorPoint?.date || !finiteNumber(anchorValue)) return []
+
+  const grouped = new Map<number, { sum: number; count: number }>()
+  for (let pointIndex = window.leftBoundaryIndex; pointIndex <= window.rightBoundaryIndex; pointIndex++) {
+    const point = points[pointIndex]
+    const pointValue = point?.value
+    if (!point?.date || !finiteNumber(pointValue)) continue
+    const monthOffset = monthOffsetFromAnchor(anchorPoint.date, point.date)
+    if (monthOffset == null) continue
+    const value = normalizeDayZero ? pointValue - anchorValue : pointValue
+    const current = grouped.get(monthOffset) ?? { sum: 0, count: 0 }
+    current.sum += value
+    current.count += 1
+    grouped.set(monthOffset, current)
+  }
+
+  return Array.from(grouped.entries()).map(([monthOffset, item]) => ({
+    monthOffset,
+    value: item.sum / item.count,
+  }))
+}
+
+function totalMarginValue(point: MarketTimingPoint, margin: number) {
+  if (!finiteNumber(point.basePortfolioReturn) || !finiteNumber(point.marginExcessReturn)) return undefined
+  return point.basePortfolioReturn + (margin / 100) * point.marginExcessReturn
+}
+
+function marginTotalDifference(point: MarketTimingPoint, margin: number, baseMargin: number) {
+  const baseTotal = totalMarginValue(point, baseMargin)
+  const comparisonTotal = totalMarginValue(point, margin)
+  if (!finiteNumber(baseTotal) || !finiteNumber(comparisonTotal)) return undefined
+  if (baseTotal === 0) return undefined
+  return comparisonTotal / baseTotal - 1
+}
+
+function windowMonthlyMarginValues(
+  points: MarketTimingPoint[],
+  window: WaitAdvantageWindow,
+  margin: number,
+  baseMargin: number,
+  normalizeDayZero: boolean,
+) {
+  const anchorPoint = points[window.anchorIndex]
+  if (!anchorPoint?.date) return []
+  const anchorTotalDifference = marginTotalDifference(anchorPoint, margin, baseMargin)
+  if (!finiteNumber(anchorTotalDifference)) return []
+
+  const grouped = new Map<number, { sum: number; count: number }>()
+  for (let pointIndex = window.leftBoundaryIndex; pointIndex <= window.rightBoundaryIndex; pointIndex++) {
+    const point = points[pointIndex]
+    if (!point?.date) continue
+    const monthOffset = monthOffsetFromAnchor(anchorPoint.date, point.date)
+    if (monthOffset == null) continue
+    const totalDifference = marginTotalDifference(point, margin, baseMargin)
+    if (!finiteNumber(totalDifference)) continue
+    const value = normalizeDayZero ? totalDifference - anchorTotalDifference : totalDifference
+    const current = grouped.get(monthOffset) ?? { sum: 0, count: 0 }
+    current.sum += value
+    current.count += 1
+    grouped.set(monthOffset, current)
+  }
+
+  return Array.from(grouped.entries()).map(([monthOffset, item]) => ({
+    monthOffset,
+    value: item.sum / item.count,
+  }))
+}
+
+function makeWindowAverageChartData(results: MarketTimingResult[], normalizeDayZero: boolean) {
+  const windowGroups = results.map(result => findWaitAdvantageWindows(result.points))
+  const monthlyGroups = windowGroups.map((windows, resultIndex) =>
+    windows.map(window => windowMonthlyValues(results[resultIndex].points, window, normalizeDayZero))
+  )
+  const windowCounts: number[] = []
+  let minOffset = 0
+  let maxOffset = 0
+
+  monthlyGroups.forEach((windows, resultIndex) => {
+    windowCounts[resultIndex] = windows.length
+    windows.forEach(monthlyValues => {
+      monthlyValues.forEach(({ monthOffset }) => {
+        minOffset = Math.min(minOffset, monthOffset)
+        maxOffset = Math.max(maxOffset, monthOffset)
+      })
+    })
+  })
+
+  if (!windowCounts.some(count => count > 0)) return null
+
+  const rows = Array.from({ length: maxOffset - minOffset + 1 }, (_, i) => {
+    const offset = minOffset + i
+    const row: Record<string, number | undefined> = { x: offset }
+    monthlyGroups.forEach((windows, resultIndex) => {
+      const values = windows
+        .map(monthlyValues => monthlyValues.find(item => item.monthOffset === offset)?.value)
+        .filter(finiteNumber)
+      if (values.length > 0) {
+        row[`dd${resultIndex}`] = values.reduce((sum, value) => sum + value, 0) / values.length
+      }
+    })
+    return row
+  })
+
+  return {
+    rows: downsampleChartRows(
+      rows,
+      results.map((_, i) => `dd${i}`),
+      MAX_WINDOW_AVERAGE_CHART_ROWS,
+      row => row.x === 0,
+    ),
+    windowCounts,
+  }
+}
+
+function makeMarginComparisonChartData(
+  result: MarketTimingResult,
+  baseMargin: number,
+  normalizeDayZero: boolean,
+) {
+  const windows = findWaitAdvantageWindows(result.points)
+  const monthlyGroups = windows.map(window => windowMonthlyValues(result.points, window, normalizeDayZero))
+  const marginMonthlyGroups = MARGIN_COMPARISON_LEVELS.map(margin => ({
+    margin,
+    windows: windows.map(window =>
+      windowMonthlyMarginValues(result.points, window, margin, baseMargin, normalizeDayZero)
+    ),
+  }))
+  let minOffset = 0
+  let maxOffset = 0
+
+  monthlyGroups.forEach(monthlyValues => {
+    monthlyValues.forEach(({ monthOffset }) => {
+      minOffset = Math.min(minOffset, monthOffset)
+      maxOffset = Math.max(maxOffset, monthOffset)
+    })
+  })
+
+  if (windows.length === 0) return null
+
+  const rows = Array.from({ length: maxOffset - minOffset + 1 }, (_, i) => {
+    const offset = minOffset + i
+    const row: Record<string, number | undefined> = { x: offset }
+    marginMonthlyGroups.forEach(({ margin, windows }) => {
+      const values = windows
+        .map(monthlyValues => monthlyValues.find(item => item.monthOffset === offset)?.value)
+        .filter(finiteNumber)
+      if (values.length > 0) {
+        row[`m${margin}`] = values.reduce((sum, value) => sum + value, 0) / values.length
+      }
+    })
+    return row
+  })
+
+  return {
+    rows: downsampleChartRows(
+      rows,
+      MARGIN_COMPARISON_LEVELS.map(margin => `m${margin}`),
+      MAX_WINDOW_AVERAGE_CHART_ROWS,
+      row => row.x === 0,
+    ),
+    windowCount: windows.length,
+  }
+}
+
 function makeMarketTimingTooltip(
   { isDark, gridColor, textColor }: ReturnType<typeof useChartTheme>,
 ) {
@@ -185,6 +537,9 @@ export default function MarketTimingPage() {
   const [worldCapeError, setWorldCapeError] = useState('')
   const [usCapePoints, setUsCapePoints] = useState<UsCapePoint[]>([])
   const [usCapeError, setUsCapeError] = useState('')
+  const [normalizeWindowDayZero, setNormalizeWindowDayZero] = useState(true)
+  const [marginComparisonResultIndex, setMarginComparisonResultIndex] = useState(0)
+  const [marginComparisonBaseMargin, setMarginComparisonBaseMargin] = useState(0)
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const theme = useChartTheme()
 
@@ -330,6 +685,7 @@ export default function MarketTimingPage() {
     if (!results?.results.length) return null
     const dates = results.results[0].points.map(p => p.date)
     const referenceByDate = new Map(results.referencePoints.map(p => [p.date, p.value]))
+    const dataKeys = ['reference', ...results.results.map((_, i) => `dd${i}`)]
     const rows = dates.map((date, i) => {
       const row: Record<string, any> = { x: date }
       row.reference = referenceByDate.get(date)
@@ -342,13 +698,33 @@ export default function MarketTimingPage() {
       })
       return row
     })
-    return { rows }
+    return {
+      rows: downsampleChartRows(rows, dataKeys, MAX_MARKET_TIMING_CHART_ROWS),
+    }
   }, [results])
+
+  const windowAverageChartData = useMemo(() => {
+    if (!results?.results.length) return null
+    return makeWindowAverageChartData(results.results, normalizeWindowDayZero)
+  }, [results, normalizeWindowDayZero])
+
+  const effectiveMarginComparisonIndex = results?.results.length
+    ? Math.min(marginComparisonResultIndex, results.results.length - 1)
+    : 0
+  const marginComparisonResult = results?.results[effectiveMarginComparisonIndex]
+  const marginComparisonChartData = useMemo(() => {
+    if (!marginComparisonResult) return null
+    return makeMarginComparisonChartData(
+      marginComparisonResult,
+      marginComparisonBaseMargin,
+      normalizeWindowDayZero,
+    )
+  }, [marginComparisonResult, marginComparisonBaseMargin, normalizeWindowDayZero])
 
   const referenceDrawdownChartData = useMemo(() => {
     if (!results?.referencePoints.length) return []
     let peak = Number.NEGATIVE_INFINITY
-    return results.referencePoints
+    const rows = results.referencePoints
       .map(point => {
         const value = point.value
         if (!Number.isFinite(value) || value <= 0) {
@@ -360,16 +736,24 @@ export default function MarketTimingPage() {
           referenceDrawdown: peak > 0 ? value / peak - 1 : undefined,
         }
       })
+    return downsampleChartRows(rows, ['referenceDrawdown'], MAX_MARKET_TIMING_CHART_ROWS)
   }, [results])
 
-  const worldCapeChartData = useMemo(() => worldCapePoints.map(point => ({
-    x: point.date,
-    usProxyCape: point.sourceMethod === 'US_SHILLER_PROXY' ? point.worldCape : undefined,
-    syntheticCape: point.sourceMethod.startsWith('SYNTHETIC_EP_BLEND') ? point.worldCape : undefined,
-    siblisCape: point.sourceMethod === 'SIBLIS_FREE_ANCHOR' ? point.worldCape : undefined,
-    currentReferenceCape: point.sourceMethod === 'RA_CURRENT_REFERENCE' ? point.worldCape : undefined,
-    source: sourceMethodLabel(point.sourceMethod),
-  })), [worldCapePoints])
+  const worldCapeChartData = useMemo(() => {
+    const rows = worldCapePoints.map(point => ({
+      x: point.date,
+      usProxyCape: point.sourceMethod === 'US_SHILLER_PROXY' ? point.worldCape : undefined,
+      syntheticCape: point.sourceMethod.startsWith('SYNTHETIC_EP_BLEND') ? point.worldCape : undefined,
+      siblisCape: point.sourceMethod === 'SIBLIS_FREE_ANCHOR' ? point.worldCape : undefined,
+      currentReferenceCape: point.sourceMethod === 'RA_CURRENT_REFERENCE' ? point.worldCape : undefined,
+      source: sourceMethodLabel(point.sourceMethod),
+    }))
+    return downsampleChartRows(
+      rows,
+      ['usProxyCape', 'syntheticCape', 'siblisCape', 'currentReferenceCape'],
+      MAX_CAPE_CHART_ROWS,
+    )
+  }, [worldCapePoints])
 
   const worldCapeSummary = useMemo(() => {
     if (!worldCapePoints.length) return null
@@ -385,10 +769,13 @@ export default function MarketTimingPage() {
     }
   }, [worldCapePoints])
 
-  const usCapeChartData = useMemo(() => usCapePoints.map(point => ({
-    x: point.date,
-    usCape: point.usCape,
-  })), [usCapePoints])
+  const usCapeChartData = useMemo(() => {
+    const rows = usCapePoints.map(point => ({
+      x: point.date,
+      usCape: point.usCape,
+    }))
+    return downsampleChartRows(rows, ['usCape'], MAX_CAPE_CHART_ROWS)
+  }, [usCapePoints])
 
   const usCapeSummary = useMemo(() => {
     if (!usCapePoints.length) return null
@@ -406,6 +793,16 @@ export default function MarketTimingPage() {
 
   const tooltip = useMemo(() => makeMarketTimingTooltip(theme), [theme])
   const capeTooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => fmt2(v)), [theme])
+  const windowAverageTooltip = useMemo(() => makeRechartsTooltip(
+    theme,
+    (v: number) => pct(v),
+    (label: any) => {
+      const months = Number(label)
+      if (!Number.isFinite(months)) return String(label)
+      if (months === 0) return 'Day 0'
+      return months < 0 ? `${Math.abs(months)} months before` : `${months} months after`
+    },
+  ), [theme])
   const marketTimingLineStyles = useMemo(() => {
     if (!results?.results.length) return []
     return results.results.map((_, i) => {
@@ -580,7 +977,7 @@ export default function MarketTimingPage() {
                     key={result.drawdownPct}
                     yAxisId="pnl"
                     dataKey={`dd${i}`}
-                    name={`${pct(result.drawdownPct)} DD - ${result.zeroWindowMonths ?? 0}m`}
+                    name={marketTimingResultLabel(result)}
                     stroke={marketTimingLineStyles[i]?.stroke ?? PALETTE[0][0]}
                     strokeWidth={marketTimingLineStyles[i]?.strokeWidth ?? 2}
                     dot={false}
@@ -594,6 +991,128 @@ export default function MarketTimingPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {windowAverageChartData && (
+            <>
+              <div className="backtest-chart-heading">
+                <div className="backtest-chart-title">
+                  {normalizeWindowDayZero ? 'Average Normalized P/L Around Best Wait Day' : 'Average P/L Around Best Wait Day'}
+                </div>
+                <button
+                  type="button"
+                  className={`btn-outline-accent market-timing-normalize-toggle${normalizeWindowDayZero ? ' active' : ''}`}
+                  aria-pressed={normalizeWindowDayZero}
+                  onClick={() => setNormalizeWindowDayZero(value => !value)}
+                >
+                  Day 0 Zeroed
+                </button>
+              </div>
+              <div className="backtest-chart-container market-timing-window-average-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={windowAverageChartData.rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
+                    <XAxis
+                      dataKey="x"
+                      tick={{ fill: theme.textColor, fontSize: 11 }}
+                      interval={Math.max(1, Math.floor(windowAverageChartData.rows.length / 10))}
+                    />
+                    <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
+                    <Tooltip content={windowAverageTooltip} />
+                    <Legend />
+                    <ReferenceLine x={0} stroke={theme.gridColor} strokeDasharray="4 3" />
+                    {results.results.map((result, i) => (
+                      windowAverageChartData.windowCounts[i] > 0 && (
+                        <Line
+                          key={`${result.drawdownPct}-${result.zeroWindowMonths ?? 0}`}
+                          dataKey={`dd${i}`}
+                          name={marketTimingResultLabel(result)}
+                          stroke={marketTimingLineStyles[i]?.stroke ?? PALETTE[0][0]}
+                          strokeWidth={marketTimingLineStyles[i]?.strokeWidth ?? 2}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          connectNulls={false}
+                          isAnimationActive={false}
+                          type="monotone"
+                        />
+                      )
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+
+          {marginComparisonChartData && marginComparisonResult && (
+            <>
+              <div className="backtest-chart-heading">
+                <div className="backtest-chart-title">
+                  {normalizeWindowDayZero ? 'Normalized Margin Difference Around Best Wait Day' : 'Margin Difference Around Best Wait Day'}
+                </div>
+                <div className="market-timing-chart-controls">
+                  <label>
+                    <span>Window</span>
+                    <select
+                      value={effectiveMarginComparisonIndex}
+                      onChange={e => setMarginComparisonResultIndex(Number(e.target.value))}
+                    >
+                      {results.results.map((result, i) => (
+                        <option key={`${result.drawdownPct}-${result.zeroWindowMonths ?? 0}`} value={i}>
+                          {marketTimingResultLabel(result)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Base Margin</span>
+                    <select
+                      value={marginComparisonBaseMargin}
+                      onChange={e => setMarginComparisonBaseMargin(Number(e.target.value))}
+                    >
+                      {MARGIN_COMPARISON_LEVELS.map(margin => (
+                        <option key={margin} value={margin}>{margin}%</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div className="backtest-chart-container market-timing-window-average-chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={marginComparisonChartData.rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
+                    <XAxis
+                      dataKey="x"
+                      tick={{ fill: theme.textColor, fontSize: 11 }}
+                      interval={Math.max(1, Math.floor(marginComparisonChartData.rows.length / 10))}
+                    />
+                    <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
+                    <Tooltip content={windowAverageTooltip} />
+                    <Legend />
+                    <ReferenceLine x={0} stroke={theme.gridColor} strokeDasharray="4 3" />
+                    <ReferenceLine y={0} stroke={theme.gridColor} strokeDasharray="4 3" />
+                    {MARGIN_COMPARISON_LEVELS.map((margin, i) => {
+                      const palette = PALETTE[i % PALETTE.length]
+                      const variant = Math.floor(i / PALETTE.length)
+                      return (
+                        <Line
+                          key={margin}
+                          dataKey={`m${margin}`}
+                          name={`${margin}% margin`}
+                          stroke={palette[variant % palette.length]}
+                          strokeWidth={margin === marginComparisonBaseMargin ? 1.5 : 2}
+                          strokeDasharray={margin === marginComparisonBaseMargin ? '4 3' : undefined}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                          connectNulls={false}
+                          isAnimationActive={false}
+                          type="monotone"
+                        />
+                      )
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
         </>
       )}
 

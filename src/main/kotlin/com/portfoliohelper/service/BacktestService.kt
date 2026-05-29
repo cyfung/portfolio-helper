@@ -361,7 +361,7 @@ object BacktestService {
             }
         }
 
-        val points = dates.mapIndexed { i, date ->
+        val rawPoints = dates.mapIndexed { i, date ->
             val j = triggerIndex[i]
             if (j == null || portfolioValues[i] <= 0.0 || debtIndex[i] <= 0.0) {
                 MarketTimingPoint(date.toString())
@@ -369,20 +369,37 @@ object BacktestService {
                 MarketTimingPoint(
                     date = date.toString(),
                     value = 0.0,
+                    basePortfolioReturn = 1.0,
+                    marginExcessReturn = 0.0,
                     triggerDate = date.toString(),
                     daysToTrigger = 0,
                     referenceDrawdown = referenceDrawdowns[i],
+                    zeroingWindow = true,
                 )
             } else {
-                val buyHoldValue = startingBalance * (portfolioValues[j] / portfolioValues[i])
-                val waitCapitalAtTrigger = startingBalance * (debtIndex[j] / debtIndex[i])
+                val basePortfolioReturn = portfolioValues[j] / portfolioValues[i]
+                val debtReturn = debtIndex[j] / debtIndex[i]
                 MarketTimingPoint(
                     date = date.toString(),
-                    value = buyHoldValue / waitCapitalAtTrigger - 1.0,
+                    value = basePortfolioReturn / debtReturn - 1.0,
+                    basePortfolioReturn = basePortfolioReturn,
+                    marginExcessReturn = basePortfolioReturn - debtReturn,
                     triggerDate = dates[j].toString(),
                     daysToTrigger = (dates[j].toEpochDay() - date.toEpochDay()).toInt(),
                     referenceDrawdown = referenceDrawdowns[j],
                 )
+            }
+        }
+        var nextNonZeroWindowId = 0
+        var currentNonZeroWindowId: Int? = null
+        val points = rawPoints.map { point ->
+            if (point.value != null && !point.zeroingWindow) {
+                val windowId = currentNonZeroWindowId ?: nextNonZeroWindowId++
+                currentNonZeroWindowId = windowId
+                point.copy(nonZeroWindowId = windowId)
+            } else {
+                currentNonZeroWindowId = null
+                point
             }
         }
 

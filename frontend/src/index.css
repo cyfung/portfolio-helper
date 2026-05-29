@@ -3763,6 +3763,46 @@ a.loan-calc-link:hover {
     height: 260px;
 }
 
+.market-timing-window-average-chart {
+    height: 320px;
+}
+
+.market-timing-normalize-toggle {
+    padding: 0.35rem 0.65rem;
+    font-size: var(--font-size-xs);
+}
+
+.market-timing-normalize-toggle.active {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.market-timing-chart-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem 0.75rem;
+}
+
+.market-timing-chart-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.market-timing-chart-controls select {
+    min-width: 6rem;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font: inherit;
+}
+
 .world-cape-heading {
     margin-top: 1.25rem;
 }

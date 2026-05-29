@@ -103,9 +103,13 @@ data class DataPoint(val date: String, val value: Double)
 data class MarketTimingPoint(
     val date: String,
     val value: Double? = null,
+    val basePortfolioReturn: Double? = null,
+    val marginExcessReturn: Double? = null,
     val triggerDate: String? = null,
     val daysToTrigger: Int? = null,
     val referenceDrawdown: Double? = null,
+    val zeroingWindow: Boolean = false,
+    val nonZeroWindowId: Int? = null,
 )
 
 @Serializable
