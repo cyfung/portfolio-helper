@@ -2627,4 +2627,47 @@ class RebalanceStrategyServiceTest {
         assertApprox(1.05, margins[1], label = "stage 1 should use target plus deviation, not exact reset target")
         assertApprox(1.05, margins[2], label = "stage 1 should not force an exact reset every day")
     }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsRefBuyLowResetFollowsReferenceUntilNextDrop() {
+        val dates = days(LocalDate.of(2024, 1, 2), 8)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(1.00, 0.75, 0.65, 0.55, 0.58, 0.80, 0.82, 0.55),
+            baseBuyLowEventSeries = listOf(false, false, false, false, false, true, false, false),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.75, margins[1], label = "before first stair follows reference margin")
+        assertApprox(0.50, margins[2], label = "first downward stair still fires")
+        assertApprox(0.20, margins[3], label = "second downward stair still fires")
+        assertApprox(0.20, margins[4], label = "after final stair pauses")
+        assertApprox(0.80, margins[5], label = "reference BL resets to current reference margin")
+        assertApprox(0.82, margins[6], label = "after reset follows reference margin")
+        assertApprox(0.20, margins[7], label = "after reset can drop through stairs again")
+    }
 }

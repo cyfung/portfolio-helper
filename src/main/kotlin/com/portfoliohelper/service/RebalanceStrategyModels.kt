@@ -30,7 +30,15 @@ enum class MarginRebalanceTradeDirection { BOTH, BUY_ONLY, SELL_ONLY }
 
 enum class CapeSource { US, WORLD }
 
-enum class DerivedTargetScaleFunction { SIGMOID, ADAPTIVE_LOW_SIGMOID, LINEAR, STEP, HYSTERESIS_STEP, HYSTERESIS_STAIRS }
+enum class DerivedTargetScaleFunction {
+    SIGMOID,
+    ADAPTIVE_LOW_SIGMOID,
+    LINEAR,
+    STEP,
+    HYSTERESIS_STEP,
+    HYSTERESIS_STAIRS,
+    HYSTERESIS_STAIRS_REF_BL_RESET,
+}
 
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 

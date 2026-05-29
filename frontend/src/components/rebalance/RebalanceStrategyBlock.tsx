@@ -966,7 +966,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                     const fn = e.target.value as DerivedSubStrategyState['scale']['function']
                     const refHigh = parseFloat(derived.scale.referenceUpper)
                     const currentReset = parseFloat(derived.scale.stepBaseTarget ?? '')
-                    const isHysteresis = fn === 'HYSTERESIS_STEP' || fn === 'HYSTERESIS_STAIRS'
+                    const isHysteresis = fn === 'HYSTERESIS_STEP' || fn === 'HYSTERESIS_STAIRS' || fn === 'HYSTERESIS_STAIRS_REF_BL_RESET'
                     updateDerivedScale(derived.id, {
                       function: fn,
                       ...(isHysteresis && (!Number.isFinite(currentReset) || currentReset <= refHigh)
@@ -981,9 +981,10 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                   <option value="STEP">Step</option>
                   <option value="HYSTERESIS_STEP">Hysteresis Step</option>
                   <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
+                  <option value="HYSTERESIS_STAIRS_REF_BL_RESET">Hysteresis Stairs Ref BL Reset</option>
                 </select>
               </div>
-              {!['STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID') && (
+              {!['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') && (
                 <>
                   <div className="strategy-row">
                     <label>Ref Low</label>
@@ -1077,7 +1078,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                   />
                 </div>
               )}
-              {(['STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID')) && (
+              {(['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID')) && (
                 <>
                   {(derived.scale.function ?? 'SIGMOID') === 'STEP' && (
                     <div className="strategy-row">
@@ -1096,7 +1097,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                   {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
                     <React.Fragment key={step.id}>
                       <div className="strategy-row">
-                        <label>{(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}</label>
+                        <label>{['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}</label>
                         <MarginPercentInput
                           value={step.referenceMargin}
                           placeholder={String(60 + stepIdx * 10)}
@@ -1108,7 +1109,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
                         />
                       </div>
                       <div className="strategy-row">
-                        <label>{(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}</label>
+                        <label>{['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}</label>
                         <MarginPercentInput
                           value={step.targetMargin}
                           placeholder={String(50 + stepIdx * 10)}
