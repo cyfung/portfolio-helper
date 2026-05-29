@@ -1,5 +1,6 @@
 import com.github.jk1.license.render.ReportRenderer
 import com.github.jk1.license.render.TextReportRenderer
+import com.github.gradle.node.npm.task.NpmTask
 import org.gradle.api.tasks.bundling.Jar
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import org.panteleyev.jpackage.ImageType
@@ -16,6 +17,7 @@ plugins {
     id("edu.sc.seis.launch4j") version "4.0.0"
     id("org.panteleyev.jpackageplugin") version "1.7.6"
     id("com.github.jk1.dependency-license-report") version "2.9"
+    id("com.github.node-gradle.node") version "7.1.0"
 }
 
 group = "com.portfoliohelper"
@@ -23,6 +25,12 @@ version = "0.7.19"
 
 repositories {
     mavenCentral()
+}
+
+node {
+    version.set("22.11.0")
+    download.set(true)
+    nodeProjectDir.set(file("frontend"))
 }
 
 dependencies {
@@ -113,6 +121,9 @@ kotlin.sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/vers
 val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
     group = "build"
     description = "Generates the bundled app.db SQLite database via DBBuilder"
+    javaLauncher.set(javaToolchains.launcherFor {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    })
 
     val dbSchema = project(":db-schema")
     val dbJarTask = dbSchema.tasks.named<Jar>("jar")
@@ -444,27 +455,22 @@ tasks.register("githubRelease") {
 
 // ── Frontend (React SPA) build integration ────────────────────────────────────
 
-val isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows
-val npmCmd = if (isWindows) listOf("cmd", "/c", "npm") else listOf("npm")
-
-/** Install node_modules if package.json or package-lock.json changed */
-val frontendInstall = tasks.register<Exec>("frontendInstall") {
+/** Install node_modules from the committed lockfile */
+val frontendInstall = tasks.register<NpmTask>("frontendInstall") {
     group = "build"
     description = "Installs frontend npm dependencies"
-    workingDir = file("frontend")
-    commandLine(npmCmd + "install")
+    args.set(listOf("ci"))
     inputs.file("frontend/package.json")
     inputs.file("frontend/package-lock.json")
     outputs.dir("frontend/node_modules")
 }
 
 /** Run `npm run build` → outputs to frontend/dist/ */
-val frontendBuild = tasks.register<Exec>("frontendBuild") {
+val frontendBuild = tasks.register<NpmTask>("frontendBuild") {
     dependsOn(frontendInstall)
     group = "build"
     description = "Builds the React SPA with Vite"
-    workingDir = file("frontend")
-    commandLine(npmCmd + "run" + "build")
+    args.set(listOf("run", "build"))
     inputs.dir("frontend/src")
     inputs.dir("frontend/public")
     inputs.file("frontend/index.html")
