@@ -33,6 +33,7 @@ interface ScenarioSetupControlsProps extends CashflowFormState {
   importInputId: string
   importCode: string
   configError: string
+  dateRangeError?: string
   onFromDateChange: StringSetter
   onToDateChange: StringSetter
   onImportCodeChange: StringSetter
@@ -54,6 +55,7 @@ export function ScenarioSetupControls({
   importInputId,
   importCode,
   configError,
+  dateRangeError = '',
   startingBalance,
   cashflowAmount,
   cashflowFrequency,
@@ -69,8 +71,15 @@ export function ScenarioSetupControls({
   return (
     <>
       <div className="backtest-section backtest-config-row">
-        <DateFieldWithQuickSelect label={fromLabel} inputId={fromInputId} value={fromDate} onChange={onFromDateChange} />
-        <DateFieldWithQuickSelect label={toLabel} inputId={toInputId} value={toDate} onChange={onToDateChange} />
+        <div className="backtest-date-range-controls">
+          <DateFieldWithQuickSelect label={fromLabel} inputId={fromInputId} value={fromDate} onChange={onFromDateChange} />
+          <DateFieldWithQuickSelect label={toLabel} inputId={toInputId} value={toDate} onChange={onToDateChange} />
+          {dateRangeError && (
+            <div className="backtest-date-range-error" role="alert">
+              {dateRangeError}
+            </div>
+          )}
+        </div>
 
         <div className="backtest-config-controls">
           <label htmlFor={importInputId}>Config Code</label>

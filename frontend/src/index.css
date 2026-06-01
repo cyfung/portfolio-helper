@@ -3433,6 +3433,22 @@ a.loan-calc-link:hover {
     flex-direction: column;
 }
 
+.backtest-date-range-controls {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.35rem 0.75rem;
+    align-items: start;
+}
+
+.backtest-date-range-error {
+    grid-column: 1 / -1;
+    min-height: 1.1rem;
+    color: var(--color-negative);
+    font-size: var(--font-size-sm);
+    line-height: 1.35;
+}
+
 .backtest-config-group {
     flex: 1;
     display: flex;
@@ -3479,6 +3495,12 @@ a.loan-calc-link:hover {
     .backtest-config-row,
     .backtest-cashflow-row,
     .backtest-grid-3 {
+        grid-template-columns: 1fr;
+        width: 100%;
+    }
+
+    .backtest-date-range-controls {
+        grid-column: auto;
         grid-template-columns: 1fr;
         width: 100%;
     }

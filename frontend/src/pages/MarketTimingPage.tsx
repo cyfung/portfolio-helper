@@ -16,6 +16,7 @@ import {
   blockStateToAPIPortfolio, configToBlockState, emptyBlock, PALETTE, type BlockState,
 } from '@/types/backtest'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { validateDateRange } from '@/lib/dateRange'
 
 type InterestMode = 'SPREAD' | 'FIXED'
 type ReferenceSource = 'PORTFOLIO' | 'TICKER'
@@ -542,6 +543,7 @@ export default function MarketTimingPage() {
   const [marginComparisonBaseMargin, setMarginComparisonBaseMargin] = useState(0)
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const theme = useChartTheme()
+  const dateRangeError = validateDateRange(fromDate, toDate)
 
   useEffect(() => {
     fetch('/api/backtest/settings')
@@ -642,9 +644,13 @@ export default function MarketTimingPage() {
   }
 
   async function handleRun() {
-    setRunning(true)
     setError('')
     setResults(null)
+    if (dateRangeError) {
+      setError(dateRangeError)
+      return
+    }
+    setRunning(true)
     try {
       const thresholds = parseDrawdownConfigs(drawdownConfigs)
       if (thresholds.length === 0) throw new Error('Enter at least one drawdown config')
@@ -822,8 +828,15 @@ export default function MarketTimingPage() {
 
       <div className="backtest-form-card">
         <div className="backtest-section backtest-config-row">
-          <DateFieldWithQuickSelect label="From Date" inputId="market-timing-from-date" value={fromDate} onChange={setFromDate} />
-          <DateFieldWithQuickSelect label="To Date" inputId="market-timing-to-date" value={toDate} onChange={setToDate} />
+          <div className="backtest-date-range-controls">
+            <DateFieldWithQuickSelect label="From Date" inputId="market-timing-from-date" value={fromDate} onChange={setFromDate} />
+            <DateFieldWithQuickSelect label="To Date" inputId="market-timing-to-date" value={toDate} onChange={setToDate} />
+            {dateRangeError && (
+              <div className="backtest-date-range-error" role="alert">
+                {dateRangeError}
+              </div>
+            )}
+          </div>
           <div className="backtest-config-controls">
             <label htmlFor="market-timing-import-code">Config Code</label>
             <div className="backtest-config-group">
@@ -891,7 +904,7 @@ export default function MarketTimingPage() {
           <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
         </div>
 
-        <RunButton label="Run Market Timing" running={running} disabled={running} onClick={handleRun} />
+        <RunButton label="Run Market Timing" running={running} disabled={running || !!dateRangeError} onClick={handleRun} />
       </div>
 
       {error && <div className="backtest-error">{error}</div>}

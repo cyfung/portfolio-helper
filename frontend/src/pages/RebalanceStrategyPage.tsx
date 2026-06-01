@@ -24,6 +24,7 @@ import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR, type RechartsChartData,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
+import { validateDateRange } from '@/lib/dateRange'
 import {
   RebalStrategyState, emptyStrategy, strategyStateToAPI, savedConfigToStrategyState,
   normalizeStrategySpreadInput,
@@ -316,6 +317,7 @@ export default function RebalanceStrategyPage() {
 
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
+  const dateRangeError = validateDateRange(fromDate, toDate)
 
   // Restore the shared backtest portfolio cache, but only load portfolio slot 0.
   useEffect(() => {
@@ -338,6 +340,10 @@ export default function RebalanceStrategyPage() {
 
   async function handleRun() {
     setError('')
+    if (dateRangeError) {
+      setError(dateRangeError)
+      return
+    }
     const runPortfolio = normalizeBlockSpreadInputs(portfolio)
     if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
     let portfolioApi
@@ -705,6 +711,7 @@ export default function RebalanceStrategyPage() {
           importInputId="rs-import-code"
           importCode={importCode}
           configError={configError}
+          dateRangeError={dateRangeError}
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
@@ -752,7 +759,7 @@ export default function RebalanceStrategyPage() {
         <RunButton
           label="Run Rebalance Strategy"
           running={running}
-          disabled={running}
+          disabled={running || !!dateRangeError}
           onClick={handleRun}
         />
       </div>

@@ -115,6 +115,7 @@ object RebalanceStrategyService {
   fun run(request: RebalanceStrategyRequest): MultiBacktestResult {
     val fromDate = request.fromDate?.let { LocalDate.parse(it) }
     val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+    BacktestService.validateDateRange(fromDate, toDate)
     val effrx = BacktestService.loadEffrxSeries()
     val historyFrom = LocalDate.of(1990, 1, 1)
     val portfolioNeededFrom = fromDate ?: historyFrom
@@ -545,6 +546,7 @@ object RebalanceStrategyService {
   ): RunContext {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
     val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()
+    BacktestService.validateDateRange(fromDate, toDate)
     val effrx = BacktestService.loadEffrxSeries()
     val historyFrom = LocalDate.of(1990, 1, 1)
     val portfolioNeededFrom = fromDate ?: historyFrom

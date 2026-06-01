@@ -25,6 +25,7 @@ import {
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { validateDateRange } from '@/lib/dateRange'
 
 // ── Stats helper ──────────────────────────────────────────────────────────────
 
@@ -260,6 +261,7 @@ export default function BacktestPage() {
     const pct = parseFloat(appConfig?.privacyScalePct ?? '')
     return appConfig?.privacyScaleEnabled && pct > 0 ? pct / 100 : 1
   }, [appConfig?.privacyScaleEnabled, appConfig?.privacyScalePct])
+  const dateRangeError = validateDateRange(fromDate, toDate)
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
@@ -278,12 +280,13 @@ export default function BacktestPage() {
   }, [])
 
   const fetchRealPortfolioData = useCallback(async (slug: string, signal?: AbortSignal) => {
+    if (dateRangeError) throw new Error(dateRangeError)
     const params = [fromDate && `from=${fromDate}`, toDate && `to=${toDate}`].filter(Boolean).join('&')
     const r = await fetch(`/api/performance/chart/${slug}${params ? '?' + params : ''}`, { signal })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const d = await r.json()
     return realPortfolioDataFromResponse(d, privacyNavScaleFactor)
-  }, [fromDate, toDate, privacyNavScaleFactor])
+  }, [dateRangeError, fromDate, toDate, privacyNavScaleFactor])
 
   // Fetch real portfolio data when slug or date range changes
   useEffect(() => {
@@ -292,6 +295,7 @@ export default function BacktestPage() {
       return
     }
     if (!appConfigReady) return
+    if (dateRangeError) return
     const ac = new AbortController()
     fetchRealPortfolioData(realSlug, ac.signal)
       .then(realData => {
@@ -305,7 +309,7 @@ export default function BacktestPage() {
         if (!ac.signal.aborted) setViewState(prev => ({ ...prev, realData: null }))
       })
     return () => ac.abort()
-  }, [realSlug, appConfigReady, fetchRealPortfolioData])
+  }, [realSlug, appConfigReady, dateRangeError, fetchRealPortfolioData])
 
   // Persist real portfolio selection
   useEffect(() => {
@@ -314,6 +318,10 @@ export default function BacktestPage() {
 
   async function handleFetchRealFromIbkr(slug: string) {
     if (!slug || realIngestingRef.current) return
+    if (dateRangeError) {
+      setError(dateRangeError)
+      return
+    }
     const portfolioName = realPortfolios.find(p => p.slug === slug)?.name ?? slug
     realIngestingRef.current = true
     setRealIngesting(true)
@@ -581,6 +589,10 @@ export default function BacktestPage() {
 
   async function handleRun() {
     setError('')
+    if (dateRangeError) {
+      setError(dateRangeError)
+      return
+    }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     let portfolios
@@ -919,6 +931,7 @@ export default function BacktestPage() {
           importInputId="backtest-import-code"
           importCode={importCode}
           configError={configError}
+          dateRangeError={dateRangeError}
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
@@ -955,7 +968,7 @@ export default function BacktestPage() {
                 type="button"
                 style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
                 onClick={() => handleFetchRealFromIbkr(realSlug)}
-                disabled={!realSlug || realIngesting}
+                disabled={!realSlug || realIngesting || !!dateRangeError}
               >
                 {realIngesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
               </button>
@@ -976,7 +989,7 @@ export default function BacktestPage() {
           showSavedStrategies
         />
 
-        <RunButton label="Run Backtest" running={running} disabled={running} onClick={handleRun} />
+        <RunButton label="Run Backtest" running={running} disabled={running || !!dateRangeError} onClick={handleRun} />
       </div>
 
       {error && <div className="backtest-error">{error}</div>}

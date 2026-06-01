@@ -24,11 +24,19 @@ import kotlin.time.Duration.Companion.minutes
 
 object BacktestService {
     private val logger = LoggerFactory.getLogger(BacktestService::class.java)
+    const val DATE_RANGE_ERROR_MESSAGE = "From date must be on or before to date."
     private val tickerDir get() = AppDirs.dataDir.resolve(".ticker").toFile()
+
+    fun validateDateRange(fromDate: LocalDate?, toDate: LocalDate) {
+        if (fromDate != null && fromDate > toDate) {
+            throw IllegalArgumentException(DATE_RANGE_ERROR_MESSAGE)
+        }
+    }
 
     fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        validateDateRange(fromDate, toDate)
         val effrxSeries = loadEffrxSeries()
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
@@ -181,6 +189,7 @@ object BacktestService {
     fun runMarketTiming(request: MarketTimingRequest): MarketTimingMultiResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        validateDateRange(fromDate, toDate)
         val effrxSeries = loadEffrxSeries()
         val neededFrom = LocalDate.of(1990, 1, 1)
         val portfolio = request.portfolio.copy(marginStrategies = emptyList(), rebalanceStrategies = emptyList())

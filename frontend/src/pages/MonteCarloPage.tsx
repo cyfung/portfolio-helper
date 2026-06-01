@@ -15,6 +15,7 @@ import { scaleDash } from '@/lib/colorScheme'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
+import { validateDateRange } from '@/lib/dateRange'
 import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
@@ -71,6 +72,7 @@ export default function MonteCarloPage() {
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
+  const dateRangeError = validateDateRange(fromDate, toDate)
 
   // Restore settings on mount
   useEffect(() => {
@@ -152,6 +154,10 @@ export default function MonteCarloPage() {
 
   async function doRun(seed: number | null = null) {
     setError('')
+    if (dateRangeError) {
+      setError(dateRangeError)
+      return
+    }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     let portfolios
@@ -326,6 +332,7 @@ export default function MonteCarloPage() {
           importInputId="mc-import-code"
           importCode={importCode}
           configError={configError}
+          dateRangeError={dateRangeError}
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
@@ -361,11 +368,11 @@ export default function MonteCarloPage() {
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <RunButton label="Run Simulation" running={running} disabled={running} onClick={() => doRun(null)} />
+          <RunButton label="Run Simulation" running={running} disabled={running || !!dateRangeError} onClick={() => doRun(null)} />
           {lastSeed != null && (
             <button
               className="run-backtest-btn" type="button"
-              style={{ opacity: 0.75 }} disabled={running}
+              style={{ opacity: 0.75 }} disabled={running || !!dateRangeError}
               onClick={() => doRun(lastSeed)}
             >
               Rerun (same seed)

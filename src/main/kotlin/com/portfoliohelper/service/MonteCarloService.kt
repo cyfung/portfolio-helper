@@ -18,6 +18,7 @@ object MonteCarloService {
         progressTotal.set(request.numSimulations)
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        BacktestService.validateDateRange(fromDate, toDate)
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
         val effrxSeries = BacktestService.loadEffrxSeries()
 
