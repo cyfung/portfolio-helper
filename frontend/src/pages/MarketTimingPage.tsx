@@ -1,528 +1,51 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Download } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BacktestPageHeader } from '@/components/backtest/CommonBacktestSections'
+import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import { UsCapeHistoryChart, WorldCapeHistoryChart } from '@/components/marketTiming/CapeHistoryCharts'
+import MarketTimingResultsCharts from '@/components/marketTiming/MarketTimingResultsCharts'
+import MarketTimingSetupCard from '@/components/marketTiming/MarketTimingSetupCard'
 import {
-  Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from 'recharts'
-import { BacktestPageHeader, RunButton } from '@/components/backtest/CommonBacktestSections'
-import DateFieldWithQuickSelect from '@/components/backtest/DateFieldWithQuickSelect'
-import PortfolioBlock from '@/components/backtest/PortfolioBlock'
-import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
-import { useChartTheme } from '@/lib/chartTheme'
-import { makeRechartsTooltip } from '@/lib/chartTooltip'
-import { compressToCode, decompressFromCode } from '@/lib/compress'
-import { fmt2, money, pct } from '@/lib/statsFormatters'
-import { DEFAULT_SPREAD_PERCENT, isValidNumberInput, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
-import {
-  blockStateToAPIPortfolio, configToBlockState, emptyBlock, PALETTE, type BlockState,
-} from '@/types/backtest'
+  makeCapeSummary,
+  makeMarginComparisonChartData,
+  makeMarketTimingChartData,
+  makeMarketTimingLineStyles,
+  makeReferenceDrawdownChartData,
+  makeUsCapeChartData,
+  makeWindowAverageChartData,
+  makeWorldCapeChartData,
+  parseDrawdownConfigs,
+} from '@/lib/marketTiming/chartData'
+import { parseUsCapeCsv, parseWorldCapeCsv } from '@/lib/marketTiming/capeCsv'
+import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { validateDateRange } from '@/lib/dateRange'
-
-type InterestMode = 'SPREAD' | 'FIXED'
-type ReferenceSource = 'PORTFOLIO' | 'TICKER'
-
-interface MarketTimingPoint {
-  date: string
-  value?: number | null
-  basePortfolioReturn?: number | null
-  marginExcessReturn?: number | null
-  triggerDate?: string | null
-  daysToTrigger?: number | null
-  referenceDrawdown?: number | null
-  zeroingWindow?: boolean | null
-  nonZeroWindowId?: number | null
-}
-
-interface MarketTimingSummary {
-  totalPoints: number
-  triggeredPoints: number
-  bestValue?: number | null
-  worstValue?: number | null
-  averageValue?: number | null
-  medianValue?: number | null
-  nonZeroAverageValue?: number | null
-  nonZeroMedianValue?: number | null
-  winRate?: number | null
-  averageDaysToTrigger?: number | null
-}
-
-interface MarketTimingResult {
-  drawdownPct: number
-  zeroWindowMonths?: number | null
-  points: MarketTimingPoint[]
-  summary: MarketTimingSummary
-}
-
-interface MarketTimingResponse {
-  referenceLabel: string
-  referencePoints: { date: string; value: number }[]
-  results: MarketTimingResult[]
-  error?: string
-}
-
-interface WorldCapePoint {
-  date: string
-  worldCape: number
-  sourceMethod: string
-}
-
-interface UsCapePoint {
-  date: string
-  usCape: number
-}
-
-interface DrawdownConfigInput {
-  drawdownPct: number
-  zeroWindowMonths: number
-}
+import {
+  blockStateToAPIPortfolio, configToBlockState, emptyBlock, type BlockState,
+} from '@/types/backtest'
+import type {
+  InterestMode,
+  MarketTimingResponse,
+  ReferenceSource,
+  UsCapePoint,
+  WorldCapePoint,
+} from '@/types/marketTiming'
 
 const WORLD_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/world-cape-history.csv`
 const US_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/us-cape-history.csv`
-const MAX_MARKET_TIMING_CHART_ROWS = 1_600
-const MAX_WINDOW_AVERAGE_CHART_ROWS = 1_200
-const MAX_CAPE_CHART_ROWS = 1_200
-const MARGIN_COMPARISON_LEVELS = Array.from({ length: 11 }, (_, i) => i * 10)
+const DEFAULT_DRAWDOWN_CONFIGS = '5-0, 10-0, 15-0, 20-0, 25-0'
 
-function parseDrawdownConfigs(value: string): DrawdownConfigInput[] {
-  return value
-    .split(/[,\n;]+/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(entry => {
-      const match = entry.match(/^(\d+(?:\.\d+)?)\s*(?:[-:/]\s*(\d+(?:\.\d+)?))?$/)
-      if (!match) return null
-      const drawdown = parseFloat(match[1])
-      const zeroWindow = match[2] == null ? 0 : Math.floor(parseFloat(match[2]))
-      if (!Number.isFinite(drawdown) || drawdown <= 0 || drawdown >= 100) return null
-      return {
-        drawdownPct: drawdown / 100,
-        zeroWindowMonths: Number.isFinite(zeroWindow) ? Math.max(0, zeroWindow) : 0,
-      }
-    })
-    .filter((config): config is DrawdownConfigInput => config != null)
-}
-
-function formatDays(days?: number | null) {
-  if (days == null || !Number.isFinite(days)) return '-'
-  if (days < 365) return `${Math.round(days)}d`
-  return `${fmt2(days / 365.25)}y`
-}
-
-function splitCsvLine(line: string) {
-  const fields: string[] = []
-  let field = ''
-  let inQuotes = false
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        field += '"'
-        i++
-      } else {
-        inQuotes = !inQuotes
-      }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(field)
-      field = ''
-    } else {
-      field += ch
-    }
-  }
-  fields.push(field)
-  return fields
-}
-
-function sourceMethodLabel(method: string) {
-  if (method === 'US_SHILLER_PROXY') return 'US Shiller proxy'
-  if (method.startsWith('SYNTHETIC_EP_BLEND')) return 'Synthetic world CAPE'
-  if (method === 'SIBLIS_FREE_ANCHOR') return 'Siblis world CAPE'
-  if (method === 'RA_CURRENT_REFERENCE') return 'RA current reference'
-  return method
-}
-
-function marketTimingResultLabel(result: MarketTimingResult) {
-  return `${pct(result.drawdownPct)} DD - ${result.zeroWindowMonths ?? 0}m`
-}
-
-function finiteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
-interface DateParts {
-  year: number
-  month: number
-  day: number
-}
-
-function parseIsoDateParts(value: string): DateParts | null {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (!match) return null
-  return {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3]),
-  }
-}
-
-function datePartsToUtcMs(parts: DateParts) {
-  return Date.UTC(parts.year, parts.month - 1, parts.day)
-}
-
-function wholeCalendarMonthsBetween(earlier: DateParts, later: DateParts) {
-  let months = (later.year - earlier.year) * 12 + later.month - earlier.month
-  if (later.day < earlier.day) months -= 1
-  return Math.max(0, months)
-}
-
-function monthOffsetFromAnchor(anchorDate: string, pointDate: string) {
-  const anchor = parseIsoDateParts(anchorDate)
-  const point = parseIsoDateParts(pointDate)
-  if (!anchor || !point) return null
-  const anchorMs = datePartsToUtcMs(anchor)
-  const pointMs = datePartsToUtcMs(point)
-  if (pointMs === anchorMs) return 0
-  if (pointMs > anchorMs) return wholeCalendarMonthsBetween(anchor, point) + 1
-  return -(wholeCalendarMonthsBetween(point, anchor) + 1)
-}
-
-function downsampleChartRows<T extends Record<string, any>>(
-  rows: T[],
-  dataKeys: string[],
-  maxRows: number,
-  keepRow: (row: T, index: number) => boolean = () => false,
-) {
-  if (rows.length <= maxRows) return rows
-
-  const keepIndexes = new Set<number>([0, rows.length - 1])
-  rows.forEach((row, index) => {
-    if (keepRow(row, index)) keepIndexes.add(index)
-  })
-
-  dataKeys.forEach(key => {
-    for (let i = 1; i < rows.length; i++) {
-      const previousDefined = finiteNumber(rows[i - 1][key])
-      const currentDefined = finiteNumber(rows[i][key])
-      if (previousDefined !== currentDefined) {
-        keepIndexes.add(i - 1)
-        keepIndexes.add(i)
-      }
-    }
-  })
-
-  const remainingBudget = maxRows - keepIndexes.size
-  if (remainingBudget > 0) {
-    if (remainingBudget === 1) {
-      keepIndexes.add(Math.floor((rows.length - 1) / 2))
-    } else {
-      for (let i = 0; i < remainingBudget; i++) {
-        keepIndexes.add(Math.round((i * (rows.length - 1)) / (remainingBudget - 1)))
-      }
-    }
-  }
-
-  return Array.from(keepIndexes)
-    .sort((a, b) => a - b)
-    .map(index => rows[index])
-}
-
-interface WaitAdvantageWindow {
-  anchorIndex: number
-  leftBoundaryIndex: number
-  rightBoundaryIndex: number
-}
-
-function isZeroingWindowPoint(point: MarketTimingPoint) {
-  return point.zeroingWindow === true || point.daysToTrigger === 0
-}
-
-function findWaitAdvantageWindows(points: MarketTimingPoint[]): WaitAdvantageWindow[] {
-  const windows: WaitAdvantageWindow[] = []
-  const hasBackendWindowIds = points.some(point => finiteNumber(point.nonZeroWindowId))
-  if (hasBackendWindowIds) {
-    let currentWindowId: number | null = null
-    let windowStartIndex: number | null = null
-    let bestIndex: number | null = null
-    let bestValue = Number.POSITIVE_INFINITY
-
-    function closeWindow(endExclusiveIndex: number) {
-      if (windowStartIndex != null && bestIndex != null && endExclusiveIndex > windowStartIndex) {
-        windows.push({
-          anchorIndex: bestIndex,
-          leftBoundaryIndex: windowStartIndex,
-          rightBoundaryIndex: endExclusiveIndex - 1,
-        })
-      }
-      currentWindowId = null
-      windowStartIndex = null
-      bestIndex = null
-      bestValue = Number.POSITIVE_INFINITY
-    }
-
-    points.forEach((point, index) => {
-      const value = point.value
-      const windowId = point.nonZeroWindowId
-      if (!finiteNumber(value) || !finiteNumber(windowId)) {
-        closeWindow(index)
-        return
-      }
-      if (currentWindowId !== windowId) {
-        closeWindow(index)
-        currentWindowId = windowId
-        windowStartIndex = index
-      }
-      if (value < bestValue) {
-        bestValue = value
-        bestIndex = index
-      }
-    })
-    closeWindow(points.length)
-    return windows
-  }
-
-  let windowStartIndex: number | null = null
-  let bestIndex: number | null = null
-  let bestValue = Number.POSITIVE_INFINITY
-
-  function closeWindow(endExclusiveIndex: number) {
-    if (windowStartIndex != null && bestIndex != null && endExclusiveIndex > windowStartIndex) {
-      windows.push({
-        anchorIndex: bestIndex,
-        leftBoundaryIndex: windowStartIndex,
-        rightBoundaryIndex: endExclusiveIndex - 1,
-      })
-    }
-    windowStartIndex = null
-    bestIndex = null
-    bestValue = Number.POSITIVE_INFINITY
-  }
-
-  points.forEach((point, index) => {
-    const value = point.value
-    if (!finiteNumber(value) || isZeroingWindowPoint(point)) {
-      closeWindow(index)
-      return
-    }
-    if (windowStartIndex == null) windowStartIndex = index
-    if (value < bestValue) {
-      bestValue = value
-      bestIndex = index
-    }
-  })
-  closeWindow(points.length)
-
-  return windows
-}
-
-function windowMonthlyValues(
-  points: MarketTimingPoint[],
-  window: WaitAdvantageWindow,
-  normalizeDayZero: boolean,
-) {
-  const anchorPoint = points[window.anchorIndex]
-  const anchorValue = anchorPoint?.value
-  if (!anchorPoint?.date || !finiteNumber(anchorValue)) return []
-
-  const grouped = new Map<number, { sum: number; count: number }>()
-  for (let pointIndex = window.leftBoundaryIndex; pointIndex <= window.rightBoundaryIndex; pointIndex++) {
-    const point = points[pointIndex]
-    const pointValue = point?.value
-    if (!point?.date || !finiteNumber(pointValue)) continue
-    const monthOffset = monthOffsetFromAnchor(anchorPoint.date, point.date)
-    if (monthOffset == null) continue
-    const value = normalizeDayZero ? pointValue - anchorValue : pointValue
-    const current = grouped.get(monthOffset) ?? { sum: 0, count: 0 }
-    current.sum += value
-    current.count += 1
-    grouped.set(monthOffset, current)
-  }
-
-  return Array.from(grouped.entries()).map(([monthOffset, item]) => ({
-    monthOffset,
-    value: item.sum / item.count,
-  }))
-}
-
-function totalMarginValue(point: MarketTimingPoint, margin: number) {
-  if (!finiteNumber(point.basePortfolioReturn) || !finiteNumber(point.marginExcessReturn)) return undefined
-  return point.basePortfolioReturn + (margin / 100) * point.marginExcessReturn
-}
-
-function marginTotalDifference(point: MarketTimingPoint, margin: number, baseMargin: number) {
-  const baseTotal = totalMarginValue(point, baseMargin)
-  const comparisonTotal = totalMarginValue(point, margin)
-  if (!finiteNumber(baseTotal) || !finiteNumber(comparisonTotal)) return undefined
-  if (baseTotal === 0) return undefined
-  return comparisonTotal / baseTotal - 1
-}
-
-function windowMonthlyMarginValues(
-  points: MarketTimingPoint[],
-  window: WaitAdvantageWindow,
-  margin: number,
-  baseMargin: number,
-  normalizeDayZero: boolean,
-) {
-  const anchorPoint = points[window.anchorIndex]
-  if (!anchorPoint?.date) return []
-  const anchorTotalDifference = marginTotalDifference(anchorPoint, margin, baseMargin)
-  if (!finiteNumber(anchorTotalDifference)) return []
-
-  const grouped = new Map<number, { sum: number; count: number }>()
-  for (let pointIndex = window.leftBoundaryIndex; pointIndex <= window.rightBoundaryIndex; pointIndex++) {
-    const point = points[pointIndex]
-    if (!point?.date) continue
-    const monthOffset = monthOffsetFromAnchor(anchorPoint.date, point.date)
-    if (monthOffset == null) continue
-    const totalDifference = marginTotalDifference(point, margin, baseMargin)
-    if (!finiteNumber(totalDifference)) continue
-    const value = normalizeDayZero ? totalDifference - anchorTotalDifference : totalDifference
-    const current = grouped.get(monthOffset) ?? { sum: 0, count: 0 }
-    current.sum += value
-    current.count += 1
-    grouped.set(monthOffset, current)
-  }
-
-  return Array.from(grouped.entries()).map(([monthOffset, item]) => ({
-    monthOffset,
-    value: item.sum / item.count,
-  }))
-}
-
-function makeWindowAverageChartData(results: MarketTimingResult[], normalizeDayZero: boolean) {
-  const windowGroups = results.map(result => findWaitAdvantageWindows(result.points))
-  const monthlyGroups = windowGroups.map((windows, resultIndex) =>
-    windows.map(window => windowMonthlyValues(results[resultIndex].points, window, normalizeDayZero))
-  )
-  const windowCounts: number[] = []
-  let minOffset = 0
-  let maxOffset = 0
-
-  monthlyGroups.forEach((windows, resultIndex) => {
-    windowCounts[resultIndex] = windows.length
-    windows.forEach(monthlyValues => {
-      monthlyValues.forEach(({ monthOffset }) => {
-        minOffset = Math.min(minOffset, monthOffset)
-        maxOffset = Math.max(maxOffset, monthOffset)
-      })
-    })
-  })
-
-  if (!windowCounts.some(count => count > 0)) return null
-
-  const rows = Array.from({ length: maxOffset - minOffset + 1 }, (_, i) => {
-    const offset = minOffset + i
-    const row: Record<string, number | undefined> = { x: offset }
-    monthlyGroups.forEach((windows, resultIndex) => {
-      const values = windows
-        .map(monthlyValues => monthlyValues.find(item => item.monthOffset === offset)?.value)
-        .filter(finiteNumber)
-      if (values.length > 0) {
-        row[`dd${resultIndex}`] = values.reduce((sum, value) => sum + value, 0) / values.length
-      }
-    })
-    return row
-  })
-
-  return {
-    rows: downsampleChartRows(
-      rows,
-      results.map((_, i) => `dd${i}`),
-      MAX_WINDOW_AVERAGE_CHART_ROWS,
-      row => row.x === 0,
-    ),
-    windowCounts,
-  }
-}
-
-function makeMarginComparisonChartData(
-  result: MarketTimingResult,
-  baseMargin: number,
-  normalizeDayZero: boolean,
-) {
-  const windows = findWaitAdvantageWindows(result.points)
-  const monthlyGroups = windows.map(window => windowMonthlyValues(result.points, window, normalizeDayZero))
-  const marginMonthlyGroups = MARGIN_COMPARISON_LEVELS.map(margin => ({
-    margin,
-    windows: windows.map(window =>
-      windowMonthlyMarginValues(result.points, window, margin, baseMargin, normalizeDayZero)
-    ),
-  }))
-  let minOffset = 0
-  let maxOffset = 0
-
-  monthlyGroups.forEach(monthlyValues => {
-    monthlyValues.forEach(({ monthOffset }) => {
-      minOffset = Math.min(minOffset, monthOffset)
-      maxOffset = Math.max(maxOffset, monthOffset)
-    })
-  })
-
-  if (windows.length === 0) return null
-
-  const rows = Array.from({ length: maxOffset - minOffset + 1 }, (_, i) => {
-    const offset = minOffset + i
-    const row: Record<string, number | undefined> = { x: offset }
-    marginMonthlyGroups.forEach(({ margin, windows }) => {
-      const values = windows
-        .map(monthlyValues => monthlyValues.find(item => item.monthOffset === offset)?.value)
-        .filter(finiteNumber)
-      if (values.length > 0) {
-        row[`m${margin}`] = values.reduce((sum, value) => sum + value, 0) / values.length
-      }
-    })
-    return row
-  })
-
-  return {
-    rows: downsampleChartRows(
-      rows,
-      MARGIN_COMPARISON_LEVELS.map(margin => `m${margin}`),
-      MAX_WINDOW_AVERAGE_CHART_ROWS,
-      row => row.x === 0,
-    ),
-    windowCount: windows.length,
-  }
-}
-
-function makeMarketTimingTooltip(
-  { isDark, gridColor, textColor }: ReturnType<typeof useChartTheme>,
-) {
-  const contentStyle: CSSProperties = {
-    background: isDark ? '#1e1e1e' : '#ffffff',
-    border: `1px solid ${gridColor}`,
-    borderRadius: 4,
-    padding: '6px 10px',
-    fontSize: '0.78em',
-  }
-
-  return ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null
-    return (
-      <div style={contentStyle}>
-        <div style={{ color: textColor, marginBottom: 4, fontWeight: 600 }}>{label}</div>
-        {payload.map((item: any) => {
-          const value = Number(item.value)
-          const formatted = item.dataKey === 'reference' ? money(value) : pct(value)
-          return (
-            <div key={item.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 16, height: 2, background: item.color, flexShrink: 0, display: 'inline-block' }} />
-                <span style={{ color: textColor, opacity: 0.9 }}>{item.name}</span>
-              </div>
-              <span style={{ color: textColor, fontWeight: 600, textAlign: 'right' }}>{formatted}</span>
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
+async function fetchText(url: string) {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.text()
 }
 
 export default function MarketTimingPage() {
   const [portfolio, setPortfolio] = useState<BlockState>(emptyBlock(0))
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [drawdownConfigs, setDrawdownConfigs] = useState('5-0, 10-0, 15-0, 20-0, 25-0')
+  const [drawdownConfigs, setDrawdownConfigs] = useState(DEFAULT_DRAWDOWN_CONFIGS)
   const [referenceSource, setReferenceSource] = useState<ReferenceSource>('PORTFOLIO')
   const [referenceTicker, setReferenceTicker] = useState('VT')
   const [interestMode, setInterestMode] = useState<InterestMode>('SPREAD')
@@ -542,7 +65,6 @@ export default function MarketTimingPage() {
   const [marginComparisonResultIndex, setMarginComparisonResultIndex] = useState(0)
   const [marginComparisonBaseMargin, setMarginComparisonBaseMargin] = useState(0)
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
-  const theme = useChartTheme()
   const dateRangeError = validateDateRange(fromDate, toDate)
 
   useEffect(() => {
@@ -557,47 +79,18 @@ export default function MarketTimingPage() {
   }, [])
 
   useEffect(() => {
-    fetch(WORLD_CAPE_CSV_URL)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.text()
-      })
+    fetchText(WORLD_CAPE_CSV_URL)
       .then(text => {
-        const rows = text
-          .trim()
-          .split(/\r?\n/)
-          .slice(1)
-          .map(splitCsvLine)
-          .map(cols => ({
-            date: cols[0],
-            worldCape: Number(cols[1]),
-            sourceMethod: cols[8],
-          }))
-          .filter(row => row.date && Number.isFinite(row.worldCape))
-        setWorldCapePoints(rows)
+        setWorldCapePoints(parseWorldCapeCsv(text))
         setWorldCapeError('')
       })
       .catch(() => setWorldCapeError('World CAPE CSV could not be loaded'))
   }, [])
 
   useEffect(() => {
-    fetch(US_CAPE_CSV_URL)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.text()
-      })
+    fetchText(US_CAPE_CSV_URL)
       .then(text => {
-        const rows = text
-          .trim()
-          .split(/\r?\n/)
-          .slice(1)
-          .map(splitCsvLine)
-          .map(cols => ({
-            date: cols[0],
-            usCape: Number(cols[1]),
-          }))
-          .filter(row => row.date && Number.isFinite(row.usCape))
-        setUsCapePoints(rows)
+        setUsCapePoints(parseUsCapeCsv(text))
         setUsCapeError('')
       })
       .catch(() => setUsCapeError('US CAPE CSV could not be loaded'))
@@ -609,7 +102,7 @@ export default function MarketTimingPage() {
 
   function handleExport() {
     setConfigError('')
-    const payload = {
+    setImportCode(compressToCode({
       fromDate,
       toDate,
       drawdownConfigs,
@@ -619,8 +112,7 @@ export default function MarketTimingPage() {
       annualSpread,
       fixedAnnualRate,
       portfolio: blockStateToAPIPortfolio(portfolio, 0),
-    }
-    setImportCode(compressToCode(payload))
+    }))
   }
 
   function handleImport() {
@@ -630,7 +122,7 @@ export default function MarketTimingPage() {
       if (!payload?.portfolio) throw new Error('Invalid config')
       setFromDate(payload.fromDate ?? '')
       setToDate(payload.toDate ?? '')
-      setDrawdownConfigs(String(payload.drawdownConfigs ?? payload.drawdownPcts ?? '5-0, 10-0, 15-0, 20-0, 25-0'))
+      setDrawdownConfigs(String(payload.drawdownConfigs ?? payload.drawdownPcts ?? DEFAULT_DRAWDOWN_CONFIGS))
       setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
       setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
       setInterestMode(payload.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
@@ -650,35 +142,39 @@ export default function MarketTimingPage() {
       setError(dateRangeError)
       return
     }
+
     setRunning(true)
     try {
       const thresholds = parseDrawdownConfigs(drawdownConfigs)
       if (thresholds.length === 0) throw new Error('Enter at least one drawdown config')
+
       const savedPortfolios = await fetchSavedPortfolios()
       const apiPortfolio = resolvedBlockStateToAPIPortfolio(portfolio, 0, savedPortfolios)
       const runAnnualSpread = interestMode === 'SPREAD'
         ? normalizeNumberInput(annualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
         : annualSpread
       if (runAnnualSpread !== annualSpread) setAnnualSpread(runAnnualSpread)
-      const body = {
-        saveSettings: false,
-        fromDate,
-        toDate,
-        portfolio: { ...apiPortfolio, marginStrategies: [], rebalanceStrategies: [] },
-        drawdownConfigs: thresholds,
-        referenceSource,
-        referenceTicker: referenceSource === 'TICKER' ? referenceTicker.trim().toUpperCase() : undefined,
-        interestMode,
-        annualSpread: interestMode === 'SPREAD' ? percentInputToFraction(runAnnualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 }) : undefined,
-        fixedAnnualRate: interestMode === 'FIXED' ? (parseFloat(fixedAnnualRate) || 0) / 100 : undefined,
-      }
-      const res = await fetch('/api/market-timing/run', {
+
+      const response = await fetch('/api/market-timing/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          saveSettings: false,
+          fromDate,
+          toDate,
+          portfolio: { ...apiPortfolio, marginStrategies: [], rebalanceStrategies: [] },
+          drawdownConfigs: thresholds,
+          referenceSource,
+          referenceTicker: referenceSource === 'TICKER' ? referenceTicker.trim().toUpperCase() : undefined,
+          interestMode,
+          annualSpread: interestMode === 'SPREAD'
+            ? percentInputToFraction(runAnnualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
+            : undefined,
+          fixedAnnualRate: interestMode === 'FIXED' ? (parseFloat(fixedAnnualRate) || 0) / 100 : undefined,
+        }),
       })
-      const data = await res.json()
-      if (!res.ok || data.error) throw new Error(data.error || data.message || `HTTP ${res.status}`)
+      const data = await response.json()
+      if (!response.ok || data.error) throw new Error(data.error || data.message || `HTTP ${response.status}`)
       setResults(data)
     } catch (e: any) {
       setError(e?.message || 'Run failed')
@@ -687,33 +183,11 @@ export default function MarketTimingPage() {
     }
   }
 
-  const chartData = useMemo(() => {
-    if (!results?.results.length) return null
-    const dates = results.results[0].points.map(p => p.date)
-    const referenceByDate = new Map(results.referencePoints.map(p => [p.date, p.value]))
-    const dataKeys = ['reference', ...results.results.map((_, i) => `dd${i}`)]
-    const rows = dates.map((date, i) => {
-      const row: Record<string, any> = { x: date }
-      row.reference = referenceByDate.get(date)
-      results.results.forEach((result, ri) => {
-        const point = result.points[i]
-        row[`dd${ri}`] = point?.value ?? undefined
-        row[`dd${ri}Trigger`] = point?.triggerDate
-        row[`dd${ri}Days`] = point?.daysToTrigger
-        row[`dd${ri}RefDd`] = point?.referenceDrawdown
-      })
-      return row
-    })
-    return {
-      rows: downsampleChartRows(rows, dataKeys, MAX_MARKET_TIMING_CHART_ROWS),
-    }
-  }, [results])
-
+  const chartData = useMemo(() => makeMarketTimingChartData(results), [results])
   const windowAverageChartData = useMemo(() => {
     if (!results?.results.length) return null
     return makeWindowAverageChartData(results.results, normalizeWindowDayZero)
   }, [results, normalizeWindowDayZero])
-
   const effectiveMarginComparisonIndex = results?.results.length
     ? Math.min(marginComparisonResultIndex, results.results.length - 1)
     : 0
@@ -726,556 +200,96 @@ export default function MarketTimingPage() {
       normalizeWindowDayZero,
     )
   }, [marginComparisonResult, marginComparisonBaseMargin, normalizeWindowDayZero])
+  const referenceDrawdownChartData = useMemo(() => makeReferenceDrawdownChartData(results), [results])
+  const marketTimingLineStyles = useMemo(
+    () => makeMarketTimingLineStyles(results?.results.length ?? 0),
+    [results],
+  )
 
-  const referenceDrawdownChartData = useMemo(() => {
-    if (!results?.referencePoints.length) return []
-    let peak = Number.NEGATIVE_INFINITY
-    const rows = results.referencePoints
-      .map(point => {
-        const value = point.value
-        if (!Number.isFinite(value) || value <= 0) {
-          return { x: point.date, referenceDrawdown: undefined }
-        }
-        peak = Math.max(peak, value)
-        return {
-          x: point.date,
-          referenceDrawdown: peak > 0 ? value / peak - 1 : undefined,
-        }
-      })
-    return downsampleChartRows(rows, ['referenceDrawdown'], MAX_MARKET_TIMING_CHART_ROWS)
-  }, [results])
-
-  const worldCapeChartData = useMemo(() => {
-    const rows = worldCapePoints.map(point => ({
-      x: point.date,
-      usProxyCape: point.sourceMethod === 'US_SHILLER_PROXY' ? point.worldCape : undefined,
-      syntheticCape: point.sourceMethod.startsWith('SYNTHETIC_EP_BLEND') ? point.worldCape : undefined,
-      siblisCape: point.sourceMethod === 'SIBLIS_FREE_ANCHOR' ? point.worldCape : undefined,
-      currentReferenceCape: point.sourceMethod === 'RA_CURRENT_REFERENCE' ? point.worldCape : undefined,
-      source: sourceMethodLabel(point.sourceMethod),
-    }))
-    return downsampleChartRows(
-      rows,
-      ['usProxyCape', 'syntheticCape', 'siblisCape', 'currentReferenceCape'],
-      MAX_CAPE_CHART_ROWS,
-    )
-  }, [worldCapePoints])
-
-  const worldCapeSummary = useMemo(() => {
-    if (!worldCapePoints.length) return null
-    const values = worldCapePoints.map(p => p.worldCape)
-    const latest = worldCapePoints[worldCapePoints.length - 1]
-    return {
-      latest,
-      startDate: worldCapePoints[0].date,
-      endDate: latest.date,
-      min: Math.min(...values),
-      max: Math.max(...values),
-      count: worldCapePoints.length,
-    }
-  }, [worldCapePoints])
-
-  const usCapeChartData = useMemo(() => {
-    const rows = usCapePoints.map(point => ({
-      x: point.date,
-      usCape: point.usCape,
-    }))
-    return downsampleChartRows(rows, ['usCape'], MAX_CAPE_CHART_ROWS)
-  }, [usCapePoints])
-
-  const usCapeSummary = useMemo(() => {
-    if (!usCapePoints.length) return null
-    const values = usCapePoints.map(p => p.usCape)
-    const latest = usCapePoints[usCapePoints.length - 1]
-    return {
-      latest,
-      startDate: usCapePoints[0].date,
-      endDate: latest.date,
-      min: Math.min(...values),
-      max: Math.max(...values),
-      count: usCapePoints.length,
-    }
-  }, [usCapePoints])
-
-  const tooltip = useMemo(() => makeMarketTimingTooltip(theme), [theme])
-  const capeTooltip = useMemo(() => makeRechartsTooltip(theme, (v: number) => fmt2(v)), [theme])
-  const windowAverageTooltip = useMemo(() => makeRechartsTooltip(
-    theme,
-    (v: number) => pct(v),
-    (label: any) => {
-      const months = Number(label)
-      if (!Number.isFinite(months)) return String(label)
-      if (months === 0) return 'Day 0'
-      return months < 0 ? `${Math.abs(months)} months before` : `${months} months after`
-    },
-  ), [theme])
-  const marketTimingLineStyles = useMemo(() => {
-    if (!results?.results.length) return []
-    return results.results.map((_, i) => {
-      const groupIndex = i % PALETTE.length
-      const variantIndex = Math.floor(i / PALETTE.length)
-      const palette = PALETTE[groupIndex % PALETTE.length]
-      return {
-        stroke: palette[variantIndex % palette.length],
-        strokeWidth: Math.max(1.4, 2.4 - variantIndex * 0.25),
-      }
-    })
-  }, [results])
+  const worldCapeChartData = useMemo(() => makeWorldCapeChartData(worldCapePoints), [worldCapePoints])
+  const worldCapeSummary = useMemo(
+    () => makeCapeSummary(worldCapePoints, point => point.worldCape),
+    [worldCapePoints],
+  )
+  const usCapeChartData = useMemo(() => makeUsCapeChartData(usCapePoints), [usCapePoints])
+  const usCapeSummary = useMemo(
+    () => makeCapeSummary(usCapePoints, point => point.usCape),
+    [usCapePoints],
+  )
 
   return (
     <div className="container">
       <BacktestPageHeader active="/market-timing" />
 
-      <div className="backtest-form-card">
-        <div className="backtest-section backtest-config-row">
-          <div className="backtest-date-range-controls">
-            <DateFieldWithQuickSelect label="From Date" inputId="market-timing-from-date" value={fromDate} onChange={setFromDate} />
-            <DateFieldWithQuickSelect label="To Date" inputId="market-timing-to-date" value={toDate} onChange={setToDate} />
-            {dateRangeError && (
-              <div className="backtest-date-range-error" role="alert">
-                {dateRangeError}
-              </div>
-            )}
-          </div>
-          <div className="backtest-config-controls">
-            <label htmlFor="market-timing-import-code">Config Code</label>
-            <div className="backtest-config-group">
-              <input id="market-timing-import-code" type="text" spellCheck={false} placeholder="Paste code..." value={importCode} onChange={e => setImportCode(e.target.value)} />
-              <button className="backtest-config-btn" type="button" onClick={handleImport}>Import</button>
-              <button className="backtest-config-btn" type="button" onClick={handleExport}>Export</button>
-              {configError && <div className="backtest-config-error">{configError}</div>}
-            </div>
-          </div>
-        </div>
-
-        <div className="backtest-section market-timing-config">
-          <div className="market-timing-config-row">
-            <div className="market-timing-field market-timing-field-drawdown">
-              <label htmlFor="market-timing-dd-pcts">Drawdown % - Zero Window (month)</label>
-              <input
-                id="market-timing-dd-pcts"
-                type="text"
-                value={drawdownConfigs}
-                onChange={e => setDrawdownConfigs(e.target.value)}
-                title="Use comma-separated drawdown-window pairs, e.g. 5-0, 10-36."
-              />
-            </div>
-            <div className="market-timing-field market-timing-field-reference">
-              <label htmlFor="market-timing-reference-source">Reference</label>
-              <select id="market-timing-reference-source" value={referenceSource} onChange={e => setReferenceSource(e.target.value as ReferenceSource)}>
-                <option value="PORTFOLIO">Portfolio</option>
-                <option value="TICKER">Ticker</option>
-              </select>
-            </div>
-            {referenceSource === 'TICKER' && (
-              <div className="market-timing-field market-timing-field-ticker">
-                <label htmlFor="market-timing-reference-ticker">Ticker</label>
-                <input id="market-timing-reference-ticker" type="text" value={referenceTicker} onChange={e => setReferenceTicker(e.target.value)} />
-              </div>
-            )}
-          </div>
-          <div className="market-timing-config-row market-timing-config-row-interest">
-            <div className="market-timing-field market-timing-field-interest">
-              <label htmlFor="market-timing-interest-mode">Interest</label>
-              <select id="market-timing-interest-mode" value={interestMode} onChange={e => setInterestMode(e.target.value as InterestMode)}>
-                <option value="SPREAD">EFFR + spread</option>
-                <option value="FIXED">Fixed rate</option>
-              </select>
-            </div>
-            <div className="market-timing-field market-timing-field-rate">
-              <label htmlFor="market-timing-interest-rate">{interestMode === 'SPREAD' ? 'Spread %' : 'Fixed %'}</label>
-              <input
-                id="market-timing-interest-rate"
-                type="number"
-                step="0.05"
-                value={interestMode === 'SPREAD' ? annualSpread : fixedAnnualRate}
-                onChange={e => interestMode === 'SPREAD' ? setAnnualSpread(e.target.value) : setFixedAnnualRate(e.target.value)}
-                onBlur={() => { if (interestMode === 'SPREAD') setAnnualSpreadTouched(true) }}
-                className={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 }) ? 'input-error' : undefined}
-                aria-invalid={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 })}
-                title={interestMode === 'SPREAD' && annualSpreadTouched && !isValidNumberInput(annualSpread, { min: 0 }) ? 'Enter a valid non-negative spread percent' : undefined}
-              />
-            </div>
-          </div>
-        </div>
-
-        <SavedPortfoliosBar ref={savedBarRef} />
-        <div className="portfolio-blocks">
-          <PortfolioBlock idx={0} value={portfolio} onChange={setPortfolio} onSavedRefresh={refreshSaved} />
-        </div>
-
-        <RunButton label="Run Market Timing" running={running} disabled={running || !!dateRangeError} onClick={handleRun} />
-      </div>
+      <MarketTimingSetupCard
+        portfolio={portfolio}
+        fromDate={fromDate}
+        toDate={toDate}
+        drawdownConfigs={drawdownConfigs}
+        referenceSource={referenceSource}
+        referenceTicker={referenceTicker}
+        interestMode={interestMode}
+        annualSpread={annualSpread}
+        annualSpreadTouched={annualSpreadTouched}
+        fixedAnnualRate={fixedAnnualRate}
+        importCode={importCode}
+        configError={configError}
+        running={running}
+        dateRangeError={dateRangeError}
+        savedBarRef={savedBarRef}
+        onPortfolioChange={setPortfolio}
+        onFromDateChange={setFromDate}
+        onToDateChange={setToDate}
+        onDrawdownConfigsChange={setDrawdownConfigs}
+        onReferenceSourceChange={setReferenceSource}
+        onReferenceTickerChange={setReferenceTicker}
+        onInterestModeChange={setInterestMode}
+        onAnnualSpreadChange={setAnnualSpread}
+        onAnnualSpreadTouched={() => setAnnualSpreadTouched(true)}
+        onFixedAnnualRateChange={setFixedAnnualRate}
+        onImportCodeChange={setImportCode}
+        onImport={handleImport}
+        onExport={handleExport}
+        onRun={handleRun}
+        onSavedRefresh={refreshSaved}
+      />
 
       {error && <div className="backtest-error">{error}</div>}
 
       {results && chartData && (
-        <>
-          <div className="stats-container">
-            <table className="backtest-stats-table">
-              <thead>
-                <tr>
-                  <th>DD - Window</th>
-                  <th>Triggered</th>
-                  <th>Avg P/L %</th>
-                  <th>Median P/L %</th>
-                  <th>Avg Non-Zero P/L %</th>
-                  <th>Median Non-Zero P/L %</th>
-                  <th>Best P/L %</th>
-                  <th>Worst P/L %</th>
-                  <th title="Wins divided by wins plus losses. Neutral zero P/L cases are excluded.">Win/Loss Rate</th>
-                  <th>Avg Wait</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.results.map(result => (
-                  <tr key={`${result.drawdownPct}-${result.zeroWindowMonths ?? 0}`}>
-                    <td>{pct(result.drawdownPct)} - {result.zeroWindowMonths ?? 0}m</td>
-                    <td>{result.summary.triggeredPoints}/{result.summary.totalPoints}</td>
-                    <td>{result.summary.averageValue == null ? '-' : pct(result.summary.averageValue)}</td>
-                    <td>{result.summary.medianValue == null ? '-' : pct(result.summary.medianValue)}</td>
-                    <td>{result.summary.nonZeroAverageValue == null ? '-' : pct(result.summary.nonZeroAverageValue)}</td>
-                    <td>{result.summary.nonZeroMedianValue == null ? '-' : pct(result.summary.nonZeroMedianValue)}</td>
-                    <td>{result.summary.bestValue == null ? '-' : pct(result.summary.bestValue)}</td>
-                    <td>{result.summary.worstValue == null ? '-' : pct(result.summary.worstValue)}</td>
-                    <td>{result.summary.winRate == null ? '-' : pct(result.summary.winRate)}</td>
-                    <td>{formatDays(result.summary.averageDaysToTrigger)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="market-timing-pl-note" role="note">
-            P/L is the percentage advantage at the dip trigger for <span className="market-timing-pl-emphasis">buy and hold from the start date</span> against
-            <span className="market-timing-pl-emphasis"> waiting for the drawdown trigger, then buying and holding</span>.
-            After the trigger, both strategies hold the same portfolio, so later returns are a common multiplier.
-            <span className="market-timing-pl-positive"> Positive P/L</span> means buying immediately is ahead.
-            <span className="market-timing-pl-negative"> Negative P/L</span> means waiting for the dip is ahead.
-          </div>
-
-          <div className="backtest-chart-heading">
-            <div className="backtest-chart-title">Buy Now vs Wait for Dip P/L %</div>
-          </div>
-          <div className="backtest-chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData.rows} syncId="market-timing" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-                <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(chartData.rows.length / 8))} />
-                <YAxis yAxisId="pnl" tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
-                <YAxis
-                  yAxisId="reference"
-                  orientation="right"
-                  tick={{ fill: theme.textColor, fontSize: 11 }}
-                  tickFormatter={v => '$' + Number(v).toFixed(0)}
-                  width={72}
-                />
-                <Tooltip content={tooltip} />
-                <Legend />
-                <Line
-                  yAxisId="reference"
-                  dataKey="reference"
-                  name={`Reference - ${results.referenceLabel || 'Portfolio'}`}
-                  stroke={theme.textColor}
-                  strokeWidth={1.8}
-                  strokeDasharray="4 3"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  type="monotone"
-                />
-                {results.results.map((result, i) => (
-                  <Line
-                    key={result.drawdownPct}
-                    yAxisId="pnl"
-                    dataKey={`dd${i}`}
-                    name={marketTimingResultLabel(result)}
-                    stroke={marketTimingLineStyles[i]?.stroke ?? PALETTE[0][0]}
-                    strokeWidth={marketTimingLineStyles[i]?.strokeWidth ?? 2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                    type="monotone"
-                  />
-                ))}
-                <Brush dataKey="x" height={26} stroke={theme.gridColor} fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {windowAverageChartData && (
-            <>
-              <div className="backtest-chart-heading">
-                <div className="backtest-chart-title">
-                  {normalizeWindowDayZero ? 'Average Normalized P/L Around Best Wait Day' : 'Average P/L Around Best Wait Day'}
-                </div>
-                <button
-                  type="button"
-                  className={`btn-outline-accent market-timing-normalize-toggle${normalizeWindowDayZero ? ' active' : ''}`}
-                  aria-pressed={normalizeWindowDayZero}
-                  onClick={() => setNormalizeWindowDayZero(value => !value)}
-                >
-                  Day 0 Zeroed
-                </button>
-              </div>
-              <div className="backtest-chart-container market-timing-window-average-chart">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={windowAverageChartData.rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-                    <XAxis
-                      dataKey="x"
-                      tick={{ fill: theme.textColor, fontSize: 11 }}
-                      interval={Math.max(1, Math.floor(windowAverageChartData.rows.length / 10))}
-                    />
-                    <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
-                    <Tooltip content={windowAverageTooltip} />
-                    <Legend />
-                    <ReferenceLine x={0} stroke={theme.gridColor} strokeDasharray="4 3" />
-                    {results.results.map((result, i) => (
-                      windowAverageChartData.windowCounts[i] > 0 && (
-                        <Line
-                          key={`${result.drawdownPct}-${result.zeroWindowMonths ?? 0}`}
-                          dataKey={`dd${i}`}
-                          name={marketTimingResultLabel(result)}
-                          stroke={marketTimingLineStyles[i]?.stroke ?? PALETTE[0][0]}
-                          strokeWidth={marketTimingLineStyles[i]?.strokeWidth ?? 2}
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                          connectNulls={false}
-                          isAnimationActive={false}
-                          type="monotone"
-                        />
-                      )
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-
-          {marginComparisonChartData && marginComparisonResult && (
-            <>
-              <div className="backtest-chart-heading">
-                <div className="backtest-chart-title">
-                  {normalizeWindowDayZero ? 'Normalized Margin Difference Around Best Wait Day' : 'Margin Difference Around Best Wait Day'}
-                </div>
-                <div className="market-timing-chart-controls">
-                  <label>
-                    <span>Window</span>
-                    <select
-                      value={effectiveMarginComparisonIndex}
-                      onChange={e => setMarginComparisonResultIndex(Number(e.target.value))}
-                    >
-                      {results.results.map((result, i) => (
-                        <option key={`${result.drawdownPct}-${result.zeroWindowMonths ?? 0}`} value={i}>
-                          {marketTimingResultLabel(result)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Base Margin</span>
-                    <select
-                      value={marginComparisonBaseMargin}
-                      onChange={e => setMarginComparisonBaseMargin(Number(e.target.value))}
-                    >
-                      {MARGIN_COMPARISON_LEVELS.map(margin => (
-                        <option key={margin} value={margin}>{margin}%</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
-              <div className="backtest-chart-container market-timing-window-average-chart">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={marginComparisonChartData.rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-                    <XAxis
-                      dataKey="x"
-                      tick={{ fill: theme.textColor, fontSize: 11 }}
-                      interval={Math.max(1, Math.floor(marginComparisonChartData.rows.length / 10))}
-                    />
-                    <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
-                    <Tooltip content={windowAverageTooltip} />
-                    <Legend />
-                    <ReferenceLine x={0} stroke={theme.gridColor} strokeDasharray="4 3" />
-                    <ReferenceLine y={0} stroke={theme.gridColor} strokeDasharray="4 3" />
-                    {MARGIN_COMPARISON_LEVELS.map((margin, i) => {
-                      const palette = PALETTE[i % PALETTE.length]
-                      const variant = Math.floor(i / PALETTE.length)
-                      return (
-                        <Line
-                          key={margin}
-                          dataKey={`m${margin}`}
-                          name={`${margin}% margin`}
-                          stroke={palette[variant % palette.length]}
-                          strokeWidth={margin === marginComparisonBaseMargin ? 1.5 : 2}
-                          strokeDasharray={margin === marginComparisonBaseMargin ? '4 3' : undefined}
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                          connectNulls={false}
-                          isAnimationActive={false}
-                          type="monotone"
-                        />
-                      )
-                    })}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-        </>
+        <MarketTimingResultsCharts
+          results={results}
+          chartData={chartData}
+          windowAverageChartData={windowAverageChartData}
+          marginComparisonChartData={marginComparisonChartData}
+          referenceDrawdownChartData={referenceDrawdownChartData}
+          marginComparisonResult={marginComparisonResult}
+          effectiveMarginComparisonIndex={effectiveMarginComparisonIndex}
+          marginComparisonBaseMargin={marginComparisonBaseMargin}
+          normalizeWindowDayZero={normalizeWindowDayZero}
+          lineStyles={marketTimingLineStyles}
+          onNormalizeWindowDayZeroChange={setNormalizeWindowDayZero}
+          onMarginComparisonIndexChange={setMarginComparisonResultIndex}
+          onMarginComparisonBaseMarginChange={setMarginComparisonBaseMargin}
+        />
       )}
 
       {worldCapeError && <div className="backtest-error">{worldCapeError}</div>}
-
       {worldCapeSummary && worldCapeChartData.length > 0 && (
-        <>
-          <div className="backtest-chart-heading world-cape-heading">
-            <div className="backtest-chart-title">World CAPE History</div>
-            <a className="h-btn subtle world-cape-download" href={WORLD_CAPE_CSV_URL} download>
-              <Download size={14} aria-hidden="true" />
-              <span>CSV</span>
-            </a>
-          </div>
-          <div className="world-cape-meta" aria-label="World CAPE dataset summary">
-            <span>{worldCapeSummary.startDate} to {worldCapeSummary.endDate}</span>
-            <span>{worldCapeSummary.count} observations</span>
-            <span>Latest {fmt2(worldCapeSummary.latest.worldCape)} on {worldCapeSummary.latest.date}</span>
-            <span>Range {fmt2(worldCapeSummary.min)}-{fmt2(worldCapeSummary.max)}</span>
-          </div>
-          <div className="backtest-chart-container world-cape-chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={worldCapeChartData} syncId="world-cape" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-                <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(worldCapeChartData.length / 10))} />
-                <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => Number(v).toFixed(0)} width={48} />
-                <Tooltip content={capeTooltip} />
-                <Legend />
-                <Line
-                  dataKey="usProxyCape"
-                  name="US Shiller proxy"
-                  stroke={theme.textColor}
-                  strokeWidth={1.8}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  type="monotone"
-                />
-                <Line
-                  dataKey="syntheticCape"
-                  name="Synthetic world CAPE"
-                  stroke={PALETTE[0][0]}
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  type="monotone"
-                />
-                <Line
-                  dataKey="siblisCape"
-                  name="Siblis world CAPE"
-                  stroke={PALETTE[2][0]}
-                  strokeWidth={2.4}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  type="monotone"
-                />
-                <Line
-                  dataKey="currentReferenceCape"
-                  name="RA current reference"
-                  stroke={PALETTE[4 % PALETTE.length][0]}
-                  strokeWidth={0}
-                  dot={{ r: 4, strokeWidth: 2 }}
-                  activeDot={{ r: 5 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  type="monotone"
-                />
-                <Brush dataKey="x" height={26} stroke={theme.gridColor} fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {referenceDrawdownChartData.length > 0 && (
-            <>
-              <div className="backtest-chart-heading">
-                <div className="backtest-chart-title">Reference Drawdown %</div>
-              </div>
-              <div className="backtest-chart-container market-timing-reference-drawdown-chart">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={referenceDrawdownChartData} syncId="market-timing" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-                    <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(referenceDrawdownChartData.length / 8))} />
-                    <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => pct(Number(v))} width={72} />
-                    <Tooltip content={tooltip} />
-                    <Legend />
-                    <Line
-                      dataKey="referenceDrawdown"
-                      name={`Reference Drawdown - ${results.referenceLabel || 'Portfolio'}`}
-                      stroke={PALETTE[1 % PALETTE.length][0]}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                      connectNulls={false}
-                      isAnimationActive={false}
-                      type="monotone"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-        </>
+        <WorldCapeHistoryChart
+          csvUrl={WORLD_CAPE_CSV_URL}
+          chartData={worldCapeChartData}
+          summary={worldCapeSummary}
+        />
       )}
 
       {usCapeError && <div className="backtest-error">{usCapeError}</div>}
-
       {usCapeSummary && usCapeChartData.length > 0 && (
-        <>
-          <div className="backtest-chart-heading world-cape-heading">
-            <div className="backtest-chart-title">US CAPE History</div>
-            <a className="h-btn subtle world-cape-download" href={US_CAPE_CSV_URL} download>
-              <Download size={14} aria-hidden="true" />
-              <span>CSV</span>
-            </a>
-          </div>
-          <div className="world-cape-meta" aria-label="US CAPE dataset summary">
-            <span>{usCapeSummary.startDate} to {usCapeSummary.endDate}</span>
-            <span>{usCapeSummary.count} observations</span>
-            <span>Latest {fmt2(usCapeSummary.latest.usCape)} on {usCapeSummary.latest.date}</span>
-            <span>Range {fmt2(usCapeSummary.min)}-{fmt2(usCapeSummary.max)}</span>
-          </div>
-          <div className="backtest-chart-container world-cape-chart-container">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={usCapeChartData} syncId="us-cape" margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme.gridColor} />
-                <XAxis dataKey="x" tick={{ fill: theme.textColor, fontSize: 11 }} interval={Math.max(1, Math.floor(usCapeChartData.length / 10))} />
-                <YAxis tick={{ fill: theme.textColor, fontSize: 11 }} tickFormatter={v => Number(v).toFixed(0)} width={48} />
-                <Tooltip content={capeTooltip} />
-                <Legend />
-                <Line
-                  dataKey="usCape"
-                  name="US Shiller CAPE"
-                  stroke={PALETTE[1 % PALETTE.length][0]}
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  type="monotone"
-                />
-                <Brush dataKey="x" height={26} stroke={theme.gridColor} fill={theme.isDark ? '#1a1a1a' : '#f8f8f8'} travellerWidth={6} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </>
+        <UsCapeHistoryChart
+          csvUrl={US_CAPE_CSV_URL}
+          chartData={usCapeChartData}
+          summary={usCapeSummary}
+        />
       )}
     </div>
   )
