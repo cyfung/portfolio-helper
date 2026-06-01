@@ -5,6 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush, ReferenceDot,
 } from 'recharts'
+import type { LegendPayload } from 'recharts'
 import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
@@ -38,6 +39,32 @@ interface SeriesStats {
   sharpe: number
   ulcerIndex: number
   upi: number
+}
+
+type ChartRow = Record<string, unknown>
+
+interface RealPortfolioSummary {
+  slug: string
+  name?: string | null
+}
+
+interface PortfolioDataResponse {
+  allPortfolios?: RealPortfolioSummary[]
+}
+
+interface StoredBacktestConfig {
+  fromDate?: string | null
+  toDate?: string | null
+  portfolios?: Record<string, unknown>[]
+}
+
+interface PerformanceIngestResponse {
+  written?: number
+  error?: string
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 const ACTION_MARKERS: Record<string, { label: string; short: string; color: string; defaultVisible?: boolean }> = {
@@ -181,7 +208,7 @@ interface BacktestViewState {
   selected: Set<string>
 }
 
-function realPortfolioDataFromResponse(d: any, navScaleFactor: number): RealPortfolioData {
+function realPortfolioDataFromResponse(d: Partial<RealPortfolioData>, navScaleFactor: number): RealPortfolioData {
   return {
     dates:            d.dates            ?? [],
     twrSeries:        d.twrSeries        ?? [],
@@ -270,8 +297,8 @@ export default function BacktestPage() {
   useEffect(() => {
     fetch('/api/portfolio/data')
       .then(r => r.json())
-      .then((d: any) => {
-        setRealPortfolios((d.allPortfolios ?? []).map((p: any) => ({
+      .then((d: PortfolioDataResponse) => {
+        setRealPortfolios((d.allPortfolios ?? []).map(p => ({
           slug: p.slug,
           name: p.name || p.slug,
         })))
@@ -329,7 +356,7 @@ export default function BacktestPage() {
     setError('')
     try {
       const r = await fetch(`/api/performance/ingest/${slug}`, { method: 'POST' })
-      const d = await r.json()
+      const d: PerformanceIngestResponse = await r.json()
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
       const newRealData = appConfigReady
         ? await fetchRealPortfolioData(slug)
@@ -341,9 +368,9 @@ export default function BacktestPage() {
         }))
       }
       setRealFetchNotice(`Fetched ${d.written} new snapshot(s).`)
-    } catch (e: any) {
+    } catch (e: unknown) {
       setRealFetchNotice('')
-      setError(`Fetch from IBKR failed for ${portfolioName}: ${e.message}`)
+      setError(`Fetch from IBKR failed for ${portfolioName}: ${errorMessage(e)}`)
     } finally {
       realIngestingRef.current = false
       setRealIngesting(false)
@@ -354,8 +381,9 @@ export default function BacktestPage() {
   useEffect(() => {
     fetch('/api/backtest/settings')
       .then(r => r.json())
-      .then((req: any) => {
+      .then((req: StoredBacktestConfig) => {
         if (!req.portfolios) return
+        const portfolios = req.portfolios
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate)   setToDate(req.toDate)
         const cashflowState = cashflowStateFromSettings(req)
@@ -364,8 +392,9 @@ export default function BacktestPage() {
         if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
         setBlocks(prev => {
           const next = [...prev]
-          req.portfolios.forEach((p: any, i: number) => {
-            if (i < 3) next[i] = configToBlockState(p, p.label || '')
+          portfolios.forEach((p, i) => {
+            const label = typeof p.label === 'string' ? p.label : ''
+            if (i < 3) next[i] = configToBlockState(p, label)
           })
           return next
         })
@@ -474,9 +503,10 @@ export default function BacktestPage() {
     // Normalisation bases: return series value at the first overlap date.
     // Dividing (1 + series[i]) by (1 + base) makes the line start at 1.0 at that date,
     // then multiply by refStart to put it on the correct Y axis value.
-    const twrBase = firstOverlapRealIdx >= 0 ? (realData!.twrSeries[firstOverlapRealIdx]        ?? 0) : 0
-    const mwrBase = firstOverlapRealIdx >= 0 ? (realData!.mwrSeries?.[firstOverlapRealIdx]      ?? 0) : 0
-    const posBase = firstOverlapRealIdx >= 0 ? (realData!.positionSeries?.[firstOverlapRealIdx] ?? 0) : 0
+    const hasRealOverlap = realData != null && firstOverlapRealIdx >= 0
+    const twrBase = hasRealOverlap ? (realData.twrSeries[firstOverlapRealIdx]        ?? 0) : 0
+    const mwrBase = hasRealOverlap ? (realData.mwrSeries?.[firstOverlapRealIdx]      ?? 0) : 0
+    const posBase = hasRealOverlap ? (realData.positionSeries?.[firstOverlapRealIdx] ?? 0) : 0
 
     // Inject real portfolio columns into chart rows
     if (realData?.dates.length) {
@@ -499,10 +529,10 @@ export default function BacktestPage() {
     }
 
     // Stats computed from the overlap window (same period as what the chart shows)
-    const od = firstOverlapRealIdx >= 0 ? realData!.dates.slice(firstOverlapRealIdx)    : []
+    const od = hasRealOverlap ? realData.dates.slice(firstOverlapRealIdx)    : []
     const nv = firstOverlapRealIdx >= 0 ? realNavSeries.slice(firstOverlapRealIdx) : []
-    const tv = firstOverlapRealIdx >= 0
-      ? realData!.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)) : []
+    const tv = hasRealOverlap
+      ? realData.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)) : []
     const mv = realData?.mwrSeries && firstOverlapRealIdx >= 0
       ? realData.mwrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + mwrBase)) : null
     const pv = realData?.positionSeries && firstOverlapRealIdx >= 0
@@ -601,8 +631,8 @@ export default function BacktestPage() {
       portfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
         .filter(p => p.tickers.length > 0)
-    } catch (e: any) {
-      setError(e.message || 'Unable to resolve saved portfolio references.')
+    } catch (e: unknown) {
+      setError(errorMessage(e) || 'Unable to resolve saved portfolio references.')
       return
     }
     if (portfolios.length === 0) {
@@ -650,8 +680,8 @@ export default function BacktestPage() {
         realData: newRealData,
         selected: new Set(defaultKeys),
       })
-    } catch (e: any) {
-      setError('Request failed: ' + e.message)
+    } catch (e: unknown) {
+      setError('Request failed: ' + errorMessage(e))
     } finally {
       setRunning(false)
     }
@@ -671,13 +701,13 @@ export default function BacktestPage() {
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     })
     setImportCode(code)
-    try { await navigator.clipboard.writeText(code) } catch (_) {}
+    try { await navigator.clipboard.writeText(code) } catch {}
   }
 
   async function handleImport() {
     if (!importCode.trim()) return
     try {
-      const req: any = await decompressFromCode(importCode.trim())
+      const req = await decompressFromCode(importCode.trim()) as StoredBacktestConfig
       if (req.fromDate) setFromDate(req.fromDate)
       if (req.toDate)   setToDate(req.toDate)
       const cashflowState = cashflowStateFromSettings(req)
@@ -685,16 +715,18 @@ export default function BacktestPage() {
       if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
       if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
       if (req.portfolios) {
+        const portfolios = req.portfolios
         setBlocks(prev => {
           const next = [...prev]
-          req.portfolios.forEach((p: any, i: number) => {
-            if (i < 3) next[i] = configToBlockState(p, p.label || '')
+          portfolios.forEach((p, i) => {
+            const label = typeof p.label === 'string' ? p.label : ''
+            if (i < 3) next[i] = configToBlockState(p, label)
           })
           return next
         })
       }
       setConfigError('')
-    } catch (_) {
+    } catch {
       setConfigError('Invalid config code.')
       setTimeout(() => setConfigError(''), 3000)
     }
@@ -705,7 +737,8 @@ export default function BacktestPage() {
   function toggleCurve(key: string, checked: boolean) {
     setViewState(prev => {
       const selected = new Set(prev.selected)
-      checked ? selected.add(key) : selected.delete(key)
+      if (checked) selected.add(key)
+      else selected.delete(key)
       return { ...prev, selected }
     })
   }
@@ -717,7 +750,8 @@ export default function BacktestPage() {
   function toggleActionPointType(type: string, checked: boolean) {
     setVisibleActionPointTypes(prev => {
       const next = new Set(prev)
-      checked ? next.add(type) : next.delete(type)
+      if (checked) next.add(type)
+      else next.delete(type)
       return next
     })
   }
@@ -743,7 +777,7 @@ export default function BacktestPage() {
 
   // ── Chart helpers ─────────────────────────────────────────────────────────
 
-  const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
+  const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: unknown) => string) =>
     makeRechartsTooltip(theme, valueFmt, labelFmt)
 
   const commonLineProps = {
@@ -782,7 +816,7 @@ export default function BacktestPage() {
     )
   }
 
-  const renderActionMarkers = (rows: Record<string, any>[], chart: ActionPointChartKey, yAxisId?: string) => {
+  const renderActionMarkers = (rows: ChartRow[], chart: ActionPointChartKey, yAxisId?: string) => {
     if (!selectedActionCurve || !actionPointChartVisibility[chart]) return null
     const points = forceActionPointChartDots[chart]
       ? selectedActionPointGroups.markers.concat(selectedActionPointGroups.denseGroups.flatMap(group => group.points))
@@ -864,20 +898,21 @@ export default function BacktestPage() {
     return map
   }, [chartData, isDark])
 
-  const renderLegend = (props: any) => {
+  const renderLegend = (props: { payload?: ReadonlyArray<LegendPayload> }) => {
     const { payload } = props
     if (!payload?.length) return null
     return (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem 0.8rem', fontSize: '0.78em', color: textColor, padding: '4px 8px 0' }}>
-        {payload.map((entry: any, i: number) => {
-          const meta = legendMetaMap.get(entry.value as string)
-          const color = meta?.color ?? (entry.color as string)
+        {payload.map((entry, i) => {
+          const value = entry.value ?? ''
+          const meta = legendMetaMap.get(value)
+          const color = meta?.color ?? entry.color ?? textColor
           const sw    = meta?.strokeWidth ?? 2
           const dash  = meta?.strokeDasharray
           return (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <span key={`${value}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               <LegendLine color={color} strokeWidth={sw} strokeDasharray={dash} />
-              <span>{entry.value}</span>
+              <span>{value}</span>
             </span>
           )
         })}
@@ -1028,7 +1063,6 @@ export default function BacktestPage() {
                     const key    = `${pi}-${ci}`
                     const s      = curve.stats
                     const factor = chartData.curveScaleFactors.get(key) ?? 1
-                    const trig   = (v: number | null | undefined) => v == null ? '–' : String(v)
                     const avgMargin = averageMarginUtilization(curve.marginPoints)
                     return (
                       <tr key={key}>
