@@ -1,5 +1,12 @@
 /* Rebalance strategy block styles */
 
+.rebalance-strategy-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
 .block-header {
     display: flex;
     align-items: center;
@@ -318,6 +325,14 @@
 
 .strategy-row input[type="radio"] {
     accent-color: var(--color-accent-primary);
+}
+
+.strategy-number-input {
+    width: 5rem;
+}
+
+.strategy-ticker-input {
+    width: 6rem;
 }
 
 .strategy-hint {

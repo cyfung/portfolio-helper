@@ -7,24 +7,19 @@ import {
   MARGIN_REBALANCE_TRADE_DIRECTION_OPTIONS,
   PORTFOLIO_TRIGGER_SOURCE_OPTIONS,
   DrawdownMarginOverrideState,
-  DrawdownMarginTriggerState,
-  DrawdownMarginTriggerTierState,
   emptyDipSurge,
   emptyDrawdownMarginOverride,
   emptyDrawdownMarginTrigger,
-  emptyDrawdownMarginTriggerTier,
-  emptyDerivedTargetStep,
-  emptyDerivedSubStrategy,
   emptyVmTimingMr,
-  drawdownMarginTriggerIssues,
   normalizeStrategySpreadInput,
   strategyStateToSavedConfig,
   savedConfigToStrategyState,
   VmTimingMrState,
-  DerivedSubStrategyState,
 } from '@/types/rebalanceStrategy'
 import { isValidNumberInput } from '@/lib/numberInputs'
 import DipSurgeSection from './DipSurgeSection'
+import DerivedSubStrategiesSection from './DerivedSubStrategiesSection'
+import DrawdownMarginTriggerSection from './DrawdownMarginTriggerSection'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 import { MarginPercentInput, MarginPointSlider } from './RebalanceStrategyControls'
 import {
@@ -150,17 +145,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     set({ drawdownMarginOverride: next })
   }, [set])
 
-  const updateDrawdownMarginTrigger = useCallback((
-    key: 'drawdownBuyOnLowMargin',
-    direction: 'buy' | 'sell',
-    patch: Partial<DrawdownMarginTriggerState>,
-  ) => {
-    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
-    const next = { ...current, ...patch }
-    if (next.portfolioSource !== 'REFERENCE_PORTFOLIO') next.referenceTicker = ''
-    set({ [key]: next } as Partial<RebalStrategyState>)
-  }, [set])
-
   const updateVmTimingMr = useCallback((patch: Partial<VmTimingMrState>) => {
     const current = localRef.current.vmTimingMr ?? emptyVmTimingMr()
     set({ vmTimingMr: { ...current, ...patch } })
@@ -248,130 +232,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     }
   }, [set])
 
-  const updateDerivedSubStrategy = useCallback((id: string, patch: Partial<DerivedSubStrategyState>) => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({
-      derivedSubStrategies: items.map(item => item.id === id ? { ...item, ...patch } : item),
-    })
-  }, [set])
-
-  const updateDerivedScale = useCallback((id: string, patch: Partial<DerivedSubStrategyState['scale']>) => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({
-      derivedSubStrategies: items.map(item => item.id === id ? { ...item, scale: { ...item.scale, ...patch } } : item),
-    })
-  }, [set])
-
-  const updateDerivedStep = useCallback((
-    derivedId: string,
-    stepId: string,
-    patch: Partial<DerivedSubStrategyState['scale']['steps'][number]>,
-  ) => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({
-      derivedSubStrategies: items.map(item => item.id === derivedId
-        ? {
-          ...item,
-          scale: {
-            ...item.scale,
-            steps: (item.scale.steps ?? []).map(step => step.id === stepId ? { ...step, ...patch } : step),
-          },
-        }
-        : item),
-    })
-  }, [set])
-
-  const addDerivedStep = useCallback((derivedId: string) => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({
-      derivedSubStrategies: items.map(item => item.id === derivedId
-        ? { ...item, scale: { ...item.scale, steps: [...(item.scale.steps ?? []), emptyDerivedTargetStep(item.scale.steps?.length ?? 0)] } }
-        : item),
-    })
-  }, [set])
-
-  const removeDerivedStep = useCallback((derivedId: string, stepId: string) => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({
-      derivedSubStrategies: items.map(item => item.id === derivedId
-        ? { ...item, scale: { ...item.scale, steps: (item.scale.steps ?? []).filter(step => step.id !== stepId) } }
-        : item),
-    })
-  }, [set])
-
-  const addDerivedSubStrategy = useCallback(() => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({ derivedSubStrategies: [...items, emptyDerivedSubStrategy(items.length)] })
-  }, [set])
-
-  const removeDerivedSubStrategy = useCallback((id: string) => {
-    const items = localRef.current.derivedSubStrategies ?? []
-    set({ derivedSubStrategies: items.filter(item => item.id !== id) })
-  }, [set])
-
-  function syncFirstDrawdownTier(
-    state: DrawdownMarginTriggerState,
-    tiers: DrawdownMarginTriggerTierState[],
-    direction: 'buy' | 'sell',
-  ): DrawdownMarginTriggerState {
-    const first = tiers[0] ?? emptyDrawdownMarginTriggerTier(direction)
-    return {
-      ...state,
-      enterDrawdownPct: first.enterDrawdownPct,
-      exitDrawdownPct: first.exitDrawdownPct,
-      triggerPointIndex: first.triggerPointIndex,
-      triggerMargin: first.triggerMargin,
-      allocStrategy: first.allocStrategy,
-      restorePointIndex: first.restorePointIndex,
-      restoreMargin: first.restoreMargin,
-      tiers,
-    }
-  }
-
-  const updateDrawdownMarginTriggerTier = useCallback((
-    key: 'drawdownBuyOnLowMargin',
-    direction: 'buy' | 'sell',
-    tierId: string,
-    patch: Partial<DrawdownMarginTriggerTierState>,
-  ) => {
-    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
-    const tiers = (current.tiers?.length ? current.tiers : [emptyDrawdownMarginTriggerTier(direction)])
-      .map(tier => tier.id === tierId ? { ...tier, ...patch } : tier)
-    set({ [key]: syncFirstDrawdownTier(current, tiers, direction) } as Partial<RebalStrategyState>)
-  }, [set])
-
-  const addDrawdownMarginTriggerTier = useCallback((
-    key: 'drawdownBuyOnLowMargin',
-    direction: 'buy' | 'sell',
-  ) => {
-    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
-    const tiers = current.tiers?.length ? current.tiers : [emptyDrawdownMarginTriggerTier(direction)]
-    const prev = tiers[tiers.length - 1]
-    const prevEnter = parseFloat(prev?.enterDrawdownPct ?? '')
-    const prevExit = parseFloat(prev?.exitDrawdownPct ?? '')
-    const nextEnter = Number.isFinite(prevEnter) ? prevEnter + 5 : 10
-    const nextExit = Number.isFinite(prevExit) ? prevExit : Math.max(0, nextEnter - 5)
-    const tier = {
-      ...(prev ?? emptyDrawdownMarginTriggerTier(direction)),
-      id: emptyDrawdownMarginTriggerTier(direction).id,
-      enterDrawdownPct: String(nextEnter),
-      exitDrawdownPct: String(nextExit),
-    }
-    const nextTiers = [...tiers, tier]
-    set({ [key]: syncFirstDrawdownTier(current, nextTiers, direction) } as Partial<RebalStrategyState>)
-  }, [set])
-
-  const removeDrawdownMarginTriggerTier = useCallback((
-    key: 'drawdownBuyOnLowMargin',
-    direction: 'buy' | 'sell',
-    tierId: string,
-  ) => {
-    const current = localRef.current[key] ?? emptyDrawdownMarginTrigger(direction)
-    if ((current.tiers?.length ?? 0) <= 1) return
-    const nextTiers = (current.tiers ?? []).filter(tier => tier.id !== tierId)
-    set({ [key]: syncFirstDrawdownTier(current, nextTiers, direction) } as Partial<RebalStrategyState>)
-  }, [set])
-
   async function handleSave(overwrite: boolean) {
     const current = normalizeStrategySpreadInput(localRef.current)
     if (current !== localRef.current) updateLocal(current)
@@ -414,509 +274,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       >
         x
       </button>
-    )
-  }
-
-  function renderDrawdownMarginTrigger(
-    key: 'drawdownBuyOnLowMargin',
-    direction: 'buy' | 'sell',
-    title: string,
-    value: DrawdownMarginTriggerState,
-    triggerPlaceholder: string,
-  ) {
-    const tiers = value.tiers?.length ? value.tiers : [emptyDrawdownMarginTriggerTier(direction)]
-    const issues = drawdownMarginTriggerIssues(value, direction, title)
-    return (
-      <details open className="strategy-subsection">
-        <summary className="strategy-section-title" onClick={keepSectionOpen}>
-          {title}
-          {renderRemoveSectionButton(key, title)}
-        </summary>
-        <div className="strategy-section-body">
-            <div className="strategy-row">
-              <label>Reference</label>
-              <select
-                value={value.portfolioSource ?? 'REFERENCE_PORTFOLIO'}
-                onChange={e => updateDrawdownMarginTrigger(key, direction, {
-                  portfolioSource: e.target.value,
-                  referenceTicker: e.target.value === 'REFERENCE_PORTFOLIO' ? (value.referenceTicker ?? '') : '',
-                })}
-              >
-                {PORTFOLIO_TRIGGER_SOURCE_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-            {(value.portfolioSource ?? 'REFERENCE_PORTFOLIO') === 'REFERENCE_PORTFOLIO' && (
-              <div className="strategy-row">
-                <label>Reference Ticker</label>
-                <input
-                  type="text"
-                  value={value.referenceTicker ?? ''}
-                  placeholder="Portfolio"
-                  aria-label={`${title} reference ticker`}
-                  onChange={e => updateDrawdownMarginTrigger(key, direction, { referenceTicker: e.target.value.toUpperCase() })}
-                  onBlur={() => commit()}
-                />
-              </div>
-            )}
-            {direction === 'buy' && (
-              <>
-                <div className="strategy-row">
-                  <label>Momentum Months</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={value.momentumLookbackMonths ?? ''}
-                    placeholder="Optional"
-                    aria-label={`${title} momentum lookback months`}
-                    onChange={e => updateDrawdownMarginTrigger(key, direction, { momentumLookbackMonths: e.target.value })}
-                    onBlur={() => commit()}
-                  />
-                </div>
-                <div className="strategy-row">
-                  <label>Extend Exit Months</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={value.exitExtensionMonths ?? ''}
-                    placeholder="0"
-                    aria-label={`${title} exit extension months`}
-                    onChange={e => updateDrawdownMarginTrigger(key, direction, { exitExtensionMonths: e.target.value })}
-                    onBlur={() => commit()}
-                  />
-                </div>
-                <div className="strategy-row">
-                  <label>Exit Target Margin</label>
-                  <MarginPercentInput
-                    value={value.exitTargetMargin ?? ''}
-                    placeholder="Optional"
-                    max={sliderMax}
-                    compact
-                    ariaLabel={`${title} exit target margin`}
-                    onChange={margin => updateDrawdownMarginTrigger(key, direction, { exitTargetMargin: margin })}
-                    onCommit={() => commit()}
-                  />
-                </div>
-              </>
-            )}
-            <div className="drawdown-tier-table">
-              <div className="drawdown-tier-header">
-                <span title="Enter drawdown percent">DD In</span>
-                <span title="Exit drawdown percent">Out</span>
-                <span>Trigger</span>
-                <span>Restore</span>
-                <span>Alloc</span>
-                <span />
-              </div>
-              {tiers.map(tier => (
-                <div key={tier.id} className="drawdown-tier-row">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={tier.enterDrawdownPct}
-                    aria-label={`${title} tier enter drawdown`}
-                    onChange={e => updateDrawdownMarginTriggerTier(key, direction, tier.id, { enterDrawdownPct: e.target.value })}
-                    onBlur={() => commit()}
-                  />
-                  <input
-                    type="number"
-                    step="1"
-                    value={tier.exitDrawdownPct}
-                    aria-label={`${title} tier exit drawdown`}
-                    onChange={e => updateDrawdownMarginTriggerTier(key, direction, tier.id, { exitDrawdownPct: e.target.value })}
-                    onBlur={() => commit()}
-                  />
-                  <MarginPercentInput
-                    value={tier.triggerMargin}
-                    placeholder={triggerPlaceholder}
-                    max={sliderMax}
-                    compact
-                    ariaLabel={`${title} tier trigger margin`}
-                    onChange={margin => updateDrawdownMarginTriggerTier(key, direction, tier.id, { triggerMargin: margin, triggerPointIndex: '' })}
-                    onCommit={() => commit()}
-                  />
-                  <MarginPercentInput
-                    value={tier.restoreMargin}
-                    placeholder={midMarginPoint}
-                    max={sliderMax}
-                    compact
-                    ariaLabel={`${title} tier restore margin`}
-                    onChange={margin => updateDrawdownMarginTriggerTier(key, direction, tier.id, { restoreMargin: margin, restorePointIndex: '' })}
-                    onCommit={() => commit()}
-                  />
-                  <select
-                    value={tier.allocStrategy ?? 'PROPORTIONAL'}
-                    aria-label={`${title} tier allocation strategy`}
-                    onChange={e => updateDrawdownMarginTriggerTier(key, direction, tier.id, { allocStrategy: e.target.value })}
-                  >
-                    {allocOptions.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="remove-ticker-btn drawdown-tier-remove-btn"
-                    title="Remove tier"
-                    aria-label={`Remove ${title} tier`}
-                    disabled={tiers.length <= 1}
-                    onClick={() => removeDrawdownMarginTriggerTier(key, direction, tier.id)}
-                  >
-                    x
-                  </button>
-                </div>
-              ))}
-            </div>
-            {issues.length > 0 && <div className="strategy-hint input-error-text">{issues[0]}</div>}
-            <div className="strategy-row">
-              <label />
-              <button
-                type="button"
-                className="add-ticker-btn"
-                onClick={() => addDrawdownMarginTriggerTier(key, direction)}
-              >
-                + Add Tier
-              </button>
-            </div>
-          </div>
-      </details>
-    )
-  }
-
-  function renderDerivedSubStrategies() {
-    return (
-      <details open className="strategy-subsection">
-        <summary className="strategy-section-title" onClick={keepSectionOpen}>Derived</summary>
-        <div className="strategy-section-body">
-          {(s.derivedSubStrategies ?? []).map((derived, derivedIdx) => (
-            <div key={derived.id} className="strategy-derived-card">
-              <div className="strategy-row">
-                <label>Derived {derivedIdx + 1}</label>
-                <input
-                  type="text"
-                  value={derived.label}
-                  placeholder={`Derived ${derivedIdx + 1}`}
-                  aria-label={`Derived strategy ${derivedIdx + 1} label`}
-                  onChange={e => updateDerivedSubStrategy(derived.id, { label: e.target.value })}
-                  onBlur={() => commit()}
-                />
-              </div>
-              <div className="strategy-row">
-                <label>Enable</label>
-                <input
-                  type="checkbox"
-                  checked={derived.enabled}
-                  onChange={e => updateDerivedSubStrategy(derived.id, { enabled: e.target.checked })}
-                />
-              </div>
-              <div className="strategy-row">
-                <label>Ref Margin</label>
-                <select
-                  value={derived.marginReferenceSource ?? 'BASE_STRATEGY'}
-                  onChange={e => {
-                    const source = e.target.value as DerivedSubStrategyState['marginReferenceSource']
-                    updateDerivedSubStrategy(derived.id, {
-                      marginReferenceSource: source,
-                      ...(source === 'BASE_STRATEGY' ? { marginReferenceTicker: '' } : {}),
-                    })
-                  }}
-                >
-                  <option value="BASE_STRATEGY">Base Strategy</option>
-                  <option value="STANDALONE_TICKER">Standalone Ticker</option>
-                </select>
-              </div>
-              {(derived.marginReferenceSource ?? 'BASE_STRATEGY') === 'STANDALONE_TICKER' && (
-                <div className="strategy-row">
-                  <label>Ref Ticker</label>
-                  <input
-                    type="text"
-                    value={derived.marginReferenceTicker ?? ''}
-                    placeholder="SPY"
-                    aria-label={`Derived strategy ${derivedIdx + 1} reference margin ticker`}
-                    onChange={e => updateDerivedSubStrategy(derived.id, { marginReferenceTicker: e.target.value.toUpperCase() })}
-                    onBlur={() => commit()}
-                    style={{ width: '6rem' }}
-                  />
-                </div>
-              )}
-              <div className="strategy-row">
-                <label>Scale Function</label>
-                <select
-                  value={derived.scale.function ?? 'SIGMOID'}
-                  onChange={e => {
-                    const fn = e.target.value as DerivedSubStrategyState['scale']['function']
-                    const refHigh = parseFloat(derived.scale.referenceUpper)
-                    const currentReset = parseFloat(derived.scale.stepBaseTarget ?? '')
-                    const isHysteresis = fn === 'HYSTERESIS_STEP' || fn === 'HYSTERESIS_STAIRS'
-                    updateDerivedScale(derived.id, {
-                      function: fn,
-                      ...(isHysteresis && (!Number.isFinite(currentReset) || currentReset <= refHigh)
-                        ? { stepBaseTarget: String(Math.min(sliderMax, Math.max(0, Math.round((Number.isFinite(refHigh) ? refHigh : 100) + 10)))) }
-                        : {}),
-                    })
-                  }}
-                >
-                  <option value="SIGMOID">Sigmoid</option>
-                  <option value="ADAPTIVE_LOW_SIGMOID">Adaptive Low Sigmoid</option>
-                  <option value="LINEAR">Linear</option>
-                  <option value="STEP">Step</option>
-                  <option value="HYSTERESIS_STEP">Hysteresis Step</option>
-                  <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
-                </select>
-              </div>
-              {!['STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID') && (
-                <>
-                  <div className="strategy-row">
-                    <label>Ref Low</label>
-                    <MarginPercentInput
-                      value={derived.scale.referenceLower}
-                      placeholder="50"
-                      max={sliderMax}
-                      compact
-                      ariaLabel={`Derived strategy ${derivedIdx + 1} reference lower margin`}
-                      onChange={value => updateDerivedScale(derived.id, { referenceLower: value })}
-                      onCommit={() => commit()}
-                    />
-                  </div>
-                  <div className="strategy-row">
-                    <label>Ref High</label>
-                    <MarginPercentInput
-                      value={derived.scale.referenceUpper}
-                      placeholder="100"
-                      max={sliderMax}
-                      compact
-                      ariaLabel={`Derived strategy ${derivedIdx + 1} reference upper margin`}
-                      onChange={value => updateDerivedScale(derived.id, { referenceUpper: value })}
-                      onCommit={() => commit()}
-                    />
-                  </div>
-                  <div className="strategy-row">
-                    <label>Target Low</label>
-                    <MarginPercentInput
-                      value={derived.scale.targetLower}
-                      placeholder="30"
-                      max={sliderMax}
-                      compact
-                      ariaLabel={`Derived strategy ${derivedIdx + 1} target lower margin`}
-                      onChange={value => updateDerivedScale(derived.id, { targetLower: value })}
-                      onCommit={() => commit()}
-                    />
-                  </div>
-                  <div className="strategy-row">
-                    <label>Target High</label>
-                    <MarginPercentInput
-                      value={derived.scale.targetUpper}
-                      placeholder="100"
-                      max={sliderMax}
-                      compact
-                      ariaLabel={`Derived strategy ${derivedIdx + 1} target upper margin`}
-                      onChange={value => updateDerivedScale(derived.id, { targetUpper: value })}
-                      onCommit={() => commit()}
-                    />
-                  </div>
-                </>
-              )}
-              {(['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID')) && (
-                <div className="strategy-row">
-                  <label>Reset Above</label>
-                  <MarginPercentInput
-                    value={derived.scale.stepBaseTarget ?? ''}
-                    placeholder="110"
-                    max={sliderMax}
-                    compact
-                    ariaLabel={`Derived strategy ${derivedIdx + 1} reset threshold`}
-                    onChange={value => updateDerivedScale(derived.id, { stepBaseTarget: value })}
-                    onCommit={() => commit()}
-                  />
-                </div>
-              )}
-              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
-                <div className="strategy-row">
-                  <label>Reset Target</label>
-                  <MarginPercentInput
-                    value={derived.scale.targetUpper}
-                    placeholder="100"
-                    max={sliderMax}
-                    compact
-                    ariaLabel={`Derived strategy ${derivedIdx + 1} reset target margin`}
-                    onChange={value => updateDerivedScale(derived.id, { targetUpper: value })}
-                    onCommit={() => commit()}
-                  />
-                </div>
-              )}
-              {(['SIGMOID', 'ADAPTIVE_LOW_SIGMOID'].includes(derived.scale.function ?? 'SIGMOID')) && (
-                <div className="strategy-row">
-                  <label>Sigmoid K</label>
-                  <input
-                    type="number"
-                    min="0.1"
-                    step="0.5"
-                    value={derived.scale.sigmoidSteepness}
-                    onChange={e => updateDerivedScale(derived.id, { sigmoidSteepness: e.target.value })}
-                    onBlur={() => commit()}
-                    style={{ width: '5rem' }}
-                  />
-                </div>
-              )}
-              {(['STEP', 'HYSTERESIS_STAIRS'].includes(derived.scale.function ?? 'SIGMOID')) && (
-                <>
-                  {(derived.scale.function ?? 'SIGMOID') === 'STEP' && (
-                    <div className="strategy-row">
-                      <label>Base Target</label>
-                      <MarginPercentInput
-                        value={derived.scale.stepBaseTarget ?? '50'}
-                        placeholder={midMarginPoint}
-                        max={sliderMax}
-                        compact
-                        ariaLabel={`Derived strategy ${derivedIdx + 1} base target margin`}
-                        onChange={value => updateDerivedScale(derived.id, { stepBaseTarget: value })}
-                        onCommit={() => commit()}
-                      />
-                    </div>
-                  )}
-                  {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
-                    <React.Fragment key={step.id}>
-                      <div className="strategy-row">
-                        <label>{(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}</label>
-                        <MarginPercentInput
-                          value={step.referenceMargin}
-                          placeholder={String(60 + stepIdx * 10)}
-                          max={sliderMax}
-                          compact
-                          ariaLabel={`Derived strategy ${derivedIdx + 1} step ${stepIdx + 1} reference margin`}
-                          onChange={value => updateDerivedStep(derived.id, step.id, { referenceMargin: value })}
-                          onCommit={() => commit()}
-                        />
-                      </div>
-                      <div className="strategy-row">
-                        <label>{(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}</label>
-                        <MarginPercentInput
-                          value={step.targetMargin}
-                          placeholder={String(50 + stepIdx * 10)}
-                          max={sliderMax}
-                          compact
-                          ariaLabel={`Derived strategy ${derivedIdx + 1} step ${stepIdx + 1} target margin`}
-                          onChange={value => updateDerivedStep(derived.id, step.id, { targetMargin: value })}
-                          onCommit={() => commit()}
-                        />
-                      </div>
-                      <div className="strategy-row">
-                        <label />
-                        <button
-                          type="button"
-                          className="remove-ticker-btn"
-                          disabled={(derived.scale.steps?.length ?? 0) <= 1}
-                          onClick={() => removeDerivedStep(derived.id, step.id)}
-                        >
-                          Remove Step
-                        </button>
-                      </div>
-                    </React.Fragment>
-                  ))}
-                  <div className="strategy-row">
-                    <label />
-                    <button type="button" className="add-ticker-btn" onClick={() => addDerivedStep(derived.id)}>
-                      + Add Step
-                    </button>
-                  </div>
-                </>
-              )}
-              <div className="strategy-row">
-                <label>BL Dev %</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={derived.buyDeviationPct ?? derived.absoluteDeviationPct}
-                  onChange={e => updateDerivedSubStrategy(derived.id, {
-                    buyDeviationPct: e.target.value,
-                    absoluteDeviationPct: e.target.value,
-                  })}
-                  onBlur={() => commit()}
-                  style={{ width: '5rem' }}
-                />
-              </div>
-              <div className="strategy-row">
-                <label>SH Dev %</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={derived.sellDeviationPct ?? derived.absoluteDeviationPct}
-                  onChange={e => updateDerivedSubStrategy(derived.id, { sellDeviationPct: e.target.value })}
-                  onBlur={() => commit()}
-                  style={{ width: '5rem' }}
-                />
-              </div>
-              <div className="strategy-row">
-                <label>BL Alloc</label>
-                <select
-                  value={derived.buyAllocStrategy ?? derived.allocStrategy ?? 'PROPORTIONAL'}
-                  onChange={e => updateDerivedSubStrategy(derived.id, { buyAllocStrategy: e.target.value, allocStrategy: e.target.value })}
-                >
-                  {allocOptions.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="strategy-row">
-                <label>SH Alloc</label>
-                <select
-                  value={derived.sellAllocStrategy ?? derived.allocStrategy ?? 'PROPORTIONAL'}
-                  onChange={e => updateDerivedSubStrategy(derived.id, { sellAllocStrategy: e.target.value })}
-                >
-                  {allocOptions.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="strategy-row">
-                <label>Timeout Days</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={derived.timeoutDays ?? '10'}
-                  onChange={e => updateDerivedSubStrategy(derived.id, { timeoutDays: e.target.value })}
-                  onBlur={() => commit()}
-                  style={{ width: '5rem' }}
-                />
-              </div>
-              <div className="strategy-row">
-                <label>Max Margin</label>
-                <MarginPercentInput
-                  value={derived.maxMargin ?? ''}
-                  placeholder={marginPoints[4] ?? DEFAULT_POINTS[4]}
-                  max={sliderMax}
-                  compact
-                  ariaLabel={`Derived strategy ${derivedIdx + 1} max margin`}
-                  onChange={value => updateDerivedSubStrategy(derived.id, { maxMargin: value })}
-                  onCommit={() => commit()}
-                />
-              </div>
-              <div className="strategy-row">
-                <label />
-                <button
-                  type="button"
-                  className="remove-ticker-btn"
-                  onClick={() => removeDerivedSubStrategy(derived.id)}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-          <div className="strategy-row">
-            <label />
-            <button type="button" className="add-ticker-btn" onClick={addDerivedSubStrategy}>
-              + Add Derived
-            </button>
-          </div>
-        </div>
-      </details>
     )
   }
 
@@ -1456,12 +813,19 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       </details>
       )}
 
-      {drawdownBuyOnLowMargin.enabled && renderDrawdownMarginTrigger(
-        'drawdownBuyOnLowMargin',
-        'buy',
-        'BL on Drawdown',
-        drawdownBuyOnLowMargin,
-        marginPoints[0] ?? DEFAULT_POINTS[0],
+      {drawdownBuyOnLowMargin.enabled && (
+        <DrawdownMarginTriggerSection
+          direction="buy"
+          title="BL on Drawdown"
+          value={drawdownBuyOnLowMargin}
+          triggerPlaceholder={marginPoints[0] ?? DEFAULT_POINTS[0]}
+          midMarginPoint={midMarginPoint}
+          sliderMax={sliderMax}
+          allocOptions={allocOptions}
+          onChange={value => set({ drawdownBuyOnLowMargin: value })}
+          onRemove={() => removeOptionalStrategySection('drawdownBuyOnLowMargin')}
+          onCommit={() => commit()}
+        />
       )}
 
       {(s.buyTheDip.basePortfolio || s.buyTheDip.individualStock) && (
@@ -1520,7 +884,15 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           )}
         </div>
       )}
-      {renderDerivedSubStrategies()}
+      <DerivedSubStrategiesSection
+        value={s.derivedSubStrategies ?? []}
+        marginPoints={marginPoints}
+        midMarginPoint={midMarginPoint}
+        sliderMax={sliderMax}
+        allocOptions={allocOptions}
+        onChange={set}
+        onCommit={() => commit()}
+      />
     </div>
   )
 }))

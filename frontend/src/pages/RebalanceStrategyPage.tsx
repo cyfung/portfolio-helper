@@ -59,7 +59,7 @@ export default function RebalanceStrategyPage() {
           </label>
         </div>
 
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
+        <div className="rebalance-strategy-layout">
           <PortfolioBlock idx={0} value={page.portfolio} onChange={page.setPortfolio} onSavedRefresh={page.refreshSaved} />
           {page.strategies.map((strategy, i) => (
             <RebalanceStrategyBlock
