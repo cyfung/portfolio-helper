@@ -192,6 +192,7 @@
 }
 
 .backtest-ticker-row .ticker-input {
+    height: var(--block-control-height, 1.875rem);
     font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     padding: 0.375rem 0.5rem;
@@ -202,6 +203,7 @@
 }
 
 .backtest-ticker-row .weight-input {
+    height: var(--block-control-height, 1.875rem);
     font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-sm);
     padding: 0.375rem 0.5rem;
@@ -219,7 +221,7 @@
 
 .ticker-config-btn {
     width: 28px;
-    height: 28px;
+    height: var(--block-control-height, 1.875rem);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -241,6 +243,9 @@
 }
 
 /* remove-ticker-btn - base from .btn-remove */
+.backtest-ticker-row .remove-ticker-btn {
+    height: var(--block-control-height, 1.875rem);
+}
 
 .add-ticker-btn {
     background: none;

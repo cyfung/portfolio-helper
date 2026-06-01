@@ -14,6 +14,8 @@
 
 /* Individual portfolio block */
 .portfolio-block {
+    --block-control-height: 1.875rem;
+    --block-compact-control-height: 1.625rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 6px;
     padding: 0.875rem;
@@ -22,6 +24,11 @@
     flex-direction: column;
     gap: 0.75rem;
     flex: 1 1 260px;
+}
+
+.portfolio-block .portfolio-label,
+.portfolio-block .rebalance-select {
+    height: var(--block-control-height);
 }
 
 /* Margin config rows container */
@@ -58,6 +65,7 @@
 }
 
 .margin-config-row input {
+    height: var(--block-compact-control-height);
     padding: 0.25rem 0.375rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
@@ -84,6 +92,7 @@ input.input-error,
 }
 
 .margin-config-row select.mc-mode {
+    height: var(--block-compact-control-height);
     padding: 0.25rem 0.25rem;
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
@@ -100,6 +109,9 @@ input.input-error,
 }
 
 /* remove-margin-btn - base from .btn-remove, xs override in button utilities */
+.margin-config-row .remove-margin-btn {
+    height: var(--block-compact-control-height);
+}
 
 .margin-header-btns {
     display: flex;
