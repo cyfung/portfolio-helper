@@ -1,0 +1,681 @@
+/* ============================================
+   Backtest Page
+   ============================================ */
+
+.backtest-form-card {
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.backtest-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.backtest-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+    gap: 0.5rem;
+}
+
+.portfolio-label {
+    flex: 1;
+}
+
+.backtest-grid-2 {
+    display: grid;
+    grid-template-columns: auto auto auto;
+    gap: 0.75rem;
+    width: fit-content;
+    align-items: stretch;
+}
+
+.backtest-config-row {
+    display: grid;
+    grid-template-columns: auto auto minmax(360px, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+    align-items: stretch;
+}
+
+.backtest-cashflow-row {
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    gap: 0.75rem;
+    width: fit-content;
+    align-items: stretch;
+}
+
+.backtest-date-field,
+.backtest-config-controls {
+    display: flex;
+    flex-direction: column;
+}
+
+.backtest-date-range-controls {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.35rem 0.75rem;
+    align-items: start;
+}
+
+.backtest-date-range-error {
+    grid-column: 1 / -1;
+    min-height: 1.1rem;
+    color: var(--color-negative);
+    font-size: var(--font-size-sm);
+    line-height: 1.35;
+}
+
+.backtest-config-group {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.backtest-section .backtest-config-group input {
+    width: 100%;
+    min-width: 200px;
+}
+
+/* Backtest config button - size override for .btn-outline-accent */
+.backtest-config-btn {
+    padding: 0.375rem 0.625rem;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0.03em;
+}
+
+.backtest-config-error {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    align-self: center;
+    font-size: var(--font-size-sm);
+    color: var(--color-negative);
+    visibility: hidden;
+}
+
+.backtest-config-error:not(:empty) {
+    visibility: visible;
+}
+
+.backtest-grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+    .backtest-grid-2,
+    .backtest-config-row,
+    .backtest-cashflow-row,
+    .backtest-grid-3 {
+        grid-template-columns: 1fr;
+        width: 100%;
+    }
+
+    .backtest-date-range-controls {
+        grid-column: auto;
+        grid-template-columns: 1fr;
+        width: 100%;
+    }
+}
+
+.backtest-section label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.backtest-section input,
+.backtest-section select {
+    height: 2.125rem;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.25;
+    font-family: var(--font-family-mono), monospace;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.backtest-section input:focus,
+.backtest-section select:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+/* Ticker row */
+.ticker-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-height: 2.25rem;
+    border-radius: 4px;
+}
+
+.ticker-rows:empty {
+    border: 1px dashed color-mix(in srgb, var(--color-border-medium) 65%, transparent);
+    background: color-mix(in srgb, var(--color-text-primary) 2%, transparent);
+}
+
+.backtest-ticker-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 20px auto;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.backtest-ticker-row.has-ticker-config {
+    grid-template-columns: 1fr 80px 20px 28px auto;
+}
+
+.backtest-ticker-row .ticker-input {
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+}
+
+.backtest-ticker-row .weight-input {
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    text-align: right;
+}
+
+.backtest-ticker-row .weight-unit {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+}
+
+.ticker-config-btn {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.ticker-config-btn:hover:not(:disabled) {
+    color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+}
+
+.ticker-config-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* remove-ticker-btn - base from .btn-remove */
+
+.add-ticker-btn {
+    background: none;
+    border: 1px solid var(--color-border-medium);
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+}
+
+.add-ticker-btn:hover {
+    background: var(--color-bg-hover);
+}
+
+.backtest-weight-hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    min-height: 1.2em;
+    font-family: var(--font-family-mono), monospace;
+}
+
+.backtest-weight-hint.hint-ok {
+    color: var(--color-positive);
+}
+
+.backtest-weight-hint.hint-warn {
+    color: var(--color-warning);
+}
+
+/* Run button */
+.run-backtest-btn {
+    padding: 0.5rem 1.5rem;
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    cursor: pointer;
+    align-self: flex-start;
+}
+
+.run-backtest-btn:hover {
+    background: var(--color-accent-hover);
+}
+
+.run-backtest-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* Chart title above chart containers */
+.backtest-chart-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: 0.35rem;
+    padding-left: 0.25rem;
+}
+
+.backtest-chart-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.backtest-chart-heading .backtest-chart-title {
+    margin-bottom: 0;
+}
+
+.market-timing-config {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.market-timing-config-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.75rem 1rem;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.market-timing-field {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.market-timing-field input,
+.market-timing-field select {
+    width: 100%;
+}
+
+.market-timing-field-drawdown {
+    width: 27rem;
+}
+
+.market-timing-field-interest {
+    width: 18rem;
+}
+
+.market-timing-field-rate {
+    width: 10rem;
+}
+
+@media (max-width: 900px) {
+    .market-timing-config,
+    .market-timing-config-row {
+        width: 100%;
+    }
+}
+
+@media (max-width: 600px) {
+    .market-timing-config,
+    .market-timing-config-row {
+        width: 100%;
+    }
+
+    .market-timing-field,
+    .market-timing-field-drawdown,
+    .market-timing-field-interest,
+    .market-timing-field-rate {
+        width: 100%;
+    }
+}
+
+.market-timing-pl-note {
+    margin: -0.25rem 0 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-accent-primary) 5%, var(--color-bg-elevated));
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.market-timing-pl-positive {
+    color: var(--color-positive);
+    font-weight: 600;
+}
+
+.market-timing-pl-emphasis {
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+.market-timing-pl-negative {
+    color: var(--color-negative);
+    font-weight: 600;
+}
+
+/* Chart container */
+.backtest-chart-container {
+    height: 400px;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-elevated);
+    padding: 1rem;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.market-timing-reference-drawdown-chart {
+    height: 260px;
+}
+
+.market-timing-window-average-chart {
+    height: 320px;
+}
+
+.market-timing-normalize-toggle {
+    padding: 0.35rem 0.65rem;
+    font-size: var(--font-size-xs);
+}
+
+.market-timing-normalize-toggle.active {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.market-timing-chart-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem 0.75rem;
+}
+
+.market-timing-chart-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.market-timing-chart-controls select {
+    min-width: 6rem;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font: inherit;
+}
+
+.world-cape-heading {
+    margin-top: 1.25rem;
+}
+
+.world-cape-download {
+    text-decoration: none;
+}
+
+.world-cape-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.8rem;
+    margin: -0.1rem 0 0.5rem;
+    padding-left: 0.25rem;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.world-cape-meta span + span {
+    padding-left: 0.8rem;
+    border-left: 1px solid var(--color-border-subtle);
+}
+
+.world-cape-chart-container {
+    height: 360px;
+}
+
+.chart-scale-toggle {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    z-index: 1;
+    font-size: var(--font-size-sm);
+    padding: 2px 10px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 4px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chart-scale-toggle:hover { opacity: 1; }
+.chart-scale-toggle.active {
+    background: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    color: #fff;
+    opacity: 1;
+}
+
+.chart-action-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 1.7rem;
+    padding: 2px 8px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.chart-action-filter > span {
+    color: var(--color-text-tertiary);
+}
+
+.chart-action-filter label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    font-weight: var(--font-weight-semibold);
+}
+
+.chart-dot-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.chart-dot-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.chart-action-density {
+    width: 100%;
+    display: grid;
+    gap: 0.25rem;
+    margin: -0.1rem 0 0.35rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.chart-action-density-row {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.chart-action-density-row svg {
+    width: 100%;
+    height: 10px;
+    display: block;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-bg-secondary) 70%, transparent);
+}
+
+.chart-action-density-row > span:first-child {
+    font-weight: var(--font-weight-semibold);
+}
+
+.chart-action-density-row > span:last-child {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+}
+
+/* Error message */
+.backtest-error {
+    color: var(--color-negative);
+    font-size: var(--font-size-sm);
+    padding: 0.5rem;
+    border: 1px solid var(--color-negative);
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    background: color-mix(in srgb, var(--color-negative) 8%, transparent);
+}
+
+/* Stats table */
+.backtest-stats-table {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: var(--font-size-md);
+}
+
+.backtest-stats-table td {
+    padding: var(--spacing-xs) var(--spacing-lg);
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+}
+
+.backtest-stats-table th:first-child,
+.backtest-stats-table td:first-child {
+    text-align: center;
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+}
+
+.backtest-stats-table td:nth-child(2) {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+.backtest-stats-table th {
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--spacing-xs) var(--spacing-lg);
+    white-space: nowrap;
+}
+
+.backtest-stats-table th:not(:first-child) {
+    text-align: center;
+}
+
+.backtest-stats-table td:not(:first-child):not(:nth-child(2)) {
+    text-align: right;
+}
+
+.backtest-stats-table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--color-text-primary) 3%, transparent);
+}
+
+.backtest-stats-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, transparent);
+}
+
+/* Curve visibility toggle checkbox */
+.curve-toggle {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid var(--color-border-strong);
+    border-radius: 3px;
+    cursor: pointer;
+    background: transparent;
+    flex-shrink: 0;
+    transition: background 0.12s, border-color 0.12s;
+    vertical-align: middle;
+}
+.curve-toggle:checked {
+    background-color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5l2.5 2.5 4.5-4.5' stroke='%23fff' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.curve-toggle:indeterminate {
+    background-color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 5h6' stroke='%23fff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+.curve-toggle:hover {
+    border-color: var(--color-accent-primary);
+}

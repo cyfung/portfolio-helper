@@ -1,0 +1,647 @@
+/* ============================================
+   Table Styles
+   ============================================ */
+.portfolio-tables-wrapper {
+    --portfolio-content-scale: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    zoom: var(--portfolio-content-scale);
+}
+
+@supports not (zoom: 1) {
+    .portfolio-tables-wrapper {
+        transform: scale(var(--portfolio-content-scale));
+        transform-origin: top center;
+        width: calc(100% / var(--portfolio-content-scale));
+    }
+}
+
+.tws-sync-error {
+    color: var(--color-negative);
+    margin-bottom: 12px;
+}
+
+.summary-and-rates {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: var(--spacing-xl);
+}
+
+/* ============================================
+   Summary Table (Cash + Portfolio Totals)
+   ============================================ */
+.portfolio-cash-table {
+    width: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-bg-secondary);
+    font-size: var(--font-size-md);
+}
+
+.portfolio-cash-table td {
+    padding: var(--spacing-xs) var(--spacing-lg);
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+}
+
+.portfolio-cash-table td:first-child {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+.portfolio-cash-table td:last-child {
+    text-align: right;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+}
+
+.portfolio-cash-table .cash-raw-col {
+    text-align: right;
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+}
+
+.portfolio-cash-table td.cash-converted-col {
+    color: var(--color-text-secondary);
+}
+
+.portfolio-cash-table .summary-section-break td {
+    border-top: 2px solid var(--color-border-medium);
+    padding-top: var(--spacing-sm);
+    padding-bottom: 0;
+}
+
+.portfolio-cash-table .summary-divider td {
+    border-top: 1px solid var(--color-border-subtle);
+    padding: 0;
+}
+
+.portfolio-cash-table .total-cash-row td,
+.portfolio-cash-table .grand-total-row td {
+    font-weight: var(--font-weight-semibold);
+}
+
+.portfolio-cash-table .total-cash-row td:last-child,
+.portfolio-cash-table .stock-gross-row td:last-child {
+    color: var(--color-text-primary);
+}
+
+.portfolio-cash-table .grand-total-row td:last-child {
+    color: var(--color-accent-primary);
+}
+
+.portfolio-cash-table .timestamp-row td {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+}
+
+.portfolio-cash-table .timestamp-row td:last-child {
+    color: var(--color-positive);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* Sub-value: day change nested below its parent value, no extra row needed */
+.portfolio-cash-table .summary-subvalue {
+    font-size: var(--font-size-sm);
+    text-align: right;
+    margin-top: 2px;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.portfolio-table {
+    width: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: 0 auto var(--spacing-sm) auto;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-size: var(--font-size-md);
+}
+
+.portfolio-table thead {
+    background-color: var(--color-header-bg);
+    color: var(--color-text-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.portfolio-table th {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    text-align: left;
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    font-size: var(--font-size-sm);
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--color-border-subtle);
+    white-space: nowrap;
+}
+
+/* Right-align numeric columns */
+.portfolio-table th.col-num,
+.portfolio-table th.rebal-column,
+.portfolio-table th.alloc-column {
+    text-align: right;
+}
+
+.portfolio-table tbody tr {
+    border-bottom: 1px solid var(--color-border-subtle);
+    transition: background-color var(--transition-fast);
+}
+
+.portfolio-table tbody tr:nth-child(even) {
+    background-color: var(--color-bg-secondary);
+}
+
+.portfolio-table tbody tr:hover {
+    background-color: var(--color-bg-hover);
+}
+
+.portfolio-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.portfolio-table td {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-md);
+    transition: color var(--transition-base);
+    white-space: nowrap;
+}
+
+.portfolio-table td:first-child {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-md);
+}
+
+.portfolio-table .price,
+.portfolio-table .amount {
+    text-align: right;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Mark price column - use primary text color */
+.portfolio-table .price.loaded {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.portfolio-table .price.loaded.muted {
+    color: var(--color-text-secondary);
+    font-weight: normal;
+}
+
+/* Mkt Val column - use secondary text color */
+.portfolio-table .value {
+    text-align: right;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+}
+
+.portfolio-table .value.loaded {
+    color: var(--color-text-secondary);
+}
+
+.portfolio-table .weight {
+    text-align: right;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.portfolio-table .weight.loaded {
+    color: var(--color-text-primary);
+}
+
+/* Price Change Indicators */
+.price-change {
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.price-change.positive { color: var(--color-positive); }
+.price-change.negative { color: var(--color-negative); }
+.price-change.neutral { color: var(--color-text-tertiary); }
+
+/* After-hours styling - colored+dimmed (default CSS, used when gray mode is off) */
+.price.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 0.8;
+}
+
+/* After-hours styling - chg preserves positive/negative color, just dimmed */
+.price-change.after-hours {
+    opacity: 0.75;
+}
+
+/* Display-currency estimated values shown in italic */
+.display-currency-est { font-style: italic; }
+
+/* After-hours styling - gray mode (solid gray, default setting) */
+.after-hours-gray .price.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
+}
+.after-hours-gray .price-change.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
+}
+.summary-subvalue.positive { color: var(--color-positive); }
+.summary-subvalue.negative { color: var(--color-negative); }
+.summary-subvalue.after-hours {
+    opacity: 0.75;
+}
+.after-hours-gray .summary-subvalue.after-hours {
+    color: var(--color-text-secondary) !important;
+    opacity: 1;
+}
+
+/* Weight Difference Display */
+.weight-display {
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.weight-diff {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 3px;
+    margin-left: 6px;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+}
+
+/* Near target - neutral grey */
+.weight-diff.good {
+    background: #1e2433;
+    color: #94a3b8;
+    border: 1px solid #334155;
+}
+
+/* Mild deviation - orange */
+.weight-diff.warning {
+    background: #2d1f0e;
+    color: #fb923c;
+    border: 1px solid #7c3a0a;
+}
+
+/* Overweight (positive) - red */
+.weight-diff.alert-over {
+    background: #3f1d1d;
+    color: #f87171;
+    border: 1px solid #7f1d1d;
+}
+
+/* Underweight (negative) - green */
+.weight-diff.alert-under {
+    background: #1a2e1a;
+    color: #4ade80;
+    border: 1px solid #14532d;
+}
+
+/* Light theme overrides */
+[data-theme="light"] .weight-diff.good {
+    background: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .weight-diff.warning {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fdba74;
+}
+
+[data-theme="light"] .weight-diff.alert-over {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+}
+
+[data-theme="light"] .weight-diff.alert-under {
+    background: #f0fdf4;
+    color: #16a34a;
+    border: 1px solid #86efac;
+}
+
+.weight-cur {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.weight-tgt {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    margin-left: 4px;
+}
+
+.weight-sep {
+    color: var(--color-border-strong);
+    margin: 0 3px;
+    font-size: var(--font-size-xs);
+}
+
+.th-sub {
+    display: inline;
+    font-size: 10px;
+    font-weight: var(--font-weight-normal);
+    color: var(--color-text-tertiary);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-top: 1px;
+}
+
+/* ============================================
+   Rebalancing Column Visibility
+   ============================================ */
+/* Hide rebalancing columns by default */
+.portfolio-table .rebal-column,
+.more-info-visible .portfolio-table .rebal-column.col-moreinfo{
+    display: none;
+}
+
+/* Show rebalancing columns when active */
+.rebalancing-visible .portfolio-table .rebal-column {
+    display: table-cell;
+}
+
+/* Alloc columns are always visible */
+.portfolio-table td.alloc-column,
+.portfolio-table th.alloc-column {
+    display: table-cell;
+}
+
+/* More Info columns - hidden by default (must beat rebal/alloc specificity) */
+.portfolio-table td.col-moreinfo,
+.portfolio-table th.col-moreinfo,
+.rebalancing-visible .portfolio-table .col-moreinfo {
+    display: none;
+}
+.more-info-visible .portfolio-table td.col-moreinfo,
+.more-info-visible .portfolio-table th.col-moreinfo,
+.rebalancing-visible.more-info-visible .portfolio-table .rebal-column.col-moreinfo{
+    display: table-cell;
+}
+
+/* Alloc adjustment controls */
+.stock-section {
+    width: max-content;
+}
+.stock-table-block {
+    width: max-content;
+}
+.stock-table-freshness {
+    display: flex;
+    justify-content: flex-end;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-top: 0.15rem;
+    margin-bottom: var(--spacing-sm);
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+}
+.stock-table-freshness time,
+.stock-table-freshness-value {
+    color: var(--color-positive);
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+}
+.stock-table-freshness-label {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-base), sans-serif;
+    font-weight: var(--font-weight-medium);
+}
+
+.group-by-control {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+    margin-right: auto;
+}
+.group-by-control select {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    border: none;
+}
+.group-by-clear {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: 0 2px;
+    line-height: 1;
+    opacity: 0.6;
+}
+.group-by-clear:hover {
+    opacity: 1;
+    color: var(--color-text-primary);
+}
+
+.stock-group-header td {
+    padding-top: 1rem;
+    padding-bottom: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+.stock-group-header:first-child td {
+    padding-top: var(--spacing-sm);
+}
+
+.alloc-controls {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-xs) 0 var(--spacing-sm);
+    width: 100%;
+}
+.alloc-controls-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.alloc-mode-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+.alloc-mode-label {
+    font-size: 1.15rem;
+    font-weight: 800;
+    line-height: 1;
+    min-width: 1ch;
+    text-align: center;
+}
+.alloc-mode-label-deposit { color: #22c55e; }
+.alloc-mode-label-withdraw { color: #ef4444; }
+.alloc-mode-group select {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+#alloc-add-mode {
+    border: 1.5px solid #22c55e;
+}
+#alloc-reduce-mode {
+    border: 1.5px solid #ef4444;
+}
+
+/* ============================================
+   Table Footer (Total Row)
+   ============================================ */
+.portfolio-table tfoot {
+    background-color: var(--color-bg-secondary);
+    border-top: 1px solid var(--color-border-medium);
+}
+
+/* Hide tfoot total row by default; show only in edit mode */
+.portfolio-table tfoot tr {
+    display: none;
+}
+.editing-active .portfolio-table tfoot tr {
+    display: table-row;
+}
+#target-weight-total {
+    text-align: right;
+    font-weight: 600;
+}
+#target-weight-total.weight-total-error {
+    color: var(--color-negative);
+}
+
+.portfolio-table .total-row td {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+}
+
+.portfolio-table .total-value {
+    color: var(--color-accent-primary);
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Portfolio Total Section */
+.portfolio-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    align-items: flex-end;
+    text-align: right;
+}
+
+.total-main {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-mono), monospace;
+}
+
+.total-change {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+}
+
+.change-dollars, .change-percent {
+    font-family: var(--font-family-mono), monospace;
+    font-weight: var(--font-weight-semibold);
+}
+
+.change-dollars.positive, .change-percent.positive { color: var(--color-positive); }
+.change-dollars.negative, .change-percent.negative { color: var(--color-negative); }
+.change-dollars.neutral, .change-percent.neutral { color: var(--color-text-tertiary); }
+
+/* ============================================
+   Row Update Highlighting
+   ============================================ */
+
+/* Highlight animation for updated rows */
+.portfolio-table tbody tr.recently-updated {
+    animation: row-highlight-fade 10s ease-out;
+}
+
+@keyframes row-highlight-fade {
+    0% {
+        background-color: rgba(0, 102, 204, 0.25);
+        box-shadow: 0 0 8px rgba(0, 102, 204, 0.4);
+    }
+    20% {
+        background-color: rgba(0, 102, 204, 0.2);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* Dark theme variant - lighter blue glow */
+[data-theme="dark"] .portfolio-table tbody tr.recently-updated {
+    animation: row-highlight-fade-dark 10s ease-out;
+}
+
+@keyframes row-highlight-fade-dark {
+    0% {
+        background-color: rgba(88, 166, 255, 0.15);
+        box-shadow: 0 0 8px rgba(88, 166, 255, 0.3);
+    }
+    20% {
+        background-color: rgba(88, 166, 255, 0.1);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* Timestamp row styling */
+.timestamp-row td {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-md);
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.timestamp-value {
+    text-align: right;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+}
+
+.timestamp-value.loaded {
+    color: var(--color-positive);
+    font-weight: var(--font-weight-semibold);
+}

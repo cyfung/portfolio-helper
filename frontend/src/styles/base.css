@@ -1,0 +1,43 @@
+/* ============================================
+   Global Styles
+   ============================================ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    border-color: var(--color-border-subtle);
+}
+
+body {
+    font-family: var(--font-family-base), sans-serif;
+    font-weight: var(--font-weight-normal);
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    padding: var(--spacing-lg);
+    transition: background-color var(--transition-base), color var(--transition-base);
+    line-height: 1.4;
+}
+
+input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+
+/* ============================================
+   Container
+   ============================================ */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    background-color: var(--color-bg-primary);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-xl);
+    transition: background-color var(--transition-base);
+}

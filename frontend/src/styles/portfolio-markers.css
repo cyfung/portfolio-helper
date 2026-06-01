@@ -1,0 +1,124 @@
+/* ============================================
+   Mark Price Cell - inline Day % pill
+   ============================================ */
+.mark-day-pct {
+    display: inline-block;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    font-family: var(--font-family-mono), monospace;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 5px;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.mark-day-pct:empty {
+    display: none;
+}
+
+.mark-day-pct.positive {
+    background: color-mix(in srgb, var(--color-positive) 15%, transparent);
+    color: var(--color-positive);
+    border: 1px solid color-mix(in srgb, var(--color-positive) 30%, transparent);
+}
+
+.mark-day-pct.negative {
+    background: color-mix(in srgb, var(--color-negative) 15%, transparent);
+    color: var(--color-negative);
+    border: 1px solid color-mix(in srgb, var(--color-negative) 30%, transparent);
+}
+
+.mark-day-pct.neutral {
+    background: color-mix(in srgb, var(--color-text-tertiary) 12%, transparent);
+    color: var(--color-text-tertiary);
+    border: 1px solid color-mix(in srgb, var(--color-text-tertiary) 25%, transparent);
+}
+
+.mark-day-pct.after-hours {
+    opacity: 0.75;
+}
+.after-hours-gray .mark-day-pct.after-hours {
+    color: var(--color-text-secondary) !important;
+    background: color-mix(in srgb, var(--color-text-secondary) 12%, transparent) !important;
+    border-color: color-mix(in srgb, var(--color-text-secondary) 25%, transparent) !important;
+    opacity: 1;
+}
+
+/* ============================================
+   Group Row Hover Tooltip
+   ============================================ */
+#group-hover-tooltip {
+    position: fixed;
+    z-index: 9999;
+    display: none;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    pointer-events: none;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-family-mono), monospace;
+    white-space: nowrap;
+}
+
+#group-hover-tooltip table {
+    border-collapse: collapse;
+}
+
+#group-hover-tooltip tr + tr td {
+    padding-top: var(--spacing-xs);
+}
+
+.group-tooltip-symbol {
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+    padding-right: var(--spacing-2xl);
+}
+
+.group-tooltip-alloc {
+    text-align: right;
+}
+
+.group-tooltip-na {
+    color: var(--color-text-tertiary);
+}
+
+/* ============================================
+   Action columns (Rebal $ / Rebal Qty / Alloc $ / Alloc Qty)
+   Distinct hue from day-change: blue = buy, red = sell
+   ============================================ */
+.portfolio-table .action-neutral,
+.action-neutral {
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--color-text-tertiary);
+}
+
+.portfolio-table .action-positive,
+.action-positive {
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+    color: #4338CA;
+}
+
+.portfolio-table .action-negative,
+.action-negative {
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+    text-align: right;
+    white-space: nowrap;
+    color: #BE185D;
+}
+
+[data-theme="dark"] .portfolio-table .action-positive,
+[data-theme="dark"] .action-positive { color: #85B7EB; }
+[data-theme="dark"] .portfolio-table .action-negative,
+[data-theme="dark"] .action-negative { color: #F09595; }

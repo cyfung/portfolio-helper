@@ -1,0 +1,331 @@
+/* ============================================
+   Accessibility
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ============================================
+   IBKR Margin Rates table
+   ============================================ */
+.ibkr-rates-table {
+    border-collapse: collapse;
+    font-size: 0.85em;
+    min-width: 180px;
+}
+
+.ibkr-rates-error {
+    color: var(--color-negative);
+    font-size: 0.82em;
+    line-height: 1.35;
+    max-width: 260px;
+    padding: 2px 8px 4px 8px;
+}
+
+.ibkr-rates-table thead th {
+    text-align: left;
+    font-size: 0.78em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    padding: 0 8px 4px 8px;
+    white-space: nowrap;
+}
+
+.ibkr-rates-table td {
+    padding: 2px 8px;
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.ibkr-rates-table .ibkr-rate-currency {
+    font-weight: 600;
+    min-width: 50px;
+}
+
+.ibkr-interest-summary {
+    margin-top: 8px;
+    font-size: 0.85em;
+    font-family: var(--font-family-mono), monospace;
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.ibkr-interest-summary td {
+    padding: 2px 8px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.ibkr-interest-summary td:last-child {
+    text-align: right;
+    color: var(--color-text-primary);
+}
+
+.ibkr-interest-summary td.ibkr-value-muted {
+    color: var(--color-text-secondary);
+}
+
+.ibkr-interest-summary td.ibkr-rate-diff {
+    color: var(--color-warning);
+}
+
+.ibkr-interest-summary td.ibkr-action-hint {
+    color: var(--color-text-secondary);
+    font-style: italic;
+    padding-top: 0;
+}
+
+.ibkr-rates-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.ibkr-last-fetch {
+    font-family: var(--font-family-mono), monospace;
+    font-size: 0.78em;
+    color: var(--color-text-tertiary);
+}
+
+.ibkr-reload-btn {
+    background: none;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: 0.85em;
+    line-height: 1;
+    padding: 1px 5px;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.ibkr-reload-btn:hover:not(:disabled) {
+    color: var(--color-text-primary);
+    border-color: var(--color-border-medium);
+}
+
+.ibkr-reload-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
+
+/* Delete Row / Cash Buttons - base from .btn-remove, overrides in button utilities */
+
+/* ============================================
+   Add Stock / Add Entry Buttons
+   ============================================ */
+.edit-add-buttons {
+    display: none;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) 0;
+    justify-content: center;
+}
+
+.editing-active .edit-add-buttons {
+    display: flex;
+}
+
+.add-stock-btn,
+.add-cash-btn {
+    background: none;
+    border: 1px dashed var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-sm) var(--spacing-lg);
+}
+
+.add-stock-btn:hover,
+.add-cash-btn:hover {
+    border-color: var(--color-text-secondary);
+    color: var(--color-text-primary);
+}
+
+.copy-col-btn {
+    display: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    padding: 0 2px;
+    vertical-align: middle;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+.copy-col-btn:hover {
+    opacity: 1;
+}
+.copy-btn-flash {
+    opacity: 1 !important;
+    color: var(--color-accent-primary);
+}
+
+/* ============================================
+   Edit Mode: Hide non-editable sections
+   ============================================ */
+
+/* Hide IBKR rates table in edit mode */
+.editing-active .ibkr-rates-wrapper {
+    display: none;
+}
+
+/* Hide summary table in edit mode (replaced by cash-edit-table) */
+.editing-active .portfolio-cash-table {
+    display: none;
+}
+
+/* ============================================
+   Cash Edit Table (edit mode only)
+   ============================================ */
+.cash-edit-table-wrapper {
+    display: none;
+}
+
+.dividend-from-section {
+    display: none;
+}
+
+.editing-active .dividend-from-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.dividend-from-section input[type="date"] {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    color-scheme: light;
+}
+
+[data-theme="dark"] .dividend-from-section input[type="date"] {
+    color-scheme: dark;
+}
+
+.editing-active .cash-edit-table-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: fit-content;
+}
+
+.cash-edit-table {
+    border-collapse: collapse;
+    width: auto;
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.cash-edit-table td {
+    padding: var(--spacing-xs) var(--spacing-lg);
+    vertical-align: middle;
+}
+
+/* Symbol input: left-aligned text */
+.editing-active .edit-symbol {
+    text-align: left;
+    width: 80px;
+}
+
+/* Cash structured field inputs */
+.editing-active .cash-edit-label {
+    text-align: left;
+    width: 120px;
+}
+.editing-active .cash-edit-currency {
+    width: 52px;
+    text-transform: uppercase;
+}
+.editing-active .cash-edit-amount {
+    width: 110px;
+    text-align: right;
+}
+.editing-active .cash-edit-multiplier {
+    width: 52px;
+    text-align: right;
+}
+.cash-normal-fields,
+.cash-ref-fields {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.cash-normal-fields td,
+.cash-ref-fields td {
+    padding: 0;
+}
+.cash-edit-portfolio-ref {
+    padding: 2px 4px;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    width: 110px;
+}
+
+.edit-import-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) 0 var(--spacing-sm);
+}
+
+.edit-import-label,
+.edit-import-status {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.edit-import-label {
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.edit-import-controls select {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.edit-import-controls .add-stock-btn {
+    padding: var(--spacing-xs) var(--spacing-lg);
+}
+
+.edit-import-controls .add-stock-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.cash-margin-toggle,
+.cash-ref-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}

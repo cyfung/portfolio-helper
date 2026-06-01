@@ -1,0 +1,313 @@
+/* 3-column portfolio block grid */
+.portfolio-blocks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+@media (max-width: 900px) {
+    .portfolio-blocks {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Individual portfolio block */
+.portfolio-block {
+    border: 1px solid var(--color-border-medium);
+    border-radius: 6px;
+    padding: 0.875rem;
+    background: var(--color-bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1 1 260px;
+}
+
+/* Margin config rows container */
+.margin-config-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+/* Column headers for margin input grid */
+.margin-col-headers {
+    display: grid;
+    grid-template-columns: 1rem 1fr 1fr 1fr 1fr 5.5rem 5.5rem auto;
+    gap: 0.35rem;
+    padding: 0 0 0.1rem;
+}
+
+.margin-col-headers span {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    text-align: right;
+}
+
+.margin-col-headers span:last-child {
+    min-width: 1.5rem; /* align with remove button */
+}
+
+/* Single margin config row: drag | ratio | spread | dev up | dev down | mode | remove */
+.margin-config-row {
+    display: grid;
+    grid-template-columns: 1rem 1fr 1fr 1fr 1fr 5.5rem 5.5rem auto;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.margin-config-row input {
+    padding: 0.25rem 0.375rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-family: var(--font-family-mono), monospace;
+    text-align: right;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.margin-config-row input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+input.input-error,
+.margin-config-row input.input-error,
+.strategy-row input.input-error,
+.backtest-config-row input.input-error {
+    border-color: var(--color-negative);
+    background: color-mix(in srgb, var(--color-negative) 8%, var(--color-bg-primary));
+}
+
+.margin-config-row select.mc-mode {
+    padding: 0.25rem 0.25rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    width: auto;
+    box-sizing: border-box;
+}
+
+.margin-config-row select.mc-mode:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+/* remove-margin-btn - base from .btn-remove, xs override in button utilities */
+
+.margin-header-btns {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.include-no-margin-btn,
+.add-margin-btn {
+    background: none;
+    border: 1px solid var(--color-border-medium);
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.include-no-margin-btn:hover,
+.add-margin-btn:hover {
+    background: var(--color-bg-hover);
+}
+
+/* Saved portfolios bar */
+
+#saved-portfolios-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.saved-portfolio-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(0, 102, 204, 0.08);
+    border: 1px solid var(--color-accent-primary);
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem 0.2rem 0.65rem;
+    font-size: 0.85rem;
+    cursor: grab;
+    user-select: none;
+    white-space: nowrap;
+    color: var(--color-accent-primary);
+    transition: background 0.15s, color 0.15s;
+}
+
+.saved-portfolio-chip:hover {
+    background: rgba(0, 102, 204, 0.15);
+}
+
+.saved-portfolio-chip:active {
+    cursor: grabbing;
+}
+
+.saved-portfolio-chip-del {
+    background: none;
+    border: none;
+    padding: 0;
+    line-height: 1;
+    font-size: 0.7rem;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.5;
+}
+
+.saved-portfolio-chip-del:hover {
+    opacity: 1;
+}
+
+.saved-strategy-chip {
+    background: color-mix(in srgb, #f97316 18%, transparent);
+    border-color: #f97316;
+    color: #f97316;
+}
+
+.saved-strategy-chip:hover {
+    background: color-mix(in srgb, #f97316 28%, transparent);
+}
+
+/* Drop target highlight */
+.portfolio-block.drag-over {
+    outline: 2px dashed var(--color-accent-primary);
+    outline-offset: 3px;
+    border-radius: 6px;
+    background:
+        linear-gradient(color-mix(in srgb, var(--color-accent-primary) 8%, transparent), color-mix(in srgb, var(--color-accent-primary) 8%, transparent)),
+        var(--color-bg-secondary);
+}
+
+.portfolio-block.drag-over > .backtest-section:first-child {
+    position: relative;
+}
+
+.portfolio-block.drag-over > .backtest-section:first-child .backtest-section-header {
+    visibility: hidden;
+}
+
+.portfolio-block.drag-over > .backtest-section:first-child::after {
+    content: "Load saved portfolio into this block";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100%;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 55%, transparent);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-accent-primary) 12%, var(--color-bg-primary));
+    color: var(--color-accent-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+.portfolio-block.drag-over-portfolio-ref .ticker-rows {
+    position: relative;
+    min-height: 2.5rem;
+    outline: 2px dashed var(--color-positive);
+    outline-offset: 4px;
+    border-radius: 4px;
+    background:
+        repeating-linear-gradient(
+            -45deg,
+            color-mix(in srgb, var(--color-positive) 10%, transparent) 0,
+            color-mix(in srgb, var(--color-positive) 10%, transparent) 8px,
+            transparent 8px,
+            transparent 16px
+        );
+}
+
+.portfolio-block.drag-over-portfolio-ref .ticker-rows::before {
+    content: "Add as portfolio reference row";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-bg-primary) 82%, transparent);
+    color: var(--color-positive);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+.portfolio-block.drag-over-portfolio-ref .backtest-ticker-row {
+    opacity: 0.35;
+}
+
+/* Margin row drag handle */
+.margin-drag-handle {
+    cursor: grab;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.45;
+}
+.margin-drag-handle:hover { opacity: 1; }
+.margin-config-row:active .margin-drag-handle { cursor: grabbing; }
+
+.rebalance-strategy-margin-row {
+    grid-template-columns: 1rem 1fr auto;
+    padding: 0.35rem 0;
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.strategy-margin-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    min-width: 0;
+}
+
+.strategy-margin-name {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.strategy-margin-info span:not(.strategy-margin-name) {
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    padding: 0.12rem 0.35rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+/* Margin drop-zone highlight */
+.portfolio-block.drag-over-margin .margin-config-rows {
+    outline: 2px dashed var(--color-accent-primary);
+    outline-offset: 3px;
+    border-radius: 4px;
+    min-height: 2rem;
+}

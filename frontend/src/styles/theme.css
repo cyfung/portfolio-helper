@@ -1,0 +1,110 @@
+/* ============================================
+   CSS Variables - Light Theme (Default)
+   ============================================ */
+:root {
+    --color-bg-primary: #ffffff;
+    --color-bg-secondary: #f8f9fa;
+    --color-bg-elevated: #ffffff;
+    --color-bg-hover: #f1f3f5;
+    --color-bg-tertiary: #eef1f4;
+
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #495057;
+    --color-text-tertiary: #6c757d;
+    --color-text-inverse: #ffffff;
+
+    --color-border-subtle: #dee2e6;
+    --color-border-medium: #ced4da;
+    --color-border-strong: #adb5bd;
+
+    --color-accent-primary: #0066cc;
+    --color-accent-hover: #0052a3;
+
+    --color-positive: #00875a;
+    --color-negative: #de350b;
+    --color-warning: #b45309;
+
+    --color-header-bg: #dee2e6;
+    --color-header-text: #1a1a1a;
+
+    --font-family-base: system-ui, -apple-system, sans-serif;
+    --font-family-mono: ui-monospace, 'Cascadia Code', monospace;
+
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 2rem;
+
+    --font-weight-normal: 500;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    --spacing-xs: 0.125rem;
+    --spacing-sm: 0.25rem;
+    --spacing-md: 0.375rem;
+    --spacing-lg: 0.5rem;
+    --spacing-xl: 0.75rem;
+    --spacing-2xl: 1rem;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+
+    --color-muted: #888888;
+    --color-danger: #c0392b;
+    --color-border-light: #e9ecef;
+
+    --transition-fast: 0.15s ease;
+    --transition-base: 0.3s ease;
+
+    /* Input background (used by form elements) */
+    --color-bg-input: var(--color-bg-secondary);
+}
+
+/* ============================================
+   Dark Theme Overrides
+   ============================================ */
+[data-theme="dark"] {
+    --color-bg-primary: #161920;
+    --color-bg-secondary: #191C24;
+    --color-bg-elevated: #141924;
+    --color-bg-hover: #1a1f2e;
+    --color-bg-tertiary: #202637;
+
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #8b949e;
+    --color-text-tertiary: #6e7681;
+    --color-text-inverse: #0a0e14;
+
+    --color-border-subtle: #1c2128;
+    --color-border-medium: #2d333b;
+    --color-border-strong: #3d444d;
+
+    --color-accent-primary: #58a6ff;
+    --color-accent-hover: #79b8ff;
+
+    --color-positive: #3DC37A;
+    --color-negative: #EE6579;
+    --color-warning: #f59e0b;
+
+    --color-header-bg: #1c2128;
+    --color-header-text: #e6edf3;
+
+    --color-muted: #6e7681;
+    --color-danger: #e55353;
+    --color-border-light: #1c2128;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+
+    --color-bg-input: #1a1f2e;
+}

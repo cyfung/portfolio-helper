@@ -1,0 +1,243 @@
+.portfolio-ref-row .portfolio-ref-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    border-style: dashed;
+    background: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-bg-secondary));
+    color: var(--color-text-primary);
+}
+
+.portfolio-ref-badge {
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-accent-primary) 18%, transparent);
+    color: var(--color-accent-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.portfolio-builder-results {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+    align-items: start;
+}
+
+.portfolio-builder-result-block {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-elevated);
+    overflow: visible;
+}
+
+.portfolio-builder-result-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border-subtle);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+}
+
+.portfolio-builder-result-title span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.portfolio-builder-result-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+}
+
+.portfolio-builder-toggle-btn {
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.portfolio-builder-toggle-btn:hover {
+    border-color: var(--color-accent-primary);
+}
+
+.portfolio-builder-margin-select {
+    max-width: 9rem;
+    flex: 0 0 auto;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    padding: 0.15rem 0.35rem;
+}
+
+.portfolio-builder-table {
+    width: auto;
+    min-width: 12rem;
+    margin: 0.5rem auto 0.75rem;
+}
+
+.portfolio-builder-table th:not(:first-child),
+.portfolio-builder-table td:not(:first-child) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.portfolio-builder-table th:first-child,
+.portfolio-builder-table td:first-child {
+    text-align: left;
+}
+
+.portfolio-builder-table tfoot th {
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.portfolio-builder-group-section {
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 0.15rem;
+    position: relative;
+}
+
+.portfolio-builder-group-table {
+    margin-top: 0.35rem;
+}
+
+.portfolio-builder-group-table tbody tr {
+    cursor: pointer;
+}
+
+.portfolio-builder-group-table tbody tr.selected td {
+    background: color-mix(in srgb, var(--color-accent-primary) 16%, transparent);
+    color: var(--color-text-primary);
+    font-weight: 700;
+}
+
+.portfolio-builder-group-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.portfolio-builder-group-name svg {
+    color: var(--color-accent-primary);
+    flex: 0 0 auto;
+}
+
+.portfolio-builder-group-composition {
+    position: fixed;
+    z-index: 30;
+    min-width: 14rem;
+    max-width: min(24rem, 90vw);
+    margin: 0;
+    padding: 0.35rem;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-elevated);
+    box-shadow: 0 14px 34px color-mix(in srgb, #000 24%, transparent);
+    pointer-events: auto;
+}
+
+.portfolio-builder-group-composition th,
+.portfolio-builder-group-composition td {
+    border-radius: 0;
+}
+
+.portfolio-builder-group-composition th:first-child {
+    border-top-left-radius: var(--radius-md);
+}
+
+.portfolio-builder-group-composition th:last-child {
+    border-top-right-radius: var(--radius-md);
+}
+
+.portfolio-builder-result-block .stats-container {
+    display: flex;
+    justify-content: center;
+    margin: 0;
+}
+
+.portfolio-builder-empty {
+    padding: 0.75rem;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
+@media (max-width: 900px) {
+    .portfolio-builder-results {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+.clear-portfolio-btn {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--color-muted);
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+}
+
+.clear-portfolio-btn:hover {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+}
+
+/* Est Val column header hint */
+.col-info-hint {
+    cursor: help;
+    font-size: 0.75em;
+    opacity: 0.6;
+    user-select: none;
+}
+
+/* Floating price ladder tooltip */
+#est-val-tooltip {
+    position: fixed;
+    z-index: 9999;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-family: var(--font-family-mono), monospace;
+    pointer-events: none;
+    white-space: pre;
+    width: max-content;
+    line-height: 1.6;
+    display: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#est-val-tooltip .ladder-up {
+    color: #f0a04b;
+}
+#est-val-tooltip .ladder-down {
+    color: #7eb8f7;
+}
+#est-val-tooltip hr.ladder-separator {
+    border: none;
+    border-top: 1px solid var(--color-border-medium);
+    margin: 2px 0;
+}
+/* cursor on hoverable cells */
+td[id^="est-val-"].loaded {
+    cursor: help;
+}

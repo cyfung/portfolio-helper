@@ -1,0 +1,86 @@
+/* Monte Carlo */
+
+.mc-params-grid {
+    display: grid;
+    grid-template-columns: repeat(5, auto);
+    gap: 1rem;
+    width: fit-content;
+}
+
+@media (max-width: 900px) {
+    .mc-params-grid {
+        grid-template-columns: repeat(2, 1fr);
+        width: 100%;
+    }
+}
+
+.mc-params-grid input,
+.mc-params-grid select {
+    height: 2.125rem;
+    box-sizing: border-box;
+    line-height: 1.25;
+}
+
+.mc-params-grid input {
+    width: 150px;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    margin-top: 0.25rem;
+}
+
+.mc-params-grid select {
+    width: 120px;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+    margin-top: 0.25rem;
+}
+
+.mc-percentile-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.mc-pct-tab {
+    padding: 4px 14px;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.15s, color 0.15s;
+}
+
+.mc-pct-tab:hover {
+    border-color: var(--color-accent-primary);
+}
+
+.mc-pct-tab.active {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+    border-color: var(--color-accent-primary);
+}
+
+.mc-stats-header {
+    margin-bottom: 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.mc-active-pct td { background: rgba(100,140,200,0.15); }
+.mc-pct-separator td { padding: var(--spacing-md) var(--spacing-lg); color: var(--color-text-secondary); border-top: 1px solid var(--color-border-subtle); font-size: var(--font-size-sm); }
+
+.backtest-stats-table .mc-sort-target {
+    color: var(--color-accent-primary);
+    font-weight: var(--font-weight-semibold);
+}

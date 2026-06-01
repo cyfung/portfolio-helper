@@ -1,0 +1,148 @@
+/* ============================================
+   Info, Status and Error Messages
+   ============================================ */
+.status {
+    text-align: left;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-sm);
+    transition: color var(--transition-base);
+}
+
+.status.complete {
+    color: var(--color-positive);
+}
+
+.info {
+    text-align: center;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-md);
+    transition: color var(--transition-base);
+}
+
+.error {
+    color: var(--color-negative);
+    text-align: center;
+    padding: var(--spacing-md);
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-negative);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--transition-base);
+}
+
+/* ============================================
+   Responsive Design
+   ============================================ */
+@media (max-width: 768px) {
+    body {
+        padding: var(--spacing-sm);
+    }
+
+    .container {
+        padding: var(--spacing-lg);
+    }
+
+    .portfolio-header {
+        grid-template-columns: 1fr;
+        margin-bottom: var(--spacing-lg);
+        padding: 0.75rem;
+    }
+
+    .header-title-group,
+    .header-top-controls,
+    .header-buttons {
+        grid-column: 1;
+    }
+
+    .header-top-controls {
+        grid-row: 2;
+        justify-content: flex-start;
+        min-width: 0;
+        flex-wrap: wrap;
+    }
+
+    .header-buttons {
+        grid-row: 3;
+        justify-content: flex-start;
+    }
+
+    .page-nav-tabs {
+        flex-wrap: wrap;
+        gap: 0.15rem;
+    }
+
+    .header-brand-name {
+        max-width: 10rem;
+    }
+
+    h1 {
+        font-size: var(--font-size-xl);
+    }
+
+    .theme-toggle {
+        width: 32px;
+        height: 32px;
+    }
+
+    .theme-toggle svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .portfolio-table th,
+    .portfolio-table td {
+        padding: var(--spacing-sm) var(--spacing-lg);
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: var(--spacing-md);
+    }
+
+    .container {
+        padding: var(--spacing-lg);
+        border-radius: var(--radius-md);
+    }
+
+    .portfolio-header {
+        margin-bottom: var(--spacing-lg);
+        padding: 0.65rem;
+    }
+
+    .header-app-icon {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .header-brand {
+        font-size: var(--font-size-md);
+    }
+
+    .header-active-context {
+        font-size: var(--font-size-sm);
+    }
+
+    h1 {
+        font-size: var(--font-size-lg);
+    }
+
+    .theme-toggle {
+        width: 32px;
+        height: 32px;
+    }
+
+    .theme-toggle svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .portfolio-table th,
+    .portfolio-table td,
+    .portfolio-table .total-row td {
+        padding: var(--spacing-sm) var(--spacing-lg);
+    }
+}

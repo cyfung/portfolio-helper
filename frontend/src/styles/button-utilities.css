@@ -1,0 +1,85 @@
+/* Standard outlined-accent button
+   Use .btn-outline-accent for any new small action button that has a
+   transparent background with accent-coloured border and fills on hover.
+   Existing classes (.save-portfolio-btn, .backtest-config-btn) are grouped
+   here so they share the same base without needing HTML changes.          */
+.btn-outline-accent,
+.save-portfolio-btn,
+.backtest-config-btn,
+.reorder-tabs-btn {
+    border: 1px solid var(--color-accent-primary);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition-fast);
+}
+
+.btn-outline-accent:hover,
+.save-portfolio-btn:not(:disabled):hover,
+.backtest-config-btn:hover {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.btn-outline-accent:disabled,
+.save-portfolio-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* Standard remove/delete button
+   Use .btn-remove for any new icon-style delete/remove button.
+   Existing classes are grouped here so they share the same base.
+   Size overrides (font-size, padding) follow below each rule.              */
+.btn-remove,
+.remove-ticker-btn,
+.remove-margin-btn,
+.delete-row-btn,
+.delete-cash-btn,
+.cf-remove,
+.backup-modal-item-del {
+    background: none;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    padding: 0.25rem 0.375rem;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.btn-remove:hover,
+.remove-ticker-btn:hover,
+.remove-margin-btn:hover,
+.delete-row-btn:hover,
+.delete-cash-btn:hover,
+.cf-remove:hover,
+.backup-modal-item-del:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-negative);
+}
+
+/* remove-margin-btn - xs font */
+.remove-margin-btn { font-size: var(--font-size-xs); }
+
+/* delete-row/cash - larger icon, tighter horizontal padding */
+.delete-row-btn,
+.delete-cash-btn {
+    font-size: 1rem;
+    padding: 2px 5px;
+    flex-shrink: 0;
+}
+
+/* cf-remove - extra padding, no shrink */
+.cf-remove {
+    padding: var(--spacing-sm);
+    flex-shrink: 0;
+}
+
+/* Save button - size override */
+.save-portfolio-btn {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.6rem;
+}
