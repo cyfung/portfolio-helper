@@ -284,25 +284,6 @@ export default function DerivedSubStrategiesSection({
               />
             </div>
 
-            <div className="strategy-derived-grid strategy-derived-grid-deviation">
-              <NumberInputRow
-                label="BL Dev %"
-                value={derived.buyDeviationPct ?? derived.absoluteDeviationPct}
-                min="0"
-                step="0.5"
-                onChange={next => updateSubStrategy(derived.id, { buyDeviationPct: next, absoluteDeviationPct: next })}
-                onCommit={onCommit}
-              />
-              <NumberInputRow
-                label="SH Dev %"
-                value={derived.sellDeviationPct ?? derived.absoluteDeviationPct}
-                min="0"
-                step="0.5"
-                onChange={next => updateSubStrategy(derived.id, { sellDeviationPct: next })}
-                onCommit={onCommit}
-              />
-            </div>
-
             {STEP_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
               <div className="strategy-derived-steps">
                 {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
@@ -343,6 +324,34 @@ export default function DerivedSubStrategiesSection({
 
             <div className="strategy-derived-divider" />
 
+            <div className="strategy-derived-grid strategy-derived-grid-deviation">
+              <NumberInputRow
+                label="BL Dev %"
+                value={derived.buyDeviationPct ?? derived.absoluteDeviationPct}
+                min="0"
+                step="0.5"
+                onChange={next => updateSubStrategy(derived.id, { buyDeviationPct: next, absoluteDeviationPct: next })}
+                onCommit={onCommit}
+              />
+              <NumberInputRow
+                label="SH Dev %"
+                value={derived.sellDeviationPct ?? derived.absoluteDeviationPct}
+                min="0"
+                step="0.5"
+                onChange={next => updateSubStrategy(derived.id, { sellDeviationPct: next })}
+                onCommit={onCommit}
+              />
+              <NumberInputRow
+                label="Timeout"
+                value={derived.timeoutDays ?? '10'}
+                min="0"
+                step="1"
+                onChange={next => updateSubStrategy(derived.id, { timeoutDays: next })}
+                onCommit={onCommit}
+                suffix="D"
+              />
+            </div>
+
             <div className="strategy-derived-grid strategy-derived-grid-alloc">
               <DerivedField label="BL Alloc Type">
                 <select
@@ -364,15 +373,6 @@ export default function DerivedSubStrategiesSection({
                   ))}
                 </select>
               </DerivedField>
-              <NumberInputRow
-                label="Timeout"
-                value={derived.timeoutDays ?? '10'}
-                min="0"
-                step="1"
-                onChange={next => updateSubStrategy(derived.id, { timeoutDays: next })}
-                onCommit={onCommit}
-                suffix="D"
-              />
             </div>
           </div>
         ))}
@@ -416,7 +416,7 @@ function DerivedMarginInput({
   onCommit,
 }: DerivedMarginInputProps) {
   return (
-    <label className="strategy-derived-field">
+    <div className="strategy-derived-field">
       <span>{label}</span>
       <MarginPercentInput
         value={value}
@@ -426,7 +426,7 @@ function DerivedMarginInput({
         onChange={onChange}
         onCommit={onCommit}
       />
-    </label>
+    </div>
   )
 }
 

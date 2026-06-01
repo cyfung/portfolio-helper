@@ -136,13 +136,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.strategy-derived-grid-params,
-.strategy-derived-grid-alloc {
+.strategy-derived-grid-params {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.strategy-derived-grid-deviation {
+.strategy-derived-grid-alloc {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.strategy-derived-grid-deviation {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .strategy-derived-field {
@@ -187,6 +190,10 @@
     width: 100%;
 }
 
+.strategy-derived-field .margin-percent-input {
+    width: 100%;
+}
+
 .strategy-derived-field input[type="number"]:not(.margin-point-number-input) {
     text-align: right;
 }
@@ -196,6 +203,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, auto);
     align-items: center;
     gap: 0.3rem;
+    width: 100%;
     min-width: 0;
 }
 
@@ -303,6 +311,10 @@
 .strategy-row select:focus {
     outline: none;
     border-color: var(--color-accent-primary);
+}
+
+.strategy-row input[type="number"]:not(.margin-point-number-input) {
+    text-align: right;
 }
 
 .drawdown-tier-table {
@@ -482,8 +494,15 @@
     min-width: 0;
     border: none;
     border-radius: 0;
-    color: var(--color-accent-primary);
+    color: var(--color-warning);
     font-weight: 600;
+}
+
+.strategy-row .margin-point-endpoint .margin-point-number-input {
+    border: none;
+    border-radius: 0;
+    background: var(--color-bg-primary);
+    color: var(--color-warning);
 }
 
 .margin-point-step {
