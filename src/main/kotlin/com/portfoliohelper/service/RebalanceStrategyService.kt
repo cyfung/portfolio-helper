@@ -213,6 +213,11 @@ object RebalanceStrategyService {
       val effrx: Map<LocalDate, Double>,
   )
 
+  private data class DerivedReferenceSeries(
+      val margins: List<Double>,
+      val buyLowEvents: List<Boolean>,
+  )
+
   private fun runBasePortfolio(request: RebalanceStrategyRequest): MultiBacktestResult =
       BacktestService.runMulti(
           MultiBacktestRequest(
@@ -247,7 +252,10 @@ object RebalanceStrategyService {
             strategyPortfolio,
             strategy,
             context,
-            curve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
+            DerivedReferenceSeries(
+                curve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
+                buyLowEventsFor(curve, context.dates),
+            ),
         )
     return PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
   }
@@ -257,12 +265,22 @@ object RebalanceStrategyService {
       strategyPortfolio: PortfolioConfig,
       strategy: RebalStrategyConfig,
       context: RunContext,
-      defaultBaseMargins: List<Double>,
+      defaultReferenceSeries: DerivedReferenceSeries,
   ): List<CurveResult> {
-    val standaloneBaseMarginCache = mutableMapOf<String, List<Double>>()
+    val standaloneBaseCache = mutableMapOf<String, DerivedReferenceSeries>()
     return strategy.derivedSubStrategies
         .filter { it.enabled }
         .map { derived ->
+          val referenceSeries =
+              referenceSeriesForDerived(
+                  derived,
+                  defaultReferenceSeries,
+                  standaloneBaseCache,
+                  strategyPortfolio,
+                  strategy,
+                  request,
+                  context,
+              )
           runStrategy(
               strategyPortfolio,
               strategy.derivedOnlyConfig(derived),
@@ -273,37 +291,30 @@ object RebalanceStrategyService {
               request.startingBalance,
               request.includeActionDiagnostics,
               derived,
-              baseMarginsForDerived(
-                  derived,
-                  defaultBaseMargins,
-                  standaloneBaseMarginCache,
-                  strategyPortfolio,
-                  strategy,
-                  request,
-                  context,
-              ),
+              referenceSeries.margins,
+              referenceSeries.buyLowEvents,
           )
         }
   }
 
-  private fun baseMarginsForDerived(
+  private fun referenceSeriesForDerived(
       derived: DerivedSubStrategyConfig,
-      defaultBaseMargins: List<Double>,
-      standaloneBaseMarginCache: MutableMap<String, List<Double>>,
+      defaultReferenceSeries: DerivedReferenceSeries,
+      standaloneBaseCache: MutableMap<String, DerivedReferenceSeries>,
       strategyPortfolio: PortfolioConfig,
       strategy: RebalStrategyConfig,
       request: RebalanceStrategyRequest,
       context: RunContext,
-  ): List<Double> {
+  ): DerivedReferenceSeries {
     val ticker =
         if (derived.marginReferenceSource == DerivedMarginReferenceSource.STANDALONE_TICKER) {
           normalizeReferenceTicker(derived.marginReferenceTicker)
         } else {
           null
         }
-    if (ticker == null) return defaultBaseMargins
+    if (ticker == null) return defaultReferenceSeries
 
-    return standaloneBaseMarginCache.getOrPut(ticker) {
+    return standaloneBaseCache.getOrPut(ticker) {
       val standalonePortfolio =
           strategyPortfolio.copy(
               label = "${strategyPortfolio.label} / $ticker",
@@ -323,8 +334,21 @@ object RebalanceStrategyService {
               request.startingBalance,
               includeActionDiagnostics = false,
           )
-      standaloneCurve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio }
+      DerivedReferenceSeries(
+          standaloneCurve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
+          buyLowEventsFor(standaloneCurve, context.dates),
+      )
     }
+  }
+
+  private fun buyLowEventsFor(curveResult: CurveResult, dates: List<LocalDate>): List<Boolean> {
+    val buyLowDates =
+        curveResult.actionPoints
+            ?.filter { it.type == "BUY_LOW" }
+            ?.map { LocalDate.parse(it.date) }
+            ?.toSet()
+            ?: emptySet()
+    return dates.map { it in buyLowDates }
   }
 
   private fun RebalStrategyConfig.derivedOnlyConfig(derived: DerivedSubStrategyConfig): RebalStrategyConfig =
@@ -640,6 +664,7 @@ object RebalanceStrategyService {
       strategy: RebalStrategyConfig,
       derivedSubStrategy: DerivedSubStrategyConfig,
       baseMarginSeries: List<Double>,
+      baseBuyLowEventSeries: List<Boolean> = emptyList(),
       cashflow: CashflowConfig?,
       seriesMap: Map<String, Map<LocalDate, Double>>,
       dates: List<LocalDate>,
@@ -658,9 +683,10 @@ object RebalanceStrategyService {
           includeActionDiagnostics,
           derivedSubStrategy,
           baseMarginSeries,
+          baseBuyLowEventSeries,
       )
 
-  // ── Core simulation ───────────────────────────────────────────────────────
+  // Core simulation
 
   private fun runStrategy(
       portfolio: PortfolioConfig,
@@ -673,6 +699,7 @@ object RebalanceStrategyService {
       includeActionDiagnostics: Boolean = false,
       derivedSubStrategy: DerivedSubStrategyConfig? = null,
       baseMarginSeries: List<Double>? = null,
+      baseBuyLowEventSeries: List<Boolean>? = null,
   ): CurveResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
@@ -698,7 +725,9 @@ object RebalanceStrategyService {
     }
     fun dynamicDerivedTargetAt(recordedIndex: Int): DerivedTargetSignal? {
       val baseMargin = baseMarginAt(recordedIndex) ?: return null
-      return derivedTargetRuntime?.target(baseMargin)
+      val referenceBuyLowEvent =
+          baseBuyLowEventSeries?.getOrNull(recordedIndex.coerceAtLeast(0)) == true
+      return derivedTargetRuntime?.target(baseMargin, referenceBuyLowEvent)
     }
 
     val marginTarget = initialDerivedTargetAt(0) ?: strategy.marginRatio
@@ -866,7 +895,7 @@ object RebalanceStrategyService {
 
     if (vmTimingMr != null) recordVmTimingPoint(firstDate)
 
-    // ── Pre-loop: build trigger checkers and executors ────────────────────
+    // Pre-loop: build trigger checkers and executors
     fun DipSurgeConfig.buildResources(): DipSurgeResources {
       val keys =
           if (scope == DipSurgeScope.INDIVIDUAL_STOCK) tickers.map { DipSurgeKey.Stock(it) }
@@ -990,7 +1019,7 @@ object RebalanceStrategyService {
       return (if (momentumReturn >= 0.0) 1.0 else 0.0) to momentumReturn
     }
 
-    // ── Per-day helper: check triggers and drive executors for one config ─
+    // Per-day helper: check triggers and drive executors for one config
     fun processConfig(
         res: DipSurgeResources,
         direction: Direction,
@@ -1604,10 +1633,10 @@ object RebalanceStrategyService {
       dipResources.forEach { advanceCheckers(it) }
       surgeResources.forEach { advanceCheckers(it) }
 
-      // Step 8: Buy-the-dip — check triggers + executor.advance
+      // Step 8: Buy-the-dip: check triggers + executor.advance
       dipResources.forEach { processConfig(it, Direction.BUY, i, curDate, "BUY_DIP") }
 
-      // Step 9: Sell-on-surge — check triggers + executor.advance
+      // Step 9: Sell-on-surge: check triggers + executor.advance
       surgeResources.forEach { processConfig(it, Direction.SELL, i, curDate, "SELL_SURGE") }
 
       // Step 10: Record equity
@@ -1636,7 +1665,7 @@ object RebalanceStrategyService {
     )
   }
 
-  // ── Eligible amount calculation ───────────────────────────────────────────
+  // Eligible amount calculation
 
   private fun computeEligible(
       key: DipSurgeKey,
@@ -1675,7 +1704,7 @@ object RebalanceStrategyService {
     }
   }
 
-  // ── Allocation helpers ────────────────────────────────────────────────────
+  // Allocation helpers
 
   private fun applyAllocDelta(
       tickers: List<String>,
@@ -1715,7 +1744,7 @@ object RebalanceStrategyService {
     }
   }
 
-  // ── Utility ───────────────────────────────────────────────────────────────
+  // Utility
 
   private fun performProportionalRebalance(
       targetTotal: Double,
@@ -1784,7 +1813,7 @@ object RebalanceStrategyService {
   }
 }
 
-// ── Extension / helpers ───────────────────────────────────────────────────────
+// Extension / helpers
 
 private fun tradeMovedGrossInDirection(before: Double, after: Double, direction: Direction): Boolean {
   val epsilon = 1e-9
@@ -1838,7 +1867,7 @@ private fun biWeeklyBucket(date: LocalDate): Long =
 private fun monthBucket(date: LocalDate, monthsPerBucket: Int): Int =
     date.year * 12 + (date.monthValue - 1) / monthsPerBucket
 
-// ── Pre-loop resources ────────────────────────────────────────────────────────
+// Pre-loop resources
 
 private data class DerivedTargetSignal(
     val targetMargin: Double?,
@@ -1852,7 +1881,7 @@ private sealed interface DerivedTargetRuntime {
 
   fun initialTarget(baseMargin: Double): Double
 
-  fun target(baseMargin: Double): DerivedTargetSignal
+  fun target(baseMargin: Double, referenceBuyLowEvent: Boolean = false): DerivedTargetSignal
 
   fun targetReferenceIndex(currentIndex: Int): Int = currentIndex - 1
 
@@ -1865,6 +1894,7 @@ private sealed interface DerivedTargetRuntime {
           DerivedTargetScaleFunction.STEP -> StepDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STEP -> HysteresisStepDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS -> HysteresisStairsDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET -> HysteresisStairsRefBuyLowResetDerivedTargetRuntime(scale)
         }
   }
 }
@@ -1890,7 +1920,7 @@ private abstract class InterpolatedDerivedTargetRuntime(
 
   protected abstract fun shape(normalized: Double): Double
 
-  override fun target(baseMargin: Double): DerivedTargetSignal {
+  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
     val lowRef = refLow(baseMargin)
     val lowTarget = targetLow(baseMargin)
     val refSpan = refHigh - lowRef
@@ -1932,7 +1962,7 @@ private class LinearDerivedTargetRuntime(
 private class StepDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
 ) : DerivedTargetRuntimeBase(scale) {
-  override fun target(baseMargin: Double): DerivedTargetSignal {
+  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
     var target = scale.stepBaseTarget
     for (step in scale.steps.sortedBy { it.referenceMargin }) {
       if (baseMargin >= step.referenceMargin) target = step.targetMargin
@@ -1954,7 +1984,7 @@ private class HysteresisStepDerivedTargetRuntime(
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
-  override fun target(baseMargin: Double): DerivedTargetSignal {
+  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
     if (stage != Stage.TARGET_HIGH && baseMargin > resetThreshold) {
       stage = Stage.TARGET_HIGH
       return DerivedTargetSignal(highTarget)
@@ -2029,7 +2059,7 @@ private class HysteresisStairsDerivedTargetRuntime(
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
-  override fun target(baseMargin: Double): DerivedTargetSignal {
+  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
     if (nextStairIndex > 0 && baseMargin > resetThreshold) {
       nextStairIndex = 0
       return DerivedTargetSignal(highTarget, forceExactTarget = true)
@@ -2049,6 +2079,50 @@ private class HysteresisStairsDerivedTargetRuntime(
 
     return if (nextStairIndex == 0) {
       DerivedTargetSignal(highTarget)
+    } else {
+      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+    }
+  }
+}
+
+private class HysteresisStairsRefBuyLowResetDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  private data class Stair(val referenceMargin: Double, val targetMargin: Double)
+
+  override val usesPostPriceMarginForTriggers: Boolean = true
+
+  private val stairs =
+      scale.steps
+          .filter { it.referenceMargin.isFinite() && it.targetMargin.isFinite() }
+          .sortedByDescending { it.referenceMargin }
+          .map { Stair(it.referenceMargin, it.targetMargin.coerceAtLeast(0.0)) }
+  private var nextStairIndex = 0
+
+  override fun initialTarget(baseMargin: Double): Double = baseMargin.coerceAtLeast(0.0)
+
+  override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
+
+  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
+    if (nextStairIndex > 0 && referenceBuyLowEvent) {
+      nextStairIndex = 0
+      return DerivedTargetSignal(baseMargin.coerceAtLeast(0.0), forceExactTarget = true)
+    }
+
+    val crossedIndex =
+        stairs
+            .withIndex()
+            .drop(nextStairIndex)
+            .lastOrNull { (_, stair) -> baseMargin < stair.referenceMargin }
+            ?.index
+
+    if (crossedIndex != null) {
+      nextStairIndex = crossedIndex + 1
+      return DerivedTargetSignal(stairs[crossedIndex].targetMargin, forceExactTarget = true)
+    }
+
+    return if (nextStairIndex == 0) {
+      DerivedTargetSignal(baseMargin.coerceAtLeast(0.0))
     } else {
       DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
     }

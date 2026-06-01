@@ -19,8 +19,9 @@ interface Props {
   onCommit: () => void
 }
 
-const STEP_SCALE_FUNCTIONS = ['STEP', 'HYSTERESIS_STAIRS']
-const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS']
+const STEP_SCALE_FUNCTIONS = ['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET']
+const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET']
+const RESET_ABOVE_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS']
 const SIGMOID_SCALE_FUNCTIONS = ['SIGMOID', 'ADAPTIVE_LOW_SIGMOID']
 
 export default function DerivedSubStrategiesSection({
@@ -169,6 +170,7 @@ export default function DerivedSubStrategiesSection({
                 <option value="STEP">Step</option>
                 <option value="HYSTERESIS_STEP">Hysteresis Step</option>
                 <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
+                <option value="HYSTERESIS_STAIRS_REF_BL_RESET">Hysteresis Stairs Ref BL Reset</option>
               </select>
             </div>
             {!STEP_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
@@ -211,7 +213,7 @@ export default function DerivedSubStrategiesSection({
                 />
               </>
             )}
-            {HYSTERESIS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
+            {RESET_ABOVE_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
               <DerivedMarginInput
                 label="Reset Above"
                 value={derived.scale.stepBaseTarget ?? ''}
@@ -259,7 +261,7 @@ export default function DerivedSubStrategiesSection({
                 {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
                   <React.Fragment key={step.id}>
                     <DerivedMarginInput
-                      label={(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}
+                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}
                       value={step.referenceMargin}
                       placeholder={String(60 + stepIdx * 10)}
                       sliderMax={sliderMax}
@@ -268,7 +270,7 @@ export default function DerivedSubStrategiesSection({
                       onCommit={onCommit}
                     />
                     <DerivedMarginInput
-                      label={(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}
+                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}
                       value={step.targetMargin}
                       placeholder={String(50 + stepIdx * 10)}
                       sliderMax={sliderMax}

@@ -39,4 +39,15 @@ class RebalanceStrategyRoutesTest {
         assertEquals(1.00, config.targetUpper)
         assertEquals(0.95, config.stepBaseTarget)
     }
+
+    @Test
+    fun parseDerivedTargetScaleConfigKeepsHysteresisStairsRefBuyLowResetFunction() {
+        val config = parseDerivedTargetScaleConfig(
+            buildJsonObject {
+                put("function", JsonPrimitive("HYSTERESIS_STAIRS_REF_BL_RESET"))
+            }
+        )
+
+        assertEquals(DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET, config.function)
+    }
 }

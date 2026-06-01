@@ -94,7 +94,7 @@ export interface VmTimingMrState {
   allocStrategy: string
 }
 
-export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS'
+export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
 
 export interface DerivedTargetStepState {
   id: string
@@ -597,6 +597,8 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
             ? 'HYSTERESIS_STEP'
             : item.scale?.function === 'HYSTERESIS_STAIRS'
             ? 'HYSTERESIS_STAIRS'
+            : item.scale?.function === 'HYSTERESIS_STAIRS_REF_BL_RESET'
+            ? 'HYSTERESIS_STAIRS_REF_BL_RESET'
             : item.scale?.function === 'LINEAR' || item.scale?.function === 'Z_SHAPED'
             ? 'LINEAR'
             : (item.scale?.function === 'ADAPTIVE_LOW_SIGMOID' ? 'ADAPTIVE_LOW_SIGMOID' : 'SIGMOID')
