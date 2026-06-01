@@ -313,8 +313,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
           <button className="save-portfolio-btn" disabled={!hasLabel} onClick={() => handleSave(false)}>
             Save New
           </button>
-          <button className="clear-portfolio-btn" type="button" title="Clear portfolio" onClick={handleClear}>
-            ✕
+          <button className="clear-action-btn" type="button" title="Clear portfolio" onClick={handleClear}>
+            X
           </button>
         </div>
       </div>
