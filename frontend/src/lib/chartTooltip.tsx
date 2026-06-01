@@ -1,6 +1,7 @@
 // ── chartTooltip.tsx — Shared Recharts tooltip factory ────────────────────────
 
-import { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import type { TooltipContentProps } from 'recharts'
 
 interface Theme {
   isDark: boolean
@@ -12,7 +13,7 @@ export function makeRechartsTooltip(
   { isDark, gridColor, textColor }: Theme,
   valueFmt: (v: number) => string,
   labelFmt?: (l: any) => string,
-) {
+): (props: TooltipContentProps) => ReactNode {
   const contentStyle: CSSProperties = {
     background: isDark ? '#1e1e1e' : '#ffffff',
     border: `1px solid ${gridColor}`,

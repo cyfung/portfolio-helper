@@ -1,5 +1,4 @@
-// ── ConfirmDialog.tsx — Custom confirm overlay (replaces window.confirm) ──────
-// CSS lives in index.css under "Custom Confirm Overlay"
+// Custom confirm overlay styles live in styles/overlays.css.
 
 import { useEffect } from 'react'
 import { createRoot } from 'react-dom/client'

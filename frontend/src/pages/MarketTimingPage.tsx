@@ -35,6 +35,19 @@ const WORLD_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/world-cape-history.c
 const US_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/us-cape-history.csv`
 const DEFAULT_DRAWDOWN_CONFIGS = '5-0, 10-0, 15-0, 20-0, 25-0'
 
+type MarketTimingImportConfig = {
+  portfolio?: { label?: string } & Record<string, any>
+  fromDate?: unknown
+  toDate?: unknown
+  drawdownConfigs?: unknown
+  drawdownPcts?: unknown
+  referenceSource?: unknown
+  referenceTicker?: unknown
+  interestMode?: unknown
+  annualSpread?: unknown
+  fixedAnnualRate?: unknown
+}
+
 async function fetchText(url: string) {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -100,9 +113,9 @@ export default function MarketTimingPage() {
     savedBarRef.current?.refresh()
   }
 
-  function handleExport() {
+  async function handleExport() {
     setConfigError('')
-    setImportCode(compressToCode({
+    const code = await compressToCode({
       fromDate,
       toDate,
       drawdownConfigs,
@@ -112,16 +125,17 @@ export default function MarketTimingPage() {
       annualSpread,
       fixedAnnualRate,
       portfolio: blockStateToAPIPortfolio(portfolio, 0),
-    }))
+    })
+    setImportCode(code)
   }
 
-  function handleImport() {
+  async function handleImport() {
     setConfigError('')
     try {
-      const payload = decompressFromCode(importCode)
+      const payload = await decompressFromCode(importCode.trim()) as MarketTimingImportConfig
       if (!payload?.portfolio) throw new Error('Invalid config')
-      setFromDate(payload.fromDate ?? '')
-      setToDate(payload.toDate ?? '')
+      setFromDate(String(payload.fromDate ?? ''))
+      setToDate(String(payload.toDate ?? ''))
       setDrawdownConfigs(String(payload.drawdownConfigs ?? payload.drawdownPcts ?? DEFAULT_DRAWDOWN_CONFIGS))
       setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
       setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
