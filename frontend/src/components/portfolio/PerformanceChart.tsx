@@ -5,6 +5,7 @@ import {
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush,
 } from 'recharts'
 import { useChartTheme } from '@/lib/chartTheme'
+import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { SavedPortfolio } from '@/types/backtest'
 import { blockStateToAPIPortfolio, configToBlockState } from '@/types/backtest'
 
@@ -71,6 +72,9 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('none')
   const [benchmarkLoading, setBenchmarkLoading]   = useState(false)
 
+  const privacyScaleEnabled = usePortfolioStore(s => s.appConfig?.privacyScaleEnabled)
+  const privacyScalePct = usePortfolioStore(s => s.appConfig?.privacyScalePct)
+
   const theme = useChartTheme()
   const { gridColor, textColor, isDark } = theme
 
@@ -106,17 +110,23 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   // ── Fetch chart data when period changes ──────────────────────────────────
   useEffect(() => {
     if (!resolvedFrom || !resolvedTo) return
+    const controller = new AbortController()
     setLoading(true)
     setError('')
-    fetch(`/api/performance/chart/${portfolioSlug}?from=${resolvedFrom}&to=${resolvedTo}`)
+    fetch(`/api/performance/chart/${portfolioSlug}?from=${resolvedFrom}&to=${resolvedTo}`, { signal: controller.signal })
       .then(r => r.json())
       .then((d: ChartData) => {
         setData(d)
-        if (d.mwrSeries === null && mode === 'mwr') setMode('twr')
+        setMode(current => d.mwrSeries === null && current === 'mwr' ? 'twr' : current)
       })
-      .catch(() => setError('Failed to load performance data.'))
-      .finally(() => setLoading(false))
-  }, [portfolioSlug, resolvedFrom, resolvedTo])
+      .catch(err => {
+        if (err?.name !== 'AbortError') setError('Failed to load performance data.')
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [portfolioSlug, resolvedFrom, resolvedTo, privacyScaleEnabled, privacyScalePct])
 
   // ── Reset margin key + cache when benchmark changes ──────────────────────
   useEffect(() => { setBenchmarkMarginKey('none'); setBenchmarkCache({}) }, [selectedBenchmark])
