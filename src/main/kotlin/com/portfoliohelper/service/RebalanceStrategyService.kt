@@ -124,100 +124,8 @@ object RebalanceStrategyService {
             referenceTickers,
             extraTickers = standaloneMarginTickers,
         )
-    val seriesMap = context.seriesMap
-    val dates = context.dates
-    val effrx = context.effrx
-
-    val baseResult =
-        BacktestService.runMulti(
-            MultiBacktestRequest(
-                request.fromDate,
-                request.toDate,
-                listOf(request.portfolio.copy(rebalanceStrategies = emptyList())),
-                request.cashflow,
-                request.startingBalance,
-            )
-        )
-    val strategyResults =
-        request.strategies.map { strategy ->
-          val strategyPortfolio = strategy.portfolioWithRebalanceOverride(request.portfolio)
-          val curve =
-              runStrategy(
-                  strategyPortfolio,
-                  strategy,
-                  request.cashflow,
-                  seriesMap,
-                  dates,
-                  effrx,
-                  request.startingBalance,
-                  request.includeActionDiagnostics,
-              )
-          val defaultBaseMargins =
-              curve.marginPoints?.map { it.value } ?: List(dates.size) { strategy.marginRatio }
-          val standaloneBaseMarginCache = mutableMapOf<String, List<Double>>()
-          fun baseMarginsFor(derived: DerivedSubStrategyConfig): List<Double> {
-            val ticker =
-                if (derived.marginReferenceSource == DerivedMarginReferenceSource.STANDALONE_TICKER)
-                    normalizeReferenceTicker(derived.marginReferenceTicker)
-                else null
-            if (ticker == null) return defaultBaseMargins
-            return standaloneBaseMarginCache.getOrPut(ticker) {
-              val standalonePortfolio =
-                  strategyPortfolio.copy(
-                      label = "${strategyPortfolio.label} / $ticker",
-                      tickers = listOf(TickerWeight(ticker, 1.0)),
-                      marginStrategies = emptyList(),
-                      rebalanceStrategies = emptyList(),
-                      includeNoMargin = true,
-                  )
-              val standaloneCurve =
-                  runStrategy(
-                      standalonePortfolio,
-                      strategy,
-                      request.cashflow,
-                      seriesMap,
-                      dates,
-                      effrx,
-                      request.startingBalance,
-                      includeActionDiagnostics = false,
-                  )
-              standaloneCurve.marginPoints?.map { it.value } ?: List(dates.size) { strategy.marginRatio }
-            }
-          }
-          val derivedCurves =
-              strategy.derivedSubStrategies
-                  .filter { it.enabled }
-                  .map { derived ->
-                    val baseMargins = baseMarginsFor(derived)
-                    val derivedCurve =
-                        runStrategy(
-                            strategyPortfolio,
-                            strategy.copy(
-                                label = "${strategy.label} / ${derived.label}",
-                                sellOnHighMargin = null,
-                                buyOnLowMargin = null,
-                                drawdownSellOnHighMargin = null,
-                                drawdownBuyOnLowMargin = null,
-                                vmTimingMr = null,
-                                buyTheDip = null,
-                                sellOnSurge = null,
-                                buyTheDipConfigs = emptyList(),
-                                sellOnSurgeConfigs = emptyList(),
-                                derivedSubStrategies = emptyList(),
-                            ),
-                            request.cashflow,
-                            seriesMap,
-                            dates,
-                            effrx,
-                            request.startingBalance,
-                            request.includeActionDiagnostics,
-                            derived,
-                            baseMargins,
-                        )
-                    derivedCurve
-                  }
-          PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
-        }
+    val baseResult = runBasePortfolio(request)
+    val strategyResults = request.strategies.map { runConfiguredStrategy(request, it, context) }
     return MultiBacktestResult(baseResult.portfolios + strategyResults)
   }
 
@@ -304,6 +212,135 @@ object RebalanceStrategyService {
       val dates: List<LocalDate>,
       val effrx: Map<LocalDate, Double>,
   )
+
+  private fun runBasePortfolio(request: RebalanceStrategyRequest): MultiBacktestResult =
+      BacktestService.runMulti(
+          MultiBacktestRequest(
+              request.fromDate,
+              request.toDate,
+              listOf(request.portfolio.copy(rebalanceStrategies = emptyList())),
+              request.cashflow,
+              request.startingBalance,
+          )
+      )
+
+  private fun runConfiguredStrategy(
+      request: RebalanceStrategyRequest,
+      strategy: RebalStrategyConfig,
+      context: RunContext,
+  ): PortfolioResult {
+    val strategyPortfolio = strategy.portfolioWithRebalanceOverride(request.portfolio)
+    val curve =
+        runStrategy(
+            strategyPortfolio,
+            strategy,
+            request.cashflow,
+            context.seriesMap,
+            context.dates,
+            context.effrx,
+            request.startingBalance,
+            request.includeActionDiagnostics,
+        )
+    val derivedCurves =
+        runDerivedSubStrategies(
+            request,
+            strategyPortfolio,
+            strategy,
+            context,
+            curve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
+        )
+    return PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
+  }
+
+  private fun runDerivedSubStrategies(
+      request: RebalanceStrategyRequest,
+      strategyPortfolio: PortfolioConfig,
+      strategy: RebalStrategyConfig,
+      context: RunContext,
+      defaultBaseMargins: List<Double>,
+  ): List<CurveResult> {
+    val standaloneBaseMarginCache = mutableMapOf<String, List<Double>>()
+    return strategy.derivedSubStrategies
+        .filter { it.enabled }
+        .map { derived ->
+          runStrategy(
+              strategyPortfolio,
+              strategy.derivedOnlyConfig(derived),
+              request.cashflow,
+              context.seriesMap,
+              context.dates,
+              context.effrx,
+              request.startingBalance,
+              request.includeActionDiagnostics,
+              derived,
+              baseMarginsForDerived(
+                  derived,
+                  defaultBaseMargins,
+                  standaloneBaseMarginCache,
+                  strategyPortfolio,
+                  strategy,
+                  request,
+                  context,
+              ),
+          )
+        }
+  }
+
+  private fun baseMarginsForDerived(
+      derived: DerivedSubStrategyConfig,
+      defaultBaseMargins: List<Double>,
+      standaloneBaseMarginCache: MutableMap<String, List<Double>>,
+      strategyPortfolio: PortfolioConfig,
+      strategy: RebalStrategyConfig,
+      request: RebalanceStrategyRequest,
+      context: RunContext,
+  ): List<Double> {
+    val ticker =
+        if (derived.marginReferenceSource == DerivedMarginReferenceSource.STANDALONE_TICKER) {
+          normalizeReferenceTicker(derived.marginReferenceTicker)
+        } else {
+          null
+        }
+    if (ticker == null) return defaultBaseMargins
+
+    return standaloneBaseMarginCache.getOrPut(ticker) {
+      val standalonePortfolio =
+          strategyPortfolio.copy(
+              label = "${strategyPortfolio.label} / $ticker",
+              tickers = listOf(TickerWeight(ticker, 1.0)),
+              marginStrategies = emptyList(),
+              rebalanceStrategies = emptyList(),
+              includeNoMargin = true,
+          )
+      val standaloneCurve =
+          runStrategy(
+              standalonePortfolio,
+              strategy,
+              request.cashflow,
+              context.seriesMap,
+              context.dates,
+              context.effrx,
+              request.startingBalance,
+              includeActionDiagnostics = false,
+          )
+      standaloneCurve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio }
+    }
+  }
+
+  private fun RebalStrategyConfig.derivedOnlyConfig(derived: DerivedSubStrategyConfig): RebalStrategyConfig =
+      copy(
+          label = "$label / ${derived.label}",
+          sellOnHighMargin = null,
+          buyOnLowMargin = null,
+          drawdownSellOnHighMargin = null,
+          drawdownBuyOnLowMargin = null,
+          vmTimingMr = null,
+          buyTheDip = null,
+          sellOnSurge = null,
+          buyTheDipConfigs = emptyList(),
+          sellOnSurgeConfigs = emptyList(),
+          derivedSubStrategies = emptyList(),
+      )
 
   private fun scoreCandidate(
       portfolio: PortfolioConfig,
