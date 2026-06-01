@@ -699,7 +699,7 @@ object RebalanceStrategyService {
         strategy.drawdownMarginOverride?.takeIf { strategy.marginRebalanceEnabled && it.enabled }
     val derivedTargetRuntime = derivedSubStrategy?.let { DerivedTargetRuntime.from(it.scale) }
     fun baseMarginAt(recordedIndex: Int): Double? {
-      val derived = derivedSubStrategy ?: return null
+      if (derivedSubStrategy == null) return null
       val baseMargins = baseMarginSeries ?: return null
       if (baseMargins.isEmpty()) return null
       return baseMargins.getOrNull(recordedIndex.coerceIn(0, baseMargins.lastIndex))
@@ -1099,7 +1099,7 @@ object RebalanceStrategyService {
       account.accrueMarginInterest(dailyLoanRates[i])
 
       var currentDrawdown: Double? = null
-      drawdownMarginOverride?.let { cfg ->
+      if (drawdownMarginOverride != null) {
         drawdownOverrideKey?.let { key ->
           val referenceValue = portfolioTriggerValue(key)
           if (!referenceValue.isNaN()) {
@@ -1286,7 +1286,6 @@ object RebalanceStrategyService {
           )
         }
         activeDrawdownOverride = null
-        effectiveMarginRebalance = marginRebalance
       }
       val normalMarginRebalanceDue =
           if (normalRebalanceDueOnDrawdownExit) true

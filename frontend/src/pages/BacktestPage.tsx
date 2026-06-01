@@ -357,7 +357,11 @@ export default function BacktestPage() {
     try {
       const r = await fetch(`/api/performance/ingest/${slug}`, { method: 'POST' })
       const d: PerformanceIngestResponse = await r.json()
-      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+      if (!r.ok) {
+        setRealFetchNotice('')
+        setError(`Fetch from IBKR failed for ${portfolioName}: ${d.error ?? `HTTP ${r.status}`}`)
+        return
+      }
       const newRealData = appConfigReady
         ? await fetchRealPortfolioData(slug)
         : null
@@ -433,10 +437,10 @@ export default function BacktestPage() {
   }, [results, selected])
 
   const REAL_LABEL_KEY: Record<string, string> = {
-    'Real – NAV':      'real-nav',
-    'Real – TWR':      'real-twr',
-    'Real – MWR':      'real-mwr',
-    'Real – Position': 'real-pos',
+    'Real - NAV':      'real-nav',
+    'Real - TWR':      'real-twr',
+    'Real - MWR':      'real-mwr',
+    'Real - Position': 'real-pos',
   }
 
   const theme  = useChartTheme()
@@ -515,16 +519,16 @@ export default function BacktestPage() {
         if (ri == null) continue
 
         const nav = realNavSeries[ri]
-        if (nav != null) row['Real – NAV'] = +nav.toFixed(4)
+        if (nav != null) row['Real - NAV'] = +nav.toFixed(4)
 
         const twr = realData.twrSeries[ri]
-        if (twr != null) row['Real – TWR'] = +(refStart * (1 + twr) / (1 + twrBase)).toFixed(4)
+        if (twr != null) row['Real - TWR'] = +(refStart * (1 + twr) / (1 + twrBase)).toFixed(4)
 
         const mwr = realData.mwrSeries?.[ri]
-        if (mwr != null) row['Real – MWR'] = +(refStart * (1 + mwr) / (1 + mwrBase)).toFixed(4)
+        if (mwr != null) row['Real - MWR'] = +(refStart * (1 + mwr) / (1 + mwrBase)).toFixed(4)
 
         const pos = realData.positionSeries?.[ri]
-        if (pos != null) row['Real – Position'] = +(refStart * (1 + pos) / (1 + posBase)).toFixed(4)
+        if (pos != null) row['Real - Position'] = +(refStart * (1 + pos) / (1 + posBase)).toFixed(4)
       }
     }
 
@@ -579,21 +583,21 @@ export default function BacktestPage() {
       }
 
       if (realNavSeries.length)
-        injectDDRTR(realNavSeries, 0, 'Real \u2013 NAV', ac[0])
+        injectDDRTR(realNavSeries, 0, 'Real - NAV', ac[0])
       if (firstOverlapRealIdx >= 0 && realData.twrSeries.length)
         injectDDRTR(
           realData.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)),
-          firstOverlapRealIdx, 'Real \u2013 TWR', ac[1], '8 4',
+          firstOverlapRealIdx, 'Real - TWR', ac[1], '8 4',
         )
       if (firstOverlapRealIdx >= 0 && realData.mwrSeries != null)
         injectDDRTR(
           realData.mwrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + mwrBase)),
-          firstOverlapRealIdx, 'Real \u2013 MWR', ac[2], '4 3',
+          firstOverlapRealIdx, 'Real - MWR', ac[2], '4 3',
         )
       if (firstOverlapRealIdx >= 0 && realData.positionSeries != null)
         injectDDRTR(
           realData.positionSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + posBase)),
-          firstOverlapRealIdx, 'Real \u2013 Position', ac[3],
+          firstOverlapRealIdx, 'Real - Position', ac[3],
         )
     }
 
@@ -891,10 +895,10 @@ export default function BacktestPage() {
       .forEach(ds => { if (!map.has(ds.label)) map.set(ds.label, { color: ds.color, strokeWidth: ds.strokeWidth ?? 2, strokeDasharray: ds.strokeDasharray || undefined }) })
     // Standalone real series rendered separately — include their exact dash/width
     const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
-    map.set('Real \u2013 NAV',      { color: ac[0], strokeWidth: 2 })
-    map.set('Real \u2013 TWR',      { color: ac[1], strokeWidth: 2, strokeDasharray: '8 4' })
-    map.set('Real \u2013 MWR',      { color: ac[2], strokeWidth: 2, strokeDasharray: '4 3' })
-    map.set('Real \u2013 Position', { color: ac[3], strokeWidth: 2 })
+    map.set('Real - NAV',      { color: ac[0], strokeWidth: 2 })
+    map.set('Real - TWR',      { color: ac[1], strokeWidth: 2, strokeDasharray: '8 4' })
+    map.set('Real - MWR',      { color: ac[2], strokeWidth: 2, strokeDasharray: '4 3' })
+    map.set('Real - Position', { color: ac[3], strokeWidth: 2 })
     return map
   }, [chartData, isDark])
 
@@ -1090,10 +1094,10 @@ export default function BacktestPage() {
                   const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
                   return (
                     <>
-                      {realStatRow('real-nav', 'Real – NAV',      rs.nav, ac[0], rs.navAvgMargin)}
-                      {realStatRow('real-twr', 'Real – TWR',      rs.twr, ac[1])}
-                      {rs.mwr && realStatRow('real-mwr', 'Real – MWR',      rs.mwr, ac[2])}
-                      {rs.pos && realStatRow('real-pos', 'Real – Position', rs.pos, ac[3])}
+                      {realStatRow('real-nav', 'Real - NAV',      rs.nav, ac[0], rs.navAvgMargin)}
+                      {realStatRow('real-twr', 'Real - TWR',      rs.twr, ac[1])}
+                      {rs.mwr && realStatRow('real-mwr', 'Real - MWR',      rs.mwr, ac[2])}
+                      {rs.pos && realStatRow('real-pos', 'Real - Position', rs.pos, ac[3])}
                     </>
                   )
                 })()}
@@ -1193,7 +1197,7 @@ export default function BacktestPage() {
                       {showLine('real-nav') && (
                         <Line
                           yAxisId={shouldScaleToNav ? 'main' : 'nav-right'}
-                          dataKey="Real – NAV"
+                          dataKey="Real - NAV"
                           stroke={ac[0]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1207,7 +1211,7 @@ export default function BacktestPage() {
                       {showLine('real-twr') && (
                         <Line
                           yAxisId="main"
-                          dataKey="Real – TWR"
+                          dataKey="Real - TWR"
                           stroke={ac[1]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1221,7 +1225,7 @@ export default function BacktestPage() {
                       {realData.mwrSeries != null && showLine('real-mwr') && (
                         <Line
                           yAxisId="main"
-                          dataKey="Real – MWR"
+                          dataKey="Real - MWR"
                           stroke={ac[2]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1235,7 +1239,7 @@ export default function BacktestPage() {
                       {realData.positionSeries != null && showLine('real-pos') && (
                         <Line
                           yAxisId="main"
-                          dataKey="Real – Position"
+                          dataKey="Real - Position"
                           stroke={ac[3]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}

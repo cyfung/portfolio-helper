@@ -1,6 +1,6 @@
 // ── RebalanceStrategyPage.tsx ─────────────────────────────────────────────────
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ReferenceDot } from 'recharts'
 import {
   BacktestPageHeader, RunButton, ScenarioSetupControls,
@@ -15,7 +15,6 @@ import {
   VmTimingLineChart,
   type ActionPointChartKey,
   type CommonLineProps,
-  type VmTimingChartData,
 } from '@/components/rebalance/RebalanceCharts'
 import SavedStrategiesBar, { type SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { useChartTheme } from '@/lib/chartTheme'
@@ -46,12 +45,11 @@ function uniqueSavedJsonConfigName(name: string, takenNames: Set<string>) {
   const match = /^(.*?) \((\d+)\)$/.exec(name)
   const baseName = match?.[1] ?? name
   let counter = match?.[2] ? parseInt(match[2], 10) + 1 : 2
-  let candidate = ''
-  do {
-    candidate = `${baseName} (${counter})`
+  while (true) {
+    const candidate = `${baseName} (${counter})`
     counter += 1
-  } while (takenNames.has(labelKey(candidate)))
-  return candidate
+    if (!takenNames.has(labelKey(candidate))) return candidate
+  }
 }
 
 function makeUniqueStrategyLabels(strategies: RebalStrategyState[], portfolioLabel: string) {
@@ -260,7 +258,7 @@ export default function RebalanceStrategyPage() {
       strategies: currentStrategies,
     })
     setImportCode(code)
-    try { await navigator.clipboard.writeText(code) } catch (_) {}
+    try { await navigator.clipboard.writeText(code) } catch {}
   }
 
   async function handleImport() {
@@ -279,7 +277,7 @@ export default function RebalanceStrategyPage() {
         setStrategies(req.strategies.slice(0, 2).map((s: any, i: number) => savedConfigToStrategyState(s, s.label || `Strategy ${i + 1}`)))
       }
       setConfigError('')
-    } catch (_) {
+    } catch {
       setConfigError('Invalid config code.')
       setTimeout(() => setConfigError(''), 3000)
     }
@@ -380,7 +378,12 @@ export default function RebalanceStrategyPage() {
   ), [results])
 
   const toggleCurve = useCallback((key: string, checked: boolean) => {
-    setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
+    setSelected(prev => {
+      const s = new Set(prev)
+      if (checked) s.add(key)
+      else s.delete(key)
+      return s
+    })
   }, [])
   const toggleAll = useCallback((checked: boolean) => {
     setSelected(checked ? new Set(allKeys) : new Set())
@@ -388,7 +391,8 @@ export default function RebalanceStrategyPage() {
   const toggleActionPointType = useCallback((type: string, checked: boolean) => {
     setVisibleActionPointTypes(prev => {
       const next = new Set(prev)
-      checked ? next.add(type) : next.delete(type)
+      if (checked) next.add(type)
+      else next.delete(type)
       return next
     })
   }, [])

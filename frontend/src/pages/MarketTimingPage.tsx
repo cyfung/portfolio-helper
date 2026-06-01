@@ -133,7 +133,10 @@ export default function MarketTimingPage() {
     setConfigError('')
     try {
       const payload = await decompressFromCode(importCode.trim()) as MarketTimingImportConfig
-      if (!payload?.portfolio) throw new Error('Invalid config')
+      if (!payload?.portfolio) {
+        setConfigError('Invalid config')
+        return
+      }
       setFromDate(String(payload.fromDate ?? ''))
       setToDate(String(payload.toDate ?? ''))
       setDrawdownConfigs(String(payload.drawdownConfigs ?? payload.drawdownPcts ?? DEFAULT_DRAWDOWN_CONFIGS))
@@ -160,7 +163,10 @@ export default function MarketTimingPage() {
     setRunning(true)
     try {
       const thresholds = parseDrawdownConfigs(drawdownConfigs)
-      if (thresholds.length === 0) throw new Error('Enter at least one drawdown config')
+      if (thresholds.length === 0) {
+        setError('Enter at least one drawdown config')
+        return
+      }
 
       const savedPortfolios = await fetchSavedPortfolios()
       const apiPortfolio = resolvedBlockStateToAPIPortfolio(portfolio, 0, savedPortfolios)
@@ -188,7 +194,10 @@ export default function MarketTimingPage() {
         }),
       })
       const data = await response.json()
-      if (!response.ok || data.error) throw new Error(data.error || data.message || `HTTP ${response.status}`)
+      if (!response.ok || data.error) {
+        setError(data.error || data.message || `HTTP ${response.status}`)
+        return
+      }
       setResults(data)
     } catch (e: any) {
       setError(e?.message || 'Run failed')

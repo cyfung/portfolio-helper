@@ -1,6 +1,5 @@
 package com.portfoliohelper.service
 
-import com.portfoliohelper.AppConfig
 import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import okhttp3.OkHttpClient
@@ -332,7 +331,6 @@ object BacktestService {
                 referenceDrawdowns,
                 debtIndex,
                 drawdownIndex,
-                request.startingBalance,
                 firstTriggerDate,
                 threshold.zeroWindowMonths,
                 zeroedByRecentDrawdown,
@@ -353,7 +351,6 @@ object BacktestService {
         referenceDrawdowns: List<Double>,
         debtIndex: DoubleArray,
         drawdownIndex: ReferenceRangeIndex,
-        startingBalance: Double,
         firstTriggerDate: LocalDate?,
         zeroWindowMonths: Int,
         zeroedByRecentDrawdown: BooleanArray,
@@ -485,7 +482,6 @@ object BacktestService {
     private class ReferenceRangeIndex(private val values: List<Double>) {
         private val n = values.size
         private val minTree = DoubleArray(n * 4) { Double.POSITIVE_INFINITY }
-        private val maxTree = DoubleArray(n * 4) { Double.NEGATIVE_INFINITY }
 
         init {
             if (n > 0) build(1, 0, n - 1)
@@ -494,14 +490,12 @@ object BacktestService {
         private fun build(node: Int, left: Int, right: Int) {
             if (left == right) {
                 minTree[node] = values[left]
-                maxTree[node] = values[left]
                 return
             }
             val mid = (left + right) / 2
             build(node * 2, left, mid)
             build(node * 2 + 1, mid + 1, right)
             minTree[node] = minOf(minTree[node * 2], minTree[node * 2 + 1])
-            maxTree[node] = maxOf(maxTree[node * 2], maxTree[node * 2 + 1])
         }
 
         fun firstAtOrBelow(start: Int, threshold: Double): Int? {
@@ -515,19 +509,6 @@ object BacktestService {
             val mid = (left + right) / 2
             return firstAtOrBelow(node * 2, left, mid, start, threshold)
                 ?: firstAtOrBelow(node * 2 + 1, mid + 1, right, start, threshold)
-        }
-
-        fun maxIn(queryLeft: Int, queryRight: Int): Double =
-            maxIn(1, 0, n - 1, queryLeft, queryRight)
-
-        private fun maxIn(node: Int, left: Int, right: Int, queryLeft: Int, queryRight: Int): Double {
-            if (queryRight < left || right < queryLeft) return Double.NEGATIVE_INFINITY
-            if (queryLeft <= left && right <= queryRight) return maxTree[node]
-            val mid = (left + right) / 2
-            return maxOf(
-                maxIn(node * 2, left, mid, queryLeft, queryRight),
-                maxIn(node * 2 + 1, mid + 1, right, queryLeft, queryRight),
-            )
         }
     }
 
@@ -1129,22 +1110,6 @@ object BacktestService {
         (1 until dates.size)
             .filter { i -> shouldRebalance(rebalanceStrategy, dates[i - 1], dates[i]) }
             .map { i -> ActionPoint(dates[i].toString(), "PORTFOLIO_REBALANCE") }
-
-    private fun applyDailyReturns(
-        tickers: List<String>,
-        holdings: MutableMap<String, Double>,
-        seriesMap: Map<String, Map<LocalDate, Double>>,
-        prevDate: LocalDate,
-        curDate: LocalDate
-    ) {
-        for (ticker in tickers) {
-            val s = seriesMap[ticker] ?: continue
-            val prev = s[prevDate] ?: continue
-            val cur = s[curDate] ?: continue
-            if (prev == 0.0) continue
-            holdings[ticker] = (holdings[ticker] ?: 0.0) * (cur / prev)
-        }
-    }
 
     private fun applyDailyReturns(
         tickers: List<String>,
