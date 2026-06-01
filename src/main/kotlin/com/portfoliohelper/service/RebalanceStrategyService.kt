@@ -113,83 +113,20 @@ object RebalanceStrategyService {
   }
 
   fun run(request: RebalanceStrategyRequest): MultiBacktestResult {
-    val fromDate = request.fromDate?.let { LocalDate.parse(it) }
-    val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
-    BacktestService.validateDateRange(fromDate, toDate)
-    val effrx = BacktestService.loadEffrxSeries()
-    val historyFrom = LocalDate.of(1990, 1, 1)
-    val portfolioNeededFrom = fromDate ?: historyFrom
-
     val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =
         request.strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
-    val referenceTickerSet = referenceTickers.toSet()
-    val requestedTickers =
-        (request.portfolio.tickers.map { it.ticker } + referenceTickers + standaloneMarginTickers)
-            .distinct()
-    fun neededFromForTicker(ticker: String) =
-        if (ticker in referenceTickerSet) historyFrom else portfolioNeededFrom
-    fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
-
-    // Load LETF definitions and component series
-    val letfDefs = mutableMapOf<String, LETFDefinition>()
-    for (ticker in requestedTickers) {
-      BacktestService.parseLETFDefinition(ticker)?.let { letfDefs.putIfAbsent(ticker, it) }
-    }
-    val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-    fun cachedLoad(ticker: String, neededFrom: LocalDate) =
-        seriesCache.getOrPut(ticker) { BacktestService.loadNormalizedSeries(ticker, neededFrom) }
-
-    val componentNeededFrom = mutableMapOf<String, LocalDate>()
-    for ((letfTicker, def) in letfDefs) {
-      val parentNeededFrom = neededFromForTicker(letfTicker)
-      for (comp in def.components) {
-        componentNeededFrom.merge(comp.ticker, parentNeededFrom, ::earlierDate)
-      }
-    }
-    for ((ticker, neededFrom) in componentNeededFrom) {
-      cachedLoad(ticker, neededFrom)
-    }
-
-    val letfComponentSeries =
-        letfDefs.values.flatMap { it.components }.mapNotNull { seriesCache[it.ticker] }
-    val letfDates =
-        if (letfComponentSeries.isNotEmpty())
-            BacktestService.intersectDates(letfComponentSeries, null, toDate)
-        else emptyList()
-    if (letfDates.size >= 2) {
-      for ((letfString, def) in letfDefs) {
-        if (letfString !in seriesCache) {
-          val componentSeries = def.components.associate { it.ticker to seriesCache[it.ticker]!! }
-          seriesCache[letfString] =
-              BacktestService.computeLetfSeries(
-                  def,
-                  componentSeries,
-                  letfDates,
-                  effrx,
-                  def.rebalanceStrategy,
-              )
-        }
-      }
-    }
-    for (ticker in requestedTickers) {
-      if (BacktestService.parseLETFDefinition(ticker) == null) {
-        // Reference tickers need pre-fromDate history for drawdown and peak/trough triggers.
-        // Portfolio-only tickers do not; loading only from fromDate keeps synthetic tests and
-        // short local datasets from falling through to Yahoo for irrelevant older data.
-        cachedLoad(ticker, neededFromForTicker(ticker))
-      }
-    }
-
-    val seriesMap: Map<String, Map<LocalDate, Double>> =
-        requestedTickers.associateWith { ticker ->
-          seriesCache[ticker] ?: error("Series for '$ticker' not found")
-        }
-    val portfolioSeries = request.portfolio.tickers.map { tw ->
-      seriesMap[tw.ticker] ?: error("Series for '${tw.ticker}' not found")
-    }
-    val dates = BacktestService.intersectDates(portfolioSeries, fromDate, toDate)
-    if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
+    val context =
+        prepareRunContext(
+            request.fromDate,
+            request.toDate,
+            request.portfolio,
+            referenceTickers,
+            extraTickers = standaloneMarginTickers,
+        )
+    val seriesMap = context.seriesMap
+    val dates = context.dates
+    val effrx = context.effrx
 
     val baseResult =
         BacktestService.runMulti(
@@ -288,12 +225,15 @@ object RebalanceStrategyService {
     val portfolios = request.portfolios.takeIf { it.isNotEmpty() }
         ?: throw IllegalArgumentException("Missing portfolios")
     val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
+    val standaloneMarginTickers =
+        request.strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
     val contexts = portfolios.map { portfolio ->
       portfolio to prepareRunContext(
           request.fromDate,
           request.toDate,
           portfolio,
           referenceTickers,
+          extraTickers = standaloneMarginTickers,
       )
     }
 
@@ -334,7 +274,17 @@ object RebalanceStrategyService {
   ): List<CurveResult> {
     if (strategies.isEmpty()) return emptyList()
     val referenceTickers = strategies.flatMap { it.referenceTickers() }.distinct()
-    val context = prepareRunContext(fromDate, toDate, portfolio, referenceTickers, globalDates)
+    val standaloneMarginTickers =
+        strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+    val context =
+        prepareRunContext(
+            fromDate,
+            toDate,
+            portfolio,
+            referenceTickers,
+            extraTickers = standaloneMarginTickers,
+            overrideDates = globalDates,
+        )
     return strategies.map { strategy ->
       runStrategy(
           strategy.portfolioWithRebalanceOverride(portfolio),
@@ -542,6 +492,7 @@ object RebalanceStrategyService {
       toDateText: String?,
       portfolio: PortfolioConfig,
       referenceTickers: Collection<String> = emptyList(),
+      extraTickers: Collection<String> = emptyList(),
       overrideDates: List<LocalDate>? = null,
   ): RunContext {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
@@ -551,7 +502,7 @@ object RebalanceStrategyService {
     val historyFrom = LocalDate.of(1990, 1, 1)
     val portfolioNeededFrom = fromDate ?: historyFrom
 
-    val requestedTickers = (portfolio.tickers.map { it.ticker } + referenceTickers).distinct()
+    val requestedTickers = (portfolio.tickers.map { it.ticker } + referenceTickers + extraTickers).distinct()
     val referenceTickerSet = referenceTickers.toSet()
     fun neededFromForTicker(ticker: String) =
         if (ticker in referenceTickerSet) historyFrom else portfolioNeededFrom
