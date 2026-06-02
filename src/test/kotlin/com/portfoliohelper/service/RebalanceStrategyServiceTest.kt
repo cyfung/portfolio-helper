@@ -512,7 +512,7 @@ class RebalanceStrategyServiceTest {
                     val curGap = stockValues.getValue(cur) - valueValues.getValue(cur)
                     Triple(prev, cur, curGap - prevGap)
                 }
-                .sortedByDescending { kotlin.math.abs(it.third) }
+                .sortedByDescending { abs(it.third) }
                 .take(12)
                 .joinToString(" | ") { (prev, cur, delta) ->
                     "$prev->$cur delta=${"%.0f".format(delta)} gap=${"%.0f".format(stockValues.getValue(cur) - valueValues.getValue(cur))}"
@@ -549,7 +549,7 @@ class RebalanceStrategyServiceTest {
                 unmatchedImpacts("VALUE_ONLY", valueBdByDate, stockBdByDate))
                 .sortedByDescending {
                     Regex("gap\\+252=([-0-9]+)").find(it)?.groupValues?.get(1)?.toDoubleOrNull()?.let { value ->
-                        kotlin.math.abs(value)
+                        abs(value)
                     } ?: 0.0
                 }
                 .take(16)

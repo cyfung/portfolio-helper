@@ -12,7 +12,7 @@ import kotlin.system.exitProcess
 object NewTrayService {
     private val logger = LoggerFactory.getLogger(NewTrayService::class.java)
 
-    private fun loadTrayIcon(): java.awt.Image {
+    private fun loadTrayIcon(): Image {
         return try {
             javaClass.getResourceAsStream("/static/favicon-96x96.png")
                 ?.let { javax.imageio.ImageIO.read(it) }

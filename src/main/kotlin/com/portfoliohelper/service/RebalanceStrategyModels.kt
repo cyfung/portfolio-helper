@@ -374,7 +374,7 @@ private class PeakDeviationChecker(
 
 // ── DipSurgeExecutor implementations ─────────────────────────────────────────
 
-public class OnceExecutor : DipSurgeExecutor {
+class OnceExecutor : DipSurgeExecutor {
     override fun advance(
         triggered: Boolean,
         currentValue: Double,

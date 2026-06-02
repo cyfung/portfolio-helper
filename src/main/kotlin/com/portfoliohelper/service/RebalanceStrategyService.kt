@@ -2145,8 +2145,7 @@ internal class DipSurgeCooldown(coolingOffDays: Int = 10) {
   fun shouldFire(key: DipSurgeKey, curIndex: Int, rawTriggered: Boolean): Boolean {
     if (!rawTriggered) return false
     val lastTriggerIndex = lastTriggerIndexByKey[key]
-    if (lastTriggerIndex != null && curIndex - lastTriggerIndex <= coolingOffDays) return false
-    return true
+      return !(lastTriggerIndex != null && curIndex - lastTriggerIndex <= coolingOffDays)
   }
 
   fun recordFire(key: DipSurgeKey, curIndex: Int) {
