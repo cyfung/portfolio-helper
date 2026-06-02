@@ -21,9 +21,14 @@ import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/po
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { validateDateRange } from '@/lib/dateRange'
 import {
-  blockStateToAPIPortfolio, configToBlockState, emptyBlock, type BlockState,
+  blockStateToAPIPortfolio,
+  configToBlockState,
+  emptyBlock,
+  normalizeBlockSpreadInputs,
+  type BlockState,
 } from '@/types/backtest'
 import type {
+  DrawdownConfigInput,
   InterestMode,
   MarketTimingResponse,
   ReferenceSource,
@@ -33,10 +38,11 @@ import type {
 
 const WORLD_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/world-cape-history.csv`
 const US_CAPE_CSV_URL = `${import.meta.env.BASE_URL}data/us-cape-history.csv`
-const DEFAULT_DRAWDOWN_CONFIGS = '5-0, 10-0, 15-0, 20-0, 25-0'
+const DEFAULT_DRAWDOWN_CONFIGS = '5-1, 10-1, 15-1, 20-1, 25-1'
 
 type MarketTimingImportConfig = {
-  portfolio?: { label?: string } & Record<string, any>
+  portfolio?: { label?: string } & Record<string, unknown>
+  portfolios?: ({ label?: string } & Record<string, unknown>)[]
   fromDate?: unknown
   toDate?: unknown
   drawdownConfigs?: unknown
@@ -46,6 +52,54 @@ type MarketTimingImportConfig = {
   interestMode?: unknown
   annualSpread?: unknown
   fixedAnnualRate?: unknown
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
+function compactNumber(value: number) {
+  if (!Number.isFinite(value)) return ''
+  return Number(value.toFixed(6)).toString()
+}
+
+function percentLikeToInput(value: unknown, fallback: string) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return compactNumber(Math.abs(value) <= 1 ? value * 100 : value)
+  }
+  if (typeof value === 'string') return value
+  return fallback
+}
+
+function drawdownConfigToInput(config: DrawdownConfigInput) {
+  const drawdownPct = Math.abs(config.drawdownPct) <= 1
+    ? config.drawdownPct * 100
+    : config.drawdownPct
+  return `${compactNumber(drawdownPct)}-${Math.max(0, Math.floor(config.zeroWindowMonths || 0))}`
+}
+
+function drawdownConfigsToInput(value: unknown, fallback = DEFAULT_DRAWDOWN_CONFIGS) {
+  if (typeof value === 'string') return value
+  if (!Array.isArray(value)) return fallback
+
+  const entries = value
+    .map(item => {
+      if (typeof item === 'number' && Number.isFinite(item)) {
+        return drawdownConfigToInput({ drawdownPct: item, zeroWindowMonths: 0 })
+      }
+      if (!item || typeof item !== 'object') return null
+      const config = item as Record<string, unknown>
+      const drawdownPct = Number(config.drawdownPct)
+      const zeroWindowMonths = Number(config.zeroWindowMonths ?? 0)
+      if (!Number.isFinite(drawdownPct)) return null
+      return drawdownConfigToInput({
+        drawdownPct,
+        zeroWindowMonths: Number.isFinite(zeroWindowMonths) ? zeroWindowMonths : 0,
+      })
+    })
+    .filter((entry): entry is string => !!entry)
+
+  return entries.length ? entries.join(', ') : fallback
 }
 
 async function fetchText(url: string) {
@@ -83,10 +137,24 @@ export default function MarketTimingPage() {
   useEffect(() => {
     fetch('/api/backtest/settings')
       .then(r => r.json())
-      .then((req: any) => {
-        if (req.fromDate) setFromDate(req.fromDate)
-        if (req.toDate) setToDate(req.toDate)
-        if (req.portfolios?.[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
+      .then((req: MarketTimingImportConfig) => {
+        if (req.fromDate) setFromDate(String(req.fromDate))
+        if (req.toDate) setToDate(String(req.toDate))
+        if (req.drawdownConfigs != null || req.drawdownPcts != null) {
+          setDrawdownConfigs(drawdownConfigsToInput(req.drawdownConfigs ?? req.drawdownPcts))
+        }
+        if (req.referenceSource != null) {
+          setReferenceSource(req.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
+        }
+        if (req.referenceTicker != null) setReferenceTicker(String(req.referenceTicker || 'VT'))
+        if (req.interestMode != null) setInterestMode(req.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
+        if (req.annualSpread != null) {
+          setAnnualSpread(percentLikeToInput(req.annualSpread, '1.5'))
+          setAnnualSpreadTouched(false)
+        }
+        if (req.fixedAnnualRate != null) setFixedAnnualRate(percentLikeToInput(req.fixedAnnualRate, '5'))
+        const cachedPortfolio = req.portfolios?.[0] ?? req.portfolio
+        if (cachedPortfolio) setPortfolio(configToBlockState(cachedPortfolio, cachedPortfolio.label || ''))
       })
       .catch(() => {})
   }, [])
@@ -139,16 +207,16 @@ export default function MarketTimingPage() {
       }
       setFromDate(String(payload.fromDate ?? ''))
       setToDate(String(payload.toDate ?? ''))
-      setDrawdownConfigs(String(payload.drawdownConfigs ?? payload.drawdownPcts ?? DEFAULT_DRAWDOWN_CONFIGS))
+      setDrawdownConfigs(drawdownConfigsToInput(payload.drawdownConfigs ?? payload.drawdownPcts))
       setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
       setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
       setInterestMode(payload.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
-      setAnnualSpread(String(payload.annualSpread ?? '1.5'))
+      setAnnualSpread(percentLikeToInput(payload.annualSpread, '1.5'))
       setAnnualSpreadTouched(false)
-      setFixedAnnualRate(String(payload.fixedAnnualRate ?? '5'))
+      setFixedAnnualRate(percentLikeToInput(payload.fixedAnnualRate, '5'))
       setPortfolio(configToBlockState(payload.portfolio, payload.portfolio.label || ''))
-    } catch (e: any) {
-      setConfigError(e?.message || 'Invalid config code')
+    } catch (e: unknown) {
+      setConfigError(errorMessage(e, 'Invalid config code'))
     }
   }
 
@@ -168,29 +236,30 @@ export default function MarketTimingPage() {
         return
       }
 
+      const runPortfolio = normalizeBlockSpreadInputs(portfolio)
+      if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
       const savedPortfolios = await fetchSavedPortfolios()
-      const apiPortfolio = resolvedBlockStateToAPIPortfolio(portfolio, 0, savedPortfolios)
+      const apiPortfolio = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, savedPortfolios)
       const runAnnualSpread = interestMode === 'SPREAD'
         ? normalizeNumberInput(annualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
         : annualSpread
       if (runAnnualSpread !== annualSpread) setAnnualSpread(runAnnualSpread)
+      const runReferenceTicker = referenceTicker.trim().toUpperCase()
+      const runFixedAnnualRate = (parseFloat(fixedAnnualRate) || 0) / 100
 
       const response = await fetch('/api/market-timing/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          saveSettings: false,
-          fromDate,
-          toDate,
-          portfolio: { ...apiPortfolio, marginStrategies: [], rebalanceStrategies: [] },
+          fromDate: fromDate || null,
+          toDate: toDate || null,
+          portfolio: apiPortfolio,
           drawdownConfigs: thresholds,
           referenceSource,
-          referenceTicker: referenceSource === 'TICKER' ? referenceTicker.trim().toUpperCase() : undefined,
+          referenceTicker: runReferenceTicker || 'VT',
           interestMode,
-          annualSpread: interestMode === 'SPREAD'
-            ? percentInputToFraction(runAnnualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
-            : undefined,
-          fixedAnnualRate: interestMode === 'FIXED' ? (parseFloat(fixedAnnualRate) || 0) / 100 : undefined,
+          annualSpread: percentInputToFraction(runAnnualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
+          fixedAnnualRate: runFixedAnnualRate,
         }),
       })
       const data = await response.json()
@@ -199,8 +268,8 @@ export default function MarketTimingPage() {
         return
       }
       setResults(data)
-    } catch (e: any) {
-      setError(e?.message || 'Run failed')
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Run failed'))
     } finally {
       setRunning(false)
     }
