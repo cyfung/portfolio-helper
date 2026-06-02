@@ -338,7 +338,7 @@
     font-weight: var(--font-weight-semibold);
 }
 
-.drawdown-tier-row input[type="number"],
+.drawdown-tier-row input[type="number"]:not(.margin-point-number-input),
 .drawdown-tier-row select {
     height: var(--block-compact-control-height, 1.625rem);
     min-width: 0;
@@ -352,7 +352,7 @@
     font-family: var(--font-family-mono), monospace;
 }
 
-.drawdown-tier-row input[type="number"] {
+.drawdown-tier-row input[type="number"]:not(.margin-point-number-input) {
     text-align: right;
 }
 

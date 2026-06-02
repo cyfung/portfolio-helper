@@ -147,7 +147,6 @@ export default function DrawdownMarginTriggerSection({
                 value={value.exitTargetMargin ?? ''}
                 placeholder="Optional"
                 max={sliderMax}
-                compact
                 ariaLabel={`${title} exit target margin`}
                 onChange={margin => update({ exitTargetMargin: margin })}
                 onCommit={onCommit}
