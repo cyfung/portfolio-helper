@@ -19,7 +19,7 @@ export function RemoveSectionButton({
   return (
     <button
       type="button"
-      className="btn-remove strategy-section-remove"
+      className="remove-margin-btn strategy-section-remove"
       title={`Remove ${label}`}
       aria-label={`Remove ${label}`}
       onClick={e => {
@@ -27,7 +27,7 @@ export function RemoveSectionButton({
         onRemove(sectionKey)
       }}
     >
-      x
+      ✕
     </button>
   )
 }

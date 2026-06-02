@@ -74,7 +74,7 @@ export default function DrawdownMarginTriggerSection({
         {title}
         <button
           type="button"
-          className="btn-remove strategy-section-remove"
+          className="remove-margin-btn strategy-section-remove"
           title={`Remove ${title}`}
           aria-label={`Remove ${title}`}
           onClick={e => {
@@ -82,7 +82,7 @@ export default function DrawdownMarginTriggerSection({
             onRemove()
           }}
         >
-          x
+          ✕
         </button>
       </summary>
       <div className="strategy-section-body">
@@ -212,13 +212,13 @@ export default function DrawdownMarginTriggerSection({
               </select>
               <button
                 type="button"
-                className="remove-ticker-btn drawdown-tier-remove-btn"
+                className="remove-margin-btn drawdown-tier-remove-btn"
                 title="Remove tier"
                 aria-label={`Remove ${title} tier`}
                 disabled={tiers.length <= 1}
                 onClick={() => removeTier(tier.id)}
               >
-                x
+                ✕
               </button>
             </div>
           ))}

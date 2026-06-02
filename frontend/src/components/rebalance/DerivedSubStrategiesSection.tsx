@@ -123,11 +123,11 @@ export default function DerivedSubStrategiesSection({
                 </label>
                 <button
                   type="button"
-                  className="clear-action-btn strategy-derived-remove"
+                  className="remove-margin-btn strategy-derived-remove"
                   title="Remove derived strategy"
                   onClick={() => removeSubStrategy(derived.id)}
                 >
-                  X
+                  ✕
                 </button>
               </div>
             </div>

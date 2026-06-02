@@ -46,6 +46,7 @@
 
 .strategy-section-remove {
     margin-left: auto;
+    height: var(--block-compact-control-height, 1.625rem);
 }
 
 .strategy-section-title::-webkit-details-marker { display: none; }
@@ -120,9 +121,8 @@
 
 .strategy-derived-remove {
     flex: 0 0 auto;
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
     white-space: nowrap;
+    height: var(--block-compact-control-height, 1.625rem);
 }
 
 .strategy-derived-grid {
@@ -816,15 +816,5 @@
 }
 
 .dip-surge-remove {
-    background: none;
-    border: none;
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-    padding: 0 0.2rem;
-}
-
-.dip-surge-remove:hover {
-    color: var(--color-negative);
+    height: var(--block-compact-control-height, 1.625rem);
 }

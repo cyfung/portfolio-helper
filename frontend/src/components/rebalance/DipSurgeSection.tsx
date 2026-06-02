@@ -147,7 +147,7 @@ export default function DipSurgeSection({
         {removable ? (
           <button
             type="button"
-            className="btn-remove strategy-section-remove"
+            className="remove-margin-btn strategy-section-remove"
             title={`Remove ${title}`}
             aria-label={`Remove ${title}`}
             onClick={e => {
@@ -155,7 +155,7 @@ export default function DipSurgeSection({
               onChange(null)
             }}
           >
-            x
+            ✕
           </button>
         ) : (
           <label className="dip-surge-toggle" onClick={e => e.stopPropagation()}>
@@ -290,7 +290,7 @@ export default function DipSurgeSection({
                   style={{ width: '4rem' }}
                 />
               </label>
-              <button type="button" className="dip-surge-remove" onClick={() => removeTrigger(t.id)}>×</button>
+              <button type="button" className="remove-margin-btn dip-surge-remove" onClick={() => removeTrigger(t.id)}>✕</button>
             </div>
           ))}
 
