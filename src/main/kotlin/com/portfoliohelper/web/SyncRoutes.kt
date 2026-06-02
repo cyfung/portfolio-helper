@@ -8,17 +8,27 @@ import io.ktor.server.plugins.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.util.pipeline.PipelineContext
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("SyncRoutes")
 
+private object SyncAuthHook : Hook<suspend PipelineContext<Unit, PipelineCall>.(Unit) -> Unit> {
+    override fun install(
+        pipeline: ApplicationCallPipeline,
+        handler: suspend PipelineContext<Unit, PipelineCall>.(Unit) -> Unit
+    ) {
+        pipeline.intercept(ApplicationCallPipeline.Plugins, handler)
+    }
+}
+
 private val syncAuthPlugin = createRouteScopedPlugin("SyncAuth") {
-    onCall { call ->
-        if (call.request.path() == "/api/sync/pair") return@onCall
+    on(SyncAuthHook) {
         val deviceId = call.request.headers["X-Device-ID"]
         if (deviceId == null || !PairingService.isAuthorized(deviceId)) {
             logger.warn("Unauthorized sync access to ${call.request.path()}. Device-ID: $deviceId")
             call.respond(HttpStatusCode.Unauthorized, "Device not paired")
+            finish()
         }
     }
 }
@@ -86,10 +96,10 @@ fun Route.configureSyncRoutes() {
          * Response: application/octet-stream bytes (12-byte IV + ciphertext + 16-byte GCM tag)
          */
         get("/data") {
+            val deviceId = call.request.headers["X-Device-ID"]!!
             val entry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
 
-            val deviceId = call.request.headers["X-Device-ID"]!!
             val (aesKey, nonce) = PairingService.acquireEncryptionNonce(deviceId)
                 ?: return@get call.respond(HttpStatusCode.Unauthorized, "Device not found or key expired")
 
