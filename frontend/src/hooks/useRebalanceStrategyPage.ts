@@ -33,14 +33,24 @@ type PageConfigLike = Record<string, unknown> & {
   toDate?: string
   startingBalance?: unknown
   cashflow?: { amount?: unknown; frequency?: string }
+  includeActionDiagnostics?: boolean
   portfolios?: (Record<string, unknown> & { label?: string })[]
   portfolio?: Record<string, unknown> & { label?: string }
   portfolioState?: BlockState
   strategies?: StrategyConfigLike[]
+  strategyStates?: StrategyConfigLike[]
 }
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+function restoreStrategyStates(req: PageConfigLike) {
+  const savedStrategies = Array.isArray(req.strategyStates) ? req.strategyStates : req.strategies
+  if (!Array.isArray(savedStrategies)) return null
+  return savedStrategies.slice(0, 2).map((s, i) => (
+    savedConfigToStrategyState(s, s.label || `Strategy ${i + 1}`)
+  ))
 }
 
 export function useRebalanceStrategyPage() {
@@ -75,7 +85,10 @@ export function useRebalanceStrategyPage() {
         if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
         if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
         if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+        if (typeof req.includeActionDiagnostics === 'boolean') setIncludeActionDiagnostics(req.includeActionDiagnostics)
         if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
+        const restoredStrategies = restoreStrategyStates(req)
+        if (restoredStrategies) setStrategies(restoredStrategies)
       })
       .catch(() => {})
   }, [])
@@ -111,7 +124,7 @@ export function useRebalanceStrategyPage() {
       setStrategies(runStrategies)
     }
 
-    return { portfolioApi, allStrategies }
+    return { portfolioApi, allStrategies, runStrategies }
   }, [currentNormalizedStrategies, portfolio, strategies])
 
   const handleRun = useCallback(async () => {
@@ -141,6 +154,7 @@ export function useRebalanceStrategyPage() {
           portfolio: runInputs.portfolioApi,
           cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
           strategies: runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
+          strategyStates: runInputs.runStrategies,
           includeActionDiagnostics,
         }),
       })
@@ -198,11 +212,8 @@ export function useRebalanceStrategyPage() {
       if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
       if (req.portfolioState) setPortfolio(req.portfolioState)
       else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, req.portfolio.label || ''))
-      if (Array.isArray(req.strategies)) {
-        setStrategies(req.strategies.slice(0, 2).map((s, i) => (
-          savedConfigToStrategyState(s, s.label || `Strategy ${i + 1}`)
-        )))
-      }
+      const restoredStrategies = restoreStrategyStates(req)
+      if (restoredStrategies) setStrategies(restoredStrategies)
       setConfigError('')
     } catch {
       setConfigError('Invalid config code.')
