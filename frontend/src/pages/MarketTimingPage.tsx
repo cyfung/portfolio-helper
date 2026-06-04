@@ -22,6 +22,7 @@ import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { validateDateRange } from '@/lib/dateRange'
 import {
   blockStateToAPIPortfolio,
+  configToBlockInputLabel,
   configToBlockState,
   emptyBlock,
   normalizeBlockSpreadInputs,
@@ -154,7 +155,7 @@ export default function MarketTimingPage() {
         }
         if (req.fixedAnnualRate != null) setFixedAnnualRate(percentLikeToInput(req.fixedAnnualRate, '5'))
         const cachedPortfolio = req.portfolios?.[0] ?? req.portfolio
-        if (cachedPortfolio) setPortfolio(configToBlockState(cachedPortfolio, cachedPortfolio.label || ''))
+        if (cachedPortfolio) setPortfolio(configToBlockState(cachedPortfolio, configToBlockInputLabel(cachedPortfolio, 0)))
       })
       .catch(() => {})
   }, [])
@@ -214,7 +215,7 @@ export default function MarketTimingPage() {
       setAnnualSpread(percentLikeToInput(payload.annualSpread, '1.5'))
       setAnnualSpreadTouched(false)
       setFixedAnnualRate(percentLikeToInput(payload.fixedAnnualRate, '5'))
-      setPortfolio(configToBlockState(payload.portfolio, payload.portfolio.label || ''))
+      setPortfolio(configToBlockState(payload.portfolio, configToBlockInputLabel(payload.portfolio, 0)))
     } catch (e: unknown) {
       setConfigError(errorMessage(e, 'Invalid config code'))
     }

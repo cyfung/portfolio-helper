@@ -13,6 +13,7 @@ import {
   blockStateToAPIPortfolio,
   cashflowStateFromSettings,
   cashflowToPayload,
+  configToBlockInputLabel,
   configToBlockState,
   emptyBlock,
   normalizeBlockSpreadInputs,
@@ -86,7 +87,7 @@ export function useRebalanceStrategyPage() {
         if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
         if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
         if (typeof req.includeActionDiagnostics === 'boolean') setIncludeActionDiagnostics(req.includeActionDiagnostics)
-        if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], req.portfolios[0].label || ''))
+        if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], configToBlockInputLabel(req.portfolios[0], 0)))
         const restoredStrategies = restoreStrategyStates(req)
         if (restoredStrategies) setStrategies(restoredStrategies)
       })
@@ -211,7 +212,7 @@ export function useRebalanceStrategyPage() {
       if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
       if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
       if (req.portfolioState) setPortfolio(req.portfolioState)
-      else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, req.portfolio.label || ''))
+      else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
       const restoredStrategies = restoreStrategyStates(req)
       if (restoredStrategies) setStrategies(restoredStrategies)
       setConfigError('')

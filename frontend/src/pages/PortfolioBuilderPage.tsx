@@ -5,7 +5,7 @@ import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { BlockState } from '@/types/backtest'
 import type { SavedPortfolio } from '@/types/backtest'
-import { blockStateToAPIPortfolio, configToBlockState } from '@/types/backtest'
+import { blockStateToAPIPortfolio, configToBlockInputLabel, configToBlockState } from '@/types/backtest'
 import { resolveBlockState, type ResolvedStockWeight } from '@/lib/portfolioRefs'
 import { parseGroupsAttr } from '@/lib/portfolio-utils'
 
@@ -170,7 +170,7 @@ export default function PortfolioBuilderPage() {
         setBlocks(prev => {
           const next = [...prev]
           settings.portfolios.forEach((portfolio: any, i: number) => {
-            if (i < next.length) next[i] = configToBlockState(portfolio, portfolio.label || '')
+            if (i < next.length) next[i] = configToBlockState(portfolio, configToBlockInputLabel(portfolio, i))
           })
           lastSavedPortfoliosRef.current = JSON.stringify(next.map((block, i) => blockStateToAPIPortfolio(block, i)))
           return next

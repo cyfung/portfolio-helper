@@ -20,7 +20,8 @@ import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
-  cashflowStateFromSettings, cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
+  cashflowStateFromSettings, cashflowToPayload, configToBlockInputLabel,
+  DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -94,7 +95,7 @@ export default function MonteCarloPage() {
           setBlocks(prev => {
             const next = [...prev]
             req.portfolios.forEach((p: any, i: number) => {
-              if (i < 3) next[i] = configToBlockState(p, p.label || '')
+              if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
             })
             return next
           })
@@ -262,7 +263,7 @@ export default function MonteCarloPage() {
         setBlocks(prev => {
           const next = [...prev]
           req.portfolios.forEach((p: any, i: number) => {
-            if (i < 3) next[i] = configToBlockState(p, p.label || '')
+            if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
           })
           return next
         })

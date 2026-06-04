@@ -91,7 +91,14 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   // ── Ticker helpers ────────────────────────────────────────────────────────
 
   function addTicker(ticker = '', weight = '') {
-    commit({ ...localRef.current, tickers: [...localRef.current.tickers, { id: newId(), ticker, weight }] })
+    commit({ ...localRef.current, tickers: [...localRef.current.tickers, { id: newId(), ticker: ticker.toUpperCase(), weight }] })
+  }
+
+  function updateTicker(id: string, ticker: string) {
+    updateLocal({
+      ...localRef.current,
+      tickers: localRef.current.tickers.map(x => x.id === id ? { ...x, ticker: ticker.toUpperCase() } : x),
+    })
   }
 
   function addPortfolioRef(name: string, weight = '') {
@@ -340,7 +347,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                   className="ticker-input"
                   placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5"
                   value={t.ticker}
-                  onChange={e => updateLocal({ ...localRef.current, tickers: localRef.current.tickers.map(x => x.id === t.id ? { ...x, ticker: e.target.value } : x) })}
+                  onChange={e => updateTicker(t.id, e.target.value)}
                   onBlur={commitBlur}
                 />
               )}

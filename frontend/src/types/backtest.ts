@@ -138,7 +138,9 @@ export function configToBlockState(config: any, name: string): BlockState {
     label: name,
     tickers: (config.tickers || []).map((t: any) => ({
       id: newId(),
-      ticker: String(t.portfolioRef || t.ticker || ''),
+      ticker: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef
+        ? String(t.portfolioRef || t.ticker || '')
+        : String(t.ticker || '').toUpperCase(),
       weight: String(t.weight ?? ''),
       isPortfolioRef: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef,
     })),
@@ -161,6 +163,12 @@ export function configToBlockState(config: any, name: string): BlockState {
   }
 }
 
+export function configToBlockInputLabel(config: { inputLabel?: unknown; label?: unknown } | null | undefined, idx?: number): string {
+  if (typeof config?.inputLabel === 'string') return config.inputLabel
+  const label = typeof config?.label === 'string' ? config.label : ''
+  return idx != null && label === `Portfolio ${idx + 1}` ? '' : label
+}
+
 export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
   let changed = false
   const margins = state.margins.map(m => {
@@ -172,16 +180,28 @@ export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
   return changed ? { ...state, margins } : state
 }
 
+function blockStateToAPITickers(state: BlockState) {
+  return state.tickers
+    .map(t => t.isPortfolioRef
+      ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
+      : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
+    )
+    .filter(t => t.ticker && t.weight > 0)
+}
+
+function blockStateToAPILabel(state: BlockState, idx: number, tickers: ReturnType<typeof blockStateToAPITickers>) {
+  const inputLabel = state.label.trim()
+  if (inputLabel) return inputLabel
+  return tickers.length === 1 ? tickers[0].ticker : `Portfolio ${idx + 1}`
+}
+
 /** Convert BlockState to the portfolio object expected by the run API. */
 export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
+  const tickers = blockStateToAPITickers(state)
   return {
-    label: state.label.trim() || `Portfolio ${idx + 1}`,
-    tickers: state.tickers
-      .map(t => t.isPortfolioRef
-        ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
-        : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
-      )
-      .filter(t => t.ticker && t.weight > 0),
+    label: blockStateToAPILabel(state, idx, tickers),
+    inputLabel: state.label.trim(),
+    tickers,
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
       marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,

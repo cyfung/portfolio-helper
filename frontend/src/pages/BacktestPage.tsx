@@ -18,7 +18,8 @@ import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
-  cashflowToPayload, DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
+  cashflowToPayload, configToBlockInputLabel, DEFAULT_CASHFLOW_FREQUENCY,
+  normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
@@ -397,8 +398,7 @@ export default function BacktestPage() {
         setBlocks(prev => {
           const next = [...prev]
           portfolios.forEach((p, i) => {
-            const label = typeof p.label === 'string' ? p.label : ''
-            if (i < 3) next[i] = configToBlockState(p, label)
+            if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
           })
           return next
         })
@@ -723,8 +723,7 @@ export default function BacktestPage() {
         setBlocks(prev => {
           const next = [...prev]
           portfolios.forEach((p, i) => {
-            const label = typeof p.label === 'string' ? p.label : ''
-            if (i < 3) next[i] = configToBlockState(p, label)
+            if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
           })
           return next
         })
