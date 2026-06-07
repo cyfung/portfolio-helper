@@ -48,15 +48,15 @@ object HybridAllocStrategyRegistry {
     }
 
     fun find(id: String?): HybridAllocStrategyConfig? {
-        val normalizedId = id?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val normalizedId = normalizeId(id) ?: return null
         return strategies().firstOrNull { it.id == normalizedId }
     }
 
     fun baseMode(id: String?): MarginRebalanceMode? =
-        id?.trim()?.let { customBaseModes[it] }
+        normalizeId(id)?.let { customBaseModes[it] }
 
     fun modeLabel(id: String): String =
-        find(id)?.label ?: when (id) {
+        find(id)?.label ?: when (normalizeId(id) ?: id) {
             MarginRebalanceMode.CURRENT_WEIGHT.name -> "Cur Wt"
             MarginRebalanceMode.PROPORTIONAL.name -> "Tgt Wt"
             MarginRebalanceMode.FULL_REBALANCE.name -> "Full"
@@ -66,11 +66,18 @@ object HybridAllocStrategyRegistry {
             else -> id
         }
 
+    private fun normalizeId(id: String?): String? =
+        id
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.uppercase()
+            ?.replace(Regex("[^A-Z0-9_]+"), "_")
+
     private fun normalize(config: HybridAllocStrategyConfig): HybridAllocStrategyConfig? {
-        val id = config.id.trim().uppercase().replace(Regex("[^A-Z0-9_]+"), "_")
+        val id = normalizeId(config.id) ?: return null
         if (id.isBlank()) return null
-        val first = config.first.trim().uppercase()
-        val second = config.second.trim().uppercase()
+        val first = normalizeId(config.first) ?: return null
+        val second = normalizeId(config.second) ?: return null
         if (first !in customBaseModes || second !in customBaseModes) return null
         return config.copy(
             id = id,

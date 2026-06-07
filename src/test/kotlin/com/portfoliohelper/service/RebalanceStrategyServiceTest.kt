@@ -26,6 +26,83 @@ class RebalanceStrategyServiceTest {
     private fun flatCurve(dates: List<LocalDate>) = dates.associateWith { 1.0 }
 
     @Test
+    fun `waterfall mode id is normalized and does not fall back to target weight`() {
+        val tickers = listOf("A", "B")
+        val holdings = mapOf("A" to 80.0, "B" to 20.0)
+        val targetWeights = mapOf("A" to 0.5, "B" to 0.5)
+
+        val deltas = BacktestService.computeAllocationDeltas(
+            tickers,
+            holdings,
+            targetWeights,
+            20.0,
+            "waterfall"
+        )
+
+        assertApprox(0.0, deltas["A"] ?: 0.0)
+        assertApprox(20.0, deltas["B"] ?: 0.0)
+        assertApprox(20.0, deltas.values.sum())
+    }
+
+    @Test
+    fun `waterfall sell prioritizes overweight holdings`() {
+        val tickers = listOf("A", "B")
+        val holdings = mapOf("A" to 80.0, "B" to 20.0)
+        val targetWeights = mapOf("A" to 0.5, "B" to 0.5)
+
+        val deltas = BacktestService.computeAllocationDeltas(
+            tickers,
+            holdings,
+            targetWeights,
+            -20.0,
+            MarginRebalanceMode.WATERFALL.name
+        )
+
+        assertApprox(-20.0, deltas["A"] ?: 0.0)
+        assertApprox(0.0, deltas["B"] ?: 0.0)
+        assertApprox(-20.0, deltas.values.sum())
+    }
+
+    @Test
+    fun `waterfall large buy does not collapse to target weight allocation`() {
+        val tickers = listOf("A", "B")
+        val holdings = mapOf("A" to 80.0, "B" to 20.0)
+        val targetWeights = mapOf("A" to 0.5, "B" to 0.5)
+
+        val deltas = BacktestService.computeAllocationDeltas(
+            tickers,
+            holdings,
+            targetWeights,
+            100.0,
+            MarginRebalanceMode.WATERFALL.name
+        )
+
+        assertApprox(20.0, deltas["A"] ?: 0.0)
+        assertApprox(80.0, deltas["B"] ?: 0.0)
+        assertApprox(100.0, deltas.values.sum())
+    }
+
+    @Test
+    fun `waterfall levels underweight tiers instead of target-weight splitting`() {
+        val tickers = listOf("A", "B", "C")
+        val holdings = mapOf("A" to 70.0, "B" to 20.0, "C" to 10.0)
+        val targetWeights = mapOf("A" to 1.0 / 3.0, "B" to 1.0 / 3.0, "C" to 1.0 / 3.0)
+
+        val deltas = BacktestService.computeAllocationDeltas(
+            tickers,
+            holdings,
+            targetWeights,
+            30.0,
+            MarginRebalanceMode.WATERFALL.name
+        )
+
+        assertApprox(0.0, deltas["A"] ?: 0.0)
+        assertApprox(10.0, deltas["B"] ?: 0.0)
+        assertApprox(20.0, deltas["C"] ?: 0.0)
+        assertApprox(30.0, deltas.values.sum())
+    }
+
+    @Test
     fun `hybrid target waterfall averages target-weight and waterfall deltas`() {
         val tickers = listOf("A", "B")
         val holdings = mapOf("A" to 80.0, "B" to 20.0)

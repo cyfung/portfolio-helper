@@ -1296,43 +1296,39 @@ object BacktestService {
     ) {
         val totalHoldings = holdings.values.sum()
         val finalTotal = totalHoldings + delta
+        if (finalTotal == 0.0 || delta == 0.0) return
         val sign = if (delta >= 0) 1.0 else -1.0
-
-        val currentDev = mutableMapOf<String, Double>()
-        for (ticker in tickers) {
-            currentDev[ticker] =
-                (holdings[ticker] ?: 0.0) / finalTotal - (targetWeights[ticker] ?: 0.0)
+        val deviations = tickers.associateWith { ticker ->
+            (holdings[ticker] ?: 0.0) / finalTotal - (targetWeights[ticker] ?: 0.0)
         }
 
         val sorted = if (delta >= 0)
-            tickers.sortedBy { currentDev[it] ?: 0.0 }
+            tickers.sortedBy { deviations[it] ?: 0.0 }
         else
-            tickers.sortedByDescending { currentDev[it] ?: 0.0 }
+            tickers.sortedByDescending { deviations[it] ?: 0.0 }
 
         var remaining = abs(delta)
-
+        var groupLevel = deviations[sorted.firstOrNull()] ?: return
         for (i in sorted.indices) {
             if (remaining <= 0.0) break
-            val groupDev = currentDev[sorted[0]] ?: 0.0
-            val nextDev = if (i + 1 < sorted.size) currentDev[sorted[i + 1]]
-                ?: 0.0 else sign * Double.POSITIVE_INFINITY
+            val nextRawLevel = if (i + 1 < sorted.size) deviations[sorted[i + 1]] ?: 0.0 else 0.0
+            val nextLevel = if (delta >= 0) minOf(nextRawLevel, 0.0) else maxOf(nextRawLevel, 0.0)
+            val levelDistance = (nextLevel - groupLevel) * sign
+            if (levelDistance <= 0.0) continue
+
             val groupSize = i + 1
-
-            val costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize
-
+            val costToLevel = levelDistance * finalTotal * groupSize
             if (remaining >= costToLevel) {
+                val amountPerTicker = (nextLevel - groupLevel) * finalTotal
                 for (j in 0..i) {
-                    holdings[sorted[j]] =
-                        (holdings[sorted[j]] ?: 0.0) + (nextDev - groupDev) * finalTotal
-                    currentDev[sorted[j]] = nextDev
+                    holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + amountPerTicker
                 }
                 remaining -= costToLevel
+                groupLevel = nextLevel
             } else {
-                val perStock = remaining / groupSize
+                val amountPerTicker = remaining / groupSize * sign
                 for (j in 0..i) {
-                    holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + perStock * sign
-                    currentDev[sorted[j]] =
-                        (currentDev[sorted[j]] ?: 0.0) + (perStock / finalTotal) * sign
+                    holdings[sorted[j]] = (holdings[sorted[j]] ?: 0.0) + amountPerTicker
                 }
                 remaining = 0.0
             }
@@ -1375,8 +1371,6 @@ object BacktestService {
     ): Map<String, Double> =
         when (mode) {
             MarginRebalanceMode.PROPORTIONAL,
-            MarginRebalanceMode.HYBRID_TARGET_WATERFALL,
-            MarginRebalanceMode.HYBRID_WATERFALL_FULL_REBALANCE,
             MarginRebalanceMode.DAILY ->
                 proportionalAllocationDeltas(tickers, targetWeights, delta)
 
@@ -1394,6 +1388,10 @@ object BacktestService {
 
             MarginRebalanceMode.WATERFALL ->
                 allocationDeltasViaMutable(tickers, holdings, targetWeights, delta, ::computeWaterfall)
+
+            MarginRebalanceMode.HYBRID_TARGET_WATERFALL,
+            MarginRebalanceMode.HYBRID_WATERFALL_FULL_REBALANCE ->
+                error("Hybrid allocation mode must be resolved before base allocation")
         }
 
     fun applyAllocationMode(

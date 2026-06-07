@@ -65,45 +65,41 @@ function computeWaterfall(
   for (const s of eligible) alloc[s.symbol] = 0
 
   const finalTotal = totalStockValue + delta
+  if (finalTotal === 0 || delta === 0) return alloc
   const sign = delta >= 0 ? 1 : -1
+  const deviation = (s: StockForCompute) => s.positionValueUsd / finalTotal - s.targetWeight / 100
 
-  const currentDev: Record<string, number> = {}
-  for (const s of eligible)
-    currentDev[s.symbol] = (s.positionValueUsd / finalTotal) - (s.targetWeight / 100)
+  const sorted = [...eligible].sort((a, b) =>
+    sign * (deviation(a) - deviation(b))
+  )
 
-  const sorted = [...eligible].sort((a, b) => sign * (currentDev[a.symbol] - currentDev[b.symbol]))
   let remaining = Math.abs(delta)
+  let groupLevel = sorted.length ? deviation(sorted[0]) : 0
+  for (let i = 0; i < sorted.length && remaining > 0.01; i++) {
+    const nextRawLevel = i + 1 < sorted.length ? deviation(sorted[i + 1]) : 0
+    const nextLevel = delta >= 0 ? Math.min(nextRawLevel, 0) : Math.max(nextRawLevel, 0)
+    const levelDistance = (nextLevel - groupLevel) * sign
+    if (levelDistance <= 0) continue
 
-  for (let i = 0; i < sorted.length && remaining > 0; i++) {
-    const groupDev = currentDev[sorted[0].symbol]
-    const nextDev = i + 1 < sorted.length ? currentDev[sorted[i + 1].symbol] : sign * Infinity
     const groupSize = i + 1
-    const costToLevel = (nextDev - groupDev) * sign * finalTotal * groupSize
-
+    const costToLevel = levelDistance * finalTotal * groupSize
     if (remaining >= costToLevel) {
-      for (let j = 0; j <= i; j++) {
-        alloc[sorted[j].symbol] += (nextDev - groupDev) * finalTotal
-        currentDev[sorted[j].symbol] = nextDev
-      }
+      const amountPerStock = (nextLevel - groupLevel) * finalTotal
+      for (let j = 0; j <= i; j++) alloc[sorted[j].symbol] += amountPerStock
       remaining -= costToLevel
+      groupLevel = nextLevel
     } else {
-      const perStock = remaining / groupSize
-      for (let j = 0; j <= i; j++) alloc[sorted[j].symbol] += perStock * sign
+      const amountPerStock = remaining / groupSize * sign
+      for (let j = 0; j <= i; j++) alloc[sorted[j].symbol] += amountPerStock
       remaining = 0
     }
   }
-  return alloc
-}
 
-function applyProportionalSpillover(
-  alloc: Record<string, number>,
-  eligible: StockForCompute[],
-  remaining: number,
-  sign: number
-) {
-  for (const s of eligible) {
-    alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining * sign
+  if (remaining > 0.01) {
+    applyProportionalSpillover(alloc, eligible, remaining, sign)
   }
+
+  return alloc
 }
 
 function computeUndervalueFirst(
@@ -124,22 +120,33 @@ function computeUndervalueFirst(
     )
   )
 
-  let remaining = delta
+  let remaining = Math.abs(delta)
   for (const s of sorted) {
+    if (remaining <= 0.01) break
     const targetVal = (s.targetWeight / 100) * finalTotal
     const needed = (targetVal - s.positionValueUsd) * sign
     if (needed <= 0) break
-    const contribution = Math.min(needed, Math.abs(remaining)) * sign
-    alloc[s.symbol] = contribution
+    const contribution = Math.min(needed, remaining)
+    alloc[s.symbol] = contribution * sign
     remaining -= contribution
-    if (Math.abs(remaining) < 0.01) break
   }
 
-  if (Math.abs(remaining) > 0.01) {
+  if (remaining > 0.01) {
     applyProportionalSpillover(alloc, eligible, remaining, sign)
   }
 
   return alloc
+}
+
+function applyProportionalSpillover(
+  alloc: Record<string, number>,
+  eligible: StockForCompute[],
+  remaining: number,
+  sign: number
+) {
+  for (const s of eligible) {
+    alloc[s.symbol] = (alloc[s.symbol] ?? 0) + (s.targetWeight / 100) * remaining * sign
+  }
 }
 
 function computeProportional(
@@ -183,6 +190,13 @@ function computeFullRebalance(
     alloc[s.symbol] = finalTotal * (s.targetWeight / totalWeight) - s.positionValueUsd
   }
   return alloc
+}
+
+function normalizeAllocMode(mode: string | null | undefined): string {
+  return String(mode ?? 'PROPORTIONAL')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]+/g, '_') || 'PROPORTIONAL'
 }
 
 function ratio(value: number | undefined): number {
@@ -254,16 +268,17 @@ export function computeDisplay(
   // Alloc columns: how to deploy the delta using the chosen strategy
   if (hasTargetWeights && Math.abs(delta) > 0.01) {
     const eligible = stocks.filter(s => s.targetWeight > 0)
-    const mode = delta >= 0 ? allocAddMode : allocReduceMode
+    const mode = normalizeAllocMode(delta >= 0 ? allocAddMode : allocReduceMode)
 
     let rawAlloc: Record<string, number> = {}
 
-    const hybrid = hybridStrategies.find(s => s.id === mode)
+    const hybrid = hybridStrategies.find(s => normalizeAllocMode(s.id) === mode)
     const computeBase = (baseMode: string): Record<string, number> => {
-      if (baseMode === 'WATERFALL') return computeWaterfall(eligible, stockGross, delta)
-      if (baseMode === 'FULL_REBALANCE') return computeFullRebalance(eligible, stockGross, delta)
-      if (baseMode === 'UNDERVALUED_PRIORITY') return computeUndervalueFirst(eligible, stockGross, delta)
-      if (baseMode === 'CURRENT_WEIGHT') return computeCurrentWeight(eligible, stockGross, delta)
+      const normalizedBaseMode = normalizeAllocMode(baseMode)
+      if (normalizedBaseMode === 'WATERFALL') return computeWaterfall(eligible, stockGross, delta)
+      if (normalizedBaseMode === 'FULL_REBALANCE') return computeFullRebalance(eligible, stockGross, delta)
+      if (normalizedBaseMode === 'UNDERVALUED_PRIORITY') return computeUndervalueFirst(eligible, stockGross, delta)
+      if (normalizedBaseMode === 'CURRENT_WEIGHT') return computeCurrentWeight(eligible, stockGross, delta)
       return computeProportional(eligible, delta)
     }
 
@@ -278,6 +293,8 @@ export function computeDisplay(
         hybrid.firstRatio,
         hybrid.secondRatio,
       )
+    } else if (mode === 'WATERFALL') {
+      rawAlloc = computeWaterfall(eligible, stockGross, delta)
     } else if (mode === 'FULL_REBALANCE') {
       rawAlloc = computeFullRebalance(eligible, stockGross, delta)
     } else if (mode === 'UNDERVALUED_PRIORITY') {
