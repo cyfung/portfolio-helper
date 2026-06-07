@@ -67,7 +67,50 @@ private fun saveBacktestPortfolios(json: JsonObject) = transaction {
     upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
 }
 
-private fun saveBacktestSettingsFirstPortfolio(json: JsonObject, settingsKey: String) = transaction {
+private val firstPortfolioCommonSettingsKeys = setOf("fromDate", "toDate")
+
+private val marketTimingSettingsKeys = setOf(
+    "drawdownConfigs",
+    "drawdownPcts",
+    "drawdownPct",
+    "referenceSource",
+    "referenceTicker",
+    "interestMode",
+    "annualSpread",
+    "fixedAnnualRate",
+)
+
+private val rebalanceStrategySettingsKeys = setOf(
+    "startingBalance",
+    "cashflow",
+    "strategies",
+    "strategyStates",
+    "includeActionDiagnostics",
+)
+
+internal fun mergedFirstPortfolioSettings(
+    existingSettings: JsonObject,
+    json: JsonObject,
+    pageSettingsKeys: Set<String>,
+): JsonObject {
+    val replacedKeys = firstPortfolioCommonSettingsKeys + pageSettingsKeys
+    return buildJsonObject {
+        existingSettings.forEach { (k, v) ->
+            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings") {
+                put(k, v)
+            }
+        }
+        json.forEach { (k, v) ->
+            if (k in replacedKeys) put(k, v)
+        }
+    }
+}
+
+private fun saveBacktestSettingsFirstPortfolio(
+    json: JsonObject,
+    settingsKey: String,
+    pageSettingsKeys: Set<String>,
+) = transaction {
     fun get(k: String) = GlobalSettingsTable.selectAll()
         .where { GlobalSettingsTable.key eq k }
         .firstOrNull()?.get(GlobalSettingsTable.value)
@@ -91,11 +134,12 @@ private fun saveBacktestSettingsFirstPortfolio(json: JsonObject, settingsKey: St
     }
     upsert(
         settingsKey,
-        buildJsonObject {
-            json.forEach { (k, v) ->
-                if (k != "portfolio" && k != "portfolios") put(k, v)
-            }
-        }.toString()
+        mergedFirstPortfolioSettings(
+            get(settingsKey)?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
+                ?: JsonObject(emptyMap()),
+            json,
+            pageSettingsKeys,
+        ).toString()
     )
 }
 
@@ -953,7 +997,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings") }
+                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings", marketTimingSettingsKeys) }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -1054,7 +1098,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings") }
+                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings", rebalanceStrategySettingsKeys) }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
