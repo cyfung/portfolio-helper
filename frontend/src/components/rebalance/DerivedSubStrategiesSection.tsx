@@ -32,6 +32,51 @@ const DERIVED_REFERENCE_METRIC_OPTIONS: { value: DerivedSubStrategyState['margin
   { value: 'MARGIN_COVERAGE', label: 'Margin Coverage' },
 ]
 
+function referenceMetricToMargin(value: number, metric: DerivedSubStrategyState['marginReferenceMetric']) {
+  switch (metric) {
+    case 'MARGIN':
+      return value
+    case 'EQUITY_CUSHION':
+      return value > 0 ? Math.max(0, 1 / value - 1) : null
+    case 'MARGIN_COVERAGE':
+      return value > 0 ? 1 / value : null
+  }
+}
+
+function marginToReferenceMetric(value: number, metric: DerivedSubStrategyState['marginReferenceMetric']) {
+  switch (metric) {
+    case 'MARGIN':
+      return value
+    case 'EQUITY_CUSHION':
+      return value >= 0 ? 1 / (value + 1) : null
+    case 'MARGIN_COVERAGE':
+      return value > 0 ? 1 / value : null
+  }
+}
+
+function formatConvertedReferenceValue(value: number) {
+  const rounded = Math.round(value * 100) / 100
+  return String(rounded)
+}
+
+function convertReferenceValue(
+  value: string,
+  fromMetric: DerivedSubStrategyState['marginReferenceMetric'],
+  toMetric: DerivedSubStrategyState['marginReferenceMetric'],
+) {
+  if (fromMetric === toMetric) return value
+  const parsed = parseFloat(value)
+  if (!Number.isFinite(parsed)) return value
+
+  const margin = referenceMetricToMargin(parsed / 100, fromMetric)
+  if (margin == null || !Number.isFinite(margin)) return value
+
+  const converted = marginToReferenceMetric(margin, toMetric)
+  if (converted == null || !Number.isFinite(converted)) return value
+
+  return formatConvertedReferenceValue(converted * 100)
+}
+
 export default function DerivedSubStrategiesSection({
   value,
   marginPoints,
@@ -111,6 +156,30 @@ export default function DerivedSubStrategiesSection({
     })
   }
 
+  const handleReferenceMetricChange = (
+    derived: DerivedSubStrategyState,
+    nextMetric: DerivedSubStrategyState['marginReferenceMetric'],
+  ) => {
+    const currentMetric = derived.marginReferenceMetric ?? 'MARGIN'
+    const convert = (value: string) => convertReferenceValue(value, currentMetric, nextMetric)
+    const scaleFunction = derived.scale.function ?? 'SIGMOID'
+    updateSubStrategy(derived.id, {
+      marginReferenceMetric: nextMetric,
+      scale: {
+        ...derived.scale,
+        referenceLower: convert(derived.scale.referenceLower),
+        referenceUpper: convert(derived.scale.referenceUpper),
+        stepBaseTarget: RESET_ABOVE_SCALE_FUNCTIONS.includes(scaleFunction)
+          ? convert(derived.scale.stepBaseTarget)
+          : derived.scale.stepBaseTarget,
+        steps: derived.scale.steps.map(step => ({
+          ...step,
+          referenceMargin: convert(step.referenceMargin),
+        })),
+      },
+    })
+  }
+
   return (
     <details open className="strategy-subsection">
       <summary className="strategy-section-title" onClick={keepSectionOpen}>Derived</summary>
@@ -175,9 +244,7 @@ export default function DerivedSubStrategiesSection({
               <DerivedField label="Ref Metric">
                 <select
                   value={referenceMetric}
-                  onChange={e => updateSubStrategy(derived.id, {
-                    marginReferenceMetric: e.target.value as DerivedSubStrategyState['marginReferenceMetric'],
-                  })}
+                  onChange={e => handleReferenceMetricChange(derived, e.target.value as DerivedSubStrategyState['marginReferenceMetric'])}
                 >
                   {DERIVED_REFERENCE_METRIC_OPTIONS.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
