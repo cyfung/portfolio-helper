@@ -47,6 +47,7 @@ export const DEFAULT_ACTION_POINT_CHART_VISIBILITY = {
   recover: false,
   margin: false,
   marginCushion: false,
+  marginReciprocal: false,
 }
 
 export const DEFAULT_FORCE_ACTION_POINT_CHART_DOTS = {
@@ -55,9 +56,11 @@ export const DEFAULT_FORCE_ACTION_POINT_CHART_DOTS = {
   recover: false,
   margin: false,
   marginCushion: false,
+  marginReciprocal: false,
 }
 
 const ACTION_MARKER_RENDER_LIMIT = 350
+const MARGIN_RECIPROCAL_EPSILON = 1e-6
 
 export function visibleActionPointGroups(
   actionPoints: BacktestCurve['actionPoints'] | undefined,
@@ -133,7 +136,14 @@ export function useRebalanceChartData(results: BacktestResults, selected: Set<st
       pts => pts.map(p => 1 / (1 + Math.max(0, p.value))),
       c => c.marginPoints,
     )
-    return { labels, mainData, ddData, rtrData, marginData, marginCushionData }
+    const marginReciprocalData = buildRechartsData(
+      results,
+      labels,
+      selected,
+      pts => pts.map(p => 1 / (Math.max(0, p.value) + MARGIN_RECIPROCAL_EPSILON)),
+      c => c.marginPoints,
+    )
+    return { labels, mainData, ddData, rtrData, marginData, marginCushionData, marginReciprocalData }
   }, [results, selected])
 }
 

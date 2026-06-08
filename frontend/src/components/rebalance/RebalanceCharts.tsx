@@ -13,7 +13,13 @@ import {
 } from 'recharts'
 import type { RechartsChartData } from '@/lib/chartData'
 
-export type ActionPointChartKey = 'main' | 'drawdown' | 'recover' | 'margin' | 'marginCushion'
+export type ActionPointChartKey =
+  | 'main'
+  | 'drawdown'
+  | 'recover'
+  | 'margin'
+  | 'marginCushion'
+  | 'marginReciprocal'
 
 export const ACTIVE_DOT = { r: 4 }
 
@@ -65,9 +71,11 @@ function formatPercentAxis(v: any) { return (Number(v) * 100).toFixed(0) + '%' }
 function formatPercentTooltip(v: number) { return (v * 100).toFixed(2) + '%' }
 function formatRecoverAxis(v: any) { return Number(v).toFixed(2) + 'x' }
 function formatRecoverTooltip(v: number) { return v.toFixed(2) + 'x' }
+function formatMultipleAxis(v: any) { return Number(v).toFixed(2) + 'x' }
+function formatMultipleTooltip(v: number) { return v.toFixed(2) + 'x' }
 function formatVmCapeAxis(v: any) { return Number(v).toFixed(0) }
 
-type RebalanceChartKind = 'money' | 'drawdown' | 'recover' | 'margin'
+type RebalanceChartKind = 'money' | 'drawdown' | 'recover' | 'margin' | 'multiple'
 
 const CHART_FORMATTERS: Record<RebalanceChartKind, {
   axis: (v: any) => string
@@ -78,6 +86,7 @@ const CHART_FORMATTERS: Record<RebalanceChartKind, {
   drawdown: { axis: formatDrawdownAxis, tooltip: formatPercentTooltip, width: 60 },
   recover: { axis: formatRecoverAxis, tooltip: formatRecoverTooltip, width: 60 },
   margin: { axis: formatPercentAxis, tooltip: formatPercentTooltip, width: 60 },
+  multiple: { axis: formatMultipleAxis, tooltip: formatMultipleTooltip, width: 60 },
 }
 
 type RebalanceLineChartProps = {
