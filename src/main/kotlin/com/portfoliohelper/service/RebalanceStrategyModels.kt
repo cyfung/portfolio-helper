@@ -212,11 +212,14 @@ data class DerivedTargetScaleConfig(
 
 enum class DerivedMarginReferenceSource { BASE_STRATEGY, STANDALONE_TICKER }
 
+enum class DerivedMarginReferenceMetric { MARGIN, EQUITY_CUSHION, MARGIN_COVERAGE, INVERSE_MARGIN }
+
 data class DerivedSubStrategyConfig(
     val label: String,
     val enabled: Boolean = true,
     val marginReferenceSource: DerivedMarginReferenceSource = DerivedMarginReferenceSource.BASE_STRATEGY,
     val marginReferenceTicker: String? = null,
+    val marginReferenceMetric: DerivedMarginReferenceMetric = DerivedMarginReferenceMetric.MARGIN,
     val scale: DerivedTargetScaleConfig = DerivedTargetScaleConfig(),
     val absoluteDeviationPct: Double = 0.05,
     val buyDeviationPct: Double = absoluteDeviationPct,

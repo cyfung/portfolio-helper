@@ -438,9 +438,9 @@ export default function RebalanceStrategyResults({
                 role="tab"
                 aria-selected={activeMarginChart === 'marginReciprocal'}
                 onClick={() => selectMarginChart('marginReciprocal')}
-                title="Reciprocal margin utilization: 1 / (margin utilization + 0.000001)"
+                title="Margin coverage: reciprocal margin utilization shown as a percent (50% margin = 200%)"
               >
-                1 / Margin
+                Margin Coverage
               </button>
             </div>
             {renderActionDotControls(activeMarginChart)}
@@ -457,7 +457,7 @@ export default function RebalanceStrategyResults({
               renderLegend={renderLegend}
               renderActionMarkers={renderActionMarkers}
               actionChart={activeMarginChart}
-              kind={activeMarginChart === 'marginReciprocal' ? 'multiple' : 'margin'}
+              kind="margin"
             />
           </div>
         </>

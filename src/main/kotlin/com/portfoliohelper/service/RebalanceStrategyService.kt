@@ -218,6 +218,34 @@ object RebalanceStrategyService {
       val buyLowEvents: List<Boolean>,
   )
 
+  private fun metricReferenceToMargin(value: Double, metric: DerivedMarginReferenceMetric): Double =
+      when (metric) {
+        DerivedMarginReferenceMetric.MARGIN -> value
+        DerivedMarginReferenceMetric.EQUITY_CUSHION ->
+            if (value.isFinite() && value > 0.0) (1.0 / value - 1.0).coerceAtLeast(0.0) else Double.POSITIVE_INFINITY
+        DerivedMarginReferenceMetric.MARGIN_COVERAGE,
+        DerivedMarginReferenceMetric.INVERSE_MARGIN ->
+            if (value.isFinite() && value > 0.0) 1.0 / value else Double.POSITIVE_INFINITY
+      }
+
+  private fun DerivedTargetScaleConfig.withReferenceMetric(metric: DerivedMarginReferenceMetric): DerivedTargetScaleConfig {
+    if (metric == DerivedMarginReferenceMetric.MARGIN) return this
+    fun ref(value: Double) = metricReferenceToMargin(value, metric)
+    return copy(
+        referenceLower = ref(referenceLower),
+        referenceUpper = ref(referenceUpper),
+        stepBaseTarget =
+            if (function == DerivedTargetScaleFunction.HYSTERESIS_STEP ||
+                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS
+            ) {
+              ref(stepBaseTarget)
+            } else {
+              stepBaseTarget
+            },
+        steps = steps.map { it.copy(referenceMargin = ref(it.referenceMargin)) },
+    )
+  }
+
   private fun runBasePortfolio(request: RebalanceStrategyRequest): MultiBacktestResult =
       BacktestService.runMulti(
           MultiBacktestRequest(
@@ -712,7 +740,8 @@ object RebalanceStrategyService {
     val vmTimingCapeHistory = vmTimingMr?.let { loadCapeHistory(it.capeSource) }
     val drawdownMarginOverride =
         strategy.drawdownMarginOverride?.takeIf { strategy.marginRebalanceEnabled && it.enabled }
-    val derivedTargetRuntime = derivedSubStrategy?.let { DerivedTargetRuntime.from(it.scale) }
+    val derivedTargetRuntime =
+        derivedSubStrategy?.let { DerivedTargetRuntime.from(it.scale.withReferenceMetric(it.marginReferenceMetric)) }
     fun baseMarginAt(recordedIndex: Int): Double? {
       if (derivedSubStrategy == null) return null
       val baseMargins = baseMarginSeries ?: return null

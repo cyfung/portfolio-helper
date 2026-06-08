@@ -509,6 +509,11 @@ private fun parseDerivedSubStrategies(el: JsonElement?): List<DerivedSubStrategy
                     ?.trim()
                     ?.uppercase()
                     ?.takeIf { it.isNotBlank() },
+                marginReferenceMetric = when (obj["marginReferenceMetric"]?.jsonPrimitive?.content) {
+                    "EQUITY_CUSHION" -> DerivedMarginReferenceMetric.EQUITY_CUSHION
+                    "MARGIN_COVERAGE", "INVERSE_MARGIN" -> DerivedMarginReferenceMetric.MARGIN_COVERAGE
+                    else -> DerivedMarginReferenceMetric.MARGIN
+                },
                 scale = (obj["scale"] as? JsonObject)?.let { parseDerivedTargetScaleConfig(it) }
                     ?: DerivedTargetScaleConfig(),
                 absoluteDeviationPct = legacyDeviation,

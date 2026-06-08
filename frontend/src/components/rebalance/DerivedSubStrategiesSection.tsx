@@ -24,6 +24,13 @@ const STEP_SCALE_FUNCTIONS = ['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_RE
 const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET']
 const RESET_ABOVE_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS']
 const SIGMOID_SCALE_FUNCTIONS = ['SIGMOID', 'ADAPTIVE_LOW_SIGMOID']
+const MARGIN_COVERAGE_REFERENCE_MAX = 1000
+
+const DERIVED_REFERENCE_METRIC_OPTIONS: { value: DerivedSubStrategyState['marginReferenceMetric']; label: string }[] = [
+  { value: 'MARGIN', label: 'Margin' },
+  { value: 'EQUITY_CUSHION', label: 'Equity Cushion' },
+  { value: 'MARGIN_COVERAGE', label: 'Margin Coverage' },
+]
 
 export default function DerivedSubStrategiesSection({
   value,
@@ -108,7 +115,16 @@ export default function DerivedSubStrategiesSection({
     <details open className="strategy-subsection">
       <summary className="strategy-section-title" onClick={keepSectionOpen}>Derived</summary>
       <div className="strategy-section-body strategy-derived-section-body">
-        {value.map((derived, derivedIdx) => (
+        {value.map((derived, derivedIdx) => {
+          const referenceMetric = derived.marginReferenceMetric === 'INVERSE_MARGIN'
+            ? 'MARGIN_COVERAGE'
+            : (derived.marginReferenceMetric ?? 'MARGIN')
+          const referenceInputMax =
+            referenceMetric === 'MARGIN_COVERAGE'
+              ? MARGIN_COVERAGE_REFERENCE_MAX
+              : (referenceMetric === 'EQUITY_CUSHION' ? 100 : sliderMax)
+
+          return (
           <div key={derived.id} className="strategy-derived-card">
             <div className="strategy-derived-card-header">
               <div className="strategy-derived-card-title">Derived Rebalancing</div>
@@ -143,7 +159,7 @@ export default function DerivedSubStrategiesSection({
                   onBlur={onCommit}
                 />
               </DerivedField>
-              <DerivedField label="Ref Margin Source">
+              <DerivedField label="Ref Source">
                 <select
                   value={derived.marginReferenceSource ?? 'BASE_STRATEGY'}
                   onChange={e => {
@@ -156,6 +172,18 @@ export default function DerivedSubStrategiesSection({
                 >
                   <option value="BASE_STRATEGY">Base Strategy</option>
                   <option value="STANDALONE_TICKER">Standalone Ticker</option>
+                </select>
+              </DerivedField>
+              <DerivedField label="Ref Metric">
+                <select
+                  value={referenceMetric}
+                  onChange={e => updateSubStrategy(derived.id, {
+                    marginReferenceMetric: e.target.value as DerivedSubStrategyState['marginReferenceMetric'],
+                  })}
+                >
+                  {DERIVED_REFERENCE_METRIC_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
                 </select>
               </DerivedField>
               <DerivedField label="Scale Function">
@@ -178,7 +206,7 @@ export default function DerivedSubStrategiesSection({
                     type="text"
                     value={derived.marginReferenceTicker ?? ''}
                     placeholder="SPY"
-                    aria-label={`Derived strategy ${derivedIdx + 1} reference margin ticker`}
+                    aria-label={`Derived strategy ${derivedIdx + 1} reference ticker`}
                     className="strategy-ticker-input"
                     onChange={e => updateSubStrategy(derived.id, { marginReferenceTicker: e.target.value.toUpperCase() })}
                     onBlur={onCommit}
@@ -193,20 +221,20 @@ export default function DerivedSubStrategiesSection({
               {!STEP_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
                 <>
                   <DerivedMarginInput
-                    label="Ref Low"
+                    label="Ref Min"
                     value={derived.scale.referenceLower}
                     placeholder="50"
-                    sliderMax={sliderMax}
-                    ariaLabel={`Derived strategy ${derivedIdx + 1} reference lower margin`}
+                    sliderMax={referenceInputMax}
+                    ariaLabel={`Derived strategy ${derivedIdx + 1} reference lower threshold`}
                     onChange={margin => updateScale(derived.id, { referenceLower: margin })}
                     onCommit={onCommit}
                   />
                   <DerivedMarginInput
-                    label="Ref High"
+                    label="Ref Max"
                     value={derived.scale.referenceUpper}
                     placeholder="100"
-                    sliderMax={sliderMax}
-                    ariaLabel={`Derived strategy ${derivedIdx + 1} reference upper margin`}
+                    sliderMax={referenceInputMax}
+                    ariaLabel={`Derived strategy ${derivedIdx + 1} reference upper threshold`}
                     onChange={margin => updateScale(derived.id, { referenceUpper: margin })}
                     onCommit={onCommit}
                   />
@@ -242,10 +270,10 @@ export default function DerivedSubStrategiesSection({
               )}
               {RESET_ABOVE_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
                 <DerivedMarginInput
-                  label="Reset Above"
+                  label="Reset Ref"
                   value={derived.scale.stepBaseTarget ?? ''}
                   placeholder="110"
-                  sliderMax={sliderMax}
+                  sliderMax={referenceInputMax}
                   ariaLabel={`Derived strategy ${derivedIdx + 1} reset threshold`}
                   onChange={margin => updateScale(derived.id, { stepBaseTarget: margin })}
                   onCommit={onCommit}
@@ -289,11 +317,11 @@ export default function DerivedSubStrategiesSection({
                 {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
                   <div key={step.id} className="strategy-derived-step-row">
                     <DerivedMarginInput
-                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Below` : `Step ${stepIdx + 1} Above`}
+                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Ref` : `Step ${stepIdx + 1} Ref`}
                       value={step.referenceMargin}
                       placeholder={String(60 + stepIdx * 10)}
-                      sliderMax={sliderMax}
-                      ariaLabel={`Derived strategy ${derivedIdx + 1} step ${stepIdx + 1} reference margin`}
+                      sliderMax={referenceInputMax}
+                      ariaLabel={`Derived strategy ${derivedIdx + 1} step ${stepIdx + 1} reference threshold`}
                       onChange={margin => updateStep(derived.id, step.id, { referenceMargin: margin })}
                       onCommit={onCommit}
                     />
@@ -375,7 +403,8 @@ export default function DerivedSubStrategiesSection({
               </DerivedField>
             </div>
           </div>
-        ))}
+          )
+        })}
         <div className="strategy-derived-add-row">
           <button type="button" className="strategy-derived-add-btn" onClick={addSubStrategy}>
             <PlusCircle size={18} strokeWidth={2.2} aria-hidden="true" />

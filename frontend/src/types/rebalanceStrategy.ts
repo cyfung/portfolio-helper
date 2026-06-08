@@ -114,6 +114,7 @@ export interface DerivedTargetScaleState {
 }
 
 export type DerivedMarginReferenceSource = 'BASE_STRATEGY' | 'STANDALONE_TICKER'
+export type DerivedMarginReferenceMetric = 'MARGIN' | 'EQUITY_CUSHION' | 'MARGIN_COVERAGE' | 'INVERSE_MARGIN'
 
 export interface DerivedSubStrategyState {
   id: string
@@ -121,6 +122,7 @@ export interface DerivedSubStrategyState {
   enabled: boolean
   marginReferenceSource: DerivedMarginReferenceSource
   marginReferenceTicker: string
+  marginReferenceMetric: DerivedMarginReferenceMetric
   scale: DerivedTargetScaleState
   absoluteDeviationPct: string
   buyDeviationPct: string
@@ -338,6 +340,7 @@ export function emptyDerivedSubStrategy(idx: number): DerivedSubStrategyState {
     enabled: true,
     marginReferenceSource: 'BASE_STRATEGY',
     marginReferenceTicker: '',
+    marginReferenceMetric: 'MARGIN',
     scale: emptyDerivedTargetScale(),
     absoluteDeviationPct: '5',
     buyDeviationPct: '5',
@@ -616,6 +619,9 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
     sellDeviationPct: item.sellDeviationPct ?? item.absoluteDeviationPct ?? '5',
     marginReferenceSource: item.marginReferenceSource === 'STANDALONE_TICKER' ? 'STANDALONE_TICKER' : 'BASE_STRATEGY',
     marginReferenceTicker: item.marginReferenceTicker ?? '',
+    marginReferenceMetric: item.marginReferenceMetric === 'EQUITY_CUSHION'
+      ? 'EQUITY_CUSHION'
+      : (item.marginReferenceMetric === 'MARGIN_COVERAGE' || item.marginReferenceMetric === 'INVERSE_MARGIN' ? 'MARGIN_COVERAGE' : 'MARGIN'),
     timeoutDays: item.timeoutDays ?? '10',
     maxMargin: item.maxMargin ?? '',
     allocStrategy: item.allocStrategy ?? 'PROPORTIONAL',
@@ -761,6 +767,9 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       marginReferenceTicker: d.marginReferenceSource === 'STANDALONE_TICKER'
         ? d.marginReferenceTicker.trim().toUpperCase()
         : null,
+      marginReferenceMetric: d.marginReferenceMetric === 'EQUITY_CUSHION'
+        ? 'EQUITY_CUSHION'
+        : (d.marginReferenceMetric === 'MARGIN_COVERAGE' || d.marginReferenceMetric === 'INVERSE_MARGIN' ? 'MARGIN_COVERAGE' : 'MARGIN'),
       scale: {
         function: scale.function || 'SIGMOID',
         referenceLower: pctAllowZero(scale.referenceLower, 50),

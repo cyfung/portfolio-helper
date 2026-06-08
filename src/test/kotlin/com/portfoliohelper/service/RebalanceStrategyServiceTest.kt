@@ -2472,6 +2472,82 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_marginCoverageReferenceInvertsStepDirection() {
+        val dates = days(LocalDate.of(2024, 1, 2), 2)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            marginReferenceMetric = DerivedMarginReferenceMetric.MARGIN_COVERAGE,
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.STEP,
+                stepBaseTarget = 0.80,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 2.00, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.01,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.8, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.50, 0.50),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        assertApprox(0.20, requireNotNull(result.marginPoints).first().value, eps = 1e-6)
+    }
+
+    @Test
+    fun derivedStrategy_marginCoverageHysteresisStairsMatchesEquivalentMarginConfig() {
+        val dates = days(LocalDate.of(2024, 1, 2), 4)
+        val prices = flatCurve(dates)
+        val baseMargins = listOf(0.60, 0.40, 0.40, 1.10)
+        val marginDerived = DerivedSubStrategyConfig(
+            label = "margin-derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                targetUpper = 1.00,
+                stepBaseTarget = 1.00,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.50, targetMargin = 0.50)),
+            ),
+            absoluteDeviationPct = 0.05,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+        val coverageDerived = marginDerived.copy(
+            label = "coverage-derived",
+            marginReferenceMetric = DerivedMarginReferenceMetric.MARGIN_COVERAGE,
+            scale = marginDerived.scale.copy(
+                stepBaseTarget = 1.00,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 2.00, targetMargin = 0.50)),
+            ),
+        )
+
+        fun run(derived: DerivedSubStrategyConfig) =
+            RebalanceStrategyService.runDerivedStrategyResultForTest(
+                singleStockPortfolio(),
+                strategy(marginRatio = 0.8, marginSpread = 0.0),
+                derived,
+                baseMarginSeries = baseMargins,
+                cashflow = null,
+                seriesMap = mapOf("SPY" to prices),
+                dates = dates,
+                effrx = emptyMap(),
+            )
+
+        val marginResult = run(marginDerived)
+        val coverageResult = run(coverageDerived)
+        requireNotNull(marginResult.marginPoints).zip(requireNotNull(coverageResult.marginPoints))
+            .forEachIndexed { i, (marginPoint, coveragePoint) ->
+                assertApprox(marginPoint.value, coveragePoint.value, eps = 1e-9, label = "margin[$i]")
+            }
+        assertEquals(marginResult.actionPoints?.map { it.type }, coverageResult.actionPoints?.map { it.type })
+    }
+
+    @Test
     fun derivedStrategy_canUseStandaloneTickerMarginFromSameBaseStrategy() {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-derived-standalone-margin-test")
