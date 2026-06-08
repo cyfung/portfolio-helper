@@ -304,12 +304,6 @@ object PortfolioCalculator {
                 pos.symbol to w * delta
             }
 
-            AllocMode.HYBRID_TARGET_WATERFALL -> averageAllocations(
-                positions.associate { pos -> pos.symbol to (pos.targetWeight / 100.0) * delta },
-                computeWaterfall(positions, prices, totalVal, delta, scaling),
-                positions
-            )
-
             AllocMode.FULL_REBALANCE -> computeFullRebalance(
                 positions,
                 prices,

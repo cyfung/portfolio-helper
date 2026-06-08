@@ -1389,7 +1389,6 @@ object BacktestService {
             MarginRebalanceMode.WATERFALL ->
                 allocationDeltasViaMutable(tickers, holdings, targetWeights, delta, ::computeWaterfall)
 
-            MarginRebalanceMode.HYBRID_TARGET_WATERFALL,
             MarginRebalanceMode.HYBRID_WATERFALL_FULL_REBALANCE ->
                 error("Hybrid allocation mode must be resolved before base allocation")
         }

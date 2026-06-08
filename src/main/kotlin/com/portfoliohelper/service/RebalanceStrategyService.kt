@@ -223,8 +223,7 @@ object RebalanceStrategyService {
         DerivedMarginReferenceMetric.MARGIN -> value
         DerivedMarginReferenceMetric.EQUITY_CUSHION ->
             if (value.isFinite() && value > 0.0) (1.0 / value - 1.0).coerceAtLeast(0.0) else Double.POSITIVE_INFINITY
-        DerivedMarginReferenceMetric.MARGIN_COVERAGE,
-        DerivedMarginReferenceMetric.INVERSE_MARGIN ->
+        DerivedMarginReferenceMetric.MARGIN_COVERAGE ->
             if (value.isFinite() && value > 0.0) 1.0 / value else Double.POSITIVE_INFINITY
       }
 

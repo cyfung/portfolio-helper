@@ -114,7 +114,7 @@ export interface DerivedTargetScaleState {
 }
 
 export type DerivedMarginReferenceSource = 'BASE_STRATEGY' | 'STANDALONE_TICKER'
-export type DerivedMarginReferenceMetric = 'MARGIN' | 'EQUITY_CUSHION' | 'MARGIN_COVERAGE' | 'INVERSE_MARGIN'
+export type DerivedMarginReferenceMetric = 'MARGIN' | 'EQUITY_CUSHION' | 'MARGIN_COVERAGE'
 
 export interface DerivedSubStrategyState {
   id: string
@@ -478,7 +478,6 @@ function normalizeDipSurgeScopes(configValue: any): DipSurgeScopeState {
   for (const item of items) {
     if (!item) continue
     if (item.scope === 'BASE_PORTFOLIO') scopes.basePortfolio = normalize(item, 'BASE_PORTFOLIO')
-    else if (item.scope === 'WHOLE_PORTFOLIO') scopes.basePortfolio = normalize(item, 'BASE_PORTFOLIO', 'STRATEGY_GROSS')
     else if ((item.scope ?? 'INDIVIDUAL_STOCK') === 'INDIVIDUAL_STOCK') scopes.individualStock = normalize(item, 'INDIVIDUAL_STOCK')
   }
   return scopes
@@ -571,8 +570,8 @@ function normalizeVmTimingMr(configValue: any): VmTimingMrState {
     ...configValue,
     enabled: configValue.enabled ?? false,
     capeSource: configValue.capeSource === 'US' ? 'US' : 'WORLD',
-    lowerMargin: marginText(configValue.lowerMargin ?? configValue.lowerMarginPct, base.lowerMargin),
-    upperMargin: marginText(configValue.upperMargin ?? configValue.upperMarginPct, base.upperMargin),
+    lowerMargin: marginText(configValue.lowerMargin, base.lowerMargin),
+    upperMargin: marginText(configValue.upperMargin, base.upperMargin),
     momentumSource: configValue.momentumSource ?? configValue.portfolioSource ?? base.momentumSource,
     momentumReferenceTicker: configValue.momentumSource === 'REFERENCE_PORTFOLIO' || configValue.portfolioSource === 'REFERENCE_PORTFOLIO'
       ? (configValue.momentumReferenceTicker ?? configValue.referenceTicker ?? '')
@@ -602,7 +601,7 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
             ? 'HYSTERESIS_STAIRS'
             : item.scale?.function === 'HYSTERESIS_STAIRS_REF_BL_RESET'
             ? 'HYSTERESIS_STAIRS_REF_BL_RESET'
-            : item.scale?.function === 'LINEAR' || item.scale?.function === 'Z_SHAPED'
+            : item.scale?.function === 'LINEAR'
             ? 'LINEAR'
             : (item.scale?.function === 'ADAPTIVE_LOW_SIGMOID' ? 'ADAPTIVE_LOW_SIGMOID' : 'SIGMOID')
         ),
@@ -621,7 +620,7 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
     marginReferenceTicker: item.marginReferenceTicker ?? '',
     marginReferenceMetric: item.marginReferenceMetric === 'EQUITY_CUSHION'
       ? 'EQUITY_CUSHION'
-      : (item.marginReferenceMetric === 'MARGIN_COVERAGE' || item.marginReferenceMetric === 'INVERSE_MARGIN' ? 'MARGIN_COVERAGE' : 'MARGIN'),
+      : (item.marginReferenceMetric === 'MARGIN_COVERAGE' ? 'MARGIN_COVERAGE' : 'MARGIN'),
     timeoutDays: item.timeoutDays ?? '10',
     maxMargin: item.maxMargin ?? '',
     allocStrategy: item.allocStrategy ?? 'PROPORTIONAL',
@@ -769,7 +768,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
         : null,
       marginReferenceMetric: d.marginReferenceMetric === 'EQUITY_CUSHION'
         ? 'EQUITY_CUSHION'
-        : (d.marginReferenceMetric === 'MARGIN_COVERAGE' || d.marginReferenceMetric === 'INVERSE_MARGIN' ? 'MARGIN_COVERAGE' : 'MARGIN'),
+        : (d.marginReferenceMetric === 'MARGIN_COVERAGE' ? 'MARGIN_COVERAGE' : 'MARGIN'),
       scale: {
         function: scale.function || 'SIGMOID',
         referenceLower: pctAllowZero(scale.referenceLower, 50),

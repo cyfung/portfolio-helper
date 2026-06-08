@@ -24,10 +24,6 @@ object AppConfig {
     const val KEY_PRIVACY_SCALE_ENABLED = "privacyScaleEnabled"
     const val KEY_AFTER_HOURS_GRAY      = "afterHoursGray"
     const val KEY_HYBRID_ALLOC_STRATEGIES = "hybridAllocStrategies"
-    const val KEY_HYBRID_TARGET_WATERFALL_TARGET_RATIO = "hybridTargetWaterfallTargetRatio"
-    const val KEY_HYBRID_TARGET_WATERFALL_WATERFALL_RATIO = "hybridTargetWaterfallWaterfallRatio"
-    const val KEY_HYBRID_WATERFALL_FULL_WATERFALL_RATIO = "hybridWaterfallFullWaterfallRatio"
-    const val KEY_HYBRID_WATERFALL_FULL_FULL_RATIO = "hybridWaterfallFullFullRatio"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -45,10 +41,6 @@ object AppConfig {
         KEY_PRIVACY_SCALE_ENABLED to "true",
         KEY_AFTER_HOURS_GRAY    to "true",
         KEY_HYBRID_ALLOC_STRATEGIES to "",
-        KEY_HYBRID_TARGET_WATERFALL_TARGET_RATIO to "1",
-        KEY_HYBRID_TARGET_WATERFALL_WATERFALL_RATIO to "1",
-        KEY_HYBRID_WATERFALL_FULL_WATERFALL_RATIO to "1",
-        KEY_HYBRID_WATERFALL_FULL_FULL_RATIO to "1"
     )
 
     fun get(key: String): String {

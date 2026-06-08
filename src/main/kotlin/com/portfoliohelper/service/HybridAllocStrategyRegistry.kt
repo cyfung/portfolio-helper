@@ -17,14 +17,6 @@ data class HybridAllocStrategyConfig(
 object HybridAllocStrategyRegistry {
     val defaultStrategies: List<HybridAllocStrategyConfig> = listOf(
         HybridAllocStrategyConfig(
-            id = "HYBRID_TARGET_WATERFALL",
-            label = "Hybrid Target/Waterfall",
-            first = MarginRebalanceMode.PROPORTIONAL.name,
-            second = MarginRebalanceMode.WATERFALL.name,
-            firstRatio = 1.0,
-            secondRatio = 1.0,
-        ),
-        HybridAllocStrategyConfig(
             id = "HYBRID_WATERFALL_FULL_REBALANCE",
             label = "Hybrid Waterfall/Full",
             first = MarginRebalanceMode.WATERFALL.name,

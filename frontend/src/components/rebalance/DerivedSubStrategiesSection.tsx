@@ -116,9 +116,7 @@ export default function DerivedSubStrategiesSection({
       <summary className="strategy-section-title" onClick={keepSectionOpen}>Derived</summary>
       <div className="strategy-section-body strategy-derived-section-body">
         {value.map((derived, derivedIdx) => {
-          const referenceMetric = derived.marginReferenceMetric === 'INVERSE_MARGIN'
-            ? 'MARGIN_COVERAGE'
-            : (derived.marginReferenceMetric ?? 'MARGIN')
+          const referenceMetric = derived.marginReferenceMetric ?? 'MARGIN'
           const referenceInputMax =
             referenceMetric === 'MARGIN_COVERAGE'
               ? MARGIN_COVERAGE_REFERENCE_MAX

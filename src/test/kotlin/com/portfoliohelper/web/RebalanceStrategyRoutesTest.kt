@@ -109,8 +109,6 @@ class RebalanceStrategyRoutesTest {
             incoming,
             setOf(
                 "drawdownConfigs",
-                "drawdownPcts",
-                "drawdownPct",
                 "referenceSource",
                 "referenceTicker",
                 "interestMode",

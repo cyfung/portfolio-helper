@@ -20,7 +20,6 @@ enum class RebalanceStrategy {
 enum class MarginRebalanceMode {
     CURRENT_WEIGHT,
     PROPORTIONAL,
-    HYBRID_TARGET_WATERFALL,
     FULL_REBALANCE,
     HYBRID_WATERFALL_FULL_REBALANCE,
     UNDERVALUED_PRIORITY,

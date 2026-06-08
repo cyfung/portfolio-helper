@@ -76,8 +76,6 @@ private val backtestSettingsKeys = setOf(
 
 private val marketTimingSettingsKeys = setOf(
     "drawdownConfigs",
-    "drawdownPcts",
-    "drawdownPct",
     "referenceSource",
     "referenceTicker",
     "interestMode",
@@ -305,26 +303,20 @@ private fun parseExecutionMethod(obj: JsonObject): ExecutionMethod =
         else          -> ExecutionMethod.Once
     }
 
-private fun parsePortfolioTriggerSource(obj: JsonObject, scopeText: String?): PortfolioTriggerSource =
-    if (scopeText == "WHOLE_PORTFOLIO") {
-        PortfolioTriggerSource.STRATEGY_GROSS
-    } else {
-        runCatching {
-            PortfolioTriggerSource.valueOf(
-                obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO"
-            )
-        }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
-    }
+private fun parsePortfolioTriggerSource(obj: JsonObject): PortfolioTriggerSource =
+    runCatching {
+        PortfolioTriggerSource.valueOf(
+            obj["portfolioSource"]?.jsonPrimitive?.content ?: "REFERENCE_PORTFOLIO"
+        )
+    }.getOrDefault(PortfolioTriggerSource.REFERENCE_PORTFOLIO)
 
 private fun parseAllocStrategyId(raw: String?, default: String = MarginRebalanceMode.PROPORTIONAL.name): String =
     raw?.trim()?.takeIf { it.isNotBlank() } ?: default
 
 private fun parseDipSurgeConfig(obj: JsonObject): DipSurgeConfig? {
     val scopeText = obj["scope"]?.jsonPrimitive?.content ?: "INDIVIDUAL_STOCK"
-    val scope =
-        if (scopeText == "WHOLE_PORTFOLIO") DipSurgeScope.BASE_PORTFOLIO
-        else runCatching { DipSurgeScope.valueOf(scopeText) }.getOrNull() ?: return null
-    val portfolioSource = parsePortfolioTriggerSource(obj, scopeText)
+    val scope = runCatching { DipSurgeScope.valueOf(scopeText) }.getOrNull() ?: return null
+    val portfolioSource = parsePortfolioTriggerSource(obj)
 
     return DipSurgeConfig(
         scope         = scope,
@@ -467,7 +459,7 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
             "HYSTERESIS_STAIRS" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
             "HYSTERESIS_STEP" -> DerivedTargetScaleFunction.HYSTERESIS_STEP
             "STEP" -> DerivedTargetScaleFunction.STEP
-            "LINEAR", "Z_SHAPED" -> DerivedTargetScaleFunction.LINEAR
+            "LINEAR" -> DerivedTargetScaleFunction.LINEAR
             "ADAPTIVE_LOW_SIGMOID" -> DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID
             "SIGMOID" -> DerivedTargetScaleFunction.SIGMOID
             else -> DerivedTargetScaleFunction.SIGMOID
@@ -511,7 +503,7 @@ private fun parseDerivedSubStrategies(el: JsonElement?): List<DerivedSubStrategy
                     ?.takeIf { it.isNotBlank() },
                 marginReferenceMetric = when (obj["marginReferenceMetric"]?.jsonPrimitive?.content) {
                     "EQUITY_CUSHION" -> DerivedMarginReferenceMetric.EQUITY_CUSHION
-                    "MARGIN_COVERAGE", "INVERSE_MARGIN" -> DerivedMarginReferenceMetric.MARGIN_COVERAGE
+                    "MARGIN_COVERAGE" -> DerivedMarginReferenceMetric.MARGIN_COVERAGE
                     else -> DerivedMarginReferenceMetric.MARGIN
                 },
                 scale = (obj["scale"] as? JsonObject)?.let { parseDerivedTargetScaleConfig(it) }
@@ -1063,14 +1055,7 @@ fun Application.configureRouting() {
                             )
                         }
                     }
-                    else -> when (val legacy = json["drawdownPcts"]) {
-                        is JsonArray -> legacy.mapNotNull { pct ->
-                            pct.jsonPrimitive.doubleOrNull?.let { MarketTimingDrawdownConfig(it) }
-                        }
-                        else -> listOfNotNull(
-                            json["drawdownPct"]?.jsonPrimitive?.doubleOrNull?.let { MarketTimingDrawdownConfig(it) }
-                        )
-                    }
+                    else -> emptyList()
                 }
                 val referenceSource = runCatching {
                     MarketTimingReferenceSource.valueOf(

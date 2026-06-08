@@ -23,14 +23,6 @@ export const BASE_ALLOC_OPTIONS: AllocStrategyOption[] = [
 
 export const DEFAULT_HYBRID_ALLOC_STRATEGIES: HybridAllocStrategyConfig[] = [
   {
-    id: 'HYBRID_TARGET_WATERFALL',
-    label: 'Hybrid Target/Waterfall',
-    first: 'PROPORTIONAL',
-    second: 'WATERFALL',
-    firstRatio: 1,
-    secondRatio: 1,
-  },
-  {
     id: 'HYBRID_WATERFALL_FULL_REBALANCE',
     label: 'Hybrid Waterfall/Rebal',
     first: 'WATERFALL',

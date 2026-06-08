@@ -103,25 +103,6 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
-    fun `hybrid target waterfall averages target-weight and waterfall deltas`() {
-        val tickers = listOf("A", "B")
-        val holdings = mapOf("A" to 80.0, "B" to 20.0)
-        val targetWeights = mapOf("A" to 0.5, "B" to 0.5)
-
-        val deltas = BacktestService.computeAllocationDeltas(
-            tickers,
-            holdings,
-            targetWeights,
-            20.0,
-            MarginRebalanceMode.HYBRID_TARGET_WATERFALL.name
-        )
-
-        assertApprox(5.0, deltas["A"] ?: 0.0)
-        assertApprox(15.0, deltas["B"] ?: 0.0)
-        assertApprox(20.0, deltas.values.sum())
-    }
-
-    @Test
     fun `hybrid waterfall full rebalance averages waterfall and full rebalance deltas`() {
         val tickers = listOf("A", "B")
         val holdings = mapOf("A" to 80.0, "B" to 20.0)

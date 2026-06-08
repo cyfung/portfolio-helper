@@ -185,10 +185,6 @@ fun Route.configureAdminRoutes() {
             AppConfig.KEY_UPDATE_CHECK_INTERVAL,
             AppConfig.KEY_AUTO_UPDATE,
             AppConfig.KEY_HYBRID_ALLOC_STRATEGIES,
-            AppConfig.KEY_HYBRID_TARGET_WATERFALL_TARGET_RATIO,
-            AppConfig.KEY_HYBRID_TARGET_WATERFALL_WATERFALL_RATIO,
-            AppConfig.KEY_HYBRID_WATERFALL_FULL_WATERFALL_RATIO,
-            AppConfig.KEY_HYBRID_WATERFALL_FULL_FULL_RATIO,
         )
         val values = keys.associateWith { AppConfig.get(it) }
         val updateInfo = UpdateService.getInfo()

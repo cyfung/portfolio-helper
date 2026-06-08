@@ -47,7 +47,6 @@ type MarketTimingImportConfig = {
   fromDate?: unknown
   toDate?: unknown
   drawdownConfigs?: unknown
-  drawdownPcts?: unknown
   referenceSource?: unknown
   referenceTicker?: unknown
   interestMode?: unknown
@@ -141,8 +140,8 @@ export default function MarketTimingPage() {
       .then((req: MarketTimingImportConfig) => {
         if (req.fromDate) setFromDate(String(req.fromDate))
         if (req.toDate) setToDate(String(req.toDate))
-        if (req.drawdownConfigs != null || req.drawdownPcts != null) {
-          setDrawdownConfigs(drawdownConfigsToInput(req.drawdownConfigs ?? req.drawdownPcts))
+        if (req.drawdownConfigs != null) {
+          setDrawdownConfigs(drawdownConfigsToInput(req.drawdownConfigs))
         }
         if (req.referenceSource != null) {
           setReferenceSource(req.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
@@ -208,7 +207,7 @@ export default function MarketTimingPage() {
       }
       setFromDate(String(payload.fromDate ?? ''))
       setToDate(String(payload.toDate ?? ''))
-      setDrawdownConfigs(drawdownConfigsToInput(payload.drawdownConfigs ?? payload.drawdownPcts))
+      setDrawdownConfigs(drawdownConfigsToInput(payload.drawdownConfigs))
       setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
       setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
       setInterestMode(payload.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')

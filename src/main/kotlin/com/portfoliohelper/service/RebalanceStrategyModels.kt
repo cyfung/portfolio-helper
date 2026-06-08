@@ -212,7 +212,7 @@ data class DerivedTargetScaleConfig(
 
 enum class DerivedMarginReferenceSource { BASE_STRATEGY, STANDALONE_TICKER }
 
-enum class DerivedMarginReferenceMetric { MARGIN, EQUITY_CUSHION, MARGIN_COVERAGE, INVERSE_MARGIN }
+enum class DerivedMarginReferenceMetric { MARGIN, EQUITY_CUSHION, MARGIN_COVERAGE }
 
 data class DerivedSubStrategyConfig(
     val label: String,
