@@ -13,7 +13,7 @@ import {
 } from 'recharts'
 import type { RechartsChartData } from '@/lib/chartData'
 
-export type ActionPointChartKey = 'main' | 'drawdown' | 'recover' | 'margin'
+export type ActionPointChartKey = 'main' | 'drawdown' | 'recover' | 'margin' | 'marginCushion'
 
 export const ACTIVE_DOT = { r: 4 }
 

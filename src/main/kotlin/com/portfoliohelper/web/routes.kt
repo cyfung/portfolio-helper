@@ -69,6 +69,11 @@ private fun saveBacktestPortfolios(json: JsonObject) = transaction {
 
 private val firstPortfolioCommonSettingsKeys = setOf("fromDate", "toDate")
 
+private val backtestSettingsKeys = setOf(
+    "startingBalance",
+    "cashflow",
+)
+
 private val marketTimingSettingsKeys = setOf(
     "drawdownConfigs",
     "drawdownPcts",
@@ -104,6 +109,42 @@ internal fun mergedFirstPortfolioSettings(
             if (k in replacedKeys) put(k, v)
         }
     }
+}
+
+internal fun mergedBacktestSettings(
+    existingSettings: JsonObject,
+    json: JsonObject,
+): JsonObject {
+    val replacedKeys = firstPortfolioCommonSettingsKeys + backtestSettingsKeys
+    return buildJsonObject {
+        existingSettings.forEach { (k, v) ->
+            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings") {
+                put(k, v)
+            }
+        }
+        json.forEach { (k, v) ->
+            if (k in replacedKeys) put(k, v)
+        }
+    }
+}
+
+private fun saveMergedBacktestSettings(json: JsonObject, settingsKey: String) = transaction {
+    fun get(k: String) = GlobalSettingsTable.selectAll()
+        .where { GlobalSettingsTable.key eq k }
+        .firstOrNull()?.get(GlobalSettingsTable.value)
+    fun upsert(k: String, v: String) = GlobalSettingsTable.upsert {
+        it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
+    }
+
+    upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
+    upsert(
+        settingsKey,
+        mergedBacktestSettings(
+            get(settingsKey)?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
+                ?: JsonObject(emptyMap()),
+            json,
+        ).toString()
+    )
 }
 
 private fun saveBacktestSettingsFirstPortfolio(
@@ -967,7 +1008,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveBacktestSettings(json, "backtest.settings") }
+                    runCatching { saveMergedBacktestSettings(json, "backtest.settings") }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }

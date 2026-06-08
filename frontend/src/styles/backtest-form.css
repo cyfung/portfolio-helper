@@ -320,6 +320,60 @@
     margin-bottom: 0;
 }
 
+.backtest-chart-tabs-heading {
+    align-items: center;
+}
+
+.backtest-chart-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    max-width: 100%;
+    padding: 0.15rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-secondary);
+}
+
+.backtest-chart-tab {
+    min-height: 1.75rem;
+    padding: 0.25rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.backtest-chart-tab:hover {
+    color: var(--color-text-primary);
+    background: var(--color-bg-hover);
+}
+
+.backtest-chart-tab:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 2px;
+}
+
+.backtest-chart-tab.active {
+    border-color: var(--color-border-subtle);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+}
+
+@media (max-width: 600px) {
+    .backtest-chart-tabs {
+        width: 100%;
+    }
+
+    .backtest-chart-tab {
+        flex: 1 1 0;
+    }
+}
+
 .market-timing-config {
     display: flex;
     flex-direction: column;

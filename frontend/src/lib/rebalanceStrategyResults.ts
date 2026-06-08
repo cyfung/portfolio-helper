@@ -46,6 +46,7 @@ export const DEFAULT_ACTION_POINT_CHART_VISIBILITY = {
   drawdown: true,
   recover: false,
   margin: false,
+  marginCushion: false,
 }
 
 export const DEFAULT_FORCE_ACTION_POINT_CHART_DOTS = {
@@ -53,6 +54,7 @@ export const DEFAULT_FORCE_ACTION_POINT_CHART_DOTS = {
   drawdown: false,
   recover: false,
   margin: false,
+  marginCushion: false,
 }
 
 const ACTION_MARKER_RENDER_LIMIT = 350
@@ -124,7 +126,14 @@ export function useRebalanceChartData(results: BacktestResults, selected: Set<st
     const ddData = buildRechartsData(results, labels, selected, computeDrawdown)
     const rtrData = buildRechartsData(results, labels, selected, computeRTR)
     const marginData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value), c => c.marginPoints)
-    return { labels, mainData, ddData, rtrData, marginData }
+    const marginCushionData = buildRechartsData(
+      results,
+      labels,
+      selected,
+      pts => pts.map(p => 1 / (1 + Math.max(0, p.value))),
+      c => c.marginPoints,
+    )
+    return { labels, mainData, ddData, rtrData, marginData, marginCushionData }
   }, [results, selected])
 }
 

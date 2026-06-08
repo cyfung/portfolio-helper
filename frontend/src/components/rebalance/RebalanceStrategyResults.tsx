@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { ReferenceDot } from 'recharts'
 import { ActionDiagnosticsTable, ResultsStatsTable } from '@/components/rebalance/RebalanceResultTables'
 import {
@@ -21,6 +21,30 @@ import {
   visibleActionPointGroups,
 } from '@/lib/rebalanceStrategyResults'
 import { BacktestResults } from '@/types/backtest'
+
+type RiskChartTab = 'drawdown' | 'recover'
+type MarginChartTab = 'margin' | 'marginCushion'
+
+const RISK_CHART_TAB_STORAGE_KEY = 'rebalance-strategy-risk-chart-tab'
+const MARGIN_CHART_TAB_STORAGE_KEY = 'rebalance-strategy-margin-chart-tab'
+
+function storedRiskChartTab(): RiskChartTab {
+  try {
+    const stored = localStorage.getItem(RISK_CHART_TAB_STORAGE_KEY)
+    return stored === 'recover' ? 'recover' : 'drawdown'
+  } catch {
+    return 'drawdown'
+  }
+}
+
+function storedMarginChartTab(): MarginChartTab {
+  try {
+    const stored = localStorage.getItem(MARGIN_CHART_TAB_STORAGE_KEY)
+    return stored === 'marginCushion' ? 'marginCushion' : 'margin'
+  } catch {
+    return 'margin'
+  }
+}
 
 function ActionPointTypeFilter({
   visibleTypes,
@@ -59,6 +83,8 @@ export default function RebalanceStrategyResults({
   const { gridColor, textColor } = theme
   const chartData = useRebalanceChartData(results, selected)
   const [logScale, setLogScale] = useState(false)
+  const [activeRiskChart, setActiveRiskChart] = useState<RiskChartTab>(storedRiskChartTab)
+  const [activeMarginChart, setActiveMarginChart] = useState<MarginChartTab>(storedMarginChartTab)
   const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
     () => new Set(Object.entries(ACTION_MARKERS).filter(([, marker]) => marker.defaultVisible !== false).map(([type]) => type)),
   )
@@ -75,6 +101,14 @@ export default function RebalanceStrategyResults({
   )
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
   const anyChecked = selected.size > 0
+
+  useEffect(() => {
+    try { localStorage.setItem(RISK_CHART_TAB_STORAGE_KEY, activeRiskChart) } catch {}
+  }, [activeRiskChart])
+
+  useEffect(() => {
+    try { localStorage.setItem(MARGIN_CHART_TAB_STORAGE_KEY, activeMarginChart) } catch {}
+  }, [activeMarginChart])
 
   const selectedStrategyCurve = useMemo(() => {
     if (selected.size !== 1) return null
@@ -316,14 +350,33 @@ export default function RebalanceStrategyResults({
         />
       </div>
 
-      <div className="backtest-chart-heading">
-        <div className="backtest-chart-title">Drawdown</div>
-        {renderActionDotControls('drawdown')}
+      <div className="backtest-chart-heading backtest-chart-tabs-heading">
+        <div className="backtest-chart-tabs" role="tablist" aria-label="Risk chart">
+          <button
+            className={`backtest-chart-tab${activeRiskChart === 'drawdown' ? ' active' : ''}`}
+            type="button"
+            role="tab"
+            aria-selected={activeRiskChart === 'drawdown'}
+            onClick={() => setActiveRiskChart('drawdown')}
+          >
+            Drawdown
+          </button>
+          <button
+            className={`backtest-chart-tab${activeRiskChart === 'recover' ? ' active' : ''}`}
+            type="button"
+            role="tab"
+            aria-selected={activeRiskChart === 'recover'}
+            onClick={() => setActiveRiskChart('recover')}
+          >
+            Return Required to Recover
+          </button>
+        </div>
+        {renderActionDotControls(activeRiskChart)}
       </div>
-      {renderDenseActionStrips('drawdown')}
+      {renderDenseActionStrips(activeRiskChart)}
       <div className="backtest-chart-container">
         <RebalanceLineChart
-          chartData={chartData.ddData}
+          chartData={activeRiskChart === 'drawdown' ? chartData.ddData : chartData.rtrData}
           labelsLength={chartData.labels.length}
           gridColor={gridColor}
           textColor={textColor}
@@ -331,41 +384,41 @@ export default function RebalanceStrategyResults({
           makeTooltip={makeTooltip}
           renderLegend={renderLegend}
           renderActionMarkers={renderActionMarkers}
-          actionChart="drawdown"
-          kind="drawdown"
-        />
-      </div>
-
-      <div className="backtest-chart-heading">
-        <div className="backtest-chart-title">Return Required to Recover</div>
-        {renderActionDotControls('recover')}
-      </div>
-      {renderDenseActionStrips('recover')}
-      <div className="backtest-chart-container">
-        <RebalanceLineChart
-          chartData={chartData.rtrData}
-          labelsLength={chartData.labels.length}
-          gridColor={gridColor}
-          textColor={textColor}
-          commonLineProps={commonLineProps}
-          makeTooltip={makeTooltip}
-          renderLegend={renderLegend}
-          renderActionMarkers={renderActionMarkers}
-          actionChart="recover"
-          kind="recover"
+          actionChart={activeRiskChart}
+          kind={activeRiskChart}
         />
       </div>
 
       {chartData.marginData.datasets.length > 0 && (
         <>
-          <div className="backtest-chart-heading">
-            <div className="backtest-chart-title">Margin Utilization</div>
-            {renderActionDotControls('margin')}
+          <div className="backtest-chart-heading backtest-chart-tabs-heading">
+            <div className="backtest-chart-tabs" role="tablist" aria-label="Margin chart">
+              <button
+                className={`backtest-chart-tab${activeMarginChart === 'margin' ? ' active' : ''}`}
+                type="button"
+                role="tab"
+                aria-selected={activeMarginChart === 'margin'}
+                onClick={() => setActiveMarginChart('margin')}
+              >
+                Margin Utilization
+              </button>
+              <button
+                className={`backtest-chart-tab${activeMarginChart === 'marginCushion' ? ' active' : ''}`}
+                type="button"
+                role="tab"
+                aria-selected={activeMarginChart === 'marginCushion'}
+                onClick={() => setActiveMarginChart('marginCushion')}
+                title="Equity divided by gross exposure: 1 / (1 + margin utilization)"
+              >
+                Equity Cushion
+              </button>
+            </div>
+            {renderActionDotControls(activeMarginChart)}
           </div>
-          {renderDenseActionStrips('margin')}
+          {renderDenseActionStrips(activeMarginChart)}
           <div className="backtest-chart-container">
             <RebalanceLineChart
-              chartData={chartData.marginData}
+              chartData={activeMarginChart === 'margin' ? chartData.marginData : chartData.marginCushionData}
               labelsLength={chartData.labels.length}
               gridColor={gridColor}
               textColor={textColor}
@@ -373,7 +426,7 @@ export default function RebalanceStrategyResults({
               makeTooltip={makeTooltip}
               renderLegend={renderLegend}
               renderActionMarkers={renderActionMarkers}
-              actionChart="margin"
+              actionChart={activeMarginChart}
               kind="margin"
             />
           </div>

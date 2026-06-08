@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -125,5 +126,36 @@ class RebalanceStrategyRoutesTest {
         assertEquals("15-0, 20-1", merged["drawdownConfigs"]?.jsonPrimitive?.content)
         assertEquals("PORTFOLIO", merged["referenceSource"]?.jsonPrimitive?.content)
         assertNull(merged["portfolios"])
+    }
+
+    @Test
+    fun mergedBacktestSettingsKeepsRebalanceStrategySettingsWhenBacktestSaves() {
+        val existing = buildJsonObject {
+            put("fromDate", JsonPrimitive("2000-01-01"))
+            put("startingBalance", JsonPrimitive(10000))
+            put("strategies", JsonPrimitive("rebalance"))
+            put("strategyStates", JsonPrimitive("rebalance-state"))
+            put("includeActionDiagnostics", JsonPrimitive(true))
+        }
+        val incoming = buildJsonObject {
+            put("fromDate", JsonPrimitive("2010-01-01"))
+            put("toDate", JsonPrimitive("2024-12-31"))
+            put("startingBalance", JsonPrimitive(25000))
+            put("cashflow", JsonPrimitive("new-cashflow"))
+            put("portfolios", JsonPrimitive("not-persisted-here"))
+            put("saveSettings", JsonPrimitive(true))
+        }
+
+        val merged = mergedBacktestSettings(existing, incoming)
+
+        assertEquals("2010-01-01", merged["fromDate"]?.jsonPrimitive?.content)
+        assertEquals("2024-12-31", merged["toDate"]?.jsonPrimitive?.content)
+        assertEquals(25000, merged["startingBalance"]?.jsonPrimitive?.int)
+        assertEquals("new-cashflow", merged["cashflow"]?.jsonPrimitive?.content)
+        assertEquals("rebalance", merged["strategies"]?.jsonPrimitive?.content)
+        assertEquals("rebalance-state", merged["strategyStates"]?.jsonPrimitive?.content)
+        assertEquals(true, merged["includeActionDiagnostics"]?.jsonPrimitive?.boolean)
+        assertNull(merged["portfolios"])
+        assertNull(merged["saveSettings"])
     }
 }
