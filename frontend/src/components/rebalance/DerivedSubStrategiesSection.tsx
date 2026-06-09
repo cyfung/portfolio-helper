@@ -226,6 +226,16 @@ export default function DerivedSubStrategiesSection({
                   onBlur={onCommit}
                 />
               </DerivedField>
+              <DerivedField label="Ref Metric">
+                <select
+                  value={referenceMetric}
+                  onChange={e => handleReferenceMetricChange(derived, e.target.value as DerivedSubStrategyState['marginReferenceMetric'])}
+                >
+                  {DERIVED_REFERENCE_METRIC_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </DerivedField>
               <DerivedField label="Ref Source">
                 <select
                   value={derived.marginReferenceSource ?? 'BASE_STRATEGY'}
@@ -239,16 +249,6 @@ export default function DerivedSubStrategiesSection({
                 >
                   <option value="BASE_STRATEGY">Base Strategy</option>
                   <option value="STANDALONE_TICKER">Standalone Ticker</option>
-                </select>
-              </DerivedField>
-              <DerivedField label="Ref Metric">
-                <select
-                  value={referenceMetric}
-                  onChange={e => handleReferenceMetricChange(derived, e.target.value as DerivedSubStrategyState['marginReferenceMetric'])}
-                >
-                  {DERIVED_REFERENCE_METRIC_OPTIONS.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
                 </select>
               </DerivedField>
               <DerivedField label="Scale Function">
