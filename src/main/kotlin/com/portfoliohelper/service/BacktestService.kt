@@ -569,6 +569,7 @@ object BacktestService {
         val localFiles = findFiles(simPattern)
 
         // Tier 1 — local file
+        var localFallback: Map<LocalDate, Double>? = null
         if (localFiles.isNotEmpty()) {
             val extended = tryExtendAndValidate(
                 ticker,
@@ -577,9 +578,21 @@ object BacktestService {
                 today,
                 neededFromDate
             )
-            if (extended != null) return extended
-            localFiles.forEach { it.delete() }
-            logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
+            val extendedFirstDate = extended?.keys?.minOrNull()
+            if (extended != null && extendedFirstDate != null && extendedFirstDate <= neededFromDate) return extended
+            if (extended != null) {
+                localFallback = extended
+                logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after requested $neededFromDate — checking bundled resource")
+            } else {
+                val staleLocal = runCatching { readSimCsv(localFiles.first()) }.getOrNull()
+                if (!staleLocal.isNullOrEmpty() && staleLocal.size >= 20) {
+                    localFallback = staleLocal
+                    logger.warn("$upperTicker Tier 1 extension failed; keeping stale local data capped at ${staleLocal.lastKey()}")
+                } else {
+                    localFiles.forEach { it.delete() }
+                    logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
+                }
+            }
         }
 
         // Tier 2 — resource file
@@ -592,13 +605,16 @@ object BacktestService {
                 today,
                 neededFromDate
             )
-            if (extended != null) return extended
-            // Extension/validation failed. Only use bundled data as-is if it already covers the
-            // requested window; otherwise fall through to a fresh Yahoo rebuild instead of carrying
-            // stale prices forward as a flat line.
+            if (extended != null) {
+                localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
+                return extended
+            }
+            // Extension/validation failed. Use bundled synthetic data as-is; the shared calendar is
+            // capped at the earliest ticker end, so stale prices will not be carried forward flat.
             val stale = runCatching { readSimCsv(resourceFiles.first()) }.getOrNull()
-            if (!stale.isNullOrEmpty() && stale.size >= 20 && stale.firstKey() <= neededFromDate && stale.lastKey() >= today) {
-                logger.warn("$upperTicker Tier 2: extension failed; using resource data that covers requested range (last date=${stale.lastKey()})")
+            if (!stale.isNullOrEmpty() && stale.size >= 20) {
+                logger.warn("$upperTicker Tier 2: extension failed; using stale resource data (last date=${stale.lastKey()})")
+                localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
                 return stale
             }
             resourceFiles.forEach { it.delete() }
@@ -606,6 +622,8 @@ object BacktestService {
         } else {
             logger.warn("$upperTicker Tier 2: no matching resource file found for pattern $simPattern")
         }
+
+        if (localFallback != null) return localFallback
 
         // Tier 3 — rebuild from scratch
         logger.info("No valid SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
@@ -698,9 +716,12 @@ object BacktestService {
             simPattern.matches(it)
         } ?: return emptyList()
         val cl = object {}::class.java.classLoader
-        cl.getResourceAsStream("data/.ticker/$resourcesFile")
-            ?.use { Files.copy(it, tickerDir.toPath().resolve(resourcesFile)) }
-        return findFiles(simPattern)
+        val target = tickerDir.toPath().resolve(resourcesFile)
+        if (!Files.exists(target)) {
+            cl.getResourceAsStream("data/.ticker/$resourcesFile")
+                ?.use { Files.copy(it, target) }
+        }
+        return listOf(target.toFile()).filter { it.exists() }
     }
 
     internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
