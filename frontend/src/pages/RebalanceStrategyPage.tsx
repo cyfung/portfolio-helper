@@ -83,7 +83,14 @@ export default function RebalanceStrategyPage() {
 
       {page.error && <div className="backtest-error">{page.error}</div>}
       {page.results && (
-        <RebalanceStrategyResults results={page.results} selected={page.selected} setSelected={page.setSelected} />
+        <RebalanceStrategyResults
+          results={page.results}
+          selected={page.selected}
+          setSelected={page.setSelected}
+          zeroMarginInterestResults={page.zeroMarginInterestResults}
+          zeroMarginInterestRunning={page.zeroMarginInterestRunning}
+          onLoadZeroMarginInterestResults={page.loadZeroMarginInterestResults}
+        />
       )}
     </div>
   )

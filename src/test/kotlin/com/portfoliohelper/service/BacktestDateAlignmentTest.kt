@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 
 class BacktestDateAlignmentTest {
     @Test
-    fun intersectDates_usesUnionStartingAtLatestTickerStartDate() {
+    fun intersectDates_usesUnionWithinCommonTickerDateRange() {
         val jan1 = LocalDate.of(2026, 1, 1)
         val jan2 = LocalDate.of(2026, 1, 2)
         val jan3 = LocalDate.of(2026, 1, 3)
@@ -21,11 +21,11 @@ class BacktestDateAlignmentTest {
             to = jan4,
         )
 
-        assertEquals(listOf(jan2, jan3, jan4), dates)
+        assertEquals(listOf(jan2, jan3), dates)
     }
 
     @Test
-    fun intersectDates_endsOnLastDateWhereAtLeastOneTickerHasData() {
+    fun intersectDates_endsOnEarliestTickerEndDate() {
         val jan1 = LocalDate.of(2026, 1, 1)
         val jan2 = LocalDate.of(2026, 1, 2)
         val jan3 = LocalDate.of(2026, 1, 3)
@@ -41,11 +41,11 @@ class BacktestDateAlignmentTest {
             to = jan5,
         )
 
-        assertEquals(listOf(jan2, jan3, jan4, jan5), dates)
+        assertEquals(listOf(jan2, jan3, jan4), dates)
     }
 
     @Test
-    fun intersectDates_doesNotExtendEndDateUsingCarryForwardData() {
+    fun intersectDates_doesNotExtendPastEarliestTickerEndDateUsingCarryForwardData() {
         val jan1 = LocalDate.of(2026, 1, 1)
         val jan2 = LocalDate.of(2026, 1, 2)
         val jan3 = LocalDate.of(2026, 1, 3)
@@ -62,7 +62,7 @@ class BacktestDateAlignmentTest {
             to = jan6,
         )
 
-        assertEquals(listOf(jan2, jan3, jan4, jan5), dates)
+        assertEquals(listOf(jan2, jan3, jan4), dates)
     }
 
     @Test

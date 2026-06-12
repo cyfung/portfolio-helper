@@ -179,6 +179,7 @@ object RebalanceStrategyService {
       startingBalance: Double = 10_000.0,
       globalDates: List<LocalDate>? = null,
       includeActionDiagnostics: Boolean = false,
+      zeroMarginInterest: Boolean = false,
   ): List<CurveResult> {
     if (strategies.isEmpty()) return emptyList()
     val referenceTickers = strategies.flatMap { it.referenceTickers() }.distinct()
@@ -203,6 +204,7 @@ object RebalanceStrategyService {
           context.effrx,
           startingBalance,
           includeActionDiagnostics,
+          zeroMarginInterest = zeroMarginInterest,
       )
     }
   }
@@ -253,6 +255,7 @@ object RebalanceStrategyService {
               listOf(request.portfolio.copy(rebalanceStrategies = emptyList())),
               request.cashflow,
               request.startingBalance,
+              request.zeroMarginInterest,
           )
       )
 
@@ -272,6 +275,7 @@ object RebalanceStrategyService {
             context.effrx,
             request.startingBalance,
             request.includeActionDiagnostics,
+            zeroMarginInterest = request.zeroMarginInterest,
         )
     val derivedCurves =
         runDerivedSubStrategies(
@@ -320,6 +324,7 @@ object RebalanceStrategyService {
               derived,
               referenceSeries.margins,
               referenceSeries.buyLowEvents,
+              zeroMarginInterest = request.zeroMarginInterest,
           )
         }
   }
@@ -360,6 +365,7 @@ object RebalanceStrategyService {
               context.effrx,
               request.startingBalance,
               includeActionDiagnostics = false,
+              zeroMarginInterest = request.zeroMarginInterest,
           )
       DerivedReferenceSeries(
           standaloneCurve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
@@ -727,6 +733,7 @@ object RebalanceStrategyService {
       derivedSubStrategy: DerivedSubStrategyConfig? = null,
       baseMarginSeries: List<Double>? = null,
       baseBuyLowEventSeries: List<Boolean>? = null,
+      zeroMarginInterest: Boolean = false,
   ): CurveResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
@@ -787,7 +794,8 @@ object RebalanceStrategyService {
     val singleTickerReferenceValues =
         singleTickerReferenceTickers.associateWith { 1.0 }.toMutableMap()
     val dailyLoanRates =
-        BacktestService.buildDailyLoanRates(dates, effrx, strategy.marginSpread / 252.0)
+        if (zeroMarginInterest) DoubleArray(dates.size)
+        else BacktestService.buildDailyLoanRates(dates, effrx, strategy.marginSpread / 252.0)
     val dailyBaseReferenceHoldings =
         tickers.associateWith { targetWeights[it] ?: 0.0 }.toMutableMap()
     var dailyBaseReferenceValue = dailyBaseReferenceHoldings.values.sum()

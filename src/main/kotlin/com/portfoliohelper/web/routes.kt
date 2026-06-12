@@ -1135,6 +1135,7 @@ fun Application.configureRouting() {
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
                 val includeActionDiagnostics = json["includeActionDiagnostics"]?.jsonPrimitive?.booleanOrNull ?: false
+                val zeroMarginInterest = json["zeroMarginInterest"]?.jsonPrimitive?.booleanOrNull ?: false
 
                 val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
                     ?: throw IllegalArgumentException("Missing portfolio")
@@ -1154,6 +1155,7 @@ fun Application.configureRouting() {
                         strategies,
                         startingBalance,
                         includeActionDiagnostics,
+                        zeroMarginInterest,
                     )
                 )
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)

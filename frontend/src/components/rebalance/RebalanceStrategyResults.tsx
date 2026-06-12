@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { ReferenceDot } from 'recharts'
 import { ActionDiagnosticsTable, ResultsStatsTable } from '@/components/rebalance/RebalanceResultTables'
 import {
@@ -92,14 +92,22 @@ export default function RebalanceStrategyResults({
   results,
   selected,
   setSelected,
+  zeroMarginInterestResults,
+  zeroMarginInterestRunning = false,
+  onLoadZeroMarginInterestResults,
 }: {
   results: BacktestResults
   selected: Set<string>
   setSelected: Dispatch<SetStateAction<Set<string>>>
+  zeroMarginInterestResults?: BacktestResults | null
+  zeroMarginInterestRunning?: boolean
+  onLoadZeroMarginInterestResults?: () => void | Promise<void>
 }) {
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
   const chartData = useRebalanceChartData(results, selected)
+  const zeroMarginInterestChartData = useRebalanceChartData(zeroMarginInterestResults ?? results, selected)
+  const [zeroMarginInterestChart, setZeroMarginInterestChart] = useState(false)
   const [logScale, setLogScale] = useState(false)
   const [activeRiskChart, setActiveRiskChart] = useState<RiskChartTab>(storedRiskChartTab)
   const [activeMarginChart, setActiveMarginChart] = useState<MarginChartTab>(storedMarginChartTab)
@@ -119,6 +127,14 @@ export default function RebalanceStrategyResults({
   )
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
   const anyChecked = selected.size > 0
+  const marginChartSourceData =
+    zeroMarginInterestChart && zeroMarginInterestResults
+      ? zeroMarginInterestChartData
+      : chartData
+
+  useEffect(() => {
+    setZeroMarginInterestChart(false)
+  }, [results])
 
   const selectRiskChart = useCallback((tab: RiskChartTab) => {
     storeRiskChartTab(tab)
@@ -168,6 +184,15 @@ export default function RebalanceStrategyResults({
   const toggleAll = useCallback((checked: boolean) => {
     setSelected(checked ? new Set(allKeys) : new Set())
   }, [allKeys, setSelected])
+
+  const toggleZeroMarginInterestChart = useCallback(() => {
+    if (zeroMarginInterestChart) {
+      setZeroMarginInterestChart(false)
+      return
+    }
+    setZeroMarginInterestChart(true)
+    if (!zeroMarginInterestResults) void onLoadZeroMarginInterestResults?.()
+  }, [onLoadZeroMarginInterestResults, zeroMarginInterestChart, zeroMarginInterestResults])
 
   const toggleActionPointType = useCallback((type: string, checked: boolean) => {
     setVisibleActionPointTypes(prev => {
@@ -443,12 +468,24 @@ export default function RebalanceStrategyResults({
                 Margin Coverage
               </button>
             </div>
-            {renderActionDotControls(activeMarginChart)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <button
+                className={`chart-scale-toggle${zeroMarginInterestChart && zeroMarginInterestResults ? ' active' : ''}`}
+                type="button"
+                style={{ position: 'static' }}
+                disabled={zeroMarginInterestRunning}
+                onClick={toggleZeroMarginInterestChart}
+                title="Use an alternate 0% margin-interest simulation for this margin chart only"
+              >
+                {zeroMarginInterestRunning ? 'Loading 0%' : '0% Interest'}
+              </button>
+              {renderActionDotControls(activeMarginChart)}
+            </div>
           </div>
           {renderDenseActionStrips(activeMarginChart)}
           <div className="backtest-chart-container">
             <RebalanceLineChart
-              chartData={marginChartData(chartData, activeMarginChart)}
+              chartData={marginChartData(marginChartSourceData, activeMarginChart)}
               labelsLength={chartData.labels.length}
               gridColor={gridColor}
               textColor={textColor}

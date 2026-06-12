@@ -275,6 +275,7 @@ data class RebalanceStrategyRequest(
     val strategies: List<RebalStrategyConfig>,  // exactly 2
     val startingBalance: Double = 10_000.0,
     val includeActionDiagnostics: Boolean = false,
+    val zeroMarginInterest: Boolean = false,
 )
 
 enum class RebalanceOptimizationMetric { CAGR, SHARPE, UPI }

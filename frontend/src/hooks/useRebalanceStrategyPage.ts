@@ -42,8 +42,23 @@ type PageConfigLike = Record<string, unknown> & {
   strategyStates?: StrategyConfigLike[]
 }
 
+type RebalanceStrategyRunPayload = Record<string, unknown>
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+function parseJsonResponse<T>(text: string, status: number): T {
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    const preview = text.trim().replace(/\s+/g, ' ').slice(0, 240)
+    throw new Error(
+      preview
+        ? `Server returned non-JSON response (${status}): ${preview}`
+        : `Server returned empty response (${status})`,
+    )
+  }
 }
 
 function restoreStrategyStates(req: PageConfigLike) {
@@ -68,10 +83,13 @@ export function useRebalanceStrategyPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [results, setResults] = useState<BacktestResults | null>(null)
+  const [zeroMarginInterestResults, setZeroMarginInterestResults] = useState<BacktestResults | null>(null)
+  const [zeroMarginInterestRunning, setZeroMarginInterestRunning] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
   const strategyBlockRefs = useRef<(RebalanceStrategyBlockRef | null)[]>([])
+  const lastRunPayloadRef = useRef<RebalanceStrategyRunPayload | null>(null)
 
   const dateRangeError = validateDateRange(fromDate, toDate)
 
@@ -128,6 +146,19 @@ export function useRebalanceStrategyPage() {
     return { portfolioApi, allStrategies, runStrategies }
   }, [currentNormalizedStrategies, portfolio, strategies])
 
+  const fetchRunResults = useCallback(async (payload: RebalanceStrategyRunPayload) => {
+    const res = await fetch('/api/rebalance-strategy/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = parseJsonResponse<BacktestResults>(await res.text(), res.status)
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `Server error ${res.status}`)
+    }
+    return data
+  }, [])
+
   const handleRun = useCallback(async () => {
     setError('')
     if (dateRangeError) {
@@ -145,25 +176,19 @@ export function useRebalanceStrategyPage() {
 
     setRunning(true)
     try {
-      const res = await fetch('/api/rebalance-strategy/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromDate: fromDate || null,
-          toDate: toDate || null,
-          startingBalance: startingBalanceToPayload(startingBalance),
-          portfolio: runInputs.portfolioApi,
-          cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
-          strategies: runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
-          strategyStates: runInputs.runStrategies,
-          includeActionDiagnostics,
-        }),
-      })
-      const data: BacktestResults = await res.json()
-      if (!res.ok || data.error) {
-        setError(data.error || `Server error ${res.status}`)
-        return
+      const payload: RebalanceStrategyRunPayload = {
+        fromDate: fromDate || null,
+        toDate: toDate || null,
+        startingBalance: startingBalanceToPayload(startingBalance),
+        portfolio: runInputs.portfolioApi,
+        cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+        strategies: runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
+        strategyStates: runInputs.runStrategies,
+        includeActionDiagnostics,
       }
+      const data = await fetchRunResults(payload)
+      lastRunPayloadRef.current = payload
+      setZeroMarginInterestResults(null)
       setResults(data)
       setSelected(new Set(data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))))
     } catch (e: unknown) {
@@ -175,12 +200,38 @@ export function useRebalanceStrategyPage() {
     cashflowAmount,
     cashflowFrequency,
     dateRangeError,
+    fetchRunResults,
     fromDate,
     includeActionDiagnostics,
     resolveRunInputs,
     startingBalance,
     toDate,
   ])
+
+  const loadZeroMarginInterestResults = useCallback(async () => {
+    if (zeroMarginInterestResults) return
+    const payload = lastRunPayloadRef.current
+    if (!payload) {
+      setError('Run the strategy before enabling 0% margin interest on the chart.')
+      return
+    }
+
+    setError('')
+    setZeroMarginInterestRunning(true)
+    try {
+      const data = await fetchRunResults({
+        ...payload,
+        saveSettings: false,
+        includeActionDiagnostics: false,
+        zeroMarginInterest: true,
+      })
+      setZeroMarginInterestResults(data)
+    } catch (e: unknown) {
+      setError('Request failed: ' + errorMessage(e, 'Unknown error'))
+    } finally {
+      setZeroMarginInterestRunning(false)
+    }
+  }, [fetchRunResults, zeroMarginInterestResults])
 
   const handleExport = useCallback(async () => {
     const currentStrategies = currentNormalizedStrategies()
@@ -257,6 +308,8 @@ export function useRebalanceStrategyPage() {
     running,
     error,
     results,
+    zeroMarginInterestResults,
+    zeroMarginInterestRunning,
     selected,
     setSelected,
     savedBarRef,
@@ -264,6 +317,7 @@ export function useRebalanceStrategyPage() {
     strategyBlockRefs,
     dateRangeError,
     handleRun,
+    loadZeroMarginInterestResults,
     handleExport,
     handleImport,
     strategyHandlers,

@@ -134,7 +134,8 @@ object BacktestService {
                         mc.lowerRebalanceMode != MarginRebalanceMode.CURRENT_WEIGHT.name
                     )
                         applyMarginProportional(
-                            pConfig, seriesMap, globalDates, effrxSeries, mc, request.startingBalance, request.cashflow
+                            pConfig, seriesMap, globalDates, effrxSeries, mc, request.startingBalance, request.cashflow,
+                            request.zeroMarginInterest,
                         )
                     else
                         applyMargin(
@@ -142,7 +143,8 @@ object BacktestService {
                             globalDates,
                             effrxSeries,
                             mc,
-                            pConfig.rebalanceStrategy
+                            pConfig.rebalanceStrategy,
+                            request.zeroMarginInterest,
                         )
                 val marginValuePoints = globalDates.mapIndexed { i, d ->
                     DataPoint(d.toString(), marginResult.values[i])
@@ -177,6 +179,7 @@ object BacktestService {
                     pConfig.rebalanceStrategies,
                     request.startingBalance,
                     globalDates = globalDates,
+                    zeroMarginInterest = request.zeroMarginInterest,
                 )
             )
             PortfolioResult(pConfig.label, curves)
@@ -590,12 +593,13 @@ object BacktestService {
                 neededFromDate
             )
             if (extended != null) return extended
-            // Extension/validation failed (e.g. Yahoo unavailable). Before discarding, try using
-            // the stale resource data as-is — good enough for historical backtesting.
+            // Extension/validation failed. Only use bundled data as-is if it already covers the
+            // requested window; otherwise fall through to a fresh Yahoo rebuild instead of carrying
+            // stale prices forward as a flat line.
             val stale = runCatching { readSimCsv(resourceFiles.first()) }.getOrNull()
-            if (!stale.isNullOrEmpty() && stale.size >= 20) {
-                logger.warn("$upperTicker Tier 2: extension failed; using stale resource data (last date=${stale.lastKey()})")
-                return stale   // keep the copied file — Tier 1 will retry extension on next call
+            if (!stale.isNullOrEmpty() && stale.size >= 20 && stale.firstKey() <= neededFromDate && stale.lastKey() >= today) {
+                logger.warn("$upperTicker Tier 2: extension failed; using resource data that covers requested range (last date=${stale.lastKey()})")
+                return stale
             }
             resourceFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, falling through to Yahoo")
@@ -1045,11 +1049,15 @@ object BacktestService {
     ): List<LocalDate> {
         val latestStart = series.mapNotNull { it.keys.minOrNull() }.maxOrNull()
             ?: return emptyList()
+        val earliestEnd = series.mapNotNull { it.keys.maxOrNull() }.minOrNull()
+            ?: return emptyList()
         val start = listOfNotNull(from, latestStart).maxOrNull() ?: latestStart
+        val end = minOf(to, earliestEnd)
+        if (start > end) return emptyList()
         return series
             .flatMap { it.keys }
             .asSequence()
-            .filter { d -> d >= start && d <= to }
+            .filter { d -> d >= start && d <= end }
             .distinct()
             .sorted()
             .toList()
@@ -1228,7 +1236,8 @@ object BacktestService {
         dates: List<LocalDate>,
         effrx: Map<LocalDate, Double>,
         marginConfig: MarginConfig,
-        rebalanceStrategy: RebalanceStrategy
+        rebalanceStrategy: RebalanceStrategy,
+        zeroMarginInterest: Boolean = false,
     ): MarginApplyResult {
         val marginTarget = marginConfig.marginRatio
         val spread = marginConfig.marginSpread
@@ -1246,7 +1255,9 @@ object BacktestService {
         var lowerTriggers = 0
 
         val dailySpread = spread / 252.0
-        val dailyLoanRates = buildDailyLoanRates(dates, effrx, dailySpread)
+        val dailyLoanRates =
+            if (zeroMarginInterest) DoubleArray(dates.size)
+            else buildDailyLoanRates(dates, effrx, dailySpread)
 
         for (i in 1 until noMargin.size) {
             val prevDate = dates[i - 1]
@@ -1461,7 +1472,8 @@ object BacktestService {
         effrx: Map<LocalDate, Double>,
         mc: MarginConfig,
         startingBalance: Double = 10_000.0,
-        cashflow: CashflowConfig? = null
+        cashflow: CashflowConfig? = null,
+        zeroMarginInterest: Boolean = false,
     ): MarginApplyResult {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
@@ -1483,7 +1495,9 @@ object BacktestService {
         val lowerThreshold = mc.marginRatio - mc.marginDeviationLower
         val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
         val returnRatios = buildReturnRatios(tickers, seriesMap, dates)
-        val dailyLoanRates = buildDailyLoanRates(dates, effrx, dailySpread)
+        val dailyLoanRates =
+            if (zeroMarginInterest) DoubleArray(dates.size)
+            else buildDailyLoanRates(dates, effrx, dailySpread)
         var previousMarginRatio = targetRatio
 
         for (i in 1 until dates.size) {
