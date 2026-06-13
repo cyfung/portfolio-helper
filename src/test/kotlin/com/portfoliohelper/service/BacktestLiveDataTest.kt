@@ -9,6 +9,40 @@ import kotlin.test.assertTrue
 
 class BacktestLiveDataTest {
     @Test
+    fun liveKmlmResourceSeriesExtendsToLatestWithoutLosingSyntheticHistory() {
+        if (System.getProperty("liveYahoo") != "true" && System.getenv("LIVE_YAHOO") != "true") return
+
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-live-kmlm-resource-")
+        try {
+            AppDirs.dataDir = tempDataDir
+
+            val series = BacktestService.loadNormalizedSeries("KMLM", LocalDate.of(1990, 1, 1))
+            val dates = series.keys.sorted()
+            val tickerFiles = tempDataDir.resolve(".ticker").toFile()
+                .listFiles()
+                ?.map { it.name }
+                ?.sorted()
+                .orEmpty()
+
+            println("KMLM resource extension first=${dates.firstOrNull()} last=${dates.lastOrNull()} rows=${dates.size}")
+            println("tickerFiles=${tickerFiles.joinToString()}")
+
+            assertTrue(
+                dates.firstOrNull()?.isBefore(LocalDate.of(2000, 1, 1)) == true,
+                "KMLM should keep bundled synthetic history before 2000, first=${dates.firstOrNull()}"
+            )
+            assertTrue(
+                dates.lastOrNull()?.isAfter(LocalDate.now().minusDays(14)) == true,
+                "KMLM should extend close to today, last=${dates.lastOrNull()}"
+            )
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun liveBacktestDiagnostic_singleTickerIncludesLatestYahooDate() {
         if (System.getProperty("liveYahoo") != "true" && System.getenv("LIVE_YAHOO") != "true") return
 

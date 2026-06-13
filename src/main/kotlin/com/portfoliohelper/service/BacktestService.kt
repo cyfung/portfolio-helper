@@ -9,6 +9,7 @@ import java.io.File
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.LocalDate
 import java.time.temporal.IsoFields
 import java.util.*
@@ -578,10 +579,22 @@ object BacktestService {
                 neededFromDate
             )
             val extendedFirstDate = extended?.keys?.minOrNull()
-            if (extended != null && extendedFirstDate != null && extendedFirstDate <= neededFromDate) return extended
+            val resourceFirstDate = extendedFirstDate?.let { bundledResourceFirstDate(simPattern) }
+            if (
+                extended != null &&
+                extendedFirstDate != null &&
+                extendedFirstDate <= neededFromDate &&
+                (resourceFirstDate == null || resourceFirstDate >= extendedFirstDate)
+            ) {
+                return extended
+            }
             if (extended != null) {
                 localFiles.forEach { it.delete() }
-                logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after requested $neededFromDate — checking bundled resource")
+                if (resourceFirstDate != null && resourceFirstDate < extendedFirstDate) {
+                    logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after bundled resource $resourceFirstDate — checking bundled resource")
+                } else {
+                    logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after requested $neededFromDate — checking bundled resource")
+                }
             } else {
                 localFiles.forEach { it.delete() }
                 logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
@@ -589,14 +602,15 @@ object BacktestService {
         }
 
         // Tier 2 — resource file
-        val resourceFiles = copyFromResources(simPattern)
+        val resourceFiles = copyFromResources(simPattern, forceRefresh = localFiles.isNotEmpty())
         if (resourceFiles.isNotEmpty()) {
             val extended = tryExtendAndValidate(
                 ticker,
                 upperTicker,
                 resourceFiles,
                 today,
-                neededFromDate
+                neededFromDate,
+                allowAnchoredForwardExtension = true
             )
             if (extended != null) {
                 localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
@@ -634,7 +648,8 @@ object BacktestService {
         upperTicker: String,
         files: List<File>,
         neededToDate: LocalDate,
-        neededFromDate: LocalDate
+        neededFromDate: LocalDate,
+        allowAnchoredForwardExtension: Boolean = false
     ): Map<LocalDate, Double>? {
         val file = files.first()
         logger.info("Loading SIM file for $upperTicker: ${file.name}")
@@ -655,8 +670,12 @@ object BacktestService {
             val earlyYahoo = try {
                 YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, firstDate.plusDays(10))
             } catch (e: Exception) {
-                logger.warn("$upperTicker early probe fetch failed: ${e.message}")
-                return null
+                if (!allowAnchoredForwardExtension) {
+                    logger.warn("$upperTicker early probe fetch failed: ${e.message}")
+                    return null
+                }
+                logger.warn("$upperTicker early probe fetch failed: ${e.message}; keeping cached start $firstDate")
+                emptyMap()
             }
             if (earlyYahoo.keys.any { it < firstDate }) {
                 current = try {
@@ -682,8 +701,17 @@ object BacktestService {
             current = try {
                 chainExtend(current, yahoo, lastKnownDate)
             } catch (e: Exception) {
-                logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}")
-                return null
+                if (!allowAnchoredForwardExtension) {
+                    logger.warn("Failed to extend $upperTicker via Yahoo: ${e.message}")
+                    return null
+                }
+                try {
+                    logger.warn("Failed strict extension for $upperTicker via Yahoo: ${e.message}; anchoring at cached $lastKnownDate")
+                    chainExtendFromAnchor(current, yahoo, lastKnownDate)
+                } catch (fallback: Exception) {
+                    logger.warn("Failed anchored extension for $upperTicker via Yahoo: ${fallback.message}")
+                    return null
+                }
             }
         }
 
@@ -693,18 +721,33 @@ object BacktestService {
         return current
     }
 
-    private fun copyFromResources(simPattern: Regex): List<File> {
+    private fun copyFromResources(simPattern: Regex, forceRefresh: Boolean = false): List<File> {
         val allResourceFiles = getResourceFiles("data/.ticker")
         val resourcesFile = allResourceFiles.firstOrNull {
             simPattern.matches(it)
         } ?: return emptyList()
         val cl = object {}::class.java.classLoader
         val target = tickerDir.toPath().resolve(resourcesFile)
-        if (!Files.exists(target)) {
+        if (forceRefresh || !Files.exists(target)) {
             cl.getResourceAsStream("data/.ticker/$resourcesFile")
-                ?.use { Files.copy(it, target) }
+                ?.use { Files.copy(it, target, StandardCopyOption.REPLACE_EXISTING) }
         }
         return listOf(target.toFile()).filter { it.exists() }
+    }
+
+    private fun bundledResourceFirstDate(simPattern: Regex): LocalDate? {
+        val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
+            simPattern.matches(it)
+        } ?: return null
+        val cl = object {}::class.java.classLoader
+        return cl.getResourceAsStream("data/.ticker/$resourcesFile")?.bufferedReader()?.use { reader ->
+            reader.readLine()
+            reader.lineSequence()
+                .mapNotNull { line ->
+                    runCatching { LocalDate.parse(line.substringBefore(",").trim()) }.getOrNull()
+                }
+                .firstOrNull()
+        }
     }
 
     internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
@@ -991,7 +1034,41 @@ object BacktestService {
     }
 
     /**
-     * Extends [existing] (date → normalised value) backward by chaining returns from [yahoo] (date → raw adj-close).
+     * Extends [existing] forward from the latest Yahoo date that already exists in the cached series.
+     * This is used for bundled synthetic resources whose historical overlap may not exactly match
+     * current Yahoo data, but whose cached history should be preserved.
+     */
+    internal fun chainExtendFromAnchor(
+        existing: Map<LocalDate, Double>,
+        yahoo: Map<LocalDate, Double>,
+        lastSimDate: LocalDate
+    ): Map<LocalDate, Double> {
+        val sortedYahooDates = yahoo.keys.sorted()
+        require(sortedYahooDates.isNotEmpty()) { "Yahoo data is empty" }
+
+        val anchorDate = sortedYahooDates
+            .filter { it <= lastSimDate && existing.containsKey(it) }
+            .maxOrNull()
+            ?: throw IllegalStateException("No overlap on or before cached last date $lastSimDate")
+
+        val result = existing.toMutableMap()
+        var prevYahoo = yahoo[anchorDate]!!
+        var prevValue = existing[anchorDate]!!
+
+        for (date in sortedYahooDates.filter { it > anchorDate }) {
+            val currentYahoo = yahoo[date] ?: continue
+            if (prevYahoo == 0.0) { prevYahoo = currentYahoo; continue }
+            val newValue = prevValue * (currentYahoo / prevYahoo)
+            result[date] = newValue
+            prevYahoo = currentYahoo
+            prevValue = newValue
+        }
+
+        return result
+    }
+
+    /**
+     * Extends [existing] (date -> normalised value) backward by chaining returns from [yahoo] (date -> raw adj-close).
      * Anchors at yahoo's last date (must exist in [existing]), validates the overlap region (>= [firstSimDate]),
      * and writes new entries only for dates strictly before [firstSimDate].
      */
