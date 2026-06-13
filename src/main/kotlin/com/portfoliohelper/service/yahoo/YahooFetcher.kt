@@ -61,7 +61,7 @@ object YahooHistoricalFetcher {
 
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
                 "?period1=$p1&period2=$p2&interval=1d" +
-                "&events=adjclose&includeAdjustedClose=true"
+                "&events=history%7Cadjclose&includeAdjustedClose=true"
 
         logger.info("Fetching historical $ticker from $startDate to $endDate")
 

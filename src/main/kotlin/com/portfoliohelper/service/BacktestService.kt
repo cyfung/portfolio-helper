@@ -569,7 +569,6 @@ object BacktestService {
         val localFiles = findFiles(simPattern)
 
         // Tier 1 — local file
-        var localFallback: Map<LocalDate, Double>? = null
         if (localFiles.isNotEmpty()) {
             val extended = tryExtendAndValidate(
                 ticker,
@@ -581,17 +580,11 @@ object BacktestService {
             val extendedFirstDate = extended?.keys?.minOrNull()
             if (extended != null && extendedFirstDate != null && extendedFirstDate <= neededFromDate) return extended
             if (extended != null) {
-                localFallback = extended
+                localFiles.forEach { it.delete() }
                 logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after requested $neededFromDate — checking bundled resource")
             } else {
-                val staleLocal = runCatching { readSimCsv(localFiles.first()) }.getOrNull()
-                if (!staleLocal.isNullOrEmpty() && staleLocal.size >= 20) {
-                    localFallback = staleLocal
-                    logger.warn("$upperTicker Tier 1 extension failed; keeping stale local data capped at ${staleLocal.lastKey()}")
-                } else {
-                    localFiles.forEach { it.delete() }
-                    logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
-                }
+                localFiles.forEach { it.delete() }
+                logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
             }
         }
 
@@ -609,21 +602,11 @@ object BacktestService {
                 localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
                 return extended
             }
-            // Extension/validation failed. Use bundled synthetic data as-is; the shared calendar is
-            // capped at the earliest ticker end, so stale prices will not be carried forward flat.
-            val stale = runCatching { readSimCsv(resourceFiles.first()) }.getOrNull()
-            if (!stale.isNullOrEmpty() && stale.size >= 20) {
-                logger.warn("$upperTicker Tier 2: extension failed; using stale resource data (last date=${stale.lastKey()})")
-                localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
-                return stale
-            }
             resourceFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, falling through to Yahoo")
         } else {
             logger.warn("$upperTicker Tier 2: no matching resource file found for pattern $simPattern")
         }
-
-        if (localFallback != null) return localFallback
 
         // Tier 3 — rebuild from scratch
         logger.info("No valid SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
@@ -1070,15 +1053,11 @@ object BacktestService {
     ): List<LocalDate> {
         val latestStart = series.mapNotNull { it.keys.minOrNull() }.maxOrNull()
             ?: return emptyList()
-        val earliestEnd = series.mapNotNull { it.keys.maxOrNull() }.minOrNull()
-            ?: return emptyList()
         val start = listOfNotNull(from, latestStart).maxOrNull() ?: latestStart
-        val end = minOf(to, earliestEnd)
-        if (start > end) return emptyList()
         return series
             .flatMap { it.keys }
             .asSequence()
-            .filter { d -> d >= start && d <= end }
+            .filter { d -> d >= start && d <= to }
             .distinct()
             .sorted()
             .toList()
