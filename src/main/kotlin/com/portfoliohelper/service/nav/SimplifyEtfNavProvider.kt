@@ -5,6 +5,7 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import org.slf4j.LoggerFactory
 
 abstract class SimplifyEtfNavProvider : NavProvider {
@@ -35,31 +36,17 @@ abstract class SimplifyEtfNavProvider : NavProvider {
             }
 
             val html = response.bodyAsText()
-            val doc = Jsoup.parse(html)
-
-            // Find the NAV section: <h3>NAV</h3> followed by <p>$ XX.XX</p>
-            val navHeading = doc.select("h3:containsOwn(NAV)").first() ?: run {
-                logger.warn("Could not find NAV heading for $symbol")
+            val navSnapshot = parseSimplifyNav(html) ?: run {
+                logger.warn("Could not parse NAV from Simplify page for $symbol")
                 return null
             }
 
-            val navParagraph = navHeading.nextElementSibling() ?: run {
-                logger.warn("Could not find NAV value element for $symbol")
-                return null
-            }
-
-            val navText = navParagraph.text().trim()
-            val navValue = navText.replace("$", "").replace(",", "").trim().toDoubleOrNull() ?: run {
-                logger.warn("Could not parse NAV value '$navText' for $symbol")
-                return null
-            }
-
-            logger.info("Fetched NAV for $symbol: $navValue")
+            logger.info("Fetched NAV for $symbol: ${navSnapshot.nav}")
 
             NavData(
                 symbol = symbol,
-                nav = navValue,
-                asOfDate = null,
+                nav = navSnapshot.nav,
+                asOfDate = navSnapshot.asOfDate,
                 lastFetchTime = System.currentTimeMillis()
             )
         } catch (e: Exception) {
@@ -67,4 +54,56 @@ abstract class SimplifyEtfNavProvider : NavProvider {
             null
         }
     }
+}
+
+internal data class SimplifyNavSnapshot(
+    val nav: Double,
+    val asOfDate: String?
+)
+
+internal fun parseSimplifyNav(html: String): SimplifyNavSnapshot? {
+    val doc = Jsoup.parse(html)
+    return parseFundOverviewNav(doc) ?: parseLegacyNav(doc)
+}
+
+private fun parseFundOverviewNav(doc: Document): SimplifyNavSnapshot? {
+    val header = doc.select(".c-fund-overview__cell-header")
+        .firstOrNull { it.text().trim().startsWith("NAV Per Share", ignoreCase = true) }
+        ?: return null
+
+    val row = header.parent()
+    val valueElement = row?.selectFirst(".c-fund-overview__cell-data")
+        ?: header.nextElementSibling()
+        ?: return null
+
+    return parseNavSnapshot(header.text(), valueElement.text())
+}
+
+private fun parseLegacyNav(doc: Document): SimplifyNavSnapshot? {
+    val navHeading = doc.select("h3:matchesOwn((?i)^\\s*NAV\\s*$)").first()
+        ?: return null
+    val navParagraph = navHeading.nextElementSibling()
+        ?: return null
+
+    return parseNavSnapshot(navHeading.text(), navParagraph.text())
+}
+
+private fun parseNavSnapshot(labelText: String, valueText: String): SimplifyNavSnapshot? {
+    val nav = parseDollarValue(valueText) ?: return null
+    return SimplifyNavSnapshot(
+        nav = nav,
+        asOfDate = Regex("""(?i)\bas\s+of\s+(\d{1,2}/\d{1,2}/\d{4})""")
+            .find(labelText)
+            ?.groupValues
+            ?.get(1)
+    )
+}
+
+private fun parseDollarValue(text: String): Double? {
+    return Regex("""\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)""")
+        .find(text)
+        ?.groupValues
+        ?.get(1)
+        ?.replace(",", "")
+        ?.toDoubleOrNull()
 }
