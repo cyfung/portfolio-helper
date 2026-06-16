@@ -207,6 +207,12 @@ interface BacktestViewState {
   results: BacktestResults | null
   realData: RealPortfolioData | null
   selected: Set<string>
+  submittedPortfolios: SubmittedBacktestPortfolio[]
+}
+
+interface SubmittedBacktestPortfolio {
+  includeNoMargin?: boolean
+  marginStrategies?: { marginRatio?: number | null }[]
 }
 
 function realPortfolioDataFromResponse(d: Partial<RealPortfolioData>, navScaleFactor: number): RealPortfolioData {
@@ -263,8 +269,9 @@ export default function BacktestPage() {
     results: null,
     realData: null,
     selected: new Set(),
+    submittedPortfolios: [],
   })
-  const { results, realData, selected } = viewState
+  const { results, realData, selected, submittedPortfolios } = viewState
   const [logScale, setLogScale]       = useState(false)
   const [scaleToNav, setScaleToNav]   = useState(true)
   const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
@@ -446,12 +453,40 @@ export default function BacktestPage() {
   const theme  = useChartTheme()
   const { isDark, gridColor, textColor } = theme
 
+  const displayCurveLabel = useCallback((portfolioIndex: number, curveIndex: number, label: string) => {
+    const submitted = submittedPortfolios[portfolioIndex]
+    const noMarginOffset = submitted?.includeNoMargin === false ? 0 : 1
+    const marginIndex = curveIndex - noMarginOffset
+    const marginRatio = submitted?.marginStrategies?.[marginIndex]?.marginRatio
+    if (marginIndex < 0 || marginRatio == null || !Number.isFinite(marginRatio) || /\d+(?:\.\d+)?%/.test(label)) {
+      return label
+    }
+
+    const marginPct = marginRatio * 100
+    const formattedMargin = `${Number.isInteger(marginPct) ? marginPct.toFixed(0) : marginPct.toFixed(2).replace(/\.?0+$/, '')}%`
+    return label.replace(/^(Margin\s+\d+)/, `$1 ${formattedMargin}`)
+  }, [submittedPortfolios])
+
+  const displayResults = useMemo(() => {
+    if (!results) return null
+    return {
+      ...results,
+      portfolios: results.portfolios.map((portfolio, pi) => ({
+        ...portfolio,
+        curves: portfolio.curves.map((curve, ci) => ({
+          ...curve,
+          label: displayCurveLabel(pi, ci, curve.label),
+        })),
+      })),
+    }
+  }, [displayCurveLabel, results])
+
   // ── Computed chart data ───────────────────────────────────────────────────
 
   const chartData = useMemo(() => {
-    if (!results) return null
-    const labels        = buildCommonLabels(results)
-    const backtestStart = results.portfolios[0]?.curves[0]?.points[0]?.value ?? 1
+    if (!displayResults) return null
+    const labels        = buildCommonLabels(displayResults)
+    const backtestStart = displayResults.portfolios[0]?.curves[0]?.points[0]?.value ?? 1
     const navDisplayFactor = realData ? privacyNavScaleFactor / realData.navScaleFactor : 1
     const realNavSeries = realData?.navSeries.map(v => v * navDisplayFactor) ?? []
 
@@ -467,7 +502,7 @@ export default function BacktestPage() {
     const shouldScaleToNav  = scaleToNav && navStart > 0 && !!realSlug
 
     // Backtest curves: when shouldScaleToNav, scale each so its first-date value = navStart
-    const mainData = buildRechartsData(results, labels, selected, pts => {
+    const mainData = buildRechartsData(displayResults, labels, selected, pts => {
       if (shouldScaleToNav) {
         const startVal = pts[0]?.value ?? 1
         return pts.map(p => p.value * (navStart / startVal))
@@ -477,7 +512,7 @@ export default function BacktestPage() {
 
     // Per-curve scale factors for stats table End Value
     const curveScaleFactors = new Map<string, number>()
-    results.portfolios.forEach((portfolio, pi) => {
+    displayResults.portfolios.forEach((portfolio, pi) => {
       portfolio.curves.forEach((curve, ci) => {
         const factor = shouldScaleToNav ? navStart / (curve.points[0]?.value ?? 1) : 1
         curveScaleFactors.set(`${pi}-${ci}`, factor)
@@ -553,8 +588,8 @@ export default function BacktestPage() {
       navAvgMargin: realAvgMargin,
     } : null
 
-    const ddData  = buildRechartsData(results, labels, selected, computeDrawdown)
-    const rtrData = buildRechartsData(results, labels, selected, computeRTR)
+    const ddData  = buildRechartsData(displayResults, labels, selected, computeDrawdown)
+    const rtrData = buildRechartsData(displayResults, labels, selected, computeRTR)
 
     // Inject real portfolio DD/RTR series
     if (realData?.dates.length) {
@@ -601,7 +636,7 @@ export default function BacktestPage() {
         )
     }
 
-    const marginData = buildRechartsData(results, labels, selected, pts => pts.map(p => p.value), c => c.marginPoints)
+    const marginData = buildRechartsData(displayResults, labels, selected, pts => pts.map(p => p.value), c => c.marginPoints)
 
     return {
       labels,
@@ -614,7 +649,7 @@ export default function BacktestPage() {
       navStart,
       shouldScaleToNav,
     }
-  }, [results, selected, realData, scaleToNav, realSlug, isDark, privacyNavScaleFactor])
+  }, [displayResults, selected, realData, scaleToNav, realSlug, isDark, privacyNavScaleFactor])
   const selectedActionPointGroups = useMemo(() => (
     visibleActionPointGroups(selectedActionCurve?.curve.actionPoints, visibleActionPointTypes, chartData?.labels ?? [])
   ), [chartData?.labels, selectedActionCurve, visibleActionPointTypes])
@@ -683,6 +718,7 @@ export default function BacktestPage() {
         results: data,
         realData: newRealData,
         selected: new Set(defaultKeys),
+        submittedPortfolios: portfolios,
       })
     } catch (e: unknown) {
       setError('Request failed: ' + errorMessage(e))
@@ -1032,7 +1068,7 @@ export default function BacktestPage() {
 
       {error && <div className="backtest-error">{error}</div>}
 
-      {results && chartData && (
+      {displayResults && chartData && (
         <>
           {/* Stats table */}
           <div className="stats-container">
@@ -1061,7 +1097,7 @@ export default function BacktestPage() {
                 </tr>
               </thead>
               <tbody>
-                {results.portfolios.flatMap((portfolio, pi) =>
+                {displayResults.portfolios.flatMap((portfolio, pi) =>
                   portfolio.curves.map((curve, ci) => {
                     const key    = `${pi}-${ci}`
                     const s      = curve.stats
