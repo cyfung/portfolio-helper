@@ -25,10 +25,13 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.concurrent.*
+
+class YahooHistoricalDataException(message: String) : IllegalStateException(message)
 
 // ── Reusable historical fetcher ───────────────────────────────────────────────
 
@@ -71,7 +74,13 @@ object YahooHistoricalFetcher {
             resp.body!!.string()
         }
 
-        val prices = parseAdjustedCloseResponse(ticker, startDate, endDate, body)
+        val prices = parseAdjustedCloseResponse(
+            ticker,
+            startDate,
+            endDate,
+            body,
+            tailQuoteProvider = { fetchCurrentQuote(ticker) }
+        )
         logger.info("Fetched ${prices.size} trading days for $ticker")
         return prices
     }
@@ -80,7 +89,8 @@ object YahooHistoricalFetcher {
         ticker: String,
         startDate: LocalDate,
         endDate: LocalDate,
-        body: String
+        body: String,
+        tailQuoteProvider: (() -> YahooQuote?)? = null
     ): Map<LocalDate, Double> {
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
@@ -89,15 +99,65 @@ object YahooHistoricalFetcher {
         val adjCloseList = result.indicators?.adjClose?.firstOrNull()?.adjClose
             ?: error("No adjclose data for $ticker")
 
-        val prices = mutableMapOf<LocalDate, Double>()
-        for (i in timestamps.indices) {
-            val price = adjCloseList.getOrNull(i) ?: continue
+        val marketDate = result.meta?.currentTradingDate()
+        val rows = timestamps.indices.mapNotNull { i ->
             val date = Instant.ofEpochSecond(timestamps[i]).atZone(ZoneOffset.UTC).toLocalDate()
-            if (date <= endDate) prices[date] = price
+            if (date <= endDate) YahooPriceRow(date, adjCloseList.getOrNull(i)) else null
+        }
+        val latestBeforeMarketDate = marketDate
+            ?.let { date -> rows.filter { it.date < date }.maxByOrNull { it.date } }
+        val fillableTailNullDate = latestBeforeMarketDate
+            ?.takeIf { it.price == null }
+            ?.date
+        val nullRows = rows.filter { it.price == null }
+        val invalidNullRows = nullRows.filter {
+            it.date != fillableTailNullDate && !it.date.isWeekend()
+        }
+        // Null adjusted-close rows are data-quality failures unless they match one of the
+        // known Yahoo shapes below:
+        // 1. The latest row before currentTradingDate can be null while quote.previousClose
+        //    already has the official prior close; fill exactly that row from the quote API.
+        // 2. Some exchanges include weekend timestamps with null OHLC/adjclose; drop them.
+        // Any other weekday null would silently break return chains, so keep this strict.
+        if (invalidNullRows.isNotEmpty()) {
+            failOnNullAdjustedClose(
+                ticker,
+                startDate,
+                endDate,
+                marketDate,
+                rows,
+                body,
+                "invalid weekday null rows: ${invalidNullRows.joinToString { it.date.toString() }}"
+            )
         }
 
-        val marketDate = result.meta?.currentTradingDate()
-        val marketPrice = result.meta?.regularMarketPrice
+        val prices = mutableMapOf<LocalDate, Double>()
+        for (row in rows) {
+            val price = row.price ?: continue
+            prices[row.date] = price
+        }
+
+        val tailQuote = if (fillableTailNullDate != null) tailQuoteProvider?.invoke() else null
+        if (fillableTailNullDate != null) {
+            val previousClose = tailQuote?.previousClose
+            if (previousClose == null) {
+                failOnNullAdjustedClose(
+                    ticker,
+                    startDate,
+                    endDate,
+                    marketDate,
+                    rows,
+                    body,
+                    "tail null row $fillableTailNullDate could not be filled because quote previousClose was null"
+                )
+            }
+            prices[fillableTailNullDate] = previousClose
+            logger.info(
+                "Filled $ticker null adjclose tail row for $fillableTailNullDate from quote previousClose=$previousClose"
+            )
+        }
+
+        val marketPrice = tailQuote?.regularMarketPrice ?: result.meta?.regularMarketPrice
         if (marketDate != null && marketPrice != null && marketDate in startDate..endDate) {
             prices[marketDate] = marketPrice
         }
@@ -145,6 +205,51 @@ object YahooHistoricalFetcher {
         val offset = ZoneOffset.ofTotalSeconds(regular.gmtoffset ?: 0)
         return Instant.ofEpochSecond(end).atOffset(offset).toLocalDate()
     }
+
+    private fun fetchCurrentQuote(ticker: String): YahooQuote {
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1d&range=1d"
+        val request = Request.Builder().url(url).build()
+        val body = http.newCall(request).execute().use { resp ->
+            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker quote" }
+            resp.body!!.string()
+        }
+        val response = appJson.decodeFromString<YahooChartResponse>(body)
+        val result = response.chart.result?.firstOrNull()
+            ?: error("No quote result in Yahoo response for $ticker")
+        val meta = result.meta
+        val regular = meta?.currentTradingPeriod?.regular
+        return YahooQuote(
+            symbol = ticker,
+            regularMarketPrice = meta?.regularMarketPrice,
+            previousClose = meta?.chartPreviousClose,
+            tradingPeriodStart = regular?.start,
+            tradingPeriodEnd = regular?.end,
+            gmtoffset = regular?.gmtoffset,
+            currency = meta?.currency
+        )
+    }
+
+    private fun failOnNullAdjustedClose(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        marketDate: LocalDate?,
+        rows: List<YahooPriceRow>,
+        body: String,
+        reason: String
+    ): Nothing {
+        val rowsSummary = rows.joinToString { "${it.date}=${it.price ?: "null"}" }
+        val message = "Yahoo adjusted-close data for $ticker contains unsupported null rows " +
+                "for range $startDate..$endDate (currentTradingDate=$marketDate); " +
+                "$reason; rows=$rowsSummary"
+        logger.error("$message; rawResponse=$body")
+        throw YahooHistoricalDataException(message)
+    }
+
+    private data class YahooPriceRow(val date: LocalDate, val price: Double?)
+
+    private fun LocalDate.isWeekend(): Boolean =
+        dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────

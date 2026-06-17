@@ -1,8 +1,10 @@
 package com.portfoliohelper.service.yahoo
 
 import java.time.LocalDate
+import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class YahooHistoricalFetcherTest {
@@ -42,6 +44,246 @@ class YahooHistoricalFetcherTest {
 
         assertEquals(100.0, prices[LocalDate.of(2026, 5, 3)])
         assertEquals(105.5, prices[LocalDate.of(2026, 5, 4)])
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_fillsKnownTailNullFromQuotePreviousClose() {
+        val jun12 = LocalDate.of(2026, 6, 12).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun15 = LocalDate.of(2026, 6, 15).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun16 = LocalDate.of(2026, 6, 16).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun16End = LocalDate.of(2026, 6, 16).atTime(16, 0).toEpochSecond(ZoneOffset.ofHours(-4))
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "regularMarketPrice": 86.86,
+                    "chartPreviousClose": 85.34,
+                    "currentTradingPeriod": {
+                      "regular": {
+                        "gmtoffset": -14400,
+                        "start": ${jun16End - 23400},
+                        "end": $jun16End
+                      }
+                    }
+                  },
+                  "timestamp": [$jun12, $jun15, $jun16],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [85.91, null, 86.86]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val prices = YahooHistoricalFetcher.parseAdjustedCloseResponse(
+            ticker = "VXUS",
+            startDate = LocalDate.of(2026, 6, 12),
+            endDate = LocalDate.of(2026, 6, 16),
+            body = body,
+            tailQuoteProvider = {
+                YahooQuote(
+                    symbol = "VXUS",
+                    regularMarketPrice = 86.86,
+                    previousClose = 86.98
+                )
+            }
+        )
+
+        assertEquals(85.91, prices[LocalDate.of(2026, 6, 12)])
+        assertEquals(86.98, prices[LocalDate.of(2026, 6, 15)])
+        assertEquals(86.86, prices[LocalDate.of(2026, 6, 16)])
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_fillsTailNullWhenHistoricalResponseHasNoCurrentDayRow() {
+        val jun15 = LocalDate.of(2026, 6, 15).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun16 = LocalDate.of(2026, 6, 16).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun17End = LocalDate.of(2026, 6, 17).atTime(16, 30).toEpochSecond(ZoneOffset.ofHours(1))
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "regularMarketPrice": 28.80,
+                    "currentTradingPeriod": {
+                      "regular": {
+                        "gmtoffset": 3600,
+                        "start": ${jun17End - 30600},
+                        "end": $jun17End
+                      }
+                    }
+                  },
+                  "timestamp": [$jun15, $jun16],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [28.645, null]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val prices = YahooHistoricalFetcher.parseAdjustedCloseResponse(
+            ticker = "AVGS.L",
+            startDate = LocalDate.of(2026, 6, 15),
+            endDate = LocalDate.of(2026, 6, 17),
+            body = body,
+            tailQuoteProvider = {
+                YahooQuote(
+                    symbol = "AVGS.L",
+                    regularMarketPrice = 28.80,
+                    previousClose = 28.71
+                )
+            }
+        )
+
+        assertEquals(28.645, prices[LocalDate.of(2026, 6, 15)])
+        assertEquals(28.71, prices[LocalDate.of(2026, 6, 16)])
+        assertEquals(28.80, prices[LocalDate.of(2026, 6, 17)])
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_rejectsUnsupportedInteriorNullRows() {
+        // Only the latest pre-currentTradingDate null and weekend nulls are known safe cases.
+        // Any other weekday null should stay fatal so broken Yahoo chains are investigated.
+        val jun10 = LocalDate.of(2026, 6, 10).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun11 = LocalDate.of(2026, 6, 11).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun12 = LocalDate.of(2026, 6, 12).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun16End = LocalDate.of(2026, 6, 16).atTime(16, 0).toEpochSecond(ZoneOffset.ofHours(-4))
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "regularMarketPrice": 86.86,
+                    "currentTradingPeriod": {
+                      "regular": {
+                        "gmtoffset": -14400,
+                        "start": ${jun16End - 23400},
+                        "end": $jun16End
+                      }
+                    }
+                  },
+                  "timestamp": [$jun10, $jun11, $jun12],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [84.0, null, 85.91]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val error = assertFailsWith<YahooHistoricalDataException> {
+            YahooHistoricalFetcher.parseAdjustedCloseResponse(
+                ticker = "VXUS",
+                startDate = LocalDate.of(2026, 6, 10),
+                endDate = LocalDate.of(2026, 6, 16),
+                body = body,
+                tailQuoteProvider = {
+                    YahooQuote(
+                        symbol = "VXUS",
+                        regularMarketPrice = 86.86,
+                        previousClose = 86.98
+                    )
+                }
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("unsupported null rows"))
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_rejectsInteriorNullEvenWhenTailNullIsFillable() {
+        val oct23 = LocalDate.of(2025, 10, 23).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val oct24 = LocalDate.of(2025, 10, 24).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val oct27 = LocalDate.of(2025, 10, 27).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun15 = LocalDate.of(2026, 6, 15).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun16 = LocalDate.of(2026, 6, 16).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun17End = LocalDate.of(2026, 6, 17).atTime(16, 30).toEpochSecond(ZoneOffset.ofHours(1))
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "regularMarketPrice": 28.80,
+                    "currentTradingPeriod": {
+                      "regular": {
+                        "gmtoffset": 3600,
+                        "start": ${jun17End - 30600},
+                        "end": $jun17End
+                      }
+                    }
+                  },
+                  "timestamp": [$oct23, $oct24, $oct27, $jun15, $jun16],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [22.76, null, 22.98, 28.645, null]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val error = assertFailsWith<YahooHistoricalDataException> {
+            YahooHistoricalFetcher.parseAdjustedCloseResponse(
+                ticker = "AVGS.L",
+                startDate = LocalDate.of(2025, 10, 23),
+                endDate = LocalDate.of(2026, 6, 17),
+                body = body,
+                tailQuoteProvider = {
+                    YahooQuote(
+                        symbol = "AVGS.L",
+                        regularMarketPrice = 28.80,
+                        previousClose = 28.71
+                    )
+                }
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("invalid weekday null rows: 2025-10-24"))
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_ignoresWeekendNullRows() {
+        val jan29 = LocalDate.of(2016, 1, 29).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jan30 = LocalDate.of(2016, 1, 30).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val feb1 = LocalDate.of(2016, 2, 1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "timestamp": [$jan29, $jan30, $feb1],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [10.45, null, 10.82]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val prices = YahooHistoricalFetcher.parseAdjustedCloseResponse(
+            ticker = "0050.TW",
+            startDate = LocalDate.of(2016, 1, 29),
+            endDate = LocalDate.of(2016, 2, 1),
+            body = body
+        )
+
+        assertEquals(
+            mapOf(
+                LocalDate.of(2016, 1, 29) to 10.45,
+                LocalDate.of(2016, 2, 1) to 10.82
+            ),
+            prices
+        )
     }
 
     @Test
