@@ -197,7 +197,8 @@ data class PortfolioResult(
 
 @Serializable
 data class MultiBacktestResult(
-    val portfolios: List<PortfolioResult>
+    val portfolios: List<PortfolioResult>,
+    val warnings: List<String> = emptyList()
 )
 
 /** Merges duplicate tickers by summing weights, then normalises to sum-to-1. */

@@ -1068,6 +1068,14 @@ export default function BacktestPage() {
 
       {error && <div className="backtest-error">{error}</div>}
 
+      {!!displayResults?.warnings?.length && (
+        <div className="backtest-error">
+          {displayResults.warnings.map((warning, i) => (
+            <div key={i}>{warning}</div>
+          ))}
+        </div>
+      )}
+
       {displayResults && chartData && (
         <>
           {/* Stats table */}

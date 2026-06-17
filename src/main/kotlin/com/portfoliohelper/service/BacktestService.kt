@@ -39,6 +39,11 @@ object BacktestService {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         validateDateRange(fromDate, toDate)
+        val warnings = Collections.synchronizedSet(LinkedHashSet<String>())
+        val warningCollector = { _: String, tickerWarnings: List<String> ->
+            warnings.addAll(tickerWarnings)
+            Unit
+        }
         val effrxSeries = loadEffrxSeries()
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
@@ -54,7 +59,7 @@ object BacktestService {
         // Step 2: Load component ticker series for all LETF definitions
         val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
         fun cachedLoad(ticker: String) =
-            seriesCache.getOrPut(ticker) { loadNormalizedSeries(ticker, neededFrom) }
+            seriesCache.getOrPut(ticker) { loadNormalizedSeries(ticker, neededFrom, warningCollector) }
 
         val letfComponentTickers = letfDefs.values
             .flatMap { def -> def.components.map { it.ticker } }
@@ -188,7 +193,7 @@ object BacktestService {
             PortfolioResult(pConfig.label, curves)
         }.toList()
 
-        return MultiBacktestResult(portfolioResults)
+        return MultiBacktestResult(portfolioResults, synchronized(warnings) { warnings.toList() })
     }
 
     fun runMarketTiming(request: MarketTimingRequest): MarketTimingMultiResult {
@@ -559,7 +564,8 @@ object BacktestService {
      */
     internal fun loadNormalizedSeries(
         ticker: String,
-        neededFromDate: LocalDate
+        neededFromDate: LocalDate,
+        warningCollector: ((String, List<String>) -> Unit)? = null
     ): Map<LocalDate, Double> {
         require(!ticker.contains(' ')) {
             "loadNormalizedSeries called with LETF string '$ticker' — LETF series must be pre-computed via computeLetfSeries"
@@ -578,7 +584,8 @@ object BacktestService {
                 upperTicker,
                 localFiles,
                 today,
-                neededFromDate
+                neededFromDate,
+                warningCollector
             )
             val extendedFirstDate = extended?.keys?.minOrNull()
             val resourceFirstDate = extendedFirstDate?.let { bundledResourceFirstDate(simPattern) }
@@ -588,6 +595,7 @@ object BacktestService {
                 extendedFirstDate <= neededFromDate &&
                 (resourceFirstDate == null || resourceFirstDate >= extendedFirstDate)
             ) {
+                collectTickerWarnings(upperTicker, warningCollector)
                 return extended
             }
             if (extended != null) {
@@ -612,10 +620,12 @@ object BacktestService {
                 resourceFiles,
                 today,
                 neededFromDate,
+                warningCollector,
                 allowAnchoredForwardExtension = true
             )
             if (extended != null) {
                 localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
+                collectTickerWarnings(upperTicker, warningCollector)
                 return extended
             }
             resourceFiles.forEach { it.delete() }
@@ -626,7 +636,7 @@ object BacktestService {
 
         // Tier 3 — rebuild from scratch
         logger.info("No valid SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
-        val raw = YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, today)
+        val raw = fetchAdjustedCloseRecordingWarnings(ticker, upperTicker, neededFromDate, today, warningCollector)
         if (raw.isEmpty()) throw IllegalStateException("No Yahoo data for $ticker from $neededFromDate")
         val normalized = normalizeFromFirst(raw, 10_000.0)
         val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
@@ -653,6 +663,7 @@ object BacktestService {
         files: List<File>,
         neededToDate: LocalDate,
         neededFromDate: LocalDate,
+        warningCollector: ((String, List<String>) -> Unit)? = null,
         allowAnchoredForwardExtension: Boolean = false
     ): Map<LocalDate, Double>? {
         val file = files.first()
@@ -672,7 +683,13 @@ object BacktestService {
         // Prepend if needed
         if (neededFromDate < firstDate) {
             val earlyYahoo = try {
-                YahooHistoricalFetcher.fetchAdjustedClose(ticker, neededFromDate, firstDate.plusDays(10))
+                fetchAdjustedCloseRecordingWarnings(
+                    ticker,
+                    upperTicker,
+                    neededFromDate,
+                    firstDate.plusDays(10),
+                    warningCollector
+                )
             } catch (e: YahooHistoricalDataException) {
                 throw e
             } catch (e: Exception) {
@@ -705,7 +722,13 @@ object BacktestService {
                 logger.info("Extending $upperTicker SIM from $lastKnownDate to $neededToDate via Yahoo")
             }
             val yahoo = try {
-                YahooHistoricalFetcher.fetchAdjustedClose(ticker, lastKnownDate.minusDays(10), neededToDate)
+                fetchAdjustedCloseRecordingWarnings(
+                    ticker,
+                    upperTicker,
+                    lastKnownDate.minusDays(10),
+                    neededToDate,
+                    warningCollector
+                )
             } catch (e: YahooHistoricalDataException) {
                 throw e
             } catch (e: Exception) {
@@ -734,6 +757,58 @@ object BacktestService {
         files.forEach { it.delete() }
         return current
     }
+
+    private fun fetchAdjustedCloseRecordingWarnings(
+        ticker: String,
+        upperTicker: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        warningCollector: ((String, List<String>) -> Unit)? = null
+    ): Map<LocalDate, Double> {
+        val result = YahooHistoricalFetcher.fetchAdjustedCloseWithWarnings(ticker, startDate, endDate)
+        if (result.warnings.isNotEmpty()) {
+            persistTickerWarnings(upperTicker, result.warnings)
+            warningCollector?.invoke(upperTicker, result.warnings)
+        }
+        return result.prices
+    }
+
+    private fun collectTickerWarnings(
+        upperTicker: String,
+        warningCollector: ((String, List<String>) -> Unit)?
+    ) {
+        val warnings = readTickerWarnings(upperTicker)
+        if (warnings.isNotEmpty()) warningCollector?.invoke(upperTicker, warnings)
+    }
+
+    private fun persistTickerWarnings(upperTicker: String, warnings: List<String>) {
+        if (warnings.isEmpty()) return
+        tickerDir.mkdirs()
+        val merged = (readTickerWarnings(upperTicker) + warnings)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        tickerWarningsFile(upperTicker).bufferedWriter().use { out ->
+            merged.forEach { warning ->
+                out.write(warning)
+                out.newLine()
+            }
+        }
+    }
+
+    private fun readTickerWarnings(upperTicker: String): List<String> {
+        val file = tickerWarningsFile(upperTicker)
+        if (!file.exists()) return emptyList()
+        return runCatching {
+            file.readLines().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        }.getOrElse { e ->
+            logger.warn("Failed to read warning file for $upperTicker: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun tickerWarningsFile(upperTicker: String): File =
+        File(tickerDir, "$upperTicker-warnings.txt")
 
     internal fun shouldRefreshCurrentTickerFile(
         fileAge: kotlin.time.Duration,

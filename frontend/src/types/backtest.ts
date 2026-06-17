@@ -295,6 +295,7 @@ export interface BacktestPortfolioResult {
 
 export interface BacktestResults {
   portfolios: BacktestPortfolioResult[]
+  warnings?: string[]
   error?: string
 }
 

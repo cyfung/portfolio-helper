@@ -126,7 +126,7 @@ object RebalanceStrategyService {
         )
     val baseResult = runBasePortfolio(request)
     val strategyResults = request.strategies.map { runConfiguredStrategy(request, it, context) }
-    return MultiBacktestResult(baseResult.portfolios + strategyResults)
+    return MultiBacktestResult(baseResult.portfolios + strategyResults, baseResult.warnings)
   }
 
   fun scoreBatch(request: RebalanceStrategyScoreBatchRequest): List<Double> {

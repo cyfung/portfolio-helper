@@ -33,6 +33,11 @@ import java.util.concurrent.*
 
 class YahooHistoricalDataException(message: String) : IllegalStateException(message)
 
+data class YahooAdjustedCloseResult(
+    val prices: Map<LocalDate, Double>,
+    val warnings: List<String> = emptyList()
+)
+
 // ── Reusable historical fetcher ───────────────────────────────────────────────
 
 object YahooHistoricalFetcher {
@@ -58,7 +63,14 @@ object YahooHistoricalFetcher {
         ticker: String,
         startDate: LocalDate,
         endDate: LocalDate
-    ): Map<LocalDate, Double> {
+    ): Map<LocalDate, Double> =
+        fetchAdjustedCloseWithWarnings(ticker, startDate, endDate).prices
+
+    fun fetchAdjustedCloseWithWarnings(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): YahooAdjustedCloseResult {
         val p1 = startDate.minusDays(5).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
 
@@ -74,15 +86,15 @@ object YahooHistoricalFetcher {
             resp.body!!.string()
         }
 
-        val prices = parseAdjustedCloseResponse(
+        val result = parseAdjustedCloseResponseWithWarnings(
             ticker,
             startDate,
             endDate,
             body,
             tailQuoteProvider = { fetchCurrentQuote(ticker) }
         )
-        logger.info("Fetched ${prices.size} trading days for $ticker")
-        return prices
+        logger.info("Fetched ${result.prices.size} trading days for $ticker")
+        return result
     }
 
     internal fun parseAdjustedCloseResponse(
@@ -91,7 +103,16 @@ object YahooHistoricalFetcher {
         endDate: LocalDate,
         body: String,
         tailQuoteProvider: (() -> YahooQuote?)? = null
-    ): Map<LocalDate, Double> {
+    ): Map<LocalDate, Double> =
+        parseAdjustedCloseResponseWithWarnings(ticker, startDate, endDate, body, tailQuoteProvider).prices
+
+    internal fun parseAdjustedCloseResponseWithWarnings(
+        ticker: String,
+        startDate: LocalDate,
+        endDate: LocalDate,
+        body: String,
+        tailQuoteProvider: (() -> YahooQuote?)? = null
+    ): YahooAdjustedCloseResult {
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
             ?: error("No result in Yahoo response for $ticker")
@@ -113,20 +134,20 @@ object YahooHistoricalFetcher {
         val invalidNullRows = nullRows.filter {
             it.date != fillableTailNullDate && !it.date.isWeekend()
         }
+        val warnings = mutableListOf<String>()
         // Null adjusted-close rows are data-quality failures unless they match one of the
         // known Yahoo shapes below:
         // 1. The latest row before currentTradingDate can be null while quote.previousClose
         //    already has the official prior close; fill exactly that row from the quote API.
         // 2. Some exchanges include weekend timestamps with null OHLC/adjclose; drop them.
-        // Any other weekday null would silently break return chains, so keep this strict.
+        // Any other weekday null is logged and surfaced as a data-quality warning, then
+        // omitted from the returned series so backtests can still run on the usable dates.
         if (invalidNullRows.isNotEmpty()) {
-            failOnNullAdjustedClose(
+            warnings += logNullAdjustedCloseWarning(
                 ticker,
                 startDate,
                 endDate,
                 marketDate,
-                rows,
-                body,
                 "invalid weekday null rows: ${invalidNullRows.joinToString { it.date.toString() }}"
             )
         }
@@ -141,20 +162,19 @@ object YahooHistoricalFetcher {
         if (fillableTailNullDate != null) {
             val previousClose = tailQuote?.previousClose
             if (previousClose == null) {
-                failOnNullAdjustedClose(
+                warnings += logNullAdjustedCloseWarning(
                     ticker,
                     startDate,
                     endDate,
                     marketDate,
-                    rows,
-                    body,
                     "tail null row $fillableTailNullDate could not be filled because quote previousClose was null"
                 )
+            } else {
+                prices[fillableTailNullDate] = previousClose
+                logger.info(
+                    "Filled $ticker null adjclose tail row for $fillableTailNullDate from quote previousClose=$previousClose"
+                )
             }
-            prices[fillableTailNullDate] = previousClose
-            logger.info(
-                "Filled $ticker null adjclose tail row for $fillableTailNullDate from quote previousClose=$previousClose"
-            )
         }
 
         val marketPrice = tailQuote?.regularMarketPrice ?: result.meta?.regularMarketPrice
@@ -162,7 +182,7 @@ object YahooHistoricalFetcher {
             prices[marketDate] = marketPrice
         }
 
-        return prices
+        return YahooAdjustedCloseResult(prices, warnings)
     }
 
     /** Fetches dividend events for [ticker] in the given date range. Returns ex-date → amount per share. */
@@ -229,21 +249,18 @@ object YahooHistoricalFetcher {
         )
     }
 
-    private fun failOnNullAdjustedClose(
+    private fun logNullAdjustedCloseWarning(
         ticker: String,
         startDate: LocalDate,
         endDate: LocalDate,
         marketDate: LocalDate?,
-        rows: List<YahooPriceRow>,
-        body: String,
         reason: String
-    ): Nothing {
-        val rowsSummary = rows.joinToString { "${it.date}=${it.price ?: "null"}" }
+    ): String {
         val message = "Yahoo adjusted-close data for $ticker contains unsupported null rows " +
                 "for range $startDate..$endDate (currentTradingDate=$marketDate); " +
-                "$reason; rows=$rowsSummary"
-        logger.error("$message; rawResponse=$body")
-        throw YahooHistoricalDataException(message)
+                "$reason;"
+        logger.error(message)
+        return message
     }
 
     private data class YahooPriceRow(val date: LocalDate, val price: Double?)

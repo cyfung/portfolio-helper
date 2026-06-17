@@ -4,7 +4,6 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class YahooHistoricalFetcherTest {
@@ -147,9 +146,9 @@ class YahooHistoricalFetcherTest {
     }
 
     @Test
-    fun parseAdjustedCloseResponse_rejectsUnsupportedInteriorNullRows() {
+    fun parseAdjustedCloseResponse_warnsAndSkipsUnsupportedInteriorNullRows() {
         // Only the latest pre-currentTradingDate null and weekend nulls are known safe cases.
-        // Any other weekday null should stay fatal so broken Yahoo chains are investigated.
+        // Any other weekday null is reported as a data-quality warning and omitted.
         val jun10 = LocalDate.of(2026, 6, 10).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun11 = LocalDate.of(2026, 6, 11).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun12 = LocalDate.of(2026, 6, 12).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
@@ -179,27 +178,38 @@ class YahooHistoricalFetcherTest {
             }
         """.trimIndent()
 
-        val error = assertFailsWith<YahooHistoricalDataException> {
-            YahooHistoricalFetcher.parseAdjustedCloseResponse(
-                ticker = "VXUS",
-                startDate = LocalDate.of(2026, 6, 10),
-                endDate = LocalDate.of(2026, 6, 16),
-                body = body,
-                tailQuoteProvider = {
-                    YahooQuote(
-                        symbol = "VXUS",
-                        regularMarketPrice = 86.86,
-                        previousClose = 86.98
-                    )
-                }
-            )
-        }
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "VXUS",
+            startDate = LocalDate.of(2026, 6, 10),
+            endDate = LocalDate.of(2026, 6, 16),
+            body = body,
+            tailQuoteProvider = {
+                YahooQuote(
+                    symbol = "VXUS",
+                    regularMarketPrice = 86.86,
+                    previousClose = 86.98
+                )
+            }
+        )
 
-        assertTrue(error.message.orEmpty().contains("unsupported null rows"))
+        assertEquals(
+            "Yahoo adjusted-close data for VXUS contains unsupported null rows " +
+                    "for range 2026-06-10..2026-06-16 (currentTradingDate=2026-06-16); " +
+                    "invalid weekday null rows: 2026-06-11;",
+            result.warnings.single()
+        )
+        assertEquals(
+            mapOf(
+                LocalDate.of(2026, 6, 10) to 84.0,
+                LocalDate.of(2026, 6, 12) to 85.91,
+                LocalDate.of(2026, 6, 16) to 86.86
+            ),
+            result.prices
+        )
     }
 
     @Test
-    fun parseAdjustedCloseResponse_rejectsInteriorNullEvenWhenTailNullIsFillable() {
+    fun parseAdjustedCloseResponse_warnsInteriorNullEvenWhenTailNullIsFillable() {
         val oct23 = LocalDate.of(2025, 10, 23).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val oct24 = LocalDate.of(2025, 10, 24).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val oct27 = LocalDate.of(2025, 10, 27).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
@@ -231,23 +241,29 @@ class YahooHistoricalFetcherTest {
             }
         """.trimIndent()
 
-        val error = assertFailsWith<YahooHistoricalDataException> {
-            YahooHistoricalFetcher.parseAdjustedCloseResponse(
-                ticker = "AVGS.L",
-                startDate = LocalDate.of(2025, 10, 23),
-                endDate = LocalDate.of(2026, 6, 17),
-                body = body,
-                tailQuoteProvider = {
-                    YahooQuote(
-                        symbol = "AVGS.L",
-                        regularMarketPrice = 28.80,
-                        previousClose = 28.71
-                    )
-                }
-            )
-        }
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "AVGS.L",
+            startDate = LocalDate.of(2025, 10, 23),
+            endDate = LocalDate.of(2026, 6, 17),
+            body = body,
+            tailQuoteProvider = {
+                YahooQuote(
+                    symbol = "AVGS.L",
+                    regularMarketPrice = 28.80,
+                    previousClose = 28.71
+                )
+            }
+        )
 
-        assertTrue(error.message.orEmpty().contains("invalid weekday null rows: 2025-10-24"))
+        assertEquals(
+            "Yahoo adjusted-close data for AVGS.L contains unsupported null rows " +
+                    "for range 2025-10-23..2026-06-17 (currentTradingDate=2026-06-17); " +
+                    "invalid weekday null rows: 2025-10-24;",
+            result.warnings.single()
+        )
+        assertEquals(28.71, result.prices[LocalDate.of(2026, 6, 16)])
+        assertEquals(28.80, result.prices[LocalDate.of(2026, 6, 17)])
+        assertTrue(LocalDate.of(2025, 10, 24) !in result.prices)
     }
 
     @Test
