@@ -7,7 +7,7 @@ import {
   parseLetfAttr, formatSignedCurrency,
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
-import { getRebalTotal, computeDisplay } from '@/lib/rebalance'
+import { computeDisplay } from '@/lib/rebalance'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,6 @@ export default function StockTable() {
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
   const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
-  const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd, marginTargetUsd)
 
   // Index SSE market data by symbol
   const liveBySymbol = useMemo(() => new Map(
@@ -259,9 +258,7 @@ export default function StockTable() {
               const pillSign = weightDiff >= 0 ? '+' : ''
 
               // Rebal
-              const rebalDollars = targetWeight > 0
-                ? (targetWeight / 100) * rebalTotal - (posVal ?? 0)
-                : null
+              const rebalDollars = computedAlloc?.rebalDollars[sym] ?? null
               const rebalQty = (rebalDollars !== null && markPrice && markPrice > 0 && fxRate)
                 ? rebalDollars / (markPrice * fxRate) : null
 

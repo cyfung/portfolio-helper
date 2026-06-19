@@ -199,6 +199,16 @@ function normalizeAllocMode(mode: string | null | undefined): string {
     .replace(/[^A-Z0-9_]+/g, '_') || 'PROPORTIONAL'
 }
 
+function hasFullRebalanceComponent(
+  mode: string,
+  hybridStrategies: HybridAllocStrategyConfig[],
+): boolean {
+  if (mode === 'FULL_REBALANCE') return true
+  const hybrid = hybridStrategies.find(s => normalizeAllocMode(s.id) === mode)
+  if (!hybrid) return false
+  return [hybrid.first, hybrid.second].some(part => normalizeAllocMode(part) === 'FULL_REBALANCE')
+}
+
 function ratio(value: number | undefined): number {
   return Number.isFinite(value) && value! >= 0 ? value! : 1
 }
@@ -265,21 +275,25 @@ export function computeDisplay(
     }
   }
 
-  // Alloc columns: how to deploy the delta using the chosen strategy
-  if (hasTargetWeights && Math.abs(delta) > 0.01) {
-    const eligible = stocks.filter(s => s.targetWeight > 0)
-    const mode = normalizeAllocMode(delta >= 0 ? allocAddMode : allocReduceMode)
+  // Alloc columns: how to deploy the delta using the chosen strategy.
+  // Include existing zero-target positions for target-aware modes so reducing a
+  // holding from a positive current weight to a 0% target produces a sell.
+  const mode = normalizeAllocMode(delta >= 0 ? allocAddMode : allocReduceMode)
+  if (hasTargetWeights && (Math.abs(delta) > 0.01 || hasFullRebalanceComponent(mode, hybridStrategies))) {
+    const positiveTargetStocks = stocks.filter(s => s.targetWeight > 0)
+    const targetAwareStocks = stocks.filter(s => s.targetWeight > 0 || Math.abs(s.positionValueUsd) > 0.01)
+    const currentWeightStocks = delta < 0 ? targetAwareStocks : positiveTargetStocks
 
     let rawAlloc: Record<string, number> = {}
 
     const hybrid = hybridStrategies.find(s => normalizeAllocMode(s.id) === mode)
     const computeBase = (baseMode: string): Record<string, number> => {
       const normalizedBaseMode = normalizeAllocMode(baseMode)
-      if (normalizedBaseMode === 'WATERFALL') return computeWaterfall(eligible, stockGross, delta)
-      if (normalizedBaseMode === 'FULL_REBALANCE') return computeFullRebalance(eligible, stockGross, delta)
-      if (normalizedBaseMode === 'UNDERVALUED_PRIORITY') return computeUndervalueFirst(eligible, stockGross, delta)
-      if (normalizedBaseMode === 'CURRENT_WEIGHT') return computeCurrentWeight(eligible, stockGross, delta)
-      return computeProportional(eligible, delta)
+      if (normalizedBaseMode === 'WATERFALL') return computeWaterfall(targetAwareStocks, stockGross, delta)
+      if (normalizedBaseMode === 'FULL_REBALANCE') return computeFullRebalance(targetAwareStocks, stockGross, delta)
+      if (normalizedBaseMode === 'UNDERVALUED_PRIORITY') return computeUndervalueFirst(targetAwareStocks, stockGross, delta)
+      if (normalizedBaseMode === 'CURRENT_WEIGHT') return computeCurrentWeight(currentWeightStocks, stockGross, delta)
+      return computeProportional(positiveTargetStocks, delta)
     }
 
     if (serverAllocDollars && (mode === 'WATERFALL' || hybrid)) {
@@ -289,21 +303,21 @@ export function computeDisplay(
       rawAlloc = weightedAverageAllocs(
         computeBase(hybrid.first),
         computeBase(hybrid.second),
-        eligible,
+        targetAwareStocks,
         hybrid.firstRatio,
         hybrid.secondRatio,
       )
     } else if (mode === 'WATERFALL') {
-      rawAlloc = computeWaterfall(eligible, stockGross, delta)
+      rawAlloc = computeWaterfall(targetAwareStocks, stockGross, delta)
     } else if (mode === 'FULL_REBALANCE') {
-      rawAlloc = computeFullRebalance(eligible, stockGross, delta)
+      rawAlloc = computeFullRebalance(targetAwareStocks, stockGross, delta)
     } else if (mode === 'UNDERVALUED_PRIORITY') {
-      rawAlloc = computeUndervalueFirst(eligible, stockGross, delta)
+      rawAlloc = computeUndervalueFirst(targetAwareStocks, stockGross, delta)
     } else if (mode === 'CURRENT_WEIGHT') {
-      rawAlloc = computeCurrentWeight(eligible, stockGross, delta)
+      rawAlloc = computeCurrentWeight(currentWeightStocks, stockGross, delta)
     } else {
       // PROPORTIONAL (default)
-      rawAlloc = computeProportional(eligible, delta)
+      rawAlloc = computeProportional(positiveTargetStocks, delta)
     }
 
     for (const s of stocks) {

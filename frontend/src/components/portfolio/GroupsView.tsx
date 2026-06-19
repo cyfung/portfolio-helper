@@ -25,6 +25,7 @@ export default function GroupsView() {
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
   const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
   const rebalTotal = getRebalTotal(rebalTargetUsd, marginTargetPct, stockGrossUsd, marginUsd, marginTargetUsd)
+  const hasTargetWeights = stocks.some(s => (s.targetWeight ?? 0) > 0)
 
   const liveBySymbol = new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
@@ -211,7 +212,7 @@ export default function GroupsView() {
 
       // rebal: rebal dollars in native currency (mirrors rebal-dollars-${sym} cell)
       let rebalHtml = na
-      if (stockGrossKnown && targetWeight > 0 && fxRate !== null && posVal !== null) {
+      if (stockGrossKnown && hasTargetWeights && fxRate !== null && posVal !== null) {
         const rebalDollars = (targetWeight / 100) * rebalTotal - posVal
         const rebalStr = formatSignedCurrency(rebalDollars / fxRate)
         const cls = Math.abs(rebalDollars) <= 0.5 ? 'action-neutral' : rebalDollars > 0 ? 'action-positive' : 'action-negative'
