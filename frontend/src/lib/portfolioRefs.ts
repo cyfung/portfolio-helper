@@ -1,6 +1,8 @@
 import { blockStateToAPIPortfolio } from '@/types/backtest'
 import type { BlockState, SavedPortfolio } from '@/types/backtest'
 
+export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
+
 export interface ResolvedStockWeight {
   ticker: string
   weight: number

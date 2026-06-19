@@ -10,7 +10,7 @@ import {
 import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
 import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
-import { fetchSavedPortfolios, savedPortfolioConfig } from '@/lib/portfolioRefs'
+import { SAVED_PORTFOLIOS_CHANGED_EVENT, fetchSavedPortfolios, savedPortfolioConfig } from '@/lib/portfolioRefs'
 
 interface Props {
   idx: number
@@ -24,6 +24,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   const marginModeOptions = useAllocStrategyOptions(true)
   const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
+  const [savedPortfolioNames, setSavedPortfolioNames] = useState<Set<string>>(() => new Set())
+  const [savedPortfolioNamesLoaded, setSavedPortfolioNamesLoaded] = useState(false)
   const [tickerConfig, setTickerConfig] = useState<{
     symbol: string
     letf: string
@@ -73,6 +75,30 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     commitBlur()
   }
 
+  async function refreshSavedPortfolioNames() {
+    const saved = await fetchSavedPortfolios()
+    setSavedPortfolioNames(new Set(saved.map(p => p.name)))
+    setSavedPortfolioNamesLoaded(true)
+    return saved
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    function loadSavedPortfolioNames() {
+      fetchSavedPortfolios().then(saved => {
+        if (cancelled) return
+        setSavedPortfolioNames(new Set(saved.map(p => p.name)))
+        setSavedPortfolioNamesLoaded(true)
+      })
+    }
+    loadSavedPortfolioNames()
+    window.addEventListener(SAVED_PORTFOLIOS_CHANGED_EVENT, loadSavedPortfolioNames)
+    return () => {
+      cancelled = true
+      window.removeEventListener(SAVED_PORTFOLIOS_CHANGED_EVENT, loadSavedPortfolioNames)
+    }
+  }, [])
+
   // ── Weight hint ───────────────────────────────────────────────────────────
 
   const totalWeight = local.tickers.reduce((sum, t) => sum + (parseFloat(t.weight) || 0), 0)
@@ -102,6 +128,13 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     })
   }
 
+  function updatePortfolioRef(id: string, name: string) {
+    updateLocal({
+      ...localRef.current,
+      tickers: localRef.current.tickers.map(x => x.id === id ? { ...x, ticker: name } : x),
+    })
+  }
+
   function addPortfolioRef(name: string, weight = '') {
     commit({
       ...localRef.current,
@@ -118,8 +151,10 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const rowWeight = parseStrictNumberInput(row?.weight)
     if (!row?.isPortfolioRef || rowWeight == null) return
 
-    const saved = await fetchSavedPortfolios()
-    const savedConfig = savedPortfolioConfig(saved.find(p => p.name === row.ticker)?.config)
+    const refName = row.ticker.trim()
+    const saved = await refreshSavedPortfolioNames()
+    const savedConfig = savedPortfolioConfig(saved.find(p => p.name === refName)?.config)
+    if (!savedConfig) return
     const childRows = (savedConfig?.tickers ?? [])
       .map((child: any) => {
         const childWeight = parseStrictNumberInput(child?.weight)
@@ -238,6 +273,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     })
     if (res.ok) {
       onSavedRefresh()
+      refreshSavedPortfolioNames()
       setSaveMsg('Saved!')
       setTimeout(() => setSaveMsg(''), 1500)
     }
@@ -383,14 +419,40 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">
-          {local.tickers.map(t => (
-            <div key={t.id} className={`backtest-ticker-row has-ticker-config${t.isPortfolioRef ? ' portfolio-ref-row' : ''}`}>
-              {t.isPortfolioRef ? (
-                <div className="ticker-input portfolio-ref-name" title="Saved portfolio reference">
-                  <span className="portfolio-ref-badge">Portfolio</span>
-                  <span>{t.ticker}</span>
-                </div>
-              ) : (
+          {local.tickers.map(t => {
+            const refName = t.ticker.trim()
+            const portfolioRefExists = t.isPortfolioRef === true && refName.length > 0 && savedPortfolioNames.has(refName)
+            const portfolioRefMissing = t.isPortfolioRef === true && savedPortfolioNamesLoaded && !portfolioRefExists
+            const canDecomposePortfolioRef = portfolioRefExists && isValidNumberInput(t.weight)
+            const portfolioRefStatusTitle = !savedPortfolioNamesLoaded
+              ? 'Checking saved portfolio reference'
+              : portfolioRefExists
+                ? 'Saved portfolio reference exists'
+                : 'Saved portfolio reference not found'
+            const rowClassName = [
+              'backtest-ticker-row has-ticker-config',
+              t.isPortfolioRef ? 'portfolio-ref-row' : '',
+              portfolioRefExists ? 'portfolio-ref-row-exists' : '',
+              portfolioRefMissing ? 'portfolio-ref-row-missing' : '',
+            ].filter(Boolean).join(' ')
+            return (
+              <div key={t.id} className={rowClassName}>
+                {t.isPortfolioRef ? (
+                  <label className="ticker-input portfolio-ref-name" title={portfolioRefStatusTitle}>
+                    <span className="portfolio-ref-badge">Portfolio</span>
+                    <input
+                      type="text"
+                      className="portfolio-ref-input"
+                      placeholder="Saved portfolio name"
+                      value={t.ticker}
+                      onChange={e => updatePortfolioRef(t.id, e.target.value)}
+                      onBlur={() => {
+                        commitBlur()
+                        refreshSavedPortfolioNames()
+                      }}
+                    />
+                  </label>
+                ) : (
                 <input
                   type="text"
                   className="ticker-input"
@@ -413,9 +475,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 <button
                   className="ticker-config-btn portfolio-decompose-btn"
                   type="button"
-                  title="Decompose this portfolio one layer"
+                  title={portfolioRefExists ? 'Decompose this portfolio one layer' : portfolioRefStatusTitle}
                   aria-label={`Decompose ${t.ticker || 'portfolio'} one layer`}
-                  disabled={!isValidNumberInput(t.weight)}
+                  disabled={!canDecomposePortfolioRef}
                   onClick={() => decomposePortfolioRef(t.id)}
                 >
                   <Ungroup size={14} />
@@ -436,7 +498,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 ✕
               </button>
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

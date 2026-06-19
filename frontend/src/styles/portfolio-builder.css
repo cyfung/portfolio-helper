@@ -8,6 +8,36 @@
     color: var(--color-text-primary);
 }
 
+.portfolio-ref-row-exists .portfolio-ref-name {
+    border-color: color-mix(in srgb, var(--color-positive) 70%, var(--color-border-medium));
+    background: color-mix(in srgb, var(--color-positive) 10%, var(--color-bg-secondary));
+}
+
+.portfolio-ref-row-missing .portfolio-ref-name {
+    border-color: color-mix(in srgb, var(--color-negative) 70%, var(--color-border-medium));
+    background: color-mix(in srgb, var(--color-negative) 10%, var(--color-bg-secondary));
+}
+
+.backtest-ticker-row .portfolio-ref-input {
+    min-width: 0;
+    width: 100%;
+    height: 1.25rem;
+    padding: 0 0.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-border-medium) 65%, transparent);
+    border-radius: 3px;
+    outline: 0;
+    background: color-mix(in srgb, var(--color-bg-primary) 82%, transparent);
+    color: inherit;
+    font: inherit;
+    line-height: 1.2;
+    box-sizing: border-box;
+}
+
+.backtest-ticker-row .portfolio-ref-input:focus {
+    border-color: var(--color-accent-primary);
+    background: var(--color-bg-primary);
+}
+
 .portfolio-ref-badge {
     flex-shrink: 0;
     padding: 1px 5px;
@@ -17,6 +47,16 @@
     font-size: var(--font-size-xs);
     font-weight: 700;
     text-transform: uppercase;
+}
+
+.portfolio-ref-row-exists .portfolio-ref-badge {
+    background: color-mix(in srgb, var(--color-positive) 18%, transparent);
+    color: var(--color-positive);
+}
+
+.portfolio-ref-row-missing .portfolio-ref-badge {
+    background: color-mix(in srgb, var(--color-negative) 14%, transparent);
+    color: var(--color-negative);
 }
 
 .portfolio-builder-results {

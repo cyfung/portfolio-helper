@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useImperativeHandle, forwardRef } from 'react'
 import type { SavedPortfolio } from '@/types/backtest'
+import { SAVED_PORTFOLIOS_CHANGED_EVENT } from '@/lib/portfolioRefs'
 
 export interface SavedPortfoliosBarRef {
   refresh: () => void
@@ -20,6 +21,7 @@ const SavedPortfoliosBar = forwardRef<SavedPortfoliosBarRef, Props>(
         const res = await fetch(apiPath)
         if (!res.ok) return
         setList(await res.json())
+        window.dispatchEvent(new Event(SAVED_PORTFOLIOS_CHANGED_EVENT))
       } catch (_) {}
     }
 
