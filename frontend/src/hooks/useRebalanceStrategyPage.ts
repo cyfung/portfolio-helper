@@ -125,6 +125,7 @@ export function useRebalanceStrategyPage() {
     if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
 
     const portfolioApi = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, await fetchSavedPortfolios())
+    const settingsPortfolio = blockStateToAPIPortfolio(runPortfolio, 0)
     if (portfolioApi.tickers.length === 0) {
       throw new Error('Add at least one ticker with a positive weight to the portfolio.')
     }
@@ -143,7 +144,7 @@ export function useRebalanceStrategyPage() {
       setStrategies(runStrategies)
     }
 
-    return { portfolioApi, allStrategies, runStrategies }
+    return { portfolioApi, settingsPortfolio, allStrategies, runStrategies }
   }, [currentNormalizedStrategies, portfolio, strategies])
 
   const fetchRunResults = useCallback(async (payload: RebalanceStrategyRunPayload) => {
@@ -181,6 +182,7 @@ export function useRebalanceStrategyPage() {
         toDate: toDate || null,
         startingBalance: startingBalanceToPayload(startingBalance),
         portfolio: runInputs.portfolioApi,
+        settingsPortfolio: runInputs.settingsPortfolio,
         cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
         strategies: runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
         strategyStates: runInputs.runStrategies,

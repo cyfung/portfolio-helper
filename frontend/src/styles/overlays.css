@@ -119,12 +119,17 @@
     line-height: 1;
 }
 
-.ticker-config-dialog label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
+.ticker-config-dialog .ticker-config-field {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.65rem;
+    align-items: center;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+}
+
+.ticker-config-dialog .ticker-config-field span {
+    font-weight: var(--font-weight-medium);
 }
 
 .ticker-config-dialog input,

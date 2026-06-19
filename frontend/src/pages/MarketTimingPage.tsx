@@ -240,6 +240,7 @@ export default function MarketTimingPage() {
       if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
       const savedPortfolios = await fetchSavedPortfolios()
       const apiPortfolio = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, savedPortfolios)
+      const settingsPortfolio = blockStateToAPIPortfolio(runPortfolio, 0)
       const runAnnualSpread = interestMode === 'SPREAD'
         ? normalizeNumberInput(annualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
         : annualSpread
@@ -254,6 +255,7 @@ export default function MarketTimingPage() {
           fromDate: fromDate || null,
           toDate: toDate || null,
           portfolio: apiPortfolio,
+          settingsPortfolio,
           drawdownConfigs: thresholds,
           referenceSource,
           referenceTicker: runReferenceTicker || 'VT',

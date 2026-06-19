@@ -36,6 +36,35 @@
     flex: 1;
 }
 
+.ticker-section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.ticker-modifier-hint {
+    width: 1rem;
+    height: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 50%;
+    color: var(--color-text-tertiary);
+    cursor: help;
+    font-size: var(--font-size-xs);
+    line-height: 1;
+    text-transform: none;
+    user-select: none;
+}
+
+.ticker-modifier-hint:hover,
+.ticker-modifier-hint:focus {
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+    outline: none;
+}
+
 .backtest-grid-2 {
     display: grid;
     grid-template-columns: auto auto auto;

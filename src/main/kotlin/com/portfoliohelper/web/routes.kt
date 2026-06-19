@@ -53,10 +53,14 @@ private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transa
     fun upsert(k: String, v: String) = GlobalSettingsTable.upsert {
         it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
     }
-    upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
+    upsert("backtest.portfolios", settingsPortfoliosForSave(json).toString())
     upsert(
         settingsKey,
-        buildJsonObject { json.forEach { (k, v) -> if (k != "portfolios") put(k, v) } }.toString()
+        buildJsonObject {
+            json.forEach { (k, v) ->
+                if (k != "portfolios" && k !in settingsOnlyPortfolioKeys) put(k, v)
+            }
+        }.toString()
     )
 }
 
@@ -91,6 +95,17 @@ private val rebalanceStrategySettingsKeys = setOf(
     "includeActionDiagnostics",
 )
 
+private val settingsOnlyPortfolioKeys = setOf("settingsPortfolio", "settingsPortfolios")
+
+private fun settingsPortfoliosForSave(json: JsonObject): JsonElement =
+    json["settingsPortfolios"] ?: json["portfolios"] ?: JsonArray(emptyList())
+
+private fun settingsFirstPortfolioForSave(json: JsonObject): JsonElement? =
+    json["settingsPortfolio"]
+        ?: (json["settingsPortfolios"] as? JsonArray)?.firstOrNull()
+        ?: json["portfolio"]
+        ?: (json["portfolios"] as? JsonArray)?.firstOrNull()
+
 internal fun mergedFirstPortfolioSettings(
     existingSettings: JsonObject,
     json: JsonObject,
@@ -99,7 +114,7 @@ internal fun mergedFirstPortfolioSettings(
     val replacedKeys = firstPortfolioCommonSettingsKeys + pageSettingsKeys
     return buildJsonObject {
         existingSettings.forEach { (k, v) ->
-            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings") {
+            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings" && k !in settingsOnlyPortfolioKeys) {
                 put(k, v)
             }
         }
@@ -116,7 +131,7 @@ internal fun mergedBacktestSettings(
     val replacedKeys = firstPortfolioCommonSettingsKeys + backtestSettingsKeys
     return buildJsonObject {
         existingSettings.forEach { (k, v) ->
-            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings") {
+            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings" && k !in settingsOnlyPortfolioKeys) {
                 put(k, v)
             }
         }
@@ -134,7 +149,7 @@ private fun saveMergedBacktestSettings(json: JsonObject, settingsKey: String) = 
         it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
     }
 
-    upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
+    upsert("backtest.portfolios", settingsPortfoliosForSave(json).toString())
     upsert(
         settingsKey,
         mergedBacktestSettings(
@@ -160,7 +175,7 @@ private fun saveBacktestSettingsFirstPortfolio(
     val existingPortfolios = get("backtest.portfolios")
         ?.let { runCatching { Json.parseToJsonElement(it).jsonArray }.getOrNull() }
         ?: JsonArray(emptyList())
-    val firstPortfolio = json["portfolio"] ?: (json["portfolios"] as? JsonArray)?.firstOrNull()
+    val firstPortfolio = settingsFirstPortfolioForSave(json)
 
     if (firstPortfolio != null) {
         upsert(
@@ -935,7 +950,6 @@ fun Application.configureRouting() {
                     }
                 }
                 PortfolioMasterService.refreshAllStocks()
-                PortfolioUpdateBroadcaster.broadcastReload()
                 MarketDataCoordinator.refresh()
                 call.respondText(appJson.encodeToString(TickerConfigDto(symbol, letf, groups)), ContentType.Application.Json)
             } catch (e: Exception) {

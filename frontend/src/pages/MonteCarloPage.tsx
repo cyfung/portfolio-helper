@@ -161,6 +161,7 @@ export default function MonteCarloPage() {
     }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
+    const settingsPortfolios = runBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
     let portfolios
     try {
       const savedPortfolios = await fetchSavedPortfolios()
@@ -203,6 +204,7 @@ export default function MonteCarloPage() {
       startingBalance: startingBalanceToPayload(startingBalance),
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       portfolios,
+      settingsPortfolios,
     }
     if (seed != null) reqBody.seed = seed
 

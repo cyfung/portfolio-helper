@@ -664,6 +664,7 @@ export default function BacktestPage() {
     }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
+    const settingsPortfolios = runBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
     let portfolios
     try {
       const latestSavedPortfolios = await fetchSavedPortfolios()
@@ -694,6 +695,7 @@ export default function BacktestPage() {
             toDate: toDate || null,
             startingBalance: startingBalanceToPayload(startingBalance),
             portfolios,
+            settingsPortfolios,
             cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
           }),
         }),

@@ -1,15 +1,16 @@
 // ── PortfolioBlock.tsx — Controlled portfolio block for Backtest & MonteCarlo ─
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Settings } from 'lucide-react'
+import { Settings, Ungroup } from 'lucide-react'
 import {
   BlockState, MarginRow, RebalanceStrategyRow, newId,
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
   REBALANCE_OPTIONS,
 } from '@/types/backtest'
 import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
-import { isValidNumberInput } from '@/lib/numberInputs'
+import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
+import { fetchSavedPortfolios, savedPortfolioConfig } from '@/lib/portfolioRefs'
 
 interface Props {
   idx: number
@@ -19,7 +20,7 @@ interface Props {
   showTickerConfig?: boolean
 }
 
-const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh, showTickerConfig = false }: Props) {
+const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
   const marginModeOptions = useAllocStrategyOptions(true)
   const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
@@ -110,6 +111,38 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   function removeTicker(id: string) {
     commit({ ...localRef.current, tickers: localRef.current.tickers.filter(t => t.id !== id) })
+  }
+
+  async function decomposePortfolioRef(rowId: string) {
+    const row = localRef.current.tickers.find(t => t.id === rowId)
+    const rowWeight = parseStrictNumberInput(row?.weight)
+    if (!row?.isPortfolioRef || rowWeight == null) return
+
+    const saved = await fetchSavedPortfolios()
+    const savedConfig = savedPortfolioConfig(saved.find(p => p.name === row.ticker)?.config)
+    const childRows = (savedConfig?.tickers ?? [])
+      .map((child: any) => {
+        const childWeight = parseStrictNumberInput(child?.weight)
+        if (childWeight == null) return null
+        const isPortfolioRef = child?.isPortfolioRef === true || child?.type === 'PORTFOLIO_REF' || !!child?.portfolioRef
+        const ticker = isPortfolioRef
+          ? String(child?.portfolioRef || child?.ticker || '').trim()
+          : String(child?.ticker || '').trim().toUpperCase()
+        if (!ticker) return null
+        return {
+          id: newId(),
+          ticker,
+          weight: String(rowWeight * childWeight / 100),
+          ...(isPortfolioRef ? { isPortfolioRef: true } : {}),
+        }
+      })
+      .filter(Boolean) as BlockState['tickers']
+
+    if (childRows.length === 0) return
+    commit({
+      ...localRef.current,
+      tickers: localRef.current.tickers.flatMap(t => t.id === rowId ? childRows : [t]),
+    })
   }
 
   async function openTickerConfig(rawSymbol: string) {
@@ -329,13 +362,29 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       {/* Tickers */}
       <div className="backtest-section">
         <div className="backtest-section-header">
-          <span>Tickers &amp; Weights</span>
+          <span className="ticker-section-title">
+            Tickers &amp; Weights
+            <span
+              className="ticker-modifier-hint"
+              title={[
+                'Synthetic ticker syntax: use multiplier/ticker pairs, e.g. 1 KMLM 1 VT.',
+                'S=<spread %>, e.g. S=1.5',
+                'R=<rebalance: D/W/M/Q/Y>, e.g. R=Q',
+                'E=<expense ratio %>, e.g. E=0.95',
+                'Example: 2 QQQ S=1.5 R=Q E=0.95.',
+              ].join('\n')}
+              aria-label="Ticker modifier help"
+              tabIndex={0}
+            >
+              ?
+            </span>
+          </span>
           <button className="add-ticker-btn" type="button" onClick={() => addTicker()}>+ Add Ticker</button>
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">
           {local.tickers.map(t => (
-            <div key={t.id} className={`backtest-ticker-row${showTickerConfig ? ' has-ticker-config' : ''}${t.isPortfolioRef ? ' portfolio-ref-row' : ''}`}>
+            <div key={t.id} className={`backtest-ticker-row has-ticker-config${t.isPortfolioRef ? ' portfolio-ref-row' : ''}`}>
               {t.isPortfolioRef ? (
                 <div className="ticker-input portfolio-ref-name" title="Saved portfolio reference">
                   <span className="portfolio-ref-badge">Portfolio</span>
@@ -345,7 +394,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 <input
                   type="text"
                   className="ticker-input"
-                  placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5"
+                  placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5 R=Q E=0.95"
                   value={t.ticker}
                   onChange={e => updateTicker(t.id, e.target.value)}
                   onBlur={commitBlur}
@@ -360,8 +409,17 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 onBlur={commitBlur}
               />
               <span className="weight-unit">%</span>
-              {showTickerConfig && (t.isPortfolioRef ? (
-                <span />
+              {t.isPortfolioRef ? (
+                <button
+                  className="ticker-config-btn portfolio-decompose-btn"
+                  type="button"
+                  title="Decompose this portfolio one layer"
+                  aria-label={`Decompose ${t.ticker || 'portfolio'} one layer`}
+                  disabled={!isValidNumberInput(t.weight)}
+                  onClick={() => decomposePortfolioRef(t.id)}
+                >
+                  <Ungroup size={14} />
+                </button>
               ) : (
                 <button
                   className="ticker-config-btn"
@@ -373,7 +431,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 >
                   <Settings size={14} />
                 </button>
-              ))}
+              )}
               <button className="remove-ticker-btn" type="button" title="Remove" onClick={() => removeTicker(t.id)}>
                 ✕
               </button>
@@ -513,16 +571,16 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <div className="ticker-config-status">Loading...</div>
             ) : (
               <>
-                <label>
+                <label className="ticker-config-field">
                   <span>LETF</span>
-                  <textarea
+                  <input
+                    type="text"
                     value={tickerConfig.letf}
-                    placeholder="e.g. 2 QQQ S=1.5 R=Q"
-                    rows={3}
+                    placeholder="e.g. 2 QQQ S=1.5 R=Q E=0.95"
                     onChange={e => setTickerConfig({ ...tickerConfig, letf: e.target.value })}
                   />
                 </label>
-                <label>
+                <label className="ticker-config-field">
                   <span>Groups</span>
                   <input
                     type="text"
