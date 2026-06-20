@@ -1034,9 +1034,9 @@ object BacktestService {
         )
         val result = applyMarginProportional(letfConfig, componentSeriesMap, dates, effrx, mc)
         val rawSeries = dates.zip(result.values).associate { (date, value) -> date to value }
-        if (def.expenseRatio <= 0.0) return rawSeries
+        if (def.expenseRatio == 0.0) return rawSeries
 
-        // Apply expense ratio as a daily drag on NAV: each day's return is multiplied by (1 - er/252)
+        // Apply expense ratio to NAV: positive values drag, negative values credit.
         val adjusted = mutableMapOf<LocalDate, Double>()
         var prevRaw = rawSeries[dates[0]]!!
         var prevAdj = prevRaw

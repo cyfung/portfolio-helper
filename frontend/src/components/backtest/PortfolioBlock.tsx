@@ -406,8 +406,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 'Synthetic ticker syntax: use multiplier/ticker pairs, e.g. 1 KMLM 1 VT.',
                 'S=<spread %>, e.g. S=1.5',
                 'R=<rebalance: D/W/M/Q/Y>, e.g. R=Q',
-                'E=<expense ratio %>, e.g. E=0.95',
-                'Example: 2 QQQ S=1.5 R=Q E=0.95.',
+                'E=<expense ratio or credit %>, e.g. E=0.95 or E=-1.5',
+                'Example: 2 QQQ S=1.5 R=Q E=-1.5.',
               ].join('\n')}
               aria-label="Ticker modifier help"
               tabIndex={0}
@@ -456,7 +456,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 <input
                   type="text"
                   className="ticker-input"
-                  placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5 R=Q E=0.95"
+                  placeholder="e.g. VT or: 1 KMLM 1 VT S=1.5 R=Q E=-1.5"
                   value={t.ticker}
                   onChange={e => updateTicker(t.id, e.target.value)}
                   onBlur={commitBlur}
@@ -639,7 +639,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                   <input
                     type="text"
                     value={tickerConfig.letf}
-                    placeholder="e.g. 2 QQQ S=1.5 R=Q E=0.95"
+                    placeholder="e.g. 2 QQQ S=1.5 R=Q E=-1.5"
                     onChange={e => setTickerConfig({ ...tickerConfig, letf: e.target.value })}
                   />
                 </label>

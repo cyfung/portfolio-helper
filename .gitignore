@@ -16,3 +16,4 @@ local.properties
 /android/app/release/
 /frontend/dist/
 /frontend/node_modules/
+/tools/
