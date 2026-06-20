@@ -1,7 +1,7 @@
 // ── PortfolioBlock.tsx — Controlled portfolio block for Backtest & MonteCarlo ─
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Settings, Ungroup } from 'lucide-react'
+import { ArrowDownAZ, Settings, Ungroup } from 'lucide-react'
 import {
   BlockState, MarginRow, RebalanceStrategyRow, newId,
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
@@ -119,6 +119,63 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   function addTicker(ticker = '', weight = '') {
     commit({ ...localRef.current, tickers: [...localRef.current.tickers, { id: newId(), ticker: ticker.toUpperCase(), weight }] })
+  }
+
+  function sortAndMergeTickers() {
+    type TickerRowState = BlockState['tickers'][number]
+    type TickerGroup = {
+      key: string
+      label: string
+      isPortfolioRef: boolean
+      rows: TickerRowState[]
+      weight: number
+      firstIndex: number
+    }
+
+    const groups = new Map<string, TickerGroup>()
+
+    localRef.current.tickers.forEach((row, index) => {
+      const isPortfolioRef = row.isPortfolioRef === true
+      const label = isPortfolioRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
+      const key = label ? `${isPortfolioRef ? 'portfolio' : 'ticker'}:${label}` : `empty:${row.id}`
+      const weight = parseStrictNumberInput(row.weight) ?? 0
+      const group = groups.get(key)
+      if (group) {
+        group.rows.push(row)
+        group.weight += weight
+        return
+      }
+      groups.set(key, {
+        key,
+        label,
+        isPortfolioRef,
+        rows: [row],
+        weight,
+        firstIndex: index,
+      })
+    })
+
+    const formatWeight = (weight: number) => String(Math.round(weight * 10000000000) / 10000000000)
+    const sorted = [...groups.values()]
+      .sort((a, b) => {
+        if (!a.label && b.label) return 1
+        if (a.label && !b.label) return -1
+        return a.label.localeCompare(b.label) || Number(a.isPortfolioRef) - Number(b.isPortfolioRef) || a.firstIndex - b.firstIndex
+      })
+      .map(group => {
+        const first = group.rows[0]
+        if (group.rows.length === 1) {
+          return group.label && !group.isPortfolioRef ? { ...first, ticker: group.label } : first
+        }
+        return {
+          id: first.id,
+          ticker: group.label,
+          weight: formatWeight(group.weight),
+          ...(group.isPortfolioRef ? { isPortfolioRef: true } : {}),
+        }
+      })
+
+    commit({ ...localRef.current, tickers: sorted })
   }
 
   function updateTicker(id: string, ticker: string) {
@@ -415,7 +472,18 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               ?
             </span>
           </span>
-          <button className="add-ticker-btn" type="button" onClick={() => addTicker()}>+ Add Ticker</button>
+          <div className="ticker-header-actions">
+            <button
+              className="sort-tickers-btn"
+              type="button"
+              title="Merge and sort tickers"
+              aria-label="Merge and sort tickers"
+              onClick={sortAndMergeTickers}
+            >
+              <ArrowDownAZ size={15} strokeWidth={2.2} aria-hidden="true" />
+            </button>
+            <button className="add-ticker-btn" type="button" onClick={() => addTicker()}>+ Add Ticker</button>
+          </div>
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">

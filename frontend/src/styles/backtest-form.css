@@ -276,6 +276,30 @@
     height: var(--block-control-height, 1.875rem);
 }
 
+.ticker-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.sort-tickers-btn {
+    width: 2rem;
+    height: 1.875rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid var(--color-border-medium);
+    color: var(--color-accent-primary);
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 0;
+}
+
+.sort-tickers-btn:hover {
+    background: var(--color-bg-hover);
+}
+
 .add-ticker-btn {
     background: none;
     border: 1px solid var(--color-border-medium);
