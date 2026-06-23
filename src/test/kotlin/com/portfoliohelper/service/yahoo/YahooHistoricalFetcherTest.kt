@@ -97,6 +97,49 @@ class YahooHistoricalFetcherTest {
     }
 
     @Test
+    fun parseAdjustedCloseResponse_fillsCurrentTradingDateNullFromRegularMarketPrice() {
+        val jun17 = LocalDate.of(2026, 6, 17).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun18 = LocalDate.of(2026, 6, 18).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun18End = LocalDate.of(2026, 6, 18).atTime(16, 0).toEpochSecond(ZoneOffset.ofHours(-4))
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "regularMarketPrice": 30.92,
+                    "chartPreviousClose": 30.67,
+                    "currentTradingPeriod": {
+                      "regular": {
+                        "gmtoffset": -14400,
+                        "start": ${jun18End - 23400},
+                        "end": $jun18End
+                      }
+                    }
+                  },
+                  "timestamp": [$jun17, $jun18],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [30.67, null]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "DBMF",
+            startDate = LocalDate.of(2026, 6, 17),
+            endDate = LocalDate.of(2026, 6, 20),
+            body = body
+        )
+
+        assertTrue(result.warnings.isEmpty(), "Expected no warnings, got ${result.warnings}")
+        assertEquals(30.67, result.prices[LocalDate.of(2026, 6, 17)])
+        assertEquals(30.92, result.prices[LocalDate.of(2026, 6, 18)])
+    }
+
+    @Test
     fun parseAdjustedCloseResponse_fillsTailNullWhenHistoricalResponseHasNoCurrentDayRow() {
         val jun15 = LocalDate.of(2026, 6, 15).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun16 = LocalDate.of(2026, 6, 16).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
@@ -147,8 +190,8 @@ class YahooHistoricalFetcherTest {
 
     @Test
     fun parseAdjustedCloseResponse_warnsAndSkipsUnsupportedInteriorNullRows() {
-        // Only the latest pre-currentTradingDate null and weekend nulls are known safe cases.
-        // Any other weekday null is reported as a data-quality warning and omitted.
+        // Only current/tail nulls are known safe cases. Any other null is reported as a
+        // data-quality warning and omitted.
         val jun10 = LocalDate.of(2026, 6, 10).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun11 = LocalDate.of(2026, 6, 11).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun12 = LocalDate.of(2026, 6, 12).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
@@ -195,7 +238,7 @@ class YahooHistoricalFetcherTest {
         assertEquals(
             "Yahoo adjusted-close data for VXUS contains unsupported null rows " +
                     "for range 2026-06-10..2026-06-16 (currentTradingDate=2026-06-16); " +
-                    "invalid weekday null rows: 2026-06-11;",
+                    "invalid null rows: 2026-06-11;",
             result.warnings.single()
         )
         assertEquals(
@@ -258,7 +301,7 @@ class YahooHistoricalFetcherTest {
         assertEquals(
             "Yahoo adjusted-close data for AVGS.L contains unsupported null rows " +
                     "for range 2025-10-23..2026-06-17 (currentTradingDate=2026-06-17); " +
-                    "invalid weekday null rows: 2025-10-24;",
+                    "invalid null rows: 2025-10-24;",
             result.warnings.single()
         )
         assertEquals(28.71, result.prices[LocalDate.of(2026, 6, 16)])

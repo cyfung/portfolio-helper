@@ -25,7 +25,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -125,22 +124,45 @@ object YahooHistoricalFetcher {
             val date = Instant.ofEpochSecond(timestamps[i]).atZone(ZoneOffset.UTC).toLocalDate()
             if (date <= endDate) YahooPriceRow(date, adjCloseList.getOrNull(i)) else null
         }
+        val nullRows = rows.filter { it.price == null }
+        val currentTradingNullDate = marketDate
+            ?.takeIf { date -> nullRows.any { it.date == date } }
         val latestBeforeMarketDate = marketDate
             ?.let { date -> rows.filter { it.date < date }.maxByOrNull { it.date } }
-        val fillableTailNullDate = latestBeforeMarketDate
+        val previousCloseNullDate = latestBeforeMarketDate
             ?.takeIf { it.price == null }
             ?.date
-        val nullRows = rows.filter { it.price == null }
+        val latestPricedDate = rows.filter { it.price != null }.maxOfOrNull { it.date }
+        val skippableTrailingNullDates = latestPricedDate
+            ?.let { lastPriced ->
+                nullRows
+                    .filter {
+                        it.date > lastPriced &&
+                                it.date != currentTradingNullDate &&
+                                it.date != previousCloseNullDate
+                    }
+                    .map { it.date }
+                    .toSet()
+            }
+            ?: emptySet()
+        val expectedNullDates = buildSet {
+            currentTradingNullDate?.let { add(it) }
+            previousCloseNullDate?.let { add(it) }
+            addAll(skippableTrailingNullDates)
+        }
         val invalidNullRows = nullRows.filter {
-            it.date != fillableTailNullDate && !it.date.isWeekend()
+            it.date !in expectedNullDates
         }
         val warnings = mutableListOf<String>()
         // Null adjusted-close rows are data-quality failures unless they match one of the
         // known Yahoo shapes below:
-        // 1. The latest row before currentTradingDate can be null while quote.previousClose
+        // 1. The currentTradingDate row can be null after fetching on a non-trading day;
+        //    fill it from regularMarketPrice, which Yahoo still reports for that session.
+        // 2. The latest row before currentTradingDate can be null while quote.previousClose
         //    already has the official prior close; fill exactly that row from the quote API.
-        // 2. Some exchanges include weekend timestamps with null OHLC/adjclose; drop them.
-        // Any other weekday null is logged and surfaced as a data-quality warning, then
+        // 3. Extra null rows after the last priced row are incomplete trailing records; drop
+        //    them without assuming anything about weekends or exchange holidays.
+        // Any other null is logged and surfaced as a data-quality warning, then
         // omitted from the returned series so backtests can still run on the usable dates.
         if (invalidNullRows.isNotEmpty()) {
             warnings += logNullAdjustedCloseWarning(
@@ -148,7 +170,7 @@ object YahooHistoricalFetcher {
                 startDate,
                 endDate,
                 marketDate,
-                "invalid weekday null rows: ${invalidNullRows.joinToString { it.date.toString() }}"
+                "invalid null rows: ${invalidNullRows.joinToString { it.date.toString() }}"
             )
         }
 
@@ -158,8 +180,12 @@ object YahooHistoricalFetcher {
             prices[row.date] = price
         }
 
-        val tailQuote = if (fillableTailNullDate != null) tailQuoteProvider?.invoke() else null
-        if (fillableTailNullDate != null) {
+        val tailQuote = if (currentTradingNullDate != null || previousCloseNullDate != null) {
+            tailQuoteProvider?.invoke()
+        } else {
+            null
+        }
+        if (previousCloseNullDate != null) {
             val previousClose = tailQuote?.previousClose
             if (previousClose == null) {
                 warnings += logNullAdjustedCloseWarning(
@@ -167,18 +193,33 @@ object YahooHistoricalFetcher {
                     startDate,
                     endDate,
                     marketDate,
-                    "tail null row $fillableTailNullDate could not be filled because quote previousClose was null"
+                    "tail null row $previousCloseNullDate could not be filled because quote previousClose was null"
                 )
             } else {
-                prices[fillableTailNullDate] = previousClose
+                prices[previousCloseNullDate] = previousClose
                 logger.info(
-                    "Filled $ticker null adjclose tail row for $fillableTailNullDate from quote previousClose=$previousClose"
+                    "Filled $ticker null adjclose tail row for $previousCloseNullDate from quote previousClose=$previousClose"
                 )
             }
         }
 
         val marketPrice = tailQuote?.regularMarketPrice ?: result.meta?.regularMarketPrice
-        if (marketDate != null && marketPrice != null && marketDate in startDate..endDate) {
+        if (currentTradingNullDate != null) {
+            if (marketPrice == null) {
+                warnings += logNullAdjustedCloseWarning(
+                    ticker,
+                    startDate,
+                    endDate,
+                    marketDate,
+                    "current trading date null row $currentTradingNullDate could not be filled because regularMarketPrice was null"
+                )
+            } else {
+                prices[currentTradingNullDate] = marketPrice
+                logger.info(
+                    "Filled $ticker null adjclose current trading row for $currentTradingNullDate from regularMarketPrice=$marketPrice"
+                )
+            }
+        } else if (marketDate != null && marketPrice != null && marketDate in startDate..endDate) {
             prices[marketDate] = marketPrice
         }
 
@@ -264,9 +305,6 @@ object YahooHistoricalFetcher {
     }
 
     private data class YahooPriceRow(val date: LocalDate, val price: Double?)
-
-    private fun LocalDate.isWeekend(): Boolean =
-        dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
