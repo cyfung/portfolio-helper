@@ -66,13 +66,13 @@ function parseLetfDefinition(raw: string) {
 
   for (let i = 0; i < tokens.length;) {
     const token = tokens[i]
-    if (/^[SRE]=/i.test(token)) {
+    if (/^(?:[SREV]|VOL)=/i.test(token)) {
       i += 1
       continue
     }
 
     const multiplier = parseFloat(token)
-    if (Number.isFinite(multiplier) && i + 1 < tokens.length && !/^[SRE]=/i.test(tokens[i + 1])) {
+    if (Number.isFinite(multiplier) && i + 1 < tokens.length && !/^(?:[SREV]|VOL)=/i.test(tokens[i + 1])) {
       components.push({ ticker: tokens[i + 1].toUpperCase(), weight: multiplier })
       i += 2
     } else if (!Number.isFinite(multiplier)) {

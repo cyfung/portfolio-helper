@@ -943,9 +943,10 @@ object BacktestService {
     // ── LETF helpers ──────────────────────────────────────────────────────────
 
     /**
-     * Parses a LETF definition string like "1 KMLM 1 VT S=1.5 R=Q".
+     * Parses a LETF definition string like "1 KMLM 1 VT S=1.5 R=Q V=20".
      * Returns null for plain tickers (no spaces).
-     * Tokens: alternating <multiplier> <TICKER> pairs, plus optional S=<pct> and R=<strategy>.
+     * Tokens: alternating <multiplier> <TICKER> pairs, plus optional S=<pct>, R=<strategy>,
+     * E=<pct>, and V=<relative volatility pct>.
      * R values: D=Daily, W=Weekly, M=Monthly, Q=Quarterly, Y=Yearly (default: null = inherit from outer portfolio).
      */
     internal fun parseLETFDefinition(ticker: String): LETFDefinition? {
@@ -955,6 +956,15 @@ object BacktestService {
         var spread = 0.015
         var rebalanceStrategy = RebalanceStrategy.QUARTERLY
         var expenseRatio = 0.0
+        var volatilityAdjustment = 0.0
+
+        fun isModifierToken(token: String): Boolean =
+            token.startsWith("S=", ignoreCase = true) ||
+                token.startsWith("R=", ignoreCase = true) ||
+                token.startsWith("E=", ignoreCase = true) ||
+                token.startsWith("V=", ignoreCase = true) ||
+                token.startsWith("VOL=", ignoreCase = true)
+
         var i = 0
         while (i < tokens.size) {
             val token = tokens[i]
@@ -974,14 +984,17 @@ object BacktestService {
             } else if (token.startsWith("E=", ignoreCase = true)) {
                 expenseRatio = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
                 i++
+            } else if (token.startsWith("V=", ignoreCase = true)) {
+                volatilityAdjustment = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
+                i++
+            } else if (token.startsWith("VOL=", ignoreCase = true)) {
+                volatilityAdjustment = token.substring(4).toDoubleOrNull()?.div(100.0) ?: 0.0
+                i++
             } else {
                 val multiplier = token.toDoubleOrNull()
                 if (multiplier != null && i + 1 < tokens.size) {
                     val tickerName = tokens[i + 1]
-                    if (!tickerName.startsWith("S=", ignoreCase = true) &&
-                        !tickerName.startsWith("R=", ignoreCase = true) &&
-                        !tickerName.startsWith("E=", ignoreCase = true)
-                    ) {
+                    if (!isModifierToken(tickerName)) {
                         components.add(LETFComponent(tickerName.uppercase(), multiplier))
                         i += 2
                     } else {
@@ -997,7 +1010,7 @@ object BacktestService {
             }
         }
         if (components.isEmpty()) throw IllegalArgumentException("No components found in LETF definition: $ticker")
-        return LETFDefinition(components, spread, rebalanceStrategy, expenseRatio)
+        return LETFDefinition(components, spread, rebalanceStrategy, expenseRatio, volatilityAdjustment)
     }
 
     /**
@@ -1034,18 +1047,94 @@ object BacktestService {
         )
         val result = applyMarginProportional(letfConfig, componentSeriesMap, dates, effrx, mc)
         val rawSeries = dates.zip(result.values).associate { (date, value) -> date to value }
-        if (def.expenseRatio == 0.0) return rawSeries
+        val expenseAdjustedSeries = applyExpenseRatio(rawSeries, dates, def.expenseRatio)
+        return applyVolatilityAdjustment(expenseAdjustedSeries, dates, def.volatilityAdjustment)
+    }
 
-        // Apply expense ratio to NAV: positive values drag, negative values credit.
-        val adjusted = mutableMapOf<LocalDate, Double>()
+    private fun applyExpenseRatio(
+        rawSeries: Map<LocalDate, Double>,
+        dates: List<LocalDate>,
+        expenseRatio: Double
+    ): Map<LocalDate, Double> {
+        if (expenseRatio == 0.0) return rawSeries
+
+        val adjusted = LinkedHashMap<LocalDate, Double>(dates.size)
         var prevRaw = rawSeries[dates[0]]!!
         var prevAdj = prevRaw
         adjusted[dates[0]] = prevAdj
         for (i in 1 until dates.size) {
             val curRaw = rawSeries[dates[i]]!!
-            prevAdj *= (curRaw / prevRaw) * (1.0 - def.expenseRatio / 252.0)
+            prevAdj *= (curRaw / prevRaw) * (1.0 - expenseRatio / 252.0)
             adjusted[dates[i]] = prevAdj
             prevRaw = curRaw
+        }
+        return adjusted
+    }
+
+    private fun applyVolatilityAdjustment(
+        rawSeries: Map<LocalDate, Double>,
+        dates: List<LocalDate>,
+        volatilityAdjustment: Double
+    ): Map<LocalDate, Double> {
+        if (volatilityAdjustment == 0.0 || dates.size < 2) return rawSeries
+
+        val targetFactor = 1.0 + volatilityAdjustment
+        require(targetFactor >= 0.0) {
+            "Volatility modifier must be at least -100%"
+        }
+
+        val values = dates.map { date ->
+            rawSeries[date] ?: error("Missing synthetic value for $date")
+        }
+        val returns = (1 until values.size).map { i ->
+            val prev = values[i - 1]
+            val cur = values[i]
+            require(prev > 0.0 && cur > 0.0) {
+                "Volatility modifier requires positive synthetic values"
+            }
+            cur / prev - 1.0
+        }
+        if (returns.isEmpty()) return rawSeries
+
+        val mean = returns.average()
+        val scaledReturns = returns.map { mean + targetFactor * (it - mean) }
+        val targetLogReturn = ln(values.last() / values.first())
+
+        fun shiftedLogReturn(shift: Double): Double {
+            var total = 0.0
+            for (r in scaledReturns) {
+                val ratio = 1.0 + r + shift
+                if (ratio <= 0.0) return Double.NEGATIVE_INFINITY
+                total += ln(ratio)
+            }
+            return total
+        }
+
+        val minShift = scaledReturns.maxOf { -1.0 - it }
+        var low = minShift + 1e-12
+        var high = 0.0
+        if (high <= low) high = low + 0.01
+        while (shiftedLogReturn(high) < targetLogReturn) {
+            high = high * 2.0 + 0.01
+        }
+        while (shiftedLogReturn(low) > targetLogReturn) {
+            val nextLow = (low + minShift) / 2.0
+            if (nextLow == low) break
+            low = nextLow
+        }
+
+        repeat(100) {
+            val mid = (low + high) / 2.0
+            if (shiftedLogReturn(mid) < targetLogReturn) low = mid else high = mid
+        }
+
+        val shift = (low + high) / 2.0
+        val adjusted = LinkedHashMap<LocalDate, Double>(dates.size)
+        var value = values.first()
+        adjusted[dates[0]] = value
+        for (i in 1 until dates.size) {
+            value *= 1.0 + scaledReturns[i - 1] + shift
+            adjusted[dates[i]] = value
         }
         return adjusted
     }

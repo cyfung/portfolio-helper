@@ -35,7 +35,8 @@ data class LETFDefinition(
     val components: List<LETFComponent>,
     val spread: Double,                                                       // annual fraction, default 0.015
     val rebalanceStrategy: RebalanceStrategy = RebalanceStrategy.QUARTERLY,  // default Q
-    val expenseRatio: Double = 0.0                                           // annual fraction, e.g. 0.02 = 2%
+    val expenseRatio: Double = 0.0,                                          // annual fraction, e.g. 0.02 = 2%
+    val volatilityAdjustment: Double = 0.0                                   // relative fraction, e.g. 0.20 = +20%
 ) {
     val totalMultiplier: Double get() = components.sumOf { it.multiplier }
     val borrowedRatio: Double get() = totalMultiplier - 1.0
