@@ -10,14 +10,19 @@ interface Props {
 interface CashEditRowProps {
   entry: CashData
   allPortfolios: PortfolioOption[]
+  privacyScalingActive: boolean
 }
 
-function CashEditRow({ entry, allPortfolios }: CashEditRowProps) {
+function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRowProps) {
   const isRef = entry.currency === 'P'
   const entryType = isRef && entry.marginFlag ? 'ref-margin'
     : isRef ? 'ref'
     : entry.marginFlag ? 'margin'
     : 'normal'
+  const [amountValue, setAmountValue] = useState(isRef ? '' : entry.amount.toString())
+  const [multiplierValue, setMultiplierValue] = useState(isRef ? entry.amount.toString() : '1')
+  const [amountFocused, setAmountFocused] = useState(false)
+  const [multiplierFocused, setMultiplierFocused] = useState(false)
 
   return (
     <tr
@@ -74,9 +79,13 @@ function CashEditRow({ entry, allPortfolios }: CashEditRowProps) {
         <input
           type="number"
           className="edit-input cash-edit-amount"
-          defaultValue={isRef ? '' : entry.amount.toString()}
-          placeholder="0"
+          value={privacyScalingActive && !amountFocused ? '' : amountValue}
+          data-raw-value={amountValue}
+          placeholder={privacyScalingActive && !amountFocused ? 'Set' : '0'}
           step="any"
+          onFocus={() => setAmountFocused(true)}
+          onBlur={() => setAmountFocused(false)}
+          onChange={e => setAmountValue(e.target.value)}
         />
       </td>
 
@@ -94,9 +103,13 @@ function CashEditRow({ entry, allPortfolios }: CashEditRowProps) {
         <input
           type="number"
           className="edit-input cash-edit-multiplier"
-          defaultValue={isRef ? entry.amount.toString() : '1'}
-          placeholder="1"
+          value={privacyScalingActive && !multiplierFocused ? '' : multiplierValue}
+          data-raw-value={multiplierValue}
+          placeholder={privacyScalingActive && !multiplierFocused ? 'Set' : '1'}
           step="any"
+          onFocus={() => setMultiplierFocused(true)}
+          onBlur={() => setMultiplierFocused(false)}
+          onChange={e => setMultiplierValue(e.target.value)}
         />
       </td>
 
@@ -131,9 +144,11 @@ function CashEditRow({ entry, allPortfolios }: CashEditRowProps) {
 }
 
 export default function CashEditTable({ allPortfolios, entries }: Props) {
-  const { cash } = usePortfolioStore()
+  const { cash, appConfig } = usePortfolioStore()
   const nextNewRowId = useRef(1)
   const [newRows, setNewRows] = useState<Array<{ id: number }>>([])
+  const privacyScalingActive =
+    !!appConfig?.privacyScaleEnabled && (parseFloat(appConfig.privacyScalePct ?? '') || 0) > 0
 
   const sorted = [...(entries ?? cash)].sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()))
 
@@ -152,6 +167,7 @@ export default function CashEditTable({ allPortfolios, entries }: Props) {
               key={`existing-${entry.label}-${entry.currency}-${idx}`}
               entry={entry}
               allPortfolios={allPortfolios}
+              privacyScalingActive={privacyScalingActive}
             />
           ))}
           {newRows.map(row => (
@@ -159,6 +175,7 @@ export default function CashEditTable({ allPortfolios, entries }: Props) {
               key={`new-${row.id}`}
               entry={{ label: '', currency: 'USD', amount: 0, marginFlag: false }}
               allPortfolios={allPortfolios}
+              privacyScalingActive={privacyScalingActive}
             />
           ))}
         </tbody>

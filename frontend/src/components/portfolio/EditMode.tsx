@@ -59,6 +59,10 @@ function letfAttrToStr(attr: string): string {
   return parts.join(' ')
 }
 
+function inputRawValue(input: HTMLInputElement | null): string {
+  return input?.dataset.rawValue ?? input?.value ?? ''
+}
+
 /** Read all cash rows from the CashEditTable DOM (matching original JS save logic) */
 function readCashFromDom(): object[] {
   const cashUpdates: object[] = []
@@ -71,11 +75,11 @@ function readCashFromDom(): object[] {
     const marginFlag = (row.querySelector('.cash-edit-margin') as HTMLInputElement)?.checked ?? false
     if (isRef) {
       const portfolioRef = (row.querySelector('.cash-edit-portfolio-ref') as HTMLSelectElement)?.value ?? ''
-      const multiplier = parseFloat((row.querySelector('.cash-edit-multiplier') as HTMLInputElement)?.value) || 1.0
+      const multiplier = parseFloat(inputRawValue(row.querySelector('.cash-edit-multiplier') as HTMLInputElement)) || 1.0
       cashUpdates.push({ label, currency: 'P', marginFlag, amount: multiplier, portfolioRef })
     } else {
       const currency = ((row.querySelector('.cash-edit-currency') as HTMLInputElement)?.value ?? '').trim().toUpperCase() || 'USD'
-      const amount = parseFloat(((row.querySelector('.cash-edit-amount') as HTMLInputElement)?.value ?? '').replace(/,/g, '')) || 0
+      const amount = parseFloat(inputRawValue(row.querySelector('.cash-edit-amount') as HTMLInputElement).replace(/,/g, '')) || 0
       cashUpdates.push({ label, currency, marginFlag, amount })
     }
   })
