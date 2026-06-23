@@ -7,7 +7,9 @@ object NavService : PollingService<NavData>("NAV") {
 
     private val providers: Map<String, NavProvider> = listOf(
         CtapNavProvider,
-        CtaNavProvider
+        CtaNavProvider,
+        RsitNavProvider,
+        RsstNavProvider
     ).associateBy { it.symbol }
 
     fun requestNavForSymbols(symbols: List<String>, intervalSeconds: Long? = null) {
@@ -39,5 +41,6 @@ object NavService : PollingService<NavData>("NAV") {
     override fun shutdown() {
         super.shutdown()
         SimplifyEtfNavProvider.shutdown()
+        ReturnStackedEtfNavProvider.shutdown()
     }
 }
