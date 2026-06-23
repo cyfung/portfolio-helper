@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pin } from 'lucide-react'
+import { Pin, Settings } from 'lucide-react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
@@ -20,6 +20,18 @@ interface GroupRow {
   children: ResolvedStockWeight[]
 }
 
+interface TickerConfigEditor {
+  blockIndex: number
+  label: string
+  rows: {
+    symbol: string
+    letf: string
+    groups: string
+  }[]
+  saving: boolean
+  error: string
+}
+
 function blankBlock(): BlockState {
   return { label: '', tickers: [], rebalance: 'YEARLY', margins: [], rebalanceStrategies: [], includeNoMargin: true }
 }
@@ -32,6 +44,20 @@ function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = ticker.trim().toUpperCase()
   if (!key || weight <= 0) return
   map.set(key, (map.get(key) ?? 0) + weight)
+}
+
+function isEditableTicker(ticker: string) {
+  const symbol = ticker.trim().toUpperCase()
+  return symbol.length > 0 && !/\s/.test(symbol) && /^[A-Z0-9^][A-Z0-9._-]*$/.test(symbol)
+}
+
+function editableTickerSymbols(...rowGroups: ResolvedStockWeight[][]) {
+  const symbols = new Set<string>()
+  rowGroups.flat().forEach(row => {
+    const symbol = row.ticker.trim().toUpperCase()
+    if (isEditableTicker(symbol)) symbols.add(symbol)
+  })
+  return [...symbols].sort((a, b) => a.localeCompare(b))
 }
 
 function parseLetfDefinition(raw: string) {
@@ -130,6 +156,7 @@ export default function PortfolioBuilderPage() {
   const [hoveredGroupByBlock, setHoveredGroupByBlock] = useState<Record<number, string>>({})
   const [pinnedGroupByBlock, setPinnedGroupByBlock] = useState<Record<number, string>>({})
   const [groupOverlayPos, setGroupOverlayPos] = useState({ x: 0, y: 0 })
+  const [tickerConfigEditor, setTickerConfigEditor] = useState<TickerConfigEditor | null>(null)
   const [error, setError] = useState('')
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const settingsLoadedRef = useRef(false)
@@ -247,6 +274,61 @@ export default function PortfolioBuilderPage() {
     }
   }
 
+  function openTickerConfigEditor(blockIndex: number, label: string, symbols: string[]) {
+    setTickerConfigEditor({
+      blockIndex,
+      label,
+      rows: symbols.map(symbol => ({
+        symbol,
+        letf: tickerConfigs[symbol]?.letf ?? '',
+        groups: tickerConfigs[symbol]?.groups ?? '',
+      })),
+      saving: false,
+      error: '',
+    })
+  }
+
+  function updateTickerConfigEditorRow(symbol: string, field: 'letf' | 'groups', value: string) {
+    setTickerConfigEditor(editor => editor && {
+      ...editor,
+      rows: editor.rows.map(row => row.symbol === symbol ? { ...row, [field]: value } : row),
+      error: '',
+    })
+  }
+
+  async function saveTickerConfigEditor() {
+    if (!tickerConfigEditor || tickerConfigEditor.saving) return
+    const editor = tickerConfigEditor
+    setTickerConfigEditor({ ...editor, saving: true, error: '' })
+
+    try {
+      await Promise.all(editor.rows.map(async row => {
+        const res = await fetch(`/api/ticker-config?symbol=${encodeURIComponent(row.symbol)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ letf: row.letf, groups: row.groups }),
+        })
+        if (!res.ok) throw new Error(`Failed to save ${row.symbol}`)
+      }))
+
+      if (results) setTickerConfigs(await loadTickerConfigs(results))
+      else {
+        setTickerConfigs(prev => {
+          const next = { ...prev }
+          editor.rows.forEach(row => { next[row.symbol] = { letf: row.letf, groups: row.groups } })
+          return next
+        })
+      }
+      setTickerConfigEditor(null)
+    } catch (err: unknown) {
+      setTickerConfigEditor({
+        ...editor,
+        saving: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
   return (
     <div className="container" onClick={() => setPinnedGroupByBlock({})}>
       <div className="portfolio-header">
@@ -287,6 +369,7 @@ export default function PortfolioBuilderPage() {
             const normalizedRows = normalizeRows(rawDisplayRows)
             const groupRows = buildGroupRows(normalizedRows, tickerConfigs)
             const rawGroupRows = buildGroupRows(rawDisplayRows, tickerConfigs)
+            const editableSymbols = editableTickerSymbols(rows, letfResult.rows)
             const activeGroupName = pinnedGroupByBlock[i] ?? hoveredGroupByBlock[i]
             const activeGroup = groupRows.find(group => group.name === activeGroupName)
             const activeRawGroup = rawGroupRows.find(group => group.name === activeGroupName)
@@ -303,6 +386,17 @@ export default function PortfolioBuilderPage() {
                 <div className="portfolio-builder-result-title">
                   <span>{block.label.trim() || `Portfolio ${i + 1}`}</span>
                   <div className="portfolio-builder-result-controls">
+                    {editableSymbols.length > 0 && (
+                      <button
+                        className="portfolio-builder-edit-tickers-btn"
+                        type="button"
+                        title="Edit LETF and Groups"
+                        onClick={() => openTickerConfigEditor(i, block.label.trim() || `Portfolio ${i + 1}`, editableSymbols)}
+                      >
+                        <Settings size={13} aria-hidden="true" />
+                        Edit
+                      </button>
+                    )}
                     {letfResult.expanded && (
                       <button
                         className="portfolio-builder-toggle-btn"
@@ -447,6 +541,72 @@ export default function PortfolioBuilderPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {tickerConfigEditor && (
+        <div className="ticker-config-overlay" role="dialog" aria-modal="true" onMouseDown={e => {
+          if (e.target === e.currentTarget && !tickerConfigEditor.saving) setTickerConfigEditor(null)
+        }}>
+          <div className="ticker-config-dialog portfolio-builder-ticker-editor" onClick={e => e.stopPropagation()}>
+            <div className="ticker-config-header">
+              <h2>{tickerConfigEditor.label}</h2>
+              <button
+                type="button"
+                className="ticker-config-close"
+                disabled={tickerConfigEditor.saving}
+                onClick={() => setTickerConfigEditor(null)}
+              >
+                x
+              </button>
+            </div>
+            <div className="portfolio-builder-ticker-editor-table-wrap">
+              <table className="portfolio-table portfolio-builder-ticker-editor-table">
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>LETF</th>
+                    <th>Groups</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tickerConfigEditor.rows.map(row => (
+                    <tr key={row.symbol}>
+                      <td>{row.symbol}</td>
+                      <td>
+                        <input
+                          type="text"
+                          value={row.letf}
+                          placeholder="e.g. 2 IVV"
+                          onChange={e => updateTickerConfigEditorRow(row.symbol, 'letf', e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={row.groups}
+                          placeholder="e.g. 1 Equity"
+                          onChange={e => updateTickerConfigEditorRow(row.symbol, 'groups', e.target.value)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {tickerConfigEditor.error && <div className="ticker-config-error">{tickerConfigEditor.error}</div>}
+            <div className="ticker-config-actions">
+              <button type="button" disabled={tickerConfigEditor.saving} onClick={() => setTickerConfigEditor(null)}>Cancel</button>
+              <button
+                type="button"
+                className="ticker-config-save"
+                disabled={tickerConfigEditor.saving}
+                onClick={saveTickerConfigEditor}
+              >
+                {tickerConfigEditor.saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

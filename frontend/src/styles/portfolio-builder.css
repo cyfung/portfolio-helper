@@ -116,6 +116,30 @@
     border-color: var(--color-accent-primary);
 }
 
+.portfolio-builder-edit-tickers-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.portfolio-builder-edit-tickers-btn:hover {
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+}
+
+.portfolio-builder-edit-tickers-btn svg {
+    flex: 0 0 auto;
+}
+
 .portfolio-builder-margin-select {
     max-width: 9rem;
     flex: 0 0 auto;
@@ -219,9 +243,66 @@
     font-size: var(--font-size-sm);
 }
 
+.ticker-config-dialog.portfolio-builder-ticker-editor {
+    width: min(94vw, 84rem);
+    max-width: none;
+}
+
+.portfolio-builder-ticker-editor-table-wrap {
+    max-height: min(60vh, 520px);
+    overflow: auto;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+}
+
+.portfolio-builder-ticker-editor-table {
+    width: 100%;
+    min-width: 60rem;
+    margin: 0;
+    table-layout: fixed;
+}
+
+.portfolio-builder-ticker-editor-table th,
+.portfolio-builder-ticker-editor-table td {
+    white-space: nowrap;
+}
+
+.portfolio-builder-ticker-editor-table th:first-child,
+.portfolio-builder-ticker-editor-table td:first-child {
+    width: 10rem;
+    font-family: var(--font-family-mono), monospace;
+    font-weight: 700;
+}
+
+.portfolio-builder-ticker-editor-table input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    padding: 0.35rem 0.45rem;
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+}
+
+.portfolio-builder-ticker-editor-table input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+    box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
 @media (max-width: 900px) {
     .portfolio-builder-results {
         grid-template-columns: 1fr;
+    }
+
+    .portfolio-builder-ticker-editor {
+        width: calc(100vw - 2rem);
+    }
+
+    .portfolio-builder-ticker-editor-table {
+        min-width: 48rem;
     }
 }
 
