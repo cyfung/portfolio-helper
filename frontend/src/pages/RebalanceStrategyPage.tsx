@@ -6,6 +6,7 @@ import {
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar from '@/components/backtest/SavedPortfoliosBar'
+import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
 import RebalanceStrategyResults from '@/components/rebalance/RebalanceStrategyResults'
 import SavedStrategiesBar from '@/components/rebalance/SavedStrategiesBar'
@@ -42,6 +43,12 @@ export default function RebalanceStrategyPage() {
           onStartingBalanceChange={page.setStartingBalance}
           onCashflowAmountChange={page.setCashflowAmount}
           onCashflowFrequencyChange={page.setCashflowFrequency}
+        />
+
+        <TickerMappingControl
+          idPrefix="rs"
+          value={page.tickerMappingSettings}
+          onChange={page.setTickerMappingSettings}
         />
 
         <SavedPortfoliosBar ref={page.savedBarRef} />

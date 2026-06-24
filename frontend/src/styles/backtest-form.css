@@ -329,6 +329,68 @@
     color: var(--color-warning);
 }
 
+.ticker-mapping-control {
+    max-width: 36rem;
+}
+
+.ticker-mapping-control-row {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) auto;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.ticker-mapping-control-row select {
+    min-width: 0;
+}
+
+.ticker-mapping-saved-bar {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
+}
+
+.ticker-mapping-select-chip {
+    cursor: pointer;
+    font-family: var(--font-family-mono), monospace;
+}
+
+.ticker-mapping-select-chip:active {
+    cursor: pointer;
+}
+
+.ticker-mapping-select-chip.active {
+    background: var(--color-accent-primary);
+    color: var(--color-text-inverse);
+}
+
+.ticker-mapping-chip-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.ticker-mapping-config-btn {
+    flex: 0 0 auto;
+}
+
+.ticker-mapping-active-summary {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Run button */
 .run-backtest-btn {
     padding: 0.5rem 1.5rem;

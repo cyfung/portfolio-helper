@@ -10,6 +10,7 @@ import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
+import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
@@ -36,6 +37,12 @@ import {
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { validateDateRange } from '@/lib/dateRange'
+import {
+  applyTickerMappingsToPortfolio,
+  loadTickerMappingSettings,
+  selectedTickerMappingSet as resolveSelectedTickerMappingSet,
+  type TickerMappingSettings,
+} from '@/lib/tickerMappings'
 
 // ── Stats helper ──────────────────────────────────────────────────────────────
 
@@ -269,6 +276,7 @@ export default function BacktestPage() {
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
+  const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
   const [pendingImport, setPendingImport] = useState<{ config: StoredBacktestConfig; preview: ImportDependencyPreview } | null>(null)
@@ -308,6 +316,10 @@ export default function BacktestPage() {
     return appConfig?.privacyScaleEnabled && pct > 0 ? pct / 100 : 1
   }, [appConfig?.privacyScaleEnabled, appConfig?.privacyScalePct])
   const dateRangeError = validateDateRange(fromDate, toDate)
+  const selectedTickerMappingSet = useMemo(
+    () => resolveSelectedTickerMappingSet(tickerMappingSettings),
+    [tickerMappingSettings],
+  )
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
@@ -681,6 +693,7 @@ export default function BacktestPage() {
       const latestSavedPortfolios = await fetchSavedPortfolios()
       portfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
+        .map(p => applyTickerMappingsToPortfolio(p, selectedTickerMappingSet))
         .filter(p => p.tickers.length > 0)
     } catch (e: unknown) {
       setError(errorMessage(e) || 'Unable to resolve saved portfolio references.')
@@ -1058,6 +1071,12 @@ export default function BacktestPage() {
           onStartingBalanceChange={setStartingBalance}
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
+        />
+
+        <TickerMappingControl
+          idPrefix="backtest"
+          value={tickerMappingSettings}
+          onChange={setTickerMappingSettings}
         />
 
         {realPortfolios.length > 0 && (

@@ -14,6 +14,12 @@ import {
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { makeUniqueStrategyLabels } from '@/lib/rebalanceStrategyConfig'
 import {
+  applyTickerMappingsToPortfolio,
+  loadTickerMappingSettings,
+  selectedTickerMappingSet as resolveSelectedTickerMappingSet,
+  type TickerMappingSettings,
+} from '@/lib/tickerMappings'
+import {
   BacktestResults,
   BlockState,
   DEFAULT_CASHFLOW_FREQUENCY,
@@ -85,6 +91,7 @@ export function useRebalanceStrategyPage() {
   const [startingBalance, setStartingBalance] = useState('10000')
   const [cashflowAmount, setCashflowAmount] = useState('')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
+  const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [includeActionDiagnostics, setIncludeActionDiagnostics] = useState(false)
   const [importCode, setImportCode] = useState('')
   const [configError, setConfigError] = useState('')
@@ -103,6 +110,10 @@ export function useRebalanceStrategyPage() {
   const lastRunPayloadRef = useRef<RebalanceStrategyRunPayload | null>(null)
 
   const dateRangeError = validateDateRange(fromDate, toDate)
+  const selectedTickerMappingSet = useMemo(
+    () => resolveSelectedTickerMappingSet(tickerMappingSettings),
+    [tickerMappingSettings],
+  )
 
   useEffect(() => {
     fetch('/api/backtest/settings')
@@ -135,7 +146,10 @@ export function useRebalanceStrategyPage() {
     const runPortfolio = normalizeBlockSpreadInputs(portfolio)
     if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
 
-    const portfolioApi = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, await fetchSavedPortfolios())
+    const portfolioApi = applyTickerMappingsToPortfolio(
+      resolvedBlockStateToAPIPortfolio(runPortfolio, 0, await fetchSavedPortfolios()),
+      selectedTickerMappingSet,
+    )
     const settingsPortfolio = blockStateToAPIPortfolio(runPortfolio, 0)
     if (portfolioApi.tickers.length === 0) {
       throw new Error('Add at least one ticker with a positive weight to the portfolio.')
@@ -156,7 +170,7 @@ export function useRebalanceStrategyPage() {
     }
 
     return { portfolioApi, settingsPortfolio, allStrategies, runStrategies }
-  }, [currentNormalizedStrategies, portfolio, strategies])
+  }, [currentNormalizedStrategies, portfolio, selectedTickerMappingSet, strategies])
 
   const fetchRunResults = useCallback(async (payload: RebalanceStrategyRunPayload) => {
     const res = await fetch('/api/rebalance-strategy/run', {
@@ -346,6 +360,8 @@ export function useRebalanceStrategyPage() {
     setCashflowAmount,
     cashflowFrequency,
     setCashflowFrequency,
+    tickerMappingSettings,
+    setTickerMappingSettings,
     includeActionDiagnostics,
     setIncludeActionDiagnostics,
     importCode,
