@@ -3,6 +3,7 @@ import {
   RunButton,
   ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
+import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar from '@/components/backtest/SavedPortfoliosBar'
 import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
@@ -90,6 +91,15 @@ export default function RebalanceStrategyPage() {
           zeroMarginInterestResults={page.zeroMarginInterestResults}
           zeroMarginInterestRunning={page.zeroMarginInterestRunning}
           onLoadZeroMarginInterestResults={page.loadZeroMarginInterestResults}
+        />
+      )}
+      {page.pendingImport && (
+        <ImportDependenciesDialog
+          preview={page.pendingImport.preview}
+          applying={page.importDependencyApplying}
+          error={page.importDependencyError}
+          onCancel={() => page.setPendingImport(null)}
+          onConfirm={page.confirmPendingImport}
         />
       )}
     </div>

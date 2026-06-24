@@ -9,11 +9,19 @@ import type { LegendPayload } from 'recharts'
 import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
+import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
+import {
+  applyImportDependencyPreview,
+  buildImportDependencyPreview,
+  hasImportDependencyPreview,
+  withPortfolioExportDependencies,
+  type ImportDependencyPreview,
+} from '@/lib/configImportExport'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
@@ -263,6 +271,9 @@ export default function BacktestPage() {
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
+  const [pendingImport, setPendingImport] = useState<{ config: StoredBacktestConfig; preview: ImportDependencyPreview } | null>(null)
+  const [importDependencyApplying, setImportDependencyApplying] = useState(false)
+  const [importDependencyError, setImportDependencyError] = useState('')
   const [running, setRunning]         = useState(false)
   const [error, setError]             = useState('')
   const [viewState, setViewState]     = useState<BacktestViewState>({
@@ -735,41 +746,69 @@ export default function BacktestPage() {
     const exportBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
     const portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
-    const code = await compressToCode({
+    const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null,
       toDate: toDate || null,
       startingBalance: startingBalanceToPayload(startingBalance),
       portfolios,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
-    })
+    }, portfolios))
     setImportCode(code)
     try { await navigator.clipboard.writeText(code) } catch {}
+  }
+
+  function applyImportedConfig(req: StoredBacktestConfig) {
+    if (req.fromDate) setFromDate(req.fromDate)
+    if (req.toDate)   setToDate(req.toDate)
+    const cashflowState = cashflowStateFromSettings(req)
+    if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
+    if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
+    if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (req.portfolios) {
+      const portfolios = req.portfolios
+      setBlocks(prev => {
+        const next = [...prev]
+        portfolios.forEach((p, i) => {
+          if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
+        })
+        return next
+      })
+    }
   }
 
   async function handleImport() {
     if (!importCode.trim()) return
     try {
       const req = await decompressFromCode(importCode.trim()) as StoredBacktestConfig
-      if (req.fromDate) setFromDate(req.fromDate)
-      if (req.toDate)   setToDate(req.toDate)
-      const cashflowState = cashflowStateFromSettings(req)
-      if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
-      if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
-      if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
-      if (req.portfolios) {
-        const portfolios = req.portfolios
-        setBlocks(prev => {
-          const next = [...prev]
-          portfolios.forEach((p, i) => {
-            if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
-          })
-          return next
-        })
+      const preview = await buildImportDependencyPreview(req as Record<string, unknown>)
+      if (hasImportDependencyPreview(preview)) {
+        setPendingImport({ config: req, preview })
+        setImportDependencyError('')
+        setConfigError('')
+        return
       }
+      applyImportedConfig(req)
       setConfigError('')
     } catch {
       setConfigError('Invalid config code.')
       setTimeout(() => setConfigError(''), 3000)
+    }
+  }
+
+  async function confirmPendingImport() {
+    if (!pendingImport || importDependencyApplying) return
+    setImportDependencyApplying(true)
+    setImportDependencyError('')
+    try {
+      await applyImportDependencyPreview(pendingImport.preview)
+      refreshSaved()
+      applyImportedConfig(pendingImport.config)
+      setPendingImport(null)
+      setConfigError('')
+    } catch (e: unknown) {
+      setImportDependencyError(errorMessage(e))
+    } finally {
+      setImportDependencyApplying(false)
     }
   }
 
@@ -1412,6 +1451,16 @@ export default function BacktestPage() {
             </>
           )}
         </>
+      )}
+
+      {pendingImport && (
+        <ImportDependenciesDialog
+          preview={pendingImport.preview}
+          applying={importDependencyApplying}
+          error={importDependencyError}
+          onCancel={() => setPendingImport(null)}
+          onConfirm={confirmPendingImport}
+        />
       )}
     </div>
   )

@@ -4,6 +4,13 @@ import type { RebalanceStrategyBlockRef } from '@/components/rebalance/Rebalance
 import type { SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { validateDateRange } from '@/lib/dateRange'
+import {
+  applyImportDependencyPreview,
+  buildImportDependencyPreview,
+  hasImportDependencyPreview,
+  withPortfolioExportDependencies,
+  type ImportDependencyPreview,
+} from '@/lib/configImportExport'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { makeUniqueStrategyLabels } from '@/lib/rebalanceStrategyConfig'
 import {
@@ -26,6 +33,7 @@ import {
   normalizeStrategySpreadInput,
   savedConfigToStrategyState,
   strategyStateToAPI,
+  strategyStateToSavedConfig,
 } from '@/types/rebalanceStrategy'
 
 type StrategyConfigLike = Record<string, unknown> & { label?: string }
@@ -80,6 +88,9 @@ export function useRebalanceStrategyPage() {
   const [includeActionDiagnostics, setIncludeActionDiagnostics] = useState(false)
   const [importCode, setImportCode] = useState('')
   const [configError, setConfigError] = useState('')
+  const [pendingImport, setPendingImport] = useState<{ config: PageConfigLike; preview: ImportDependencyPreview } | null>(null)
+  const [importDependencyApplying, setImportDependencyApplying] = useState(false)
+  const [importDependencyError, setImportDependencyError] = useState('')
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [results, setResults] = useState<BacktestResults | null>(null)
@@ -241,39 +252,72 @@ export function useRebalanceStrategyPage() {
 
     const exportPortfolio = normalizeBlockSpreadInputs(portfolio)
     if (exportPortfolio !== portfolio) setPortfolio(exportPortfolio)
-    const code = await compressToCode({
+    const portfolioConfig = blockStateToAPIPortfolio(exportPortfolio, 0)
+    const savedStrategies = currentStrategies
+      .map(strategy => ({ name: strategy.label.trim(), config: strategyStateToSavedConfig(strategy) }))
+      .filter((strategy): strategy is { name: string; config: RebalStrategyState } => !!strategy.name)
+    const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null,
       toDate: toDate || null,
       startingBalance: startingBalanceToPayload(startingBalance),
-      portfolio: blockStateToAPIPortfolio(exportPortfolio, 0),
+      portfolio: portfolioConfig,
       portfolioState: exportPortfolio,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       strategies: currentStrategies,
-    })
+    }, [portfolioConfig], { savedStrategies }))
     setImportCode(code)
     try { await navigator.clipboard.writeText(code) } catch {}
   }, [cashflowAmount, cashflowFrequency, currentNormalizedStrategies, fromDate, portfolio, startingBalance, strategies, toDate])
+
+  const applyImportedConfig = useCallback((req: PageConfigLike) => {
+    if (req.fromDate) setFromDate(req.fromDate)
+    if (req.toDate) setToDate(req.toDate)
+    const cashflowState = cashflowStateFromSettings(req)
+    if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
+    if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
+    if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (req.portfolioState) setPortfolio(req.portfolioState)
+    else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
+    const restoredStrategies = restoreStrategyStates(req)
+    if (restoredStrategies) setStrategies(restoredStrategies)
+  }, [])
 
   const handleImport = useCallback(async () => {
     if (!importCode.trim()) return
     try {
       const req = await decompressFromCode(importCode.trim()) as PageConfigLike
-      if (req.fromDate) setFromDate(req.fromDate)
-      if (req.toDate) setToDate(req.toDate)
-      const cashflowState = cashflowStateFromSettings(req)
-      if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
-      if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
-      if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
-      if (req.portfolioState) setPortfolio(req.portfolioState)
-      else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
-      const restoredStrategies = restoreStrategyStates(req)
-      if (restoredStrategies) setStrategies(restoredStrategies)
+      const preview = await buildImportDependencyPreview(req as Record<string, unknown>)
+      if (hasImportDependencyPreview(preview)) {
+        setPendingImport({ config: req, preview })
+        setImportDependencyError('')
+        setConfigError('')
+        return
+      }
+      applyImportedConfig(req)
       setConfigError('')
     } catch {
       setConfigError('Invalid config code.')
       setTimeout(() => setConfigError(''), 3000)
     }
-  }, [importCode])
+  }, [applyImportedConfig, importCode])
+
+  const confirmPendingImport = useCallback(async () => {
+    if (!pendingImport || importDependencyApplying) return
+    setImportDependencyApplying(true)
+    setImportDependencyError('')
+    try {
+      await applyImportDependencyPreview(pendingImport.preview)
+      savedBarRef.current?.refresh()
+      savedStrategiesBarRef.current?.refresh()
+      applyImportedConfig(pendingImport.config)
+      setPendingImport(null)
+      setConfigError('')
+    } catch (e: unknown) {
+      setImportDependencyError(errorMessage(e, 'Unable to apply import dependencies.'))
+    } finally {
+      setImportDependencyApplying(false)
+    }
+  }, [applyImportedConfig, importDependencyApplying, pendingImport])
 
   const strategyHandlers = useMemo(
     () => [0, 1].map(i => (strategy: RebalStrategyState) =>
@@ -307,6 +351,10 @@ export function useRebalanceStrategyPage() {
     importCode,
     setImportCode,
     configError,
+    pendingImport,
+    setPendingImport,
+    importDependencyApplying,
+    importDependencyError,
     running,
     error,
     results,
@@ -322,6 +370,7 @@ export function useRebalanceStrategyPage() {
     loadZeroMarginInterestResults,
     handleExport,
     handleImport,
+    confirmPendingImport,
     strategyHandlers,
     refreshSaved,
     refreshSavedStrategies,

@@ -8,12 +8,20 @@ import {
 import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
+import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { getChartTheme } from '@/lib/chartTheme'
 import { scaleDash } from '@/lib/colorScheme'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
+import {
+  applyImportDependencyPreview,
+  buildImportDependencyPreview,
+  hasImportDependencyPreview,
+  withPortfolioExportDependencies,
+  type ImportDependencyPreview,
+} from '@/lib/configImportExport'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import { validateDateRange } from '@/lib/dateRange'
 import {
@@ -61,6 +69,9 @@ export default function MonteCarloPage() {
   const [numSims, setNumSims]         = useState('500')
   const [importCode, setImportCode]   = useState('')
   const [configError, setConfigError] = useState('')
+  const [pendingImport, setPendingImport] = useState<{ config: any; preview: ImportDependencyPreview } | null>(null)
+  const [importDependencyApplying, setImportDependencyApplying] = useState(false)
+  const [importDependencyError, setImportDependencyError] = useState('')
   const [running, setRunning]         = useState(false)
   const [progress, setProgress]       = useState('')
   const [error, setError]             = useState('')
@@ -235,45 +246,73 @@ export default function MonteCarloPage() {
     const exportBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
     const portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
-    const code = await compressToCode({
+    const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null, toDate: toDate || null,
       minChunkYears: parseFloat(minChunk) || 3, maxChunkYears: parseFloat(maxChunk) || 8,
       simulatedYears: parseInt(simYears, 10) || 20, numSimulations: parseInt(numSims, 10) || 500,
       startingBalance: startingBalanceToPayload(startingBalance),
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       portfolios,
-    })
+    }, portfolios))
     setImportCode(code)
     try { await navigator.clipboard.writeText(code) } catch (_) {}
+  }
+
+  function applyImportedConfig(req: any) {
+    if (req.fromDate) setFromDate(req.fromDate)
+    if (req.toDate)   setToDate(req.toDate)
+    const cashflowState = cashflowStateFromSettings(req)
+    if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
+    if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
+    if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (req.minChunkYears  != null) setMinChunk(String(req.minChunkYears))
+    if (req.maxChunkYears  != null) setMaxChunk(String(req.maxChunkYears))
+    if (req.simulatedYears != null) setSimYears(String(req.simulatedYears))
+    if (req.numSimulations != null) setNumSims(String(req.numSimulations))
+    if (req.portfolios) {
+      setBlocks(prev => {
+        const next = [...prev]
+        req.portfolios.forEach((p: any, i: number) => {
+          if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
+        })
+        return next
+      })
+    }
   }
 
   async function handleImport() {
     if (!importCode.trim()) return
     try {
       const req: any = await decompressFromCode(importCode.trim())
-      if (req.fromDate) setFromDate(req.fromDate)
-      if (req.toDate)   setToDate(req.toDate)
-      const cashflowState = cashflowStateFromSettings(req)
-      if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
-      if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
-      if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
-      if (req.minChunkYears  != null) setMinChunk(String(req.minChunkYears))
-      if (req.maxChunkYears  != null) setMaxChunk(String(req.maxChunkYears))
-      if (req.simulatedYears != null) setSimYears(String(req.simulatedYears))
-      if (req.numSimulations != null) setNumSims(String(req.numSimulations))
-      if (req.portfolios) {
-        setBlocks(prev => {
-          const next = [...prev]
-          req.portfolios.forEach((p: any, i: number) => {
-            if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
-          })
-          return next
-        })
+      const preview = await buildImportDependencyPreview(req as Record<string, unknown>)
+      if (hasImportDependencyPreview(preview)) {
+        setPendingImport({ config: req, preview })
+        setImportDependencyError('')
+        setConfigError('')
+        return
       }
+      applyImportedConfig(req)
       setConfigError('')
     } catch (_) {
       setConfigError('Invalid config code.')
       setTimeout(() => setConfigError(''), 3000)
+    }
+  }
+
+  async function confirmPendingImport() {
+    if (!pendingImport || importDependencyApplying) return
+    setImportDependencyApplying(true)
+    setImportDependencyError('')
+    try {
+      await applyImportDependencyPreview(pendingImport.preview)
+      refreshSaved()
+      applyImportedConfig(pendingImport.config)
+      setPendingImport(null)
+      setConfigError('')
+    } catch (e: any) {
+      setImportDependencyError(e?.message || String(e))
+    } finally {
+      setImportDependencyApplying(false)
     }
   }
 
@@ -538,6 +577,15 @@ export default function MonteCarloPage() {
             </ResponsiveContainer>
           </div>
         </>
+      )}
+      {pendingImport && (
+        <ImportDependenciesDialog
+          preview={pendingImport.preview}
+          applying={importDependencyApplying}
+          error={importDependencyError}
+          onCancel={() => setPendingImport(null)}
+          onConfirm={confirmPendingImport}
+        />
       )}
     </div>
   )

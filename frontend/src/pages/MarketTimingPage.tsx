@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import { BacktestPageHeader } from '@/components/backtest/CommonBacktestSections'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { UsCapeHistoryChart, WorldCapeHistoryChart } from '@/components/marketTiming/CapeHistoryCharts'
@@ -19,6 +20,13 @@ import { parseUsCapeCsv, parseWorldCapeCsv } from '@/lib/marketTiming/capeCsv'
 import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
+import {
+  applyImportDependencyPreview,
+  buildImportDependencyPreview,
+  hasImportDependencyPreview,
+  withPortfolioExportDependencies,
+  type ImportDependencyPreview,
+} from '@/lib/configImportExport'
 import { validateDateRange } from '@/lib/dateRange'
 import {
   blockStateToAPIPortfolio,
@@ -121,6 +129,9 @@ export default function MarketTimingPage() {
   const [fixedAnnualRate, setFixedAnnualRate] = useState('5')
   const [importCode, setImportCode] = useState('')
   const [configError, setConfigError] = useState('')
+  const [pendingImport, setPendingImport] = useState<{ config: MarketTimingImportConfig; preview: ImportDependencyPreview } | null>(null)
+  const [importDependencyApplying, setImportDependencyApplying] = useState(false)
+  const [importDependencyError, setImportDependencyError] = useState('')
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
   const [results, setResults] = useState<MarketTimingResponse | null>(null)
@@ -183,7 +194,8 @@ export default function MarketTimingPage() {
 
   async function handleExport() {
     setConfigError('')
-    const code = await compressToCode({
+    const exportPortfolio = blockStateToAPIPortfolio(portfolio, 0)
+    const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate,
       toDate,
       drawdownConfigs,
@@ -192,9 +204,22 @@ export default function MarketTimingPage() {
       interestMode,
       annualSpread,
       fixedAnnualRate,
-      portfolio: blockStateToAPIPortfolio(portfolio, 0),
-    })
+      portfolio: exportPortfolio,
+    }, [exportPortfolio]))
     setImportCode(code)
+  }
+
+  function applyImportedConfig(payload: MarketTimingImportConfig) {
+    setFromDate(String(payload.fromDate ?? ''))
+    setToDate(String(payload.toDate ?? ''))
+    setDrawdownConfigs(drawdownConfigsToInput(payload.drawdownConfigs))
+    setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
+    setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
+    setInterestMode(payload.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
+    setAnnualSpread(percentLikeToInput(payload.annualSpread, '1.5'))
+    setAnnualSpreadTouched(false)
+    setFixedAnnualRate(percentLikeToInput(payload.fixedAnnualRate, '5'))
+    if (payload.portfolio) setPortfolio(configToBlockState(payload.portfolio, configToBlockInputLabel(payload.portfolio, 0)))
   }
 
   async function handleImport() {
@@ -205,18 +230,32 @@ export default function MarketTimingPage() {
         setConfigError('Invalid config')
         return
       }
-      setFromDate(String(payload.fromDate ?? ''))
-      setToDate(String(payload.toDate ?? ''))
-      setDrawdownConfigs(drawdownConfigsToInput(payload.drawdownConfigs))
-      setReferenceSource(payload.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
-      setReferenceTicker(String(payload.referenceTicker ?? 'VT'))
-      setInterestMode(payload.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
-      setAnnualSpread(percentLikeToInput(payload.annualSpread, '1.5'))
-      setAnnualSpreadTouched(false)
-      setFixedAnnualRate(percentLikeToInput(payload.fixedAnnualRate, '5'))
-      setPortfolio(configToBlockState(payload.portfolio, configToBlockInputLabel(payload.portfolio, 0)))
+      const preview = await buildImportDependencyPreview(payload as Record<string, unknown>)
+      if (hasImportDependencyPreview(preview)) {
+        setPendingImport({ config: payload, preview })
+        setImportDependencyError('')
+        return
+      }
+      applyImportedConfig(payload)
     } catch (e: unknown) {
       setConfigError(errorMessage(e, 'Invalid config code'))
+    }
+  }
+
+  async function confirmPendingImport() {
+    if (!pendingImport || importDependencyApplying) return
+    setImportDependencyApplying(true)
+    setImportDependencyError('')
+    try {
+      await applyImportDependencyPreview(pendingImport.preview)
+      refreshSaved()
+      applyImportedConfig(pendingImport.config)
+      setPendingImport(null)
+      setConfigError('')
+    } catch (e: unknown) {
+      setImportDependencyError(errorMessage(e, 'Unable to apply import dependencies'))
+    } finally {
+      setImportDependencyApplying(false)
     }
   }
 
@@ -383,6 +422,15 @@ export default function MarketTimingPage() {
           csvUrl={US_CAPE_CSV_URL}
           chartData={usCapeChartData}
           summary={usCapeSummary}
+        />
+      )}
+      {pendingImport && (
+        <ImportDependenciesDialog
+          preview={pendingImport.preview}
+          applying={importDependencyApplying}
+          error={importDependencyError}
+          onCancel={() => setPendingImport(null)}
+          onConfirm={confirmPendingImport}
         />
       )}
     </div>
