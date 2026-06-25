@@ -342,6 +342,131 @@ class YahooHistoricalFetcherTest {
     }
 
     @Test
+    fun parseAdjustedCloseResponse_repairsSplitLikeAdjustedCloseBreak() {
+        val dec30 = LocalDate.of(2013, 12, 30).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val dec31 = LocalDate.of(2013, 12, 31).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jan2 = LocalDate.of(2014, 1, 2).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jan3 = LocalDate.of(2014, 1, 3).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "timestamp": [$dec30, $dec31, $jan2, $jan3],
+                  "indicators": {
+                    "quote": [{
+                      "close": [58.0, 60.0, 15.0, 15.3]
+                    }],
+                    "adjclose": [{
+                      "adjclose": [29.0, 30.0, 7.5, 7.65]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "0050.TW",
+            startDate = LocalDate.of(2013, 12, 30),
+            endDate = LocalDate.of(2014, 1, 3),
+            body = body
+        )
+
+        assertEquals(
+            mapOf(
+                LocalDate.of(2013, 12, 30) to 7.25,
+                LocalDate.of(2013, 12, 31) to 7.5,
+                LocalDate.of(2014, 1, 2) to 7.5,
+                LocalDate.of(2014, 1, 3) to 7.65
+            ),
+            result.prices
+        )
+        assertEquals(
+            "Yahoo adjusted-close data for 0050.TW contained split-like break on 2014-01-02; " +
+                    "repaired earlier prices by multiplier 0.25 (detected split factor 4.0).",
+            result.warnings.single()
+        )
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_doesNotRepairLargeNonSplitMove() {
+        val day1 = LocalDate.of(2024, 1, 2).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val day2 = LocalDate.of(2024, 1, 3).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "timestamp": [$day1, $day2],
+                  "indicators": {
+                    "quote": [{
+                      "close": [100.0, 70.0]
+                    }],
+                    "adjclose": [{
+                      "adjclose": [98.0, 68.0]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "TEST",
+            startDate = LocalDate.of(2024, 1, 2),
+            endDate = LocalDate.of(2024, 1, 3),
+            body = body
+        )
+
+        assertTrue(result.warnings.isEmpty(), "Expected no warnings, got ${result.warnings}")
+        assertEquals(
+            mapOf(
+                LocalDate.of(2024, 1, 2) to 98.0,
+                LocalDate.of(2024, 1, 3) to 68.0
+            ),
+            result.prices
+        )
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_doesNotRepairFactorTwoBreak() {
+        val day1 = LocalDate.of(2024, 1, 2).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val day2 = LocalDate.of(2024, 1, 3).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "timestamp": [$day1, $day2],
+                  "indicators": {
+                    "quote": [{
+                      "close": [100.0, 50.0]
+                    }],
+                    "adjclose": [{
+                      "adjclose": [80.0, 40.0]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "TEST",
+            startDate = LocalDate.of(2024, 1, 2),
+            endDate = LocalDate.of(2024, 1, 3),
+            body = body
+        )
+
+        assertTrue(result.warnings.isEmpty(), "Expected no warnings, got ${result.warnings}")
+        assertEquals(
+            mapOf(
+                LocalDate.of(2024, 1, 2) to 80.0,
+                LocalDate.of(2024, 1, 3) to 40.0
+            ),
+            result.prices
+        )
+    }
+
+    @Test
     fun liveYahooDiagnostic_currentRangeIncludesLatestAvailableYahooDate() {
         if (System.getProperty("liveYahoo") != "true" && System.getenv("LIVE_YAHOO") != "true") return
 

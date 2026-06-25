@@ -29,6 +29,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.concurrent.*
+import kotlin.math.abs
 
 class YahooHistoricalDataException(message: String) : IllegalStateException(message)
 
@@ -42,6 +43,8 @@ data class YahooAdjustedCloseResult(
 object YahooHistoricalFetcher {
     private val logger = LoggerFactory.getLogger(YahooHistoricalFetcher::class.java)
     private val loggedNullAdjustedCloseWarnings = ConcurrentHashMap.newKeySet<String>()
+    private val loggedSplitRepairWarnings = ConcurrentHashMap.newKeySet<String>()
+    private val commonSplitFactors = listOf(3.0, 4.0, 5.0, 10.0)
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -117,13 +120,19 @@ object YahooHistoricalFetcher {
         val result = response.chart.result?.firstOrNull()
             ?: error("No result in Yahoo response for $ticker")
         val timestamps = result.timestamp ?: error("No timestamps for $ticker")
-        val adjCloseList = result.indicators?.adjClose?.firstOrNull()?.adjClose
+        val indicators = result.indicators ?: error("No indicators for $ticker")
+        val adjCloseList = indicators.adjClose?.firstOrNull()?.adjClose
             ?: error("No adjclose data for $ticker")
+        val closeList = indicators.quote?.firstOrNull()?.close
 
         val marketDate = result.meta?.currentTradingDate()
         val rows = timestamps.indices.mapNotNull { i ->
             val date = Instant.ofEpochSecond(timestamps[i]).atZone(ZoneOffset.UTC).toLocalDate()
-            if (date <= endDate) YahooPriceRow(date, adjCloseList.getOrNull(i)) else null
+            if (date <= endDate) YahooPriceRow(
+                date = date,
+                price = adjCloseList.getOrNull(i),
+                close = closeList?.getOrNull(i)
+            ) else null
         }
         val nullRows = rows.filter { it.price == null }
         val currentTradingNullDate = marketDate
@@ -224,6 +233,8 @@ object YahooHistoricalFetcher {
             prices[marketDate] = marketPrice
         }
 
+        warnings += repairSplitLikeAdjustedCloseBreaks(ticker, prices, rows)
+
         return YahooAdjustedCloseResult(prices, warnings)
     }
 
@@ -307,7 +318,71 @@ object YahooHistoricalFetcher {
         return message
     }
 
-    private data class YahooPriceRow(val date: LocalDate, val price: Double?)
+    private fun repairSplitLikeAdjustedCloseBreaks(
+        ticker: String,
+        prices: MutableMap<LocalDate, Double>,
+        rows: List<YahooPriceRow>
+    ): List<String> {
+        val pricedRows = rows
+            .filter { row ->
+                row.price?.takeIf { it > 0.0 } != null &&
+                        row.close?.takeIf { it > 0.0 } != null &&
+                        prices.containsKey(row.date)
+            }
+            .sortedBy { it.date }
+        if (pricedRows.size < 2) return emptyList()
+
+        val warnings = mutableListOf<String>()
+        for (i in 1 until pricedRows.size) {
+            val prev = pricedRows[i - 1]
+            val cur = pricedRows[i]
+            val prevClose = prev.close ?: continue
+            val curClose = cur.close ?: continue
+            val prevAdj = prices[prev.date] ?: continue
+            val curAdj = prices[cur.date] ?: continue
+            val rawRatio = curClose / prevClose
+            val adjRatio = curAdj / prevAdj
+            val splitFactor = matchingSplitFactor(rawRatio, adjRatio, prevAdj / prevClose, curAdj / curClose)
+                ?: continue
+            val historicalMultiplier = if (rawRatio < 1.0) 1.0 / splitFactor else splitFactor
+
+            val datesToRepair = prices.keys.filter { it < cur.date }
+            for (date in datesToRepair) {
+                prices[date] = (prices[date] ?: continue) * historicalMultiplier
+            }
+
+            val message = "Yahoo adjusted-close data for $ticker contained split-like break on ${cur.date}; " +
+                    "repaired earlier prices by multiplier $historicalMultiplier (detected split factor $splitFactor)."
+            if (loggedSplitRepairWarnings.add("$ticker|${cur.date}|$splitFactor")) {
+                logger.warn(message)
+            }
+            warnings += message
+        }
+        return warnings
+    }
+
+    private fun matchingSplitFactor(
+        rawRatio: Double,
+        adjRatio: Double,
+        prevAdjToClose: Double,
+        curAdjToClose: Double
+    ): Double? {
+        if (rawRatio <= 0.0 || adjRatio <= 0.0 || prevAdjToClose <= 0.0 || curAdjToClose <= 0.0) return null
+        val rawJump = if (rawRatio >= 1.0) rawRatio else 1.0 / rawRatio
+        val adjJump = if (adjRatio >= 1.0) adjRatio else 1.0 / adjRatio
+        if (rawJump < 1.2 || abs(rawJump - adjJump) / rawJump > 0.025) return null
+        if (abs(prevAdjToClose - curAdjToClose) / prevAdjToClose > 0.025) return null
+
+        return commonSplitFactors.firstOrNull { factor ->
+            abs(rawJump - factor) / factor <= 0.025
+        }
+    }
+
+    private data class YahooPriceRow(
+        val date: LocalDate,
+        val price: Double?,
+        val close: Double?
+    )
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
