@@ -2,6 +2,8 @@ package com.portfoliohelper.service
 
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
+import com.portfoliohelper.service.db.CashTable
+import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.StockTickersTable
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -19,7 +21,7 @@ class ManagedPortfolioTest {
         try {
             Database.connect("jdbc:sqlite:${dbFile.absolutePath}", driver = "org.sqlite.JDBC")
             val portfolios = transaction {
-                SchemaUtils.create(PortfoliosTable, PositionsTable, StockTickersTable)
+                SchemaUtils.create(PortfoliosTable, PositionsTable, StockTickersTable, CashTable, PortfolioBackupsTable)
                 val firstId = PortfoliosTable.insert {
                     it[slug] = "first"
                     it[name] = "First"
@@ -85,6 +87,41 @@ class ManagedPortfolioTest {
             assertEquals("1 Equity", ticker[StockTickersTable.groups])
             assertEquals(15.0, position[PositionsTable.amount])
             assertEquals(60.0, position[PositionsTable.targetWeight])
+        }
+    }
+
+    @Test
+    fun `restoring db backup keeps missing current ticker with zero amount`() = withDb { first, _ ->
+        transaction {
+            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")))
+        }
+        BackupService.saveToDb(first, force = true)
+        val backupId = BackupService.listDbBackups(first).single().id
+
+        transaction {
+            first.replacePositions(
+                listOf(
+                    BackupStock("SSO", 20.0, 45.0, "2 SPY", "1 Equity"),
+                    BackupStock("UPRO", 3.0, 55.0, "3 SPY", "1 Equity"),
+                )
+            )
+        }
+
+        BackupService.restoreFromDb(first, backupId)
+
+        transaction {
+            val restored = PositionsTable.selectAll()
+                .where { PositionsTable.portfolioId eq first.serialId }
+                .associateBy { it[PositionsTable.symbol] }
+            assertEquals(10.0, restored.getValue("SSO")[PositionsTable.amount])
+            assertEquals(0.0, restored.getValue("UPRO")[PositionsTable.amount])
+            assertEquals(55.0, restored.getValue("UPRO")[PositionsTable.targetWeight])
+
+            val uproTicker = StockTickersTable.selectAll()
+                .where { StockTickersTable.symbol eq "UPRO" }
+                .single()
+            assertEquals("3 SPY", uproTicker[StockTickersTable.letf])
+            assertEquals("1 Equity", uproTicker[StockTickersTable.groups])
         }
     }
 }

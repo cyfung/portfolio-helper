@@ -25,6 +25,18 @@ function parseCashKey(key: string, value: string): CashData | null {
   }
   return { label, currency, amount: parseFloat(value) || 0, marginFlag }
 }
+
+function stockKey(symbol: string): string {
+  return symbol.trim().toUpperCase()
+}
+
+function appendMissingStocksWithZeroQty(imported: StockData[], current: StockData[]): StockData[] {
+  const importedSymbols = new Set(imported.map(s => stockKey(s.label)).filter(Boolean))
+  const missing = current
+    .filter(s => !importedSymbols.has(stockKey(s.label)))
+    .map(s => ({ ...s, originalAmount: 0 }))
+  return [...imported, ...missing]
+}
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioTabs from './PortfolioTabs'
 import SummaryTable from './SummaryTable'
@@ -112,13 +124,15 @@ export default function PortfolioViewer() {
       if (snap.error) throw new Error(snap.error)
 
       // Stage TWS positions for edit mode without changing display quantities.
-      const updatedStocks: StockData[] = store.stocks.map(s => {
-        const pos = (snap.positions as Array<{ symbol: string; qty: number }>)
-          .find(p => p.symbol === s.label)
-        return pos ? { ...s, originalAmount: pos.qty } : s
-      })
-      for (const pos of snap.positions as Array<{ symbol: string; qty: number }>) {
-        if (!updatedStocks.find(s => s.label === pos.symbol)) {
+      const positions = snap.positions as Array<{ symbol: string; qty: number }>
+      const qtyBySymbol = new Map(positions.map(p => [stockKey(p.symbol), p.qty]))
+      const updatedStocks: StockData[] = store.stocks.map(s => ({
+        ...s,
+        originalAmount: qtyBySymbol.get(stockKey(s.label)) ?? 0,
+      }))
+      const existingSymbols = new Set(store.stocks.map(s => stockKey(s.label)))
+      for (const pos of positions) {
+        if (!existingSymbols.has(stockKey(pos.symbol))) {
           updatedStocks.push({ label: pos.symbol, amount: pos.qty, originalAmount: pos.qty, targetWeight: 0, letf: '', groups: '' })
         }
       }
@@ -153,7 +167,7 @@ export default function PortfolioViewer() {
     let importedStocks: StockData[] | null = null
     let importedCash: CashData[] | null = null
     if (json.stocks) {
-      importedStocks = (json.stocks as Array<any>).map(s => ({
+      const parsedStocks = (json.stocks as Array<any>).map(s => ({
         label: s.symbol ?? s.label ?? '',
         amount: s.amount ?? 0,
         originalAmount: s.amount ?? 0,
@@ -161,6 +175,7 @@ export default function PortfolioViewer() {
         letf: s.letf ?? '',
         groups: s.groups ?? '',
       }))
+      importedStocks = appendMissingStocksWithZeroQty(parsedStocks, store.stocks)
     }
     if (json.cash) {
       importedCash = (json.cash as Array<{ key: string; value: string }>)

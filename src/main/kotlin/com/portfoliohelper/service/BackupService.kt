@@ -188,9 +188,11 @@ object BackupService {
             ?: throw IllegalArgumentException("Backup $backupId not found for portfolio '${portfolio.slug}'")
 
         val root = appJson.decodeFromString<BackupRoot>(json)
+        val currentStocks = root(portfolio, resolveUsd = false).stocks
+        val restoredStocks = appendMissingCurrentStocksWithZeroQty(root.stocks, currentStocks)
         val cashEntries = root.cash.map { c -> CashEntry(c.label, c.currency, c.marginFlag, c.amount, c.portfolioRef) }
         transaction {
-            portfolio.replacePositions(root.stocks)
+            portfolio.replacePositions(restoredStocks)
             portfolio.replaceCash(cashEntries)
         }
         logger.info("Restored '${portfolio.slug}' from DB backup $backupId")
@@ -326,6 +328,17 @@ object BackupService {
     private fun sha256(input: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         return digest.digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun appendMissingCurrentStocksWithZeroQty(
+        restoredStocks: List<BackupStock>,
+        currentStocks: List<BackupStock>
+    ): List<BackupStock> {
+        val restoredSymbols = restoredStocks.map { it.symbol.trim().uppercase() }.toSet()
+        val missingCurrentStocks = currentStocks
+            .filter { it.symbol.trim().uppercase() !in restoredSymbols }
+            .map { it.copy(amount = 0.0) }
+        return restoredStocks + missingCurrentStocks
     }
 
     private fun parseJsonImport(bytes: ByteArray): ImportResult {
