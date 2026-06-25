@@ -24,6 +24,7 @@ export interface SavedStrategyExport {
 export interface SavedTickerMappingExport {
   id: string
   name: string
+  prependOnly: boolean
   mappings: {
     id: string
     from: string
@@ -60,6 +61,7 @@ export interface ImportDependencyPreview {
   savedTickerMappings: {
     originalName: string
     name: string
+    prependOnly: boolean
     mappings: TickerMappingSet['mappings']
     action: ImportDependencyAction
     enabled?: boolean
@@ -104,8 +106,11 @@ function sameJsonContent(a: unknown, b: unknown) {
   return stableStringify(a) === stableStringify(b)
 }
 
-function mappingContent(set: Pick<TickerMappingSet, 'mappings'>) {
-  return set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to }))
+function mappingContent(set: Pick<TickerMappingSet, 'mappings'> & Partial<Pick<TickerMappingSet, 'prependOnly'>>) {
+  return {
+    prependOnly: 'prependOnly' in set ? set.prependOnly !== false : true,
+    mappings: set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to })),
+  }
 }
 
 function cloneJson<T>(value: T): T {
@@ -417,6 +422,7 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
       .map(set => ({
         originalName: set.name,
         name: set.name,
+        prependOnly: set.prependOnly,
         mappings: set.mappings,
         action: currentMappingByName.has(set.name.trim().toLowerCase()) ? 'replace' as const : 'add' as const,
       }))
@@ -532,6 +538,7 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
     saveTickerMappingSettings(mergeSavedTickerMappings(currentSettings, enabledSavedTickerMappings.map(set => ({
       id: '',
       name: set.name.trim(),
+      prependOnly: set.prependOnly,
       mappings: set.mappings,
     }))))
     notifyTickerMappingsChanged()

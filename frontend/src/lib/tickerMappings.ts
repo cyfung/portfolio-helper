@@ -7,6 +7,7 @@ export interface TickerMapping {
 export interface TickerMappingSet {
   id: string
   name: string
+  prependOnly: boolean
   mappings: TickerMapping[]
 }
 
@@ -24,8 +25,8 @@ export interface WeightedTicker {
 const STORAGE_KEY = 'ticker-mapping-settings'
 export const TICKER_MAPPINGS_CHANGED_EVENT = 'ticker-mappings-changed'
 const ACTIVE_MAPPING_SET_DEFAULTS: TickerMappingSet[] = [
-  { id: 'set-1', name: 'Mapping Set 1', mappings: [] },
-  { id: 'set-2', name: 'Mapping Set 2', mappings: [] },
+  { id: 'set-1', name: 'Mapping Set 1', prependOnly: true, mappings: [] },
+  { id: 'set-2', name: 'Mapping Set 2', prependOnly: true, mappings: [] },
 ]
 
 export const DEFAULT_TICKER_MAPPING_SETTINGS: TickerMappingSettings = {
@@ -69,9 +70,14 @@ function normalizeSet(
   const mappings = Array.isArray(raw.mappings)
     ? raw.mappings.map(normalizeMapping).filter((m): m is TickerMapping => !!m)
     : []
+  const prependOnly = typeof raw.prependOnly === 'boolean'
+    ? raw.prependOnly
+    : fallback?.prependOnly ?? true
+
   return {
     id,
     name: String(raw.name || fallback?.name || `Mapping Set ${idx + 1}`).trim() || fallback?.name || `Mapping Set ${idx + 1}`,
+    prependOnly,
     mappings,
   }
 }
@@ -162,6 +168,10 @@ function tokenizeDefinition(raw: string) {
   return raw.trim().replace(/,/g, ' ').split(/\s+/).filter(Boolean)
 }
 
+function splitTickerChain(raw: string) {
+  return raw.trim().split(/\s*>\s*/).map(segment => segment.trim()).filter(Boolean)
+}
+
 function formatMultiplier(value: number) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10000000000) / 10000000000)
 }
@@ -232,12 +242,27 @@ function applySingleTickerMapping(ticker: string, mapping: TickerMapping) {
   return output.join(' ')
 }
 
+function normalizeMappedTickerSegment(ticker: string) {
+  return applySingleTickerMapping(ticker, { id: '', from: '__NO_TICKER_MAPPING__', to: '' })
+}
+
 export function mapTickerExpression(ticker: string, mappingSet: TickerMappingSet | null | undefined) {
   const mappings = usableTickerMappings(mappingSet?.mappings ?? [])
   if (mappings.length === 0) return ticker.trim().toUpperCase()
 
   return mappings.reduce(
-    (current, mapping) => applySingleTickerMapping(current, mapping),
+    (current, mapping) => {
+      if (!mappingSet?.prependOnly) return applySingleTickerMapping(current, mapping)
+
+      const chain = splitTickerChain(current)
+      if (chain.length === 0) return ''
+
+      const lastSegment = chain[chain.length - 1]
+      const mappedLastSegment = applySingleTickerMapping(lastSegment, mapping)
+      if (mappedLastSegment === normalizeMappedTickerSegment(lastSegment)) return current.trim()
+
+      return `${chain.join(' > ')} > ${mappedLastSegment}`
+    },
     ticker.trim(),
   )
 }

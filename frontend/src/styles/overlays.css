@@ -304,7 +304,7 @@
 
 .ticker-mapping-set-heading {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 0.5rem;
     align-items: center;
 }
@@ -322,6 +322,21 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+}
+
+.ticker-mapping-set-prepend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.ticker-config-dialog .ticker-mapping-set-prepend input {
+    width: auto;
+    height: auto;
+    margin: 0;
 }
 
 .ticker-mapping-order-note {
@@ -526,6 +541,14 @@
 
     .ticker-mapping-row {
         grid-template-columns: auto auto 1fr auto;
+    }
+
+    .ticker-mapping-set-heading {
+        grid-template-columns: 1fr auto;
+    }
+
+    .ticker-mapping-set-prepend {
+        grid-column: 1 / -1;
     }
 
     .ticker-mapping-add-row input:nth-of-type(2),

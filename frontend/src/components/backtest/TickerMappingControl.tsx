@@ -41,6 +41,15 @@ function cloneMappings(mappings: TickerMapping[]) {
   return mappings.map(mapping => ({ ...mapping, id: newMappingId() }))
 }
 
+function cloneMappingSet(set: TickerMappingSet) {
+  return {
+    ...set,
+    id: newMappingSetId(),
+    prependOnly: set.prependOnly,
+    mappings: cloneMappings(set.mappings),
+  }
+}
+
 type MappingDropPosition = 'before' | 'after'
 
 export default function TickerMappingControl({ idPrefix, value, onChange, onExportCode, onToast }: Props) {
@@ -184,11 +193,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     }
 
     const existing = draft.savedSets.find(saved => saved.name.trim().toLowerCase() === name.toLowerCase())
-    const savedSet = {
-      id: existing?.id ?? newMappingSetId(),
-      name,
-      mappings: cloneMappings(mappings),
-    }
+    const savedSet = { ...cloneMappingSet({ ...set, name, mappings }), id: existing?.id ?? newMappingSetId() }
     updateDraft({
       ...draft,
       savedSets: [
@@ -214,7 +219,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     updateDraft({
       ...draft,
       sets: draft.sets.map(set => set.id === targetSetId
-        ? { ...set, name: saved.name, mappings: cloneMappings(saved.mappings) }
+        ? { ...set, name: saved.name, prependOnly: saved.prependOnly, mappings: cloneMappings(saved.mappings) }
         : set
       ),
     })
@@ -343,6 +348,14 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                           value={set.name}
                           onChange={e => updateSet(set.id, { name: e.target.value })}
                         />
+                      </label>
+                      <label className="ticker-mapping-set-prepend">
+                        <input
+                          type="checkbox"
+                          checked={set.prependOnly}
+                          onChange={e => updateSet(set.id, { prependOnly: e.target.checked })}
+                        />
+                        <span>Prepend only</span>
                       </label>
                       <div className="ticker-mapping-set-actions">
                         <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id)}>+ Add Mapping</button>
