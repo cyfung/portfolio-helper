@@ -341,11 +341,11 @@ export default function StockTable() {
 
                 {/* EST */}
                 <td
-                  className={`col-market-data price${estPrice !== null && !isAfterHours ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`}
+                  className={`col-market-data price${estPrice !== null ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`}
                   id={`est-val-${sym}`}
                   data-est-val={estPrice ?? undefined}
                 >
-                  {estPrice !== null && !isAfterHours ? formatCurrency(estPrice) : '—'}
+                  {estPrice !== null ? formatCurrency(estPrice) : '—'}
                 </td>
 
                 {/* Last (close) */}

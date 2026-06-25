@@ -2,7 +2,9 @@ package com.portfoliohelper.service
 
 import com.portfoliohelper.model.Stock
 import com.portfoliohelper.service.nav.NavService
+import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import com.portfoliohelper.service.yahoo.YahooMarketDataService
+import com.portfoliohelper.service.yahoo.YahooQuote
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -11,7 +13,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
+import java.util.concurrent.ConcurrentHashMap
 
 @Serializable
 data class StockDisplay(
@@ -51,6 +55,10 @@ class StockDisplayService(
 ) {
     private val _updates = MutableSharedFlow<StockDisplaySnapshot>(replay = 1, extraBufferCapacity = 8)
     val updates: SharedFlow<StockDisplaySnapshot> = _updates.asSharedFlow()
+    private val letfEstPriceCalculator = LetfEstPriceCalculator(
+        quoteProvider = YahooMarketDataService::getQuote,
+        historicalPriceProvider = YahooHistoricalFetcher::fetchAdjustedClose
+    )
 
     fun initialize(scope: CoroutineScope) {
         scope.launch { YahooMarketDataService.batchComplete.collect { computeAndEmit() } }
@@ -106,11 +114,10 @@ class StockDisplayService(
             val dayChangePct = if (dayChangeNative != null && closePrice != null && closePrice != 0.0)
                 dayChangeNative / closePrice * 100.0 else null
 
-            val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)
+            val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)?.toString()
             val sessionStarted = quote?.tradingPeriodStart?.let { nowMs / 1000 >= it } ?: false
-            val estPriceNative = if (!sessionStarted) null else computeLetfEstVal(
-                stock.letfComponents, quote, navData?.nav,
-                qty, fxRate
+            val estPriceNative = letfEstPriceCalculator.compute(
+                stock.letfComponents, quote, navData?.nav, navData?.asOfDate
             )
 
             StockWork(
@@ -187,30 +194,98 @@ class StockDisplayService(
         return YahooMarketDataService.getQuote("${currency}USD=X")?.regularMarketPrice
     }
 
-    private fun computeLetfEstVal(
+    private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): LocalDate? {
+        if (tradingPeriodEndSec == null || gmtoffset == null) return null
+        return Instant.ofEpochSecond(tradingPeriodEndSec + gmtoffset)
+            .atOffset(ZoneOffset.UTC).toLocalDate()
+    }
+}
+
+internal class LetfEstPriceCalculator(
+    private val quoteProvider: (String) -> YahooQuote?,
+    private val historicalPriceProvider: (String, LocalDate, LocalDate) -> Map<LocalDate, Double>
+) {
+    private val historicalSeriesCache = ConcurrentHashMap<HistoricalSeriesKey, HistoricalSeries>()
+
+    fun compute(
         components: List<Pair<Double, String>>?,
-        quote: com.portfoliohelper.service.yahoo.YahooQuote?,
+        quote: YahooQuote?,
         nav: Double?,
-        @Suppress("UNUSED_PARAMETER") qty: Double,
-        @Suppress("UNUSED_PARAMETER") fxRateToUsd: Double?
+        navDate: LocalDate?
     ): Double? {
         if (components.isNullOrEmpty()) return null
-        val closePrice = quote?.previousClose ?: return null
+        quote ?: return null
+        val stockDate = quote.tradingDate()
+
+        if (nav != null && navDate != null && stockDate != null) {
+            when {
+                navDate == stockDate -> return nav
+                navDate < stockDate && isPreviousTradingDate(quote.symbol, stockDate, navDate) ->
+                    return computeFromReferenceCloses(components, nav) { sym ->
+                        quoteProvider(sym)?.previousClose
+                    }
+                navDate < stockDate ->
+                    return computeFromReferenceCloses(components, nav) { sym ->
+                        historicalAdjustedClose(sym, navDate)
+                    }
+            }
+        }
+
+        val closePrice = quote.previousClose ?: return null
         val basePrice = nav ?: closePrice
+        return computeFromReferenceCloses(components, basePrice) { sym ->
+            quoteProvider(sym)?.previousClose
+        }
+    }
+
+    private fun computeFromReferenceCloses(
+        components: List<Pair<Double, String>>,
+        basePrice: Double,
+        referenceClose: (String) -> Double?
+    ): Double? {
         var sumComponent = 0.0
         for ((mult, sym) in components) {
-            val compQuote = YahooMarketDataService.getQuote(sym) ?: return null
+            val compQuote = quoteProvider(sym) ?: return null
             val compMark = compQuote.regularMarketPrice ?: return null
-            val compClose = compQuote.previousClose ?: return null
+            val compClose = referenceClose(sym) ?: return null
             if (compClose == 0.0) return null
             sumComponent += mult * (compMark - compClose) / compClose
         }
-        return (1.0 + sumComponent) * basePrice  // per-share estimated price in native currency
+        return (1.0 + sumComponent) * basePrice
     }
 
-    private fun computeLocalDate(tradingPeriodEndSec: Long?, gmtoffset: Int?): String? {
-        if (tradingPeriodEndSec == null || gmtoffset == null) return null
-        return Instant.ofEpochSecond(tradingPeriodEndSec + gmtoffset)
-            .atOffset(ZoneOffset.UTC).toLocalDate().toString()
+    private fun isPreviousTradingDate(symbol: String, stockDate: LocalDate, candidateDate: LocalDate): Boolean {
+        val endDate = stockDate.minusDays(1)
+        if (candidateDate > endDate) return false
+        val previousTradingDate = historicalPrices(symbol, candidateDate, endDate)
+            .keys
+            .filter { it < stockDate }
+            .maxOrNull()
+        return previousTradingDate == candidateDate
     }
+
+    private fun historicalAdjustedClose(symbol: String, date: LocalDate): Double? =
+        historicalPrices(symbol, date, date)[date]
+
+    private fun historicalPrices(symbol: String, startDate: LocalDate, endDate: LocalDate): Map<LocalDate, Double> {
+        if (endDate < startDate) return emptyMap()
+        val key = HistoricalSeriesKey(symbol, startDate, endDate)
+        return historicalSeriesCache.computeIfAbsent(key) {
+            HistoricalSeries(runCatching { historicalPriceProvider(symbol, startDate, endDate) }.getOrDefault(emptyMap()))
+        }.prices
+    }
+
+    private fun YahooQuote.tradingDate(): LocalDate? {
+        if (tradingPeriodEnd == null || gmtoffset == null) return null
+        return Instant.ofEpochSecond(tradingPeriodEnd + gmtoffset)
+            .atOffset(ZoneOffset.UTC).toLocalDate()
+    }
+
+    private data class HistoricalSeriesKey(
+        val symbol: String,
+        val startDate: LocalDate,
+        val endDate: LocalDate
+    )
+
+    private data class HistoricalSeries(val prices: Map<LocalDate, Double>)
 }
