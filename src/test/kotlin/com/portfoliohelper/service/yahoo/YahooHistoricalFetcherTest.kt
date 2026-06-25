@@ -236,9 +236,7 @@ class YahooHistoricalFetcherTest {
         )
 
         assertEquals(
-            "Yahoo adjusted-close data for VXUS contains unsupported null rows " +
-                    "for range 2026-06-10..2026-06-16 (currentTradingDate=2026-06-16); " +
-                    "invalid null rows: 2026-06-11;",
+            "Yahoo adjusted-close data for VXUS contains unsupported null rows; invalid null rows: 2026-06-11;",
             result.warnings.single()
         )
         assertEquals(
@@ -299,9 +297,7 @@ class YahooHistoricalFetcherTest {
         )
 
         assertEquals(
-            "Yahoo adjusted-close data for AVGS.L contains unsupported null rows " +
-                    "for range 2025-10-23..2026-06-17 (currentTradingDate=2026-06-17); " +
-                    "invalid null rows: 2025-10-24;",
+            "Yahoo adjusted-close data for AVGS.L contains unsupported null rows; invalid null rows: 2025-10-24;",
             result.warnings.single()
         )
         assertEquals(28.71, result.prices[LocalDate.of(2026, 6, 16)])

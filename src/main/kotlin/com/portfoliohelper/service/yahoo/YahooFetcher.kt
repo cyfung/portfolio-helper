@@ -41,6 +41,7 @@ data class YahooAdjustedCloseResult(
 
 object YahooHistoricalFetcher {
     private val logger = LoggerFactory.getLogger(YahooHistoricalFetcher::class.java)
+    private val loggedNullAdjustedCloseWarnings = ConcurrentHashMap.newKeySet<String>()
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -297,10 +298,12 @@ object YahooHistoricalFetcher {
         marketDate: LocalDate?,
         reason: String
     ): String {
-        val message = "Yahoo adjusted-close data for $ticker contains unsupported null rows " +
-                "for range $startDate..$endDate (currentTradingDate=$marketDate); " +
-                "$reason;"
-        logger.error(message)
+        val message = "Yahoo adjusted-close data for $ticker contains unsupported null rows; $reason;"
+        if (loggedNullAdjustedCloseWarnings.add("$ticker|$reason")) {
+            logger.error(
+                "$message first seen for range $startDate..$endDate (currentTradingDate=$marketDate)"
+            )
+        }
         return message
     }
 

@@ -28,6 +28,8 @@ object BacktestService {
     const val DATE_RANGE_ERROR_MESSAGE = "From date must be on or before to date."
     private val tickerDir get() = AppDirs.dataDir.resolve(".ticker").toFile()
     private val tickerCacheMaxAge = 15.minutes
+    private val yahooNullRowsWarningRangePattern =
+        Regex("""^(Yahoo adjusted-close data for .+ contains unsupported null rows) for range [^;]+; (.+);$""")
 
     fun validateDateRange(fromDate: LocalDate?, toDate: LocalDate) {
         if (fromDate != null && fromDate > toDate) {
@@ -188,6 +190,7 @@ object BacktestService {
                     request.startingBalance,
                     globalDates = globalDates,
                     zeroMarginInterest = request.zeroMarginInterest,
+                    warningCollector = warningCollector,
                 )
             )
             PortfolioResult(pConfig.label, curves)
@@ -785,7 +788,7 @@ object BacktestService {
         if (warnings.isEmpty()) return
         tickerDir.mkdirs()
         val merged = (readTickerWarnings(upperTicker) + warnings)
-            .map { it.trim() }
+            .map { canonicalizeTickerWarning(it) }
             .filter { it.isNotEmpty() }
             .distinct()
         tickerWarningsFile(upperTicker).bufferedWriter().use { out ->
@@ -800,11 +803,22 @@ object BacktestService {
         val file = tickerWarningsFile(upperTicker)
         if (!file.exists()) return emptyList()
         return runCatching {
-            file.readLines().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            file.readLines()
+                .map { canonicalizeTickerWarning(it) }
+                .filter { it.isNotEmpty() }
+                .distinct()
         }.getOrElse { e ->
             logger.warn("Failed to read warning file for $upperTicker: ${e.message}")
             emptyList()
         }
+    }
+
+    internal fun canonicalizeTickerWarning(warning: String): String {
+        val trimmed = warning.trim()
+        val withoutRange = yahooNullRowsWarningRangePattern.replace(trimmed) {
+            "${it.groupValues[1]}; ${it.groupValues[2]};"
+        }
+        return withoutRange.replace("invalid weekday null rows:", "invalid null rows:")
     }
 
     private fun tickerWarningsFile(upperTicker: String): File =

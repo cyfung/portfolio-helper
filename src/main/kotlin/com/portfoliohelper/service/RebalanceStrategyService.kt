@@ -116,6 +116,11 @@ object RebalanceStrategyService {
     val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =
         request.strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+    val warnings = linkedSetOf<String>()
+    val warningCollector = { _: String, tickerWarnings: List<String> ->
+      warnings.addAll(tickerWarnings)
+      Unit
+    }
     val context =
         prepareRunContext(
             request.fromDate,
@@ -123,10 +128,12 @@ object RebalanceStrategyService {
             request.portfolio,
             referenceTickers,
             extraTickers = standaloneMarginTickers,
+            warningCollector = warningCollector,
         )
     val baseResult = runBasePortfolio(request)
     val strategyResults = request.strategies.map { runConfiguredStrategy(request, it, context) }
-    return MultiBacktestResult(baseResult.portfolios + strategyResults, baseResult.warnings)
+    warnings.addAll(baseResult.warnings)
+    return MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
   }
 
   fun scoreBatch(request: RebalanceStrategyScoreBatchRequest): List<Double> {
@@ -180,6 +187,7 @@ object RebalanceStrategyService {
       globalDates: List<LocalDate>? = null,
       includeActionDiagnostics: Boolean = false,
       zeroMarginInterest: Boolean = false,
+      warningCollector: ((String, List<String>) -> Unit)? = null,
   ): List<CurveResult> {
     if (strategies.isEmpty()) return emptyList()
     val referenceTickers = strategies.flatMap { it.referenceTickers() }.distinct()
@@ -193,6 +201,7 @@ object RebalanceStrategyService {
             referenceTickers,
             extraTickers = standaloneMarginTickers,
             overrideDates = globalDates,
+            warningCollector = warningCollector,
         )
     return strategies.map { strategy ->
       runStrategy(
@@ -588,6 +597,7 @@ object RebalanceStrategyService {
       referenceTickers: Collection<String> = emptyList(),
       extraTickers: Collection<String> = emptyList(),
       overrideDates: List<LocalDate>? = null,
+      warningCollector: ((String, List<String>) -> Unit)? = null,
   ): RunContext {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
     val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()
@@ -607,7 +617,9 @@ object RebalanceStrategyService {
     }
     val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
     fun cachedLoad(ticker: String, neededFrom: LocalDate) =
-        seriesCache.getOrPut(ticker) { BacktestService.loadNormalizedSeries(ticker, neededFrom) }
+        seriesCache.getOrPut(ticker) {
+          BacktestService.loadNormalizedSeries(ticker, neededFrom, warningCollector)
+        }
 
     val componentNeededFrom = mutableMapOf<String, LocalDate>()
     for ((letfTicker, def) in letfDefs) {
