@@ -50,54 +50,23 @@ object BacktestService {
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
         // Step 1: Collect all unique LETF definitions from all portfolio tickers
-        val letfDefs = mutableMapOf<String, LETFDefinition>()
-        for (pConfig in request.portfolios) {
-            for (tw in pConfig.tickers) {
-                val def = parseLETFDefinition(tw.ticker) ?: continue
-                letfDefs.putIfAbsent(tw.ticker, def)
-            }
-        }
-
-        // Step 2: Load component ticker series for all LETF definitions
-        val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-        fun cachedLoad(ticker: String) =
-            seriesCache.getOrPut(ticker) { loadNormalizedSeries(ticker, neededFrom, warningCollector) }
-
-        val letfComponentTickers = letfDefs.values
-            .flatMap { def -> def.components.map { it.ticker } }
-            .toSet()
-        for (ticker in letfComponentTickers) cachedLoad(ticker)
-
-        // Step 3: Compute preliminary dates from component series (needed to run LETF simulation)
-        val componentSeriesForDates = letfComponentTickers.mapNotNull { seriesCache[it] }
-        val letfDates = if (componentSeriesForDates.isNotEmpty())
-            intersectDates(componentSeriesForDates, fromDate, toDate)
-        else emptyList()
-
-        // Step 4: Compute virtual LETF series. Each LETF string is self-contained (R= default Q,
-        // S= default 1.5%), so the string itself is the cache key — no outer portfolio dependency.
-        if (letfDates.size >= 2) {
-            for ((letfString, def) in letfDefs) {
-                if (letfString !in seriesCache) {
-                    val componentSeriesMap = def.components.associate { comp ->
-                        comp.ticker to (seriesCache[comp.ticker]
-                            ?: error("Component ticker ${comp.ticker} was not loaded"))
-                    }
-                    seriesCache[letfString] = computeLetfSeries(
-                        def, componentSeriesMap, letfDates, effrxSeries, def.rebalanceStrategy
-                    )
-                }
-            }
-        }
-
-        // Step 5: Load real (non-LETF) ticker series
-        val realTickers = request.portfolios
+        val requestedTickers = request.portfolios
             .flatMap { it.tickers }
             .map { it.ticker }
-            .filter { parseLETFDefinition(it) == null }
-            .toSet()
-        for (ticker in realTickers) cachedLoad(ticker)
+            .distinct()
+        val seriesCache = resolveTickerSeries(
+            requestedTickers,
+            neededFromForTicker = { neededFrom },
+            toDate = toDate,
+            effrx = effrxSeries,
+            warningCollector = warningCollector,
+        )
 
+        // Step 2: Load component ticker series for all LETF definitions
+        // Step 3: Compute preliminary dates from component series (needed to run LETF simulation)
+        // Step 4: Compute virtual LETF series. Each LETF string is self-contained (R= default Q,
+        // S= default 1.5%), so the string itself is the cache key — no outer portfolio dependency.
+        // Step 5: Load real (non-LETF) ticker series
         // Step 6: Build allSeriesMaps and compute global date intersection.
         val allSeriesMaps = request.portfolios.map { pConfig ->
             pConfig.tickers.associate { tw ->
@@ -217,43 +186,12 @@ object BacktestService {
         }
 
         val allTickers = (portfolio.tickers.map { it.ticker } + listOfNotNull(referenceTicker)).distinct()
-        val letfDefs = mutableMapOf<String, LETFDefinition>()
-        for (ticker in allTickers) {
-            val def = parseLETFDefinition(ticker) ?: continue
-            letfDefs.putIfAbsent(ticker, def)
-        }
-
-        val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-        fun cachedLoad(ticker: String) =
-            seriesCache.getOrPut(ticker) { loadNormalizedSeries(ticker, neededFrom) }
-
-        val letfComponentTickers = letfDefs.values
-            .flatMap { def -> def.components.map { it.ticker } }
-            .toSet()
-        for (ticker in letfComponentTickers) cachedLoad(ticker)
-
-        val componentSeriesForDates = letfComponentTickers.mapNotNull { seriesCache[it] }
-        val letfDates = if (componentSeriesForDates.isNotEmpty())
-            intersectDates(componentSeriesForDates, null, toDate)
-        else emptyList()
-
-        if (letfDates.size >= 2) {
-            for ((letfString, def) in letfDefs) {
-                if (letfString !in seriesCache) {
-                    val componentSeriesMap = def.components.associate { comp ->
-                        comp.ticker to (seriesCache[comp.ticker]
-                            ?: error("Component ticker ${comp.ticker} was not loaded"))
-                    }
-                    seriesCache[letfString] = computeLetfSeries(
-                        def, componentSeriesMap, letfDates, effrxSeries, def.rebalanceStrategy
-                    )
-                }
-            }
-        }
-
-        allTickers
-            .filter { parseLETFDefinition(it) == null }
-            .forEach { cachedLoad(it) }
+        val seriesCache = resolveTickerSeries(
+            allTickers,
+            neededFromForTicker = { neededFrom },
+            toDate = toDate,
+            effrx = effrxSeries,
+        )
 
         val portfolioSeriesMap = portfolio.tickers.associate { tw ->
             tw.ticker to (seriesCache[tw.ticker] ?: error("Series for '${tw.ticker}' not found in cache"))
@@ -963,7 +901,117 @@ object BacktestService {
      * E=<pct>, and V=<relative volatility pct>.
      * R values: D=Daily, W=Weekly, M=Monthly, Q=Quarterly, Y=Yearly (default: null = inherit from outer portfolio).
      */
+    internal fun parseTickerChain(ticker: String): List<String>? {
+        if (!ticker.contains('>')) return null
+        val parts = ticker.split(">").map { it.trim() }
+        require(parts.all { it.isNotEmpty() }) { "Ticker chain contains an empty segment: $ticker" }
+        require(parts.size >= 2) { "Ticker chain must contain at least two segments: $ticker" }
+        return parts.map(::normalizeTickerExpression)
+    }
+
+    internal fun resolveTickerSeries(
+        tickers: Collection<String>,
+        neededFromForTicker: (String) -> LocalDate,
+        toDate: LocalDate,
+        effrx: Map<LocalDate, Double>,
+        warningCollector: ((String, List<String>) -> Unit)? = null
+    ): Map<String, Map<LocalDate, Double>> {
+        fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
+        val requiredNeededFrom = mutableMapOf<String, LocalDate>()
+        val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
+
+        fun collectDependencies(ticker: String, neededFrom: LocalDate) {
+            val key = normalizeTickerExpression(ticker)
+            requiredNeededFrom.merge(key, neededFrom, ::earlierDate)
+
+            val chainParts = parseTickerChain(key)
+            if (chainParts != null) {
+                chainParts.forEach { collectDependencies(it, neededFrom) }
+                return
+            }
+
+            val def = parseLETFDefinition(key) ?: return
+            def.components.forEach { collectDependencies(it.ticker, neededFrom) }
+        }
+
+        fun resolve(ticker: String): Map<LocalDate, Double> {
+            val key = normalizeTickerExpression(ticker)
+            seriesCache[key]?.let { return it }
+
+            val series = parseTickerChain(key)?.let { chainParts ->
+                val segmentSeries = chainParts.map { part -> part to resolve(part) }
+                computeTickerChainSeries(segmentSeries)
+            } ?: parseLETFDefinition(key)?.let { def ->
+                val componentSeriesMap = def.components.associate { comp -> comp.ticker to resolve(comp.ticker) }
+                val neededFrom = requiredNeededFrom[key]
+                    ?: error("No required start date recorded for synthetic ticker '$key'")
+                val dates = intersectDates(componentSeriesMap.values.toList(), neededFrom, toDate)
+                if (dates.size < 2) {
+                    throw IllegalStateException("Not enough overlapping trading dates for LETF '$key'")
+                }
+                computeLetfSeries(def, componentSeriesMap, dates, effrx, def.rebalanceStrategy)
+            } ?: loadNormalizedSeries(
+                key,
+                requiredNeededFrom[key] ?: neededFromForTicker(key),
+                warningCollector,
+            )
+
+            seriesCache[key] = series
+            return series
+        }
+
+        tickers.forEach { ticker ->
+            collectDependencies(ticker, neededFromForTicker(ticker))
+        }
+
+        return tickers.associateWith { ticker -> resolve(ticker) }
+    }
+
+    internal fun computeTickerChainSeries(
+        segments: List<Pair<String, Map<LocalDate, Double>>>
+    ): Map<LocalDate, Double> {
+        require(segments.size >= 2) { "Ticker chain must contain at least two segments" }
+        return segments
+            .dropLast(1)
+            .asReversed()
+            .fold(segments.last().second) { base, (_, overwrite) ->
+                spliceTickerSeries(base, overwrite)
+            }
+    }
+
+    internal fun spliceTickerSeries(
+        base: Map<LocalDate, Double>,
+        overwrite: Map<LocalDate, Double>
+    ): Map<LocalDate, Double> {
+        if (base.isEmpty()) return overwrite.toSortedMap()
+        if (overwrite.isEmpty()) return base.toSortedMap()
+
+        val overwriteDates = overwrite.keys.sorted()
+        val connectionDate = overwriteDates.first()
+        val anchorDate = base.keys.filter { it <= connectionDate }.maxOrNull()
+            ?: return overwrite.toSortedMap()
+        val anchorValue = base[anchorDate]
+            ?: return overwrite.toSortedMap()
+        val connectionValue = overwrite[connectionDate]
+            ?: return overwrite.toSortedMap()
+        require(anchorValue != 0.0) {
+            "Cannot scale ticker chain at $connectionDate because the base value at $anchorDate is zero"
+        }
+
+        val scale = connectionValue / anchorValue
+        val result = TreeMap<LocalDate, Double>()
+        base.keys.sorted()
+            .filter { it < connectionDate }
+            .forEach { date -> result[date] = base.getValue(date) * scale }
+        overwriteDates.forEach { date -> result[date] = overwrite.getValue(date) }
+        return result
+    }
+
+    private fun normalizeTickerExpression(ticker: String): String =
+        ticker.trim().replace(Regex("\\s+"), " ").uppercase()
+
     internal fun parseLETFDefinition(ticker: String): LETFDefinition? {
+        if (parseTickerChain(ticker) != null) return null
         if (!ticker.contains(' ')) return null
         val tokens = ticker.trim().split(Regex("\\s+"))
         val components = mutableListOf<LETFComponent>()

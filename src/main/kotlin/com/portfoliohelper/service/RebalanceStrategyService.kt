@@ -610,57 +610,13 @@ object RebalanceStrategyService {
     val referenceTickerSet = referenceTickers.toSet()
     fun neededFromForTicker(ticker: String) =
         if (ticker in referenceTickerSet) historyFrom else portfolioNeededFrom
-    fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
-    val letfDefs = mutableMapOf<String, LETFDefinition>()
-    for (ticker in requestedTickers) {
-      BacktestService.parseLETFDefinition(ticker)?.let { letfDefs.putIfAbsent(ticker, it) }
-    }
-    val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-    fun cachedLoad(ticker: String, neededFrom: LocalDate) =
-        seriesCache.getOrPut(ticker) {
-          BacktestService.loadNormalizedSeries(ticker, neededFrom, warningCollector)
-        }
-
-    val componentNeededFrom = mutableMapOf<String, LocalDate>()
-    for ((letfTicker, def) in letfDefs) {
-      val parentNeededFrom = neededFromForTicker(letfTicker)
-      for (comp in def.components) {
-        componentNeededFrom.merge(comp.ticker, parentNeededFrom, ::earlierDate)
-      }
-    }
-    for ((ticker, neededFrom) in componentNeededFrom) {
-      cachedLoad(ticker, neededFrom)
-    }
-
-    val letfComponentSeries =
-        letfDefs.values.flatMap { it.components }.mapNotNull { seriesCache[it.ticker] }
-    val letfDates =
-        if (letfComponentSeries.isNotEmpty())
-            BacktestService.intersectDates(letfComponentSeries, null, toDate)
-        else emptyList()
-    if (letfDates.size >= 2) {
-      for ((letfString, def) in letfDefs) {
-        if (letfString !in seriesCache) {
-          val componentSeries = def.components.associate { it.ticker to seriesCache[it.ticker]!! }
-          seriesCache[letfString] =
-              BacktestService.computeLetfSeries(
-                  def,
-                  componentSeries,
-                  letfDates,
-                  effrx,
-                  def.rebalanceStrategy,
-              )
-        }
-      }
-    }
-    for (ticker in requestedTickers) {
-      if (BacktestService.parseLETFDefinition(ticker) == null) {
-        // Reference tickers need pre-fromDate history for drawdown and peak/trough triggers.
-        // Portfolio-only tickers do not; loading only from fromDate keeps synthetic tests and
-        // short local datasets from falling through to Yahoo for irrelevant older data.
-        cachedLoad(ticker, neededFromForTicker(ticker))
-      }
-    }
+    val seriesCache = BacktestService.resolveTickerSeries(
+        requestedTickers,
+        neededFromForTicker = { ticker -> neededFromForTicker(ticker) },
+        toDate = toDate,
+        effrx = effrx,
+        warningCollector = warningCollector,
+    )
 
     val rawSeriesMap: Map<String, Map<LocalDate, Double>> =
         requestedTickers.associateWith { ticker ->

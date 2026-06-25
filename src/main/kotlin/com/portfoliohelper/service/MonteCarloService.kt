@@ -23,53 +23,21 @@ object MonteCarloService {
         val effrxSeries = BacktestService.loadEffrxSeries()
 
         // ── Step 1: Parse LETF definitions ───────────────────────────────────
-        val letfDefs = mutableMapOf<String, LETFDefinition>()
-        for (pConfig in request.portfolios) {
-            for (tw in pConfig.tickers) {
-                val def = BacktestService.parseLETFDefinition(tw.ticker) ?: continue
-                letfDefs.putIfAbsent(tw.ticker, def)
-            }
-        }
-
-        // ── Step 2: Load component ticker series ──────────────────────────────
-        val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
-        fun cachedLoad(ticker: String) =
-            seriesCache.getOrPut(ticker) { BacktestService.loadNormalizedSeries(ticker, neededFrom) }
-
-        val letfComponentTickers = letfDefs.values
-            .flatMap { def -> def.components.map { it.ticker } }
-            .toSet()
-        for (ticker in letfComponentTickers) cachedLoad(ticker)
-
-        // ── Step 3: Compute preliminary dates for LETF simulation ─────────────
-        val componentSeriesForDates = letfComponentTickers.mapNotNull { seriesCache[it] }
-        val letfDates = if (componentSeriesForDates.isNotEmpty())
-            BacktestService.intersectDates(componentSeriesForDates, fromDate, toDate)
-        else emptyList()
-
-        // ── Step 4: Compute virtual LETF series ───────────────────────────────
-        if (letfDates.size >= 2) {
-            for ((letfString, def) in letfDefs) {
-                if (letfString !in seriesCache) {
-                    val componentSeriesMap = def.components.associate { comp ->
-                        comp.ticker to (seriesCache[comp.ticker]
-                            ?: error("Component ticker ${comp.ticker} was not loaded"))
-                    }
-                    seriesCache[letfString] = BacktestService.computeLetfSeries(
-                        def, componentSeriesMap, letfDates, effrxSeries, def.rebalanceStrategy
-                    )
-                }
-            }
-        }
-
-        // ── Step 5: Load real (non-LETF) ticker series ────────────────────────
-        val realTickers = request.portfolios
+        val requestedTickers = request.portfolios
             .flatMap { it.tickers }
             .map { it.ticker }
-            .filter { BacktestService.parseLETFDefinition(it) == null }
-            .toSet()
-        for (ticker in realTickers) cachedLoad(ticker)
+            .distinct()
+        val seriesCache = BacktestService.resolveTickerSeries(
+            requestedTickers,
+            neededFromForTicker = { neededFrom },
+            toDate = toDate,
+            effrx = effrxSeries,
+        )
 
+        // ── Step 2: Load component ticker series ──────────────────────────────
+        // ── Step 3: Compute preliminary dates for LETF simulation ─────────────
+        // ── Step 4: Compute virtual LETF series ───────────────────────────────
+        // ── Step 5: Load real (non-LETF) ticker series ────────────────────────
         // ── Step 6: Build pool date list ──────────────────────────────────────
         val allSeriesMaps = request.portfolios.map { pConfig ->
             pConfig.tickers.associate { tw ->

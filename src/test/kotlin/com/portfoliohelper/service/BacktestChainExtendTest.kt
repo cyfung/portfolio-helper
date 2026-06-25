@@ -4,10 +4,69 @@ import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
 class BacktestChainExtendTest {
+    @Test
+    fun parseTickerChainKeepsLetfSegmentAsBaseTicker() {
+        val chain = BacktestService.parseTickerChain("CTAP > 1 CTA 1 SPY E=1.5")
+
+        assertEquals(listOf("CTAP", "1 CTA 1 SPY E=1.5"), chain)
+        assertNull(BacktestService.parseLETFDefinition("CTAP > 1 CTA 1 SPY E=1.5"))
+    }
+
+    @Test
+    fun spliceTickerSeriesScalesBaseHistoryToOverwriteConnectionDate() {
+        val jan1 = LocalDate.of(2026, 1, 1)
+        val jan2 = LocalDate.of(2026, 1, 2)
+        val jan3 = LocalDate.of(2026, 1, 3)
+        val jan4 = LocalDate.of(2026, 1, 4)
+
+        val base = mapOf(
+            jan1 to 100.0,
+            jan2 to 110.0,
+            jan3 to 121.0,
+            jan4 to 133.1,
+        )
+        val overwrite = mapOf(
+            jan3 to 50.0,
+            jan4 to 55.0,
+        )
+
+        val spliced = BacktestService.spliceTickerSeries(base, overwrite)
+
+        assertClose(100.0 * (50.0 / 121.0), spliced[jan1])
+        assertClose(110.0 * (50.0 / 121.0), spliced[jan2])
+        assertEquals(50.0, spliced[jan3])
+        assertEquals(55.0, spliced[jan4])
+    }
+
+    @Test
+    fun computeTickerChainSeriesAppliesMultipleOverwritesFromRightToLeft() {
+        val jan1 = LocalDate.of(2026, 1, 1)
+        val jan2 = LocalDate.of(2026, 1, 2)
+        val jan3 = LocalDate.of(2026, 1, 3)
+        val jan4 = LocalDate.of(2026, 1, 4)
+        val jan5 = LocalDate.of(2026, 1, 5)
+
+        val d = mapOf(jan1 to 100.0, jan2 to 200.0)
+        val c = mapOf(jan2 to 50.0, jan3 to 75.0)
+        val b = mapOf(jan3 to 30.0, jan4 to 33.0)
+        val a = mapOf(jan4 to 100.0, jan5 to 110.0)
+
+        val chained = BacktestService.computeTickerChainSeries(
+            listOf("A" to a, "B" to b, "C" to c, "D" to d)
+        )
+
+        assertClose(100.0 * (50.0 / 200.0) * (30.0 / 75.0) * (100.0 / 33.0), chained[jan1])
+        assertClose(50.0 * (30.0 / 75.0) * (100.0 / 33.0), chained[jan2])
+        assertClose(30.0 * (100.0 / 33.0), chained[jan3])
+        assertEquals(100.0, chained[jan4])
+        assertEquals(110.0, chained[jan5])
+    }
+
     @Test
     fun chainExtendFromAnchorPreservesHistoryThroughAnchorAndRebuildsCachedTail() {
         val mar1 = LocalDate.of(2026, 3, 1)
