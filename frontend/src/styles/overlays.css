@@ -550,10 +550,12 @@
 }
 
 .import-dependencies-body li {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
     gap: 0.75rem;
     padding: 0.45rem 0.55rem;
+    padding-left: calc(0.55rem + (var(--dependency-depth, 0) * 1.25rem));
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
 }
@@ -565,6 +567,59 @@
 .import-dependencies-body li strong {
     color: var(--color-text-primary);
     font-weight: var(--font-weight-medium);
+}
+
+.import-dependency-row.disabled,
+.import-dependency-disabled-row {
+    opacity: 0.48;
+}
+
+.import-dependency-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.import-dependency-name-cell {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(10rem, 1fr);
+    gap: 0.18rem;
+}
+
+.import-dependency-name-cell input {
+    min-width: 0;
+    font-size: var(--font-size-sm);
+}
+
+.import-dependency-name-cell span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.import-dependency-status {
+    min-width: 5.5rem;
+    text-align: right;
+}
+
+.import-dependency-status.add {
+    color: var(--color-positive);
+}
+
+.import-dependency-status.replace {
+    color: var(--color-warning);
+}
+
+.import-dependency-status.disabled {
+    color: var(--color-text-tertiary);
+}
+
+.import-dependency-status.error {
+    color: var(--color-negative);
 }
 
 .import-dependencies-table-wrap {
@@ -581,4 +636,16 @@
 .import-dependencies-table th,
 .import-dependencies-table td {
     white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .import-dependencies-body li {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .import-dependency-status {
+        grid-column: 2;
+        min-width: 0;
+        text-align: left;
+    }
 }

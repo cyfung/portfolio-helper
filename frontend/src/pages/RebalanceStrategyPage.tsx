@@ -108,10 +108,11 @@ export default function RebalanceStrategyPage() {
       {page.pendingImport && (
         <ImportDependenciesDialog
           preview={page.pendingImport.preview}
+          config={page.pendingImport.config as Record<string, unknown>}
           applying={page.importDependencyApplying}
           error={page.importDependencyError}
           onCancel={() => page.setPendingImport(null)}
-          onConfirm={page.confirmPendingImport}
+          onConfirm={(preview, config) => page.confirmPendingImport(preview, config)}
         />
       )}
     </div>

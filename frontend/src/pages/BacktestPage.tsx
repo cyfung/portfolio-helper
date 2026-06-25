@@ -823,14 +823,16 @@ export default function BacktestPage() {
     }
   }
 
-  async function confirmPendingImport() {
+  async function confirmPendingImport(previewArg?: ImportDependencyPreview, configArg?: StoredBacktestConfig) {
     if (!pendingImport || importDependencyApplying) return
+    const preview = previewArg ?? pendingImport.preview
+    const config = configArg ?? pendingImport.config
     setImportDependencyApplying(true)
     setImportDependencyError('')
     try {
-      await applyImportDependencyPreview(pendingImport.preview)
+      await applyImportDependencyPreview(preview)
       refreshSaved()
-      applyImportedConfig(pendingImport.config)
+      applyImportedConfig(config)
       showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')
@@ -1496,10 +1498,11 @@ export default function BacktestPage() {
       {pendingImport && (
         <ImportDependenciesDialog
           preview={pendingImport.preview}
+          config={pendingImport.config as Record<string, unknown>}
           applying={importDependencyApplying}
           error={importDependencyError}
           onCancel={() => setPendingImport(null)}
-          onConfirm={confirmPendingImport}
+          onConfirm={(preview, config) => confirmPendingImport(preview, config as StoredBacktestConfig)}
         />
       )}
     </div>

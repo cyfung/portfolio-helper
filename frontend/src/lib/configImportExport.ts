@@ -31,27 +31,44 @@ export interface SavedTickerMappingExport {
   }[]
 }
 
+export type ImportDependencyAction = 'add' | 'replace'
+
 export interface ImportDependencyPreview {
   savedPortfolios: {
+    originalName: string
     name: string
     config: any
-    action: 'add' | 'replace'
+    action: ImportDependencyAction
+    childNames: string[]
+    parentNames: string[]
+    referencedByImport: boolean
+    enabled?: boolean
   }[]
   tickerConfigs: {
     symbol: string
     current: TickerConfigExport
     next: TickerConfigExport
+    enabled?: boolean
   }[]
   savedStrategies: {
+    originalName: string
     name: string
     config: any
-    action: 'add' | 'replace'
+    action: ImportDependencyAction
+    enabled?: boolean
   }[]
   savedTickerMappings: {
+    originalName: string
     name: string
     mappings: TickerMappingSet['mappings']
-    action: 'add' | 'replace'
+    action: ImportDependencyAction
+    enabled?: boolean
   }[]
+  currentNames: {
+    savedPortfolios: string[]
+    savedStrategies: string[]
+    savedTickerMappings: string[]
+  }
 }
 
 type ConfigPayload = Record<string, unknown>
@@ -89,6 +106,11 @@ function sameJsonContent(a: unknown, b: unknown) {
 
 function mappingContent(set: Pick<TickerMappingSet, 'mappings'>) {
   return set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to }))
+}
+
+function cloneJson<T>(value: T): T {
+  if (value == null) return value
+  return JSON.parse(JSON.stringify(value))
 }
 
 function normalizeTickerConfig(config: Partial<TickerConfigExport> & { symbol?: unknown }): TickerConfigExport | null {
@@ -173,6 +195,36 @@ function collectPortfolioRefNames(configs: any[], savedPortfolios: SavedPortfoli
 
   configs.forEach(config => visitConfig(config, []))
   return names
+}
+
+function collectDirectPortfolioRefNames(configs: any[]) {
+  const names = new Set<string>()
+  configs.forEach(config => {
+    for (const row of config?.tickers ?? []) {
+      if (!isPortfolioRef(row)) continue
+      const name = refName(row)
+      if (name) names.add(name)
+    }
+  })
+  return names
+}
+
+function extractPayloadPortfolioConfigs(payload: ConfigPayload) {
+  const configs: any[] = []
+  if (Array.isArray(payload.portfolios)) configs.push(...payload.portfolios)
+  if (payload.portfolio && typeof payload.portfolio === 'object') configs.push(payload.portfolio)
+  if (payload.portfolioState && typeof payload.portfolioState === 'object') configs.push(payload.portfolioState)
+  return configs
+}
+
+function collectPortfolioChildNames(config: any, importedNames: Set<string>) {
+  const names = new Set<string>()
+  for (const row of config?.tickers ?? []) {
+    if (!isPortfolioRef(row)) continue
+    const name = refName(row)
+    if (name && importedNames.has(name)) names.add(name)
+  }
+  return [...names].sort((a, b) => a.localeCompare(b))
 }
 
 function collectDirectStockSymbols(config: any, symbols: Set<string>) {
@@ -315,6 +367,20 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
   const currentStrategyNames = new Set(currentSavedStrategies.map(strategy => strategy.name))
   const currentTickerBySymbol = new Map(currentTickerConfigs.map(config => [config.symbol, config]))
   const currentPortfolioByName = new Map(currentSavedPortfolios.map(portfolio => [portfolio.name, savedPortfolioConfig(portfolio.config)]))
+  const importedPortfolioNames = new Set(importedSavedPortfolios.map(portfolio => portfolio.name))
+  const rootPortfolioRefNames = collectDirectPortfolioRefNames(extractPayloadPortfolioConfigs(payload))
+  const portfolioChildrenByName = new Map(
+    importedSavedPortfolios.map(portfolio => [
+      portfolio.name,
+      collectPortfolioChildNames(savedPortfolioConfig(portfolio.config), importedPortfolioNames),
+    ]),
+  )
+  const portfolioParentsByName = new Map<string, string[]>()
+  portfolioChildrenByName.forEach((children, parentName) => {
+    children.forEach(childName => {
+      portfolioParentsByName.set(childName, [...(portfolioParentsByName.get(childName) ?? []), parentName])
+    })
+  })
   const currentMappingByName = new Map(
     normalizeTickerMappingSets(loadTickerMappingSettings().savedSets)
       .map(set => [set.name.trim().toLowerCase(), set]),
@@ -325,9 +391,13 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
       .map(portfolio => {
         const config = savedPortfolioConfig(portfolio.config)
         return {
+          originalName: portfolio.name,
           name: portfolio.name,
           config,
           action: currentPortfolioNames.has(portfolio.name) ? 'replace' as const : 'add' as const,
+          childNames: portfolioChildrenByName.get(portfolio.name) ?? [],
+          parentNames: (portfolioParentsByName.get(portfolio.name) ?? []).sort((a, b) => a.localeCompare(b)),
+          referencedByImport: rootPortfolioRefNames.has(portfolio.name),
         }
       })
       .filter(portfolio => (
@@ -338,12 +408,14 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
       .map(config => ({ symbol: config.symbol, current: currentTickerBySymbol.get(config.symbol) ?? { symbol: config.symbol, letf: '', groups: '' }, next: config }))
       .filter(row => !tickerConfigEquals(row.current, row.next)),
     savedStrategies: importedSavedStrategies.map(strategy => ({
+      originalName: strategy.name,
       name: strategy.name,
       config: strategy.config,
       action: currentStrategyNames.has(strategy.name) ? 'replace' : 'add',
     })),
     savedTickerMappings: importedSavedTickerMappings
       .map(set => ({
+        originalName: set.name,
         name: set.name,
         mappings: set.mappings,
         action: currentMappingByName.has(set.name.trim().toLowerCase()) ? 'replace' as const : 'add' as const,
@@ -353,6 +425,11 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
         const current = currentMappingByName.get(set.name.trim().toLowerCase())
         return !current || !sameJsonContent(mappingContent(current), mappingContent(set))
       }),
+    currentNames: {
+      savedPortfolios: [...currentPortfolioNames].sort((a, b) => a.localeCompare(b)),
+      savedStrategies: [...currentStrategyNames].sort((a, b) => a.localeCompare(b)),
+      savedTickerMappings: [...currentMappingByName.values()].map(set => set.name).sort((a, b) => a.localeCompare(b)),
+    },
   }
 }
 
@@ -375,12 +452,64 @@ async function replaceSavedJsonConfig(apiPath: string, name: string, config: any
   if (!res.ok) throw new Error(`Failed to save ${name}`)
 }
 
+export function renamePortfolioRefsInConfig<T>(config: T, renameMap: Map<string, string>): T {
+  if (renameMap.size === 0 || config == null) return config
+
+  function visit(value: any): any {
+    if (Array.isArray(value)) return value.map(visit)
+    if (!value || typeof value !== 'object') return value
+
+    const next: Record<string, unknown> = {}
+    Object.entries(value).forEach(([key, item]) => {
+      next[key] = visit(item)
+    })
+
+    if (isPortfolioRef(value)) {
+      const currentName = refName(value)
+      const nextName = renameMap.get(currentName)
+      if (nextName) {
+        if ('portfolioRef' in value || value.isPortfolioRef === true || value.type === 'PORTFOLIO_REF') next.portfolioRef = nextName
+        if ('ticker' in value || value.isPortfolioRef === true || value.type === 'PORTFOLIO_REF') next.ticker = nextName
+      }
+    }
+
+    return next
+  }
+
+  return visit(config)
+}
+
+export function rewriteImportConfigPortfolioRefs<T extends ConfigPayload>(
+  config: T,
+  preview: ImportDependencyPreview,
+): T {
+  const renameMap = new Map(
+    preview.savedPortfolios
+      .filter(portfolio => portfolio.enabled !== false)
+      .map(portfolio => [portfolio.originalName, portfolio.name.trim()] as const)
+      .filter(([from, to]) => !!to && from !== to),
+  )
+  return renamePortfolioRefsInConfig(cloneJson(config), renameMap)
+}
+
 export async function applyImportDependencyPreview(preview: ImportDependencyPreview) {
-  await Promise.all(preview.savedPortfolios.map(portfolio =>
-    replaceSavedJsonConfig('/api/backtest/savedPortfolios', portfolio.name, portfolio.config),
+  const enabledSavedPortfolios = preview.savedPortfolios
+    .filter(portfolio => portfolio.enabled !== false && portfolio.name.trim())
+  const portfolioRenameMap = new Map(
+    enabledSavedPortfolios
+      .map(portfolio => [portfolio.originalName, portfolio.name.trim()] as const)
+      .filter(([from, to]) => from !== to),
+  )
+
+  await Promise.all(enabledSavedPortfolios.map(portfolio =>
+    replaceSavedJsonConfig(
+      '/api/backtest/savedPortfolios',
+      portfolio.name.trim(),
+      renamePortfolioRefsInConfig(portfolio.config, portfolioRenameMap),
+    ),
   ))
 
-  await Promise.all(preview.tickerConfigs.map(async row => {
+  await Promise.all(preview.tickerConfigs.filter(row => row.enabled !== false).map(async row => {
     const res = await fetch(`/api/ticker-config?symbol=${encodeURIComponent(row.next.symbol)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -389,21 +518,26 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
     if (!res.ok) throw new Error(`Failed to save ticker config for ${row.next.symbol}`)
   }))
 
-  await Promise.all(preview.savedStrategies.map(strategy =>
-    replaceSavedJsonConfig('/api/rebalance-strategy/savedStrategies', strategy.name, strategy.config),
+  await Promise.all(preview.savedStrategies
+    .filter(strategy => strategy.enabled !== false && strategy.name.trim())
+    .map(strategy =>
+      replaceSavedJsonConfig('/api/rebalance-strategy/savedStrategies', strategy.name.trim(), strategy.config),
   ))
 
-  if (preview.savedTickerMappings.length > 0) {
+  const enabledSavedTickerMappings = preview.savedTickerMappings
+    .filter(set => set.enabled !== false && set.name.trim())
+
+  if (enabledSavedTickerMappings.length > 0) {
     const currentSettings = loadTickerMappingSettings()
-    saveTickerMappingSettings(mergeSavedTickerMappings(currentSettings, preview.savedTickerMappings.map(set => ({
+    saveTickerMappingSettings(mergeSavedTickerMappings(currentSettings, enabledSavedTickerMappings.map(set => ({
       id: '',
-      name: set.name,
+      name: set.name.trim(),
       mappings: set.mappings,
     }))))
     notifyTickerMappingsChanged()
   }
 
-  if (preview.savedPortfolios.length > 0) {
+  if (enabledSavedPortfolios.length > 0) {
     window.dispatchEvent(new Event(SAVED_PORTFOLIOS_CHANGED_EVENT))
   }
 }

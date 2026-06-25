@@ -330,15 +330,17 @@ export function useRebalanceStrategyPage() {
     }
   }, [applyImportedConfig, importCode, showImportToast])
 
-  const confirmPendingImport = useCallback(async () => {
+  const confirmPendingImport = useCallback(async (previewArg?: ImportDependencyPreview, configArg?: PageConfigLike) => {
     if (!pendingImport || importDependencyApplying) return
+    const preview = previewArg ?? pendingImport.preview
+    const config = configArg ?? pendingImport.config
     setImportDependencyApplying(true)
     setImportDependencyError('')
     try {
-      await applyImportDependencyPreview(pendingImport.preview)
+      await applyImportDependencyPreview(preview)
       savedBarRef.current?.refresh()
       savedStrategiesBarRef.current?.refresh()
-      applyImportedConfig(pendingImport.config)
+      applyImportedConfig(config)
       showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')

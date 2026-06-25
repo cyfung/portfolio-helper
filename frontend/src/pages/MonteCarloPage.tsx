@@ -307,14 +307,16 @@ export default function MonteCarloPage() {
     }
   }
 
-  async function confirmPendingImport() {
+  async function confirmPendingImport(previewArg?: ImportDependencyPreview, configArg?: any) {
     if (!pendingImport || importDependencyApplying) return
+    const preview = previewArg ?? pendingImport.preview
+    const config = configArg ?? pendingImport.config
     setImportDependencyApplying(true)
     setImportDependencyError('')
     try {
-      await applyImportDependencyPreview(pendingImport.preview)
+      await applyImportDependencyPreview(preview)
       refreshSaved()
-      applyImportedConfig(pendingImport.config)
+      applyImportedConfig(config)
       showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')
@@ -593,6 +595,7 @@ export default function MonteCarloPage() {
       {pendingImport && (
         <ImportDependenciesDialog
           preview={pendingImport.preview}
+          config={pendingImport.config as Record<string, unknown>}
           applying={importDependencyApplying}
           error={importDependencyError}
           onCancel={() => setPendingImport(null)}
