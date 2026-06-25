@@ -99,7 +99,8 @@ export default function ImportDependenciesDialog({
 
   function portfolioEffectiveEnabled(originalName: string, stack: string[] = []): boolean {
     const portfolio = savedPortfolioByName.get(originalName)
-    if (!portfolio || portfolio.enabled === false) return false
+    if (!portfolio) return true
+    if (portfolio.enabled === false) return false
     if (stack.includes(originalName)) return true
     return portfolio.parentNames.every(parentName => portfolioEffectiveEnabled(parentName, [...stack, originalName]))
   }
