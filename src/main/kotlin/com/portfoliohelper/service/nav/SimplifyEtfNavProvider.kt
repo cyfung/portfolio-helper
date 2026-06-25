@@ -7,6 +7,7 @@ import io.ktor.client.statement.*
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.slf4j.LoggerFactory
+import java.time.LocalDate
 
 abstract class SimplifyEtfNavProvider : NavProvider {
     abstract val slug: String
@@ -58,7 +59,7 @@ abstract class SimplifyEtfNavProvider : NavProvider {
 
 internal data class SimplifyNavSnapshot(
     val nav: Double,
-    val asOfDate: String?
+    val asOfDate: LocalDate
 )
 
 internal fun parseSimplifyNav(html: String): SimplifyNavSnapshot? {
@@ -80,7 +81,8 @@ private fun parseFundOverviewNav(doc: Document): SimplifyNavSnapshot? {
 }
 
 private fun parseLegacyNav(doc: Document): SimplifyNavSnapshot? {
-    val navHeading = doc.select("h3:matchesOwn((?i)^\\s*NAV\\s*$)").first()
+    val navHeading = doc.select("h3")
+        .firstOrNull { it.text().trim().startsWith("NAV", ignoreCase = true) }
         ?: return null
     val navParagraph = navHeading.nextElementSibling()
         ?: return null
@@ -90,14 +92,19 @@ private fun parseLegacyNav(doc: Document): SimplifyNavSnapshot? {
 
 private fun parseNavSnapshot(labelText: String, valueText: String): SimplifyNavSnapshot? {
     val nav = parseDollarValue(valueText) ?: return null
+    val asOfDate = parseAsOfDate(labelText) ?: parseAsOfDate(valueText) ?: return null
     return SimplifyNavSnapshot(
         nav = nav,
-        asOfDate = Regex("""(?i)\bas\s+of\s+(\d{1,2}/\d{1,2}/\d{4})""")
-            .find(labelText)
-            ?.groupValues
-            ?.get(1)
+        asOfDate = asOfDate
     )
 }
+
+private fun parseAsOfDate(text: String): LocalDate? =
+    Regex("""(?i)\bas\s+of\s+(\d{1,2}/\d{1,2}/\d{4})""")
+        .find(text)
+        ?.groupValues
+        ?.get(1)
+        ?.let(::parseNavDateValue)
 
 private fun parseDollarValue(text: String): Double? {
     return Regex("""\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)""")

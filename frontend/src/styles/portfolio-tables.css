@@ -410,6 +410,19 @@
 .stock-table-block {
     width: max-content;
 }
+.nav-price-value,
+.nav-date {
+    display: block;
+}
+.nav-date {
+    margin-top: 1px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-base), sans-serif;
+    font-size: 10px;
+    font-weight: var(--font-weight-normal);
+    line-height: 1.15;
+    white-space: nowrap;
+}
 .stock-table-freshness {
     display: flex;
     justify-content: flex-end;

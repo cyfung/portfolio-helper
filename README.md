@@ -17,7 +17,7 @@ A self-hosted stock portfolio dashboard with backtesting, Monte Carlo simulation
 - Interactive Brokers TWS integration (optional)
 - System tray icon (Windows/Linux)
 - IBKR margin rate display
-- NAV tracking for select funds (CTA, CTAP, RSIT, RSST)
+- NAV tracking for select funds (CTA, CTAP, RSIT, RSST, DBMF.PA, DBMFE.PA)
 
 ## Tech Stack
 

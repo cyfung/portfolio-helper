@@ -9,7 +9,9 @@ object NavService : PollingService<NavData>("NAV") {
         CtapNavProvider,
         CtaNavProvider,
         RsitNavProvider,
-        RsstNavProvider
+        RsstNavProvider,
+        DbmfNavProvider,
+        DbmfeNavProvider
     ).associateBy { it.symbol }
 
     fun requestNavForSymbols(symbols: List<String>, intervalSeconds: Long? = null) {
@@ -38,9 +40,12 @@ object NavService : PollingService<NavData>("NAV") {
 
     fun getNav(symbol: String): Double? = get(symbol)?.nav
 
+    fun getNavData(symbol: String): NavData? = get(symbol)
+
     override fun shutdown() {
         super.shutdown()
         SimplifyEtfNavProvider.shutdown()
         ReturnStackedEtfNavProvider.shutdown()
+        ImgpFundNavProvider.shutdown()
     }
 }

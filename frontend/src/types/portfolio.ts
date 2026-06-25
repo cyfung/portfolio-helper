@@ -81,6 +81,7 @@ export interface StockDisplayItem {
   tradingPeriodEndMs: number | null
   estPriceNative: number | null
   lastNav: number | null
+  lastNavDate: string | null
 }
 
 export interface StockDisplayEvent {
@@ -180,6 +181,7 @@ export interface StockDisplayState {
   markPrice: number | null
   closePrice: number | null
   lastNav: number | null
+  lastNavDate: string | null
   estPriceNative: number | null
   dayChangeNative: number | null
   dayChangePct: number | null

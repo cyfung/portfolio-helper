@@ -28,6 +28,7 @@ data class StockDisplay(
     val targetWeightPct: Double?,
     val estPriceNative: Double?,     // LETF estimated per-share price (native ccy); null if N/A or stale
     val lastNav: Double?,
+    val lastNavDate: String?,
     val isMarketClosed: Boolean,
     val tradingPeriodEnd: Long?,
     val localDate: String?
@@ -78,6 +79,8 @@ class StockDisplayService(
             val dayChangeNative: Double?,
             val dayChangePct: Double?,
             val estPriceNative: Double?,
+            val lastNav: Double?,
+            val lastNavDate: String?,
             val isMarketClosed: Boolean,
             val tradingPeriodEnd: Long?,
             val localDate: String?,
@@ -88,6 +91,7 @@ class StockDisplayService(
         val work = baseStocks.map { stock ->
             val qty = if (scale != null) Math.round(stock.amount * scale / 100.0).toDouble() else stock.amount
             val quote = YahooMarketDataService.getQuote(stock.label)
+            val navData = NavService.getNavData(stock.label)
             val ccy = quote?.currency ?: "USD"
             val fxRate = getFxRateToUsd(ccy)
             val markPrice = quote?.regularMarketPrice
@@ -105,7 +109,7 @@ class StockDisplayService(
             val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)
             val sessionStarted = quote?.tradingPeriodStart?.let { nowMs / 1000 >= it } ?: false
             val estPriceNative = if (!sessionStarted) null else computeLetfEstVal(
-                stock.letfComponents, quote, NavService.getNav(stock.label),
+                stock.letfComponents, quote, navData?.nav,
                 qty, fxRate
             )
 
@@ -118,6 +122,8 @@ class StockDisplayService(
                 positionChangeUsd = positionChangeUsd,
                 dayChangeNative = dayChangeNative, dayChangePct = dayChangePct,
                 estPriceNative = estPriceNative,
+                lastNav = navData?.nav,
+                lastNavDate = navData?.asOfDate?.toString(),
                 isMarketClosed = quote?.isMarketClosed ?: false,
                 tradingPeriodEnd = quote?.tradingPeriodEnd,
                 localDate = localDate,
@@ -151,7 +157,8 @@ class StockDisplayService(
                 currentWeightPct = currentWeightPct,
                 targetWeightPct = w.targetWeightPct,
                 estPriceNative = w.estPriceNative,
-                lastNav = NavService.getNav(w.symbol),
+                lastNav = w.lastNav,
+                lastNavDate = w.lastNavDate,
                 isMarketClosed = w.isMarketClosed,
                 tradingPeriodEnd = w.tradingPeriodEnd,
                 localDate = w.localDate

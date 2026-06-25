@@ -207,6 +207,7 @@ export default function StockTable() {
             const markPrice = live?.markPrice ?? null
             const closePrice = live?.closePrice ?? null
             const navPrice = live?.lastNav ?? null
+            const navDate = live?.lastNavDate ?? null
             const estPrice = live?.estPriceNative ?? null
             const posVal = live?.positionValueUsd ?? null
             const dayCh = live?.dayChangeNative ?? null
@@ -330,7 +331,12 @@ export default function StockTable() {
 
                 {/* Last NAV */}
                 <td className="col-market-data price muted col-moreinfo" id={`nav-${sym}`}>
-                  {navPrice !== null ? formatCurrency(navPrice) : '—'}
+                  {navPrice !== null ? (
+                    <>
+                      <span className="nav-price-value">{formatCurrency(navPrice)}</span>
+                      {navDate && <span className="nav-date">as of {navDate}</span>}
+                    </>
+                  ) : '—'}
                 </td>
 
                 {/* EST */}
