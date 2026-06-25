@@ -22,6 +22,11 @@ export interface WeightedTicker {
   weight: number
 }
 
+export interface TickerMappingResult<T> {
+  value: T
+  warnings: string[]
+}
+
 const STORAGE_KEY = 'ticker-mapping-settings'
 export const TICKER_MAPPINGS_CHANGED_EVENT = 'ticker-mappings-changed'
 const ACTIVE_MAPPING_SET_DEFAULTS: TickerMappingSet[] = [
@@ -172,6 +177,10 @@ function splitTickerChain(raw: string) {
   return raw.trim().split(/\s*>\s*/).map(segment => segment.trim()).filter(Boolean)
 }
 
+function hasModifierTokens(raw: string) {
+  return tokenizeDefinition(raw).some(isModifierToken)
+}
+
 function formatMultiplier(value: number) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10000000000) / 10000000000)
 }
@@ -205,15 +214,20 @@ function scaleMappedDefinition(target: string, multiplier: number) {
   return output
 }
 
-function applySingleTickerMapping(ticker: string, mapping: TickerMapping) {
-  const rawTicker = ticker.trim()
-  if (!rawTicker) return ''
+function letfModifierReplacementWarning(source: string, mapping: TickerMapping, mapped: string) {
+  return `Ticker mapping warning: replacing ${mapping.from} inside LETF expression. Example: ${source} with ${mapping.from} -> ${mapping.to} becomes ${mapped}. Replacement modifiers apply to the whole generated LETF expression, and duplicated modifiers are resolved by the last modifier.`
+}
 
-  if (rawTicker.toUpperCase() === mapping.from && !rawTicker.includes(' ')) return mapping.to
-  if (!rawTicker.includes(' ')) return rawTicker.toUpperCase()
+function applySingleTickerMappingWithWarnings(ticker: string, mapping: TickerMapping): TickerMappingResult<string> {
+  const rawTicker = ticker.trim()
+  if (!rawTicker) return { value: '', warnings: [] }
+
+  if (rawTicker.toUpperCase() === mapping.from && !rawTicker.includes(' ')) return { value: mapping.to, warnings: [] }
+  if (!rawTicker.includes(' ')) return { value: rawTicker.toUpperCase(), warnings: [] }
 
   const tokens = tokenizeDefinition(rawTicker)
   const output: string[] = []
+  let replacedComponent = false
   for (let i = 0; i < tokens.length;) {
     const token = tokens[i]
     if (isModifierToken(token)) {
@@ -225,21 +239,39 @@ function applySingleTickerMapping(ticker: string, mapping: TickerMapping) {
     const multiplier = parseFloat(token)
     if (Number.isFinite(multiplier) && i + 1 < tokens.length && !isModifierToken(tokens[i + 1])) {
       const componentTicker = tokens[i + 1].toUpperCase()
-      if (componentTicker === mapping.from) output.push(...scaleMappedDefinition(mapping.to, multiplier))
-      else output.push(formatMultiplier(multiplier), componentTicker)
+      if (componentTicker === mapping.from) {
+        output.push(...scaleMappedDefinition(mapping.to, multiplier))
+        replacedComponent = true
+      } else {
+        output.push(formatMultiplier(multiplier), componentTicker)
+      }
       i += 2
       continue
     }
 
     if (!Number.isFinite(multiplier)) {
       const componentTicker = token.toUpperCase()
-      if (componentTicker === mapping.from) output.push(...scaleMappedDefinition(mapping.to, 1))
-      else output.push(componentTicker)
+      if (componentTicker === mapping.from) {
+        output.push(...scaleMappedDefinition(mapping.to, 1))
+        replacedComponent = true
+      } else {
+        output.push(componentTicker)
+      }
     }
     i += 1
   }
 
-  return output.join(' ')
+  const mapped = output.join(' ')
+  return {
+    value: mapped,
+    warnings: replacedComponent && hasModifierTokens(mapping.to)
+      ? [letfModifierReplacementWarning(rawTicker, mapping, mapped)]
+      : [],
+  }
+}
+
+function applySingleTickerMapping(ticker: string, mapping: TickerMapping) {
+  return applySingleTickerMappingWithWarnings(ticker, mapping).value
 }
 
 function normalizeMappedTickerSegment(ticker: string) {
@@ -247,43 +279,79 @@ function normalizeMappedTickerSegment(ticker: string) {
 }
 
 export function mapTickerExpression(ticker: string, mappingSet: TickerMappingSet | null | undefined) {
-  const mappings = usableTickerMappings(mappingSet?.mappings ?? [])
-  if (mappings.length === 0) return ticker.trim().toUpperCase()
+  return mapTickerExpressionWithWarnings(ticker, mappingSet).value
+}
 
-  return mappings.reduce(
+export function mapTickerExpressionWithWarnings(
+  ticker: string,
+  mappingSet: TickerMappingSet | null | undefined,
+): TickerMappingResult<string> {
+  const mappings = usableTickerMappings(mappingSet?.mappings ?? [])
+  if (mappings.length === 0) return { value: ticker.trim().toUpperCase(), warnings: [] }
+
+  const warnings = new Set<string>()
+  const value = mappings.reduce(
     (current, mapping) => {
-      if (!mappingSet?.prependOnly) return applySingleTickerMapping(current, mapping)
+      if (!mappingSet?.prependOnly) {
+        const mapped = applySingleTickerMappingWithWarnings(current, mapping)
+        mapped.warnings.forEach(warning => warnings.add(warning))
+        return mapped.value
+      }
 
       const chain = splitTickerChain(current)
       if (chain.length === 0) return ''
 
       const lastSegment = chain[chain.length - 1]
-      const mappedLastSegment = applySingleTickerMapping(lastSegment, mapping)
+      const mapped = applySingleTickerMappingWithWarnings(lastSegment, mapping)
+      const mappedLastSegment = mapped.value
       if (mappedLastSegment === normalizeMappedTickerSegment(lastSegment)) return current.trim()
 
+      mapped.warnings.forEach(warning => warnings.add(warning))
       return `${chain.join(' > ')} > ${mappedLastSegment}`
     },
     ticker.trim(),
   )
+  return { value, warnings: [...warnings] }
 }
 
 export function applyTickerMappingsToRows(rows: WeightedTicker[], mappingSet: TickerMappingSet | null | undefined) {
-  if (usableTickerMappings(mappingSet?.mappings ?? []).length === 0) return rows
+  return applyTickerMappingsToRowsWithWarnings(rows, mappingSet).value
+}
+
+export function applyTickerMappingsToRowsWithWarnings(
+  rows: WeightedTicker[],
+  mappingSet: TickerMappingSet | null | undefined,
+): TickerMappingResult<WeightedTicker[]> {
+  if (usableTickerMappings(mappingSet?.mappings ?? []).length === 0) return { value: rows, warnings: [] }
   const weights = new Map<string, number>()
+  const warnings = new Set<string>()
   for (const row of rows) {
-    const mappedTicker = mapTickerExpression(row.ticker, mappingSet)
+    const mapped = mapTickerExpressionWithWarnings(row.ticker, mappingSet)
+    const mappedTicker = mapped.value
+    mapped.warnings.forEach(warning => warnings.add(warning))
     if (!mappedTicker || row.weight <= 0) continue
     weights.set(mappedTicker, (weights.get(mappedTicker) ?? 0) + row.weight)
   }
-  return [...weights.entries()]
-    .map(([ticker, weight]) => ({ ticker, weight }))
-    .sort((a, b) => a.ticker.localeCompare(b.ticker))
+  return {
+    value: [...weights.entries()]
+      .map(([ticker, weight]) => ({ ticker, weight }))
+      .sort((a, b) => a.ticker.localeCompare(b.ticker)),
+    warnings: [...warnings],
+  }
 }
 
 export function applyTickerMappingsToPortfolio<T extends { tickers: WeightedTicker[] }>(
   portfolio: T,
   mappingSet: TickerMappingSet | null | undefined,
 ): T {
-  if (!mappingSet?.mappings.length) return portfolio
-  return { ...portfolio, tickers: applyTickerMappingsToRows(portfolio.tickers, mappingSet) }
+  return applyTickerMappingsToPortfolioWithWarnings(portfolio, mappingSet).value
+}
+
+export function applyTickerMappingsToPortfolioWithWarnings<T extends { tickers: WeightedTicker[] }>(
+  portfolio: T,
+  mappingSet: TickerMappingSet | null | undefined,
+): TickerMappingResult<T> {
+  if (!mappingSet?.mappings.length) return { value: portfolio, warnings: [] }
+  const mapped = applyTickerMappingsToRowsWithWarnings(portfolio.tickers, mappingSet)
+  return { value: { ...portfolio, tickers: mapped.value }, warnings: mapped.warnings }
 }

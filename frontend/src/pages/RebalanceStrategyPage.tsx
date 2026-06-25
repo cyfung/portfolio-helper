@@ -95,6 +95,13 @@ export default function RebalanceStrategyPage() {
       </div>
 
       {page.error && <div className="backtest-error">{page.error}</div>}
+      {!!page.results?.warnings?.length && (
+        <div className="backtest-error">
+          {page.results.warnings.map((warning, i) => (
+            <div key={i}>{warning}</div>
+          ))}
+        </div>
+      )}
       {page.results && (
         <RebalanceStrategyResults
           results={page.results}

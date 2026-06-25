@@ -39,7 +39,7 @@ import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { validateDateRange } from '@/lib/dateRange'
 import {
-  applyTickerMappingsToPortfolio,
+  applyTickerMappingsToPortfolioWithWarnings,
   loadTickerMappingSettings,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
   TICKER_MAPPINGS_CHANGED_EVENT,
@@ -153,6 +153,14 @@ function averageMarginUtilization(points: { value: number }[] | undefined) {
 function averageFinite(values: (number | null | undefined)[] | undefined) {
   const finiteValues = values?.filter((value): value is number => Number.isFinite(value)) ?? []
   return finiteValues.length > 0 ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length : null
+}
+
+function addResultWarnings(results: BacktestResults, warnings: string[]) {
+  if (warnings.length === 0) return results
+  return {
+    ...results,
+    warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
+  }
 }
 
 function computeSeriesStats(dates: string[], values: number[]): SeriesStats | null {
@@ -698,11 +706,15 @@ export default function BacktestPage() {
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     const settingsPortfolios = runBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
     let portfolios
+    let mappingWarnings: string[]
     try {
       const latestSavedPortfolios = await fetchSavedPortfolios()
-      portfolios = runBlocks
+      const mappedPortfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
-        .map(p => applyTickerMappingsToPortfolio(p, selectedTickerMappingSet))
+        .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
+      mappingWarnings = mappedPortfolios.flatMap(mapped => mapped.warnings)
+      portfolios = mappedPortfolios
+        .map(mapped => mapped.value)
         .filter(p => p.tickers.length > 0)
     } catch (e: unknown) {
       setError(errorMessage(e) || 'Unable to resolve saved portfolio references.')
@@ -736,7 +748,7 @@ export default function BacktestPage() {
           ? fetch(`/api/performance/chart/${realSlug}${params ? '?' + params : ''}`)
           : Promise.resolve(null),
       ])
-      const data: BacktestResults = await backtestRes.json()
+      const data: BacktestResults = addResultWarnings(await backtestRes.json(), mappingWarnings)
       if (!backtestRes.ok || data.error) { setError(data.error || `Server error ${backtestRes.status}`); return }
 
       let newRealData: RealPortfolioData | null = realSlug ? realData : null
