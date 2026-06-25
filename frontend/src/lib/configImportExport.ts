@@ -1,5 +1,14 @@
 import { SAVED_PORTFOLIOS_CHANGED_EVENT, fetchSavedPortfolios, resolveSavedPortfolioConfig, savedPortfolioConfig, savedPortfolioConfigMap } from '@/lib/portfolioRefs'
 import type { SavedPortfolio } from '@/types/backtest'
+import {
+  exportableSavedTickerMappings,
+  loadTickerMappingSettings,
+  mergeSavedTickerMappings,
+  notifyTickerMappingsChanged,
+  normalizeTickerMappingSets,
+  saveTickerMappingSettings,
+  type TickerMappingSet,
+} from '@/lib/tickerMappings'
 
 export interface TickerConfigExport {
   symbol: string
@@ -10,6 +19,16 @@ export interface TickerConfigExport {
 export interface SavedStrategyExport {
   name: string
   config: any
+}
+
+export interface SavedTickerMappingExport {
+  id: string
+  name: string
+  mappings: {
+    id: string
+    from: string
+    to: string
+  }[]
 }
 
 export interface ImportDependencyPreview {
@@ -26,6 +45,11 @@ export interface ImportDependencyPreview {
   savedStrategies: {
     name: string
     config: any
+    action: 'add' | 'replace'
+  }[]
+  savedTickerMappings: {
+    name: string
+    mappings: TickerMappingSet['mappings']
     action: 'add' | 'replace'
   }[]
 }
@@ -46,6 +70,25 @@ function stockName(row: any) {
 
 function sortedByName<T extends { name: string }>(items: T[]) {
   return [...items].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+function sameJsonContent(a: unknown, b: unknown) {
+  return stableStringify(a) === stableStringify(b)
+}
+
+function mappingContent(set: Pick<TickerMappingSet, 'mappings'>) {
+  return set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to }))
 }
 
 function normalizeTickerConfig(config: Partial<TickerConfigExport> & { symbol?: unknown }): TickerConfigExport | null {
@@ -78,6 +121,12 @@ function normalizeSavedStrategies(value: unknown): SavedStrategyExport[] {
     byName.set(name, { name, config: item.config })
   })
   return sortedByName([...byName.values()])
+}
+
+function normalizeSavedTickerMappingsFromPayload(payload: ConfigPayload) {
+  return normalizeTickerMappingSets(
+    payload.savedTickerMappings ?? payload.savedMappings ?? payload.tickerMappingSets,
+  )
 }
 
 function parseLetfDefinition(raw: string) {
@@ -227,6 +276,13 @@ export async function withPortfolioExportDependencies<T extends ConfigPayload>(
   }
 }
 
+export async function buildSavedTickerMappingsExportPayload(): Promise<{
+  savedTickerMappings: SavedTickerMappingExport[]
+}> {
+  const savedTickerMappings = exportableSavedTickerMappings(loadTickerMappingSettings())
+  return { savedTickerMappings }
+}
+
 export async function fetchSavedStrategies(): Promise<SavedStrategyExport[]> {
   try {
     const res = await fetch('/api/rebalance-strategy/savedStrategies')
@@ -247,6 +303,7 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
     ? payload.tickerConfigs.map(config => normalizeTickerConfig(config as Partial<TickerConfigExport>)).filter((v): v is TickerConfigExport => !!v)
     : []
   const importedSavedStrategies = normalizeSavedStrategies(payload.savedStrategies)
+  const importedSavedTickerMappings = normalizeSavedTickerMappingsFromPayload(payload)
 
   const [currentSavedPortfolios, currentSavedStrategies, currentTickerConfigs] = await Promise.all([
     importedSavedPortfolios.length > 0 ? fetchSavedPortfolios() : Promise.resolve([]),
@@ -257,13 +314,26 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
   const currentPortfolioNames = new Set(currentSavedPortfolios.map(portfolio => portfolio.name))
   const currentStrategyNames = new Set(currentSavedStrategies.map(strategy => strategy.name))
   const currentTickerBySymbol = new Map(currentTickerConfigs.map(config => [config.symbol, config]))
+  const currentPortfolioByName = new Map(currentSavedPortfolios.map(portfolio => [portfolio.name, savedPortfolioConfig(portfolio.config)]))
+  const currentMappingByName = new Map(
+    normalizeTickerMappingSets(loadTickerMappingSettings().savedSets)
+      .map(set => [set.name.trim().toLowerCase(), set]),
+  )
 
   return {
-    savedPortfolios: importedSavedPortfolios.map(portfolio => ({
-      name: portfolio.name,
-      config: savedPortfolioConfig(portfolio.config),
-      action: currentPortfolioNames.has(portfolio.name) ? 'replace' : 'add',
-    })),
+    savedPortfolios: importedSavedPortfolios
+      .map(portfolio => {
+        const config = savedPortfolioConfig(portfolio.config)
+        return {
+          name: portfolio.name,
+          config,
+          action: currentPortfolioNames.has(portfolio.name) ? 'replace' as const : 'add' as const,
+        }
+      })
+      .filter(portfolio => (
+        portfolio.action === 'add' ||
+        !sameJsonContent(currentPortfolioByName.get(portfolio.name), portfolio.config)
+      )),
     tickerConfigs: importedTickerConfigs
       .map(config => ({ symbol: config.symbol, current: currentTickerBySymbol.get(config.symbol) ?? { symbol: config.symbol, letf: '', groups: '' }, next: config }))
       .filter(row => !tickerConfigEquals(row.current, row.next)),
@@ -272,11 +342,27 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
       config: strategy.config,
       action: currentStrategyNames.has(strategy.name) ? 'replace' : 'add',
     })),
+    savedTickerMappings: importedSavedTickerMappings
+      .map(set => ({
+        name: set.name,
+        mappings: set.mappings,
+        action: currentMappingByName.has(set.name.trim().toLowerCase()) ? 'replace' as const : 'add' as const,
+      }))
+      .filter(set => {
+        if (set.action === 'add') return true
+        const current = currentMappingByName.get(set.name.trim().toLowerCase())
+        return !current || !sameJsonContent(mappingContent(current), mappingContent(set))
+      }),
   }
 }
 
 export function hasImportDependencyPreview(preview: ImportDependencyPreview) {
-  return preview.savedPortfolios.length > 0 || preview.tickerConfigs.length > 0 || preview.savedStrategies.length > 0
+  return (
+    preview.savedPortfolios.length > 0 ||
+    preview.tickerConfigs.length > 0 ||
+    preview.savedStrategies.length > 0 ||
+    preview.savedTickerMappings.length > 0
+  )
 }
 
 async function replaceSavedJsonConfig(apiPath: string, name: string, config: any) {
@@ -306,6 +392,16 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
   await Promise.all(preview.savedStrategies.map(strategy =>
     replaceSavedJsonConfig('/api/rebalance-strategy/savedStrategies', strategy.name, strategy.config),
   ))
+
+  if (preview.savedTickerMappings.length > 0) {
+    const currentSettings = loadTickerMappingSettings()
+    saveTickerMappingSettings(mergeSavedTickerMappings(currentSettings, preview.savedTickerMappings.map(set => ({
+      id: '',
+      name: set.name,
+      mappings: set.mappings,
+    }))))
+    notifyTickerMappingsChanged()
+  }
 
   if (preview.savedPortfolios.length > 0) {
     window.dispatchEvent(new Event(SAVED_PORTFOLIOS_CHANGED_EVENT))

@@ -91,6 +91,20 @@ export default function ImportDependenciesDialog({
               </ul>
             </section>
           )}
+
+          {preview.savedTickerMappings.length > 0 && (
+            <section>
+              <h3>Ticker Mappings</h3>
+              <ul>
+                {preview.savedTickerMappings.map(mappingSet => (
+                  <li key={mappingSet.name}>
+                    <span>{mappingSet.name}</span>
+                    <strong>{actionLabel(mappingSet.action)}</strong>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
 
         {error && <div className="ticker-config-error">{error}</div>}

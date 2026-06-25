@@ -11,6 +11,7 @@ import {
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import { getChartTheme } from '@/lib/chartTheme'
 import { scaleDash } from '@/lib/colorScheme'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
@@ -80,6 +81,7 @@ export default function MonteCarloPage() {
   const [percentile, setPercentile]   = useState(50)
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [logScale, setLogScale]       = useState(false)
+  const { toast: importToast, showToast: showImportToast } = useTransientToast()
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
@@ -255,7 +257,12 @@ export default function MonteCarloPage() {
       portfolios,
     }, portfolios))
     setImportCode(code)
-    try { await navigator.clipboard.writeText(code) } catch (_) {}
+    try {
+      await navigator.clipboard.writeText(code)
+      showImportToast('Export code copied.')
+    } catch (_) {
+      showImportToast('Export code generated.')
+    }
   }
 
   function applyImportedConfig(req: any) {
@@ -292,6 +299,7 @@ export default function MonteCarloPage() {
         return
       }
       applyImportedConfig(req)
+      showImportToast('Import complete.')
       setConfigError('')
     } catch (_) {
       setConfigError('Invalid config code.')
@@ -307,6 +315,7 @@ export default function MonteCarloPage() {
       await applyImportDependencyPreview(pendingImport.preview)
       refreshSaved()
       applyImportedConfig(pendingImport.config)
+      showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')
     } catch (e: any) {
@@ -361,6 +370,9 @@ export default function MonteCarloPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/montecarlo" />
+      <div className={`config-status config-status-${importToast.type}${importToast.msg ? ' visible' : ''}`}>
+        {importToast.msg}
+      </div>
 
       <div className="backtest-form-card">
         <ScenarioSetupControls

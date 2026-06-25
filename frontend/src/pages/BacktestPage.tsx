@@ -15,6 +15,7 @@ import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfolio
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import {
   applyImportDependencyPreview,
@@ -41,6 +42,7 @@ import {
   applyTickerMappingsToPortfolio,
   loadTickerMappingSettings,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
+  TICKER_MAPPINGS_CHANGED_EVENT,
   type TickerMappingSettings,
 } from '@/lib/tickerMappings'
 
@@ -302,6 +304,7 @@ export default function BacktestPage() {
   const [forceActionPointChartDots, setForceActionPointChartDots] = useState<Record<ActionPointChartKey, boolean>>(
     () => ({ ...DEFAULT_FORCE_ACTION_POINT_CHART_DOTS }),
   )
+  const { toast: importToast, showToast: showImportToast } = useTransientToast()
 
   // Real portfolio overlay
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
@@ -320,6 +323,12 @@ export default function BacktestPage() {
     () => resolveSelectedTickerMappingSet(tickerMappingSettings),
     [tickerMappingSettings],
   )
+
+  useEffect(() => {
+    const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
+    window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    return () => window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+  }, [])
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
@@ -767,7 +776,12 @@ export default function BacktestPage() {
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     }, portfolios))
     setImportCode(code)
-    try { await navigator.clipboard.writeText(code) } catch {}
+    try {
+      await navigator.clipboard.writeText(code)
+      showImportToast('Export code copied.')
+    } catch {
+      showImportToast('Export code generated.')
+    }
   }
 
   function applyImportedConfig(req: StoredBacktestConfig) {
@@ -801,6 +815,7 @@ export default function BacktestPage() {
         return
       }
       applyImportedConfig(req)
+      showImportToast('Import complete.')
       setConfigError('')
     } catch {
       setConfigError('Invalid config code.')
@@ -816,6 +831,7 @@ export default function BacktestPage() {
       await applyImportDependencyPreview(pendingImport.preview)
       refreshSaved()
       applyImportedConfig(pendingImport.config)
+      showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')
     } catch (e: unknown) {
@@ -1046,6 +1062,9 @@ export default function BacktestPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/backtest" />
+      <div className={`config-status config-status-${importToast.type}${importToast.msg ? ' visible' : ''}`}>
+        {importToast.msg}
+      </div>
 
       <div className="backtest-form-card">
         <ScenarioSetupControls
@@ -1077,6 +1096,8 @@ export default function BacktestPage() {
           idPrefix="backtest"
           value={tickerMappingSettings}
           onChange={setTickerMappingSettings}
+          onExportCode={setImportCode}
+          onToast={showImportToast}
         />
 
         {realPortfolios.length > 0 && (

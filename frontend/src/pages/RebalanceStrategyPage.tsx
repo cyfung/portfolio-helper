@@ -18,6 +18,9 @@ export default function RebalanceStrategyPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/rebalance-strategy" />
+      <div className={`config-status config-status-${page.importToast.type}${page.importToast.msg ? ' visible' : ''}`}>
+        {page.importToast.msg}
+      </div>
 
       <div className="backtest-form-card">
         <ScenarioSetupControls
@@ -49,6 +52,8 @@ export default function RebalanceStrategyPage() {
           idPrefix="rs"
           value={page.tickerMappingSettings}
           onChange={page.setTickerMappingSettings}
+          onExportCode={page.setImportCode}
+          onToast={page.showImportToast}
         />
 
         <SavedPortfoliosBar ref={page.savedBarRef} />

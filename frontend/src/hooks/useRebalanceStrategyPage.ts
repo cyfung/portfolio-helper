@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import type { RebalanceStrategyBlockRef } from '@/components/rebalance/RebalanceStrategyBlock'
 import type { SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { validateDateRange } from '@/lib/dateRange'
 import {
@@ -17,6 +18,7 @@ import {
   applyTickerMappingsToPortfolio,
   loadTickerMappingSettings,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
+  TICKER_MAPPINGS_CHANGED_EVENT,
   type TickerMappingSettings,
 } from '@/lib/tickerMappings'
 import {
@@ -104,6 +106,7 @@ export function useRebalanceStrategyPage() {
   const [zeroMarginInterestResults, setZeroMarginInterestResults] = useState<BacktestResults | null>(null)
   const [zeroMarginInterestRunning, setZeroMarginInterestRunning] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const { toast: importToast, showToast: showImportToast } = useTransientToast()
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
   const strategyBlockRefs = useRef<(RebalanceStrategyBlockRef | null)[]>([])
@@ -114,6 +117,12 @@ export function useRebalanceStrategyPage() {
     () => resolveSelectedTickerMappingSet(tickerMappingSettings),
     [tickerMappingSettings],
   )
+
+  useEffect(() => {
+    const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
+    window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    return () => window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+  }, [])
 
   useEffect(() => {
     fetch('/api/backtest/settings')
@@ -280,8 +289,13 @@ export function useRebalanceStrategyPage() {
       strategies: currentStrategies,
     }, [portfolioConfig], { savedStrategies }))
     setImportCode(code)
-    try { await navigator.clipboard.writeText(code) } catch {}
-  }, [cashflowAmount, cashflowFrequency, currentNormalizedStrategies, fromDate, portfolio, startingBalance, strategies, toDate])
+    try {
+      await navigator.clipboard.writeText(code)
+      showImportToast('Export code copied.')
+    } catch {
+      showImportToast('Export code generated.')
+    }
+  }, [cashflowAmount, cashflowFrequency, currentNormalizedStrategies, fromDate, portfolio, showImportToast, startingBalance, strategies, toDate])
 
   const applyImportedConfig = useCallback((req: PageConfigLike) => {
     if (req.fromDate) setFromDate(req.fromDate)
@@ -308,12 +322,13 @@ export function useRebalanceStrategyPage() {
         return
       }
       applyImportedConfig(req)
+      showImportToast('Import complete.')
       setConfigError('')
     } catch {
       setConfigError('Invalid config code.')
       setTimeout(() => setConfigError(''), 3000)
     }
-  }, [applyImportedConfig, importCode])
+  }, [applyImportedConfig, importCode, showImportToast])
 
   const confirmPendingImport = useCallback(async () => {
     if (!pendingImport || importDependencyApplying) return
@@ -324,6 +339,7 @@ export function useRebalanceStrategyPage() {
       savedBarRef.current?.refresh()
       savedStrategiesBarRef.current?.refresh()
       applyImportedConfig(pendingImport.config)
+      showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')
     } catch (e: unknown) {
@@ -331,7 +347,7 @@ export function useRebalanceStrategyPage() {
     } finally {
       setImportDependencyApplying(false)
     }
-  }, [applyImportedConfig, importDependencyApplying, pendingImport])
+  }, [applyImportedConfig, importDependencyApplying, pendingImport, showImportToast])
 
   const strategyHandlers = useMemo(
     () => [0, 1].map(i => (strategy: RebalStrategyState) =>
@@ -378,6 +394,8 @@ export function useRebalanceStrategyPage() {
     zeroMarginInterestRunning,
     selected,
     setSelected,
+    importToast,
+    showImportToast,
     savedBarRef,
     savedStrategiesBarRef,
     strategyBlockRefs,

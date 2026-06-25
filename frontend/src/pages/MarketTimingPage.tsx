@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import { BacktestPageHeader } from '@/components/backtest/CommonBacktestSections'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import { UsCapeHistoryChart, WorldCapeHistoryChart } from '@/components/marketTiming/CapeHistoryCharts'
 import MarketTimingResultsCharts from '@/components/marketTiming/MarketTimingResultsCharts'
 import MarketTimingSetupCard from '@/components/marketTiming/MarketTimingSetupCard'
@@ -142,6 +143,7 @@ export default function MarketTimingPage() {
   const [normalizeWindowDayZero, setNormalizeWindowDayZero] = useState(true)
   const [marginComparisonResultIndex, setMarginComparisonResultIndex] = useState(0)
   const [marginComparisonBaseMargin, setMarginComparisonBaseMargin] = useState(0)
+  const { toast: importToast, showToast: showImportToast } = useTransientToast()
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const dateRangeError = validateDateRange(fromDate, toDate)
 
@@ -207,6 +209,12 @@ export default function MarketTimingPage() {
       portfolio: exportPortfolio,
     }, [exportPortfolio]))
     setImportCode(code)
+    try {
+      await navigator.clipboard.writeText(code)
+      showImportToast('Export code copied.')
+    } catch {
+      showImportToast('Export code generated.')
+    }
   }
 
   function applyImportedConfig(payload: MarketTimingImportConfig) {
@@ -237,6 +245,7 @@ export default function MarketTimingPage() {
         return
       }
       applyImportedConfig(payload)
+      showImportToast('Import complete.')
     } catch (e: unknown) {
       setConfigError(errorMessage(e, 'Invalid config code'))
     }
@@ -250,6 +259,7 @@ export default function MarketTimingPage() {
       await applyImportDependencyPreview(pendingImport.preview)
       refreshSaved()
       applyImportedConfig(pendingImport.config)
+      showImportToast('Import complete.')
       setPendingImport(null)
       setConfigError('')
     } catch (e: unknown) {
@@ -353,6 +363,9 @@ export default function MarketTimingPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/market-timing" />
+      <div className={`config-status config-status-${importToast.type}${importToast.msg ? ' visible' : ''}`}>
+        {importToast.msg}
+      </div>
 
       <MarketTimingSetupCard
         portfolio={portfolio}

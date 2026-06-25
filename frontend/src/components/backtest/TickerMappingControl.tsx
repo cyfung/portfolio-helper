@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { GripVertical, Save, Settings, Trash2, X } from 'lucide-react'
+import { Download, GripVertical, Save, Settings, Trash2, X } from 'lucide-react'
+import { compressToCode } from '@/lib/compress'
+import { buildSavedTickerMappingsExportPayload } from '@/lib/configImportExport'
 import {
   loadTickerMappingSettings,
   mappingSetSummary,
@@ -15,6 +17,8 @@ interface Props {
   idPrefix: string
   value: TickerMappingSettings
   onChange: (settings: TickerMappingSettings) => void
+  onExportCode?: (code: string) => void
+  onToast?: (message: string, type?: 'ok' | 'warn' | 'error') => void
 }
 
 function newMappingId() {
@@ -39,10 +43,11 @@ function cloneMappings(mappings: TickerMapping[]) {
 
 type MappingDropPosition = 'before' | 'after'
 
-export default function TickerMappingControl({ idPrefix, value, onChange }: Props) {
+export default function TickerMappingControl({ idPrefix, value, onChange, onExportCode, onToast }: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [draft, setDraft] = useState<TickerMappingSettings>(value)
   const [error, setError] = useState('')
+  const [exportStatus, setExportStatus] = useState('')
   const [dragOverSetId, setDragOverSetId] = useState('')
   const [draggedMapping, setDraggedMapping] = useState<{ setId: string; mappingId: string } | null>(null)
   const [dragOverMapping, setDragOverMapping] = useState<{
@@ -72,7 +77,29 @@ export default function TickerMappingControl({ idPrefix, value, onChange }: Prop
   function openEditor() {
     setDraft(loadTickerMappingSettings())
     setError('')
+    setExportStatus('')
     setEditorOpen(true)
+  }
+
+  async function exportSavedMappings() {
+    setExportStatus('')
+    const payload = await buildSavedTickerMappingsExportPayload()
+    if (payload.savedTickerMappings.length === 0) {
+      setExportStatus('No saved mappings to export.')
+      onToast?.('No saved mappings to export.', 'warn')
+      return
+    }
+
+    const code = await compressToCode(payload)
+    onExportCode?.(code)
+    try {
+      await navigator.clipboard.writeText(code)
+      setExportStatus(onExportCode ? 'Mappings export code copied and placed in Config Code.' : 'Mappings export code copied.')
+      onToast?.('Mappings export code copied.')
+    } catch {
+      setExportStatus(onExportCode ? 'Mappings export code placed in Config Code.' : 'Mappings export code generated.')
+      onToast?.('Mappings export code generated.')
+    }
   }
 
   function updateSet(setId: string, patch: Partial<TickerMappingSet>) {
@@ -223,6 +250,10 @@ export default function TickerMappingControl({ idPrefix, value, onChange }: Prop
           <button type="button" className="ticker-config-btn ticker-mapping-config-btn" onClick={openEditor} title="Configure ticker mappings" aria-label="Configure ticker mappings">
             <Settings size={15} />
           </button>
+          <button type="button" className="backtest-config-btn ticker-mapping-export-btn" onClick={exportSavedMappings} title="Export saved ticker mappings" aria-label="Export saved ticker mappings">
+            <Download size={15} />
+            <span>Export Mappings</span>
+          </button>
         </div>
         {selectedSet && usableTickerMappings(selectedSet.mappings).length > 0 ? (
           <div className="ticker-mapping-active-summary">
@@ -230,6 +261,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange }: Prop
             {usableTickerMappings(selectedSet.mappings).length > 4 ? `, +${usableTickerMappings(selectedSet.mappings).length - 4}` : ''}
           </div>
         ) : null}
+        {exportStatus && <div className="ticker-mapping-export-status">{exportStatus}</div>}
       </div>
 
       {editorOpen && (

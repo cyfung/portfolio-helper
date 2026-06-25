@@ -22,6 +22,7 @@ export interface WeightedTicker {
 }
 
 const STORAGE_KEY = 'ticker-mapping-settings'
+export const TICKER_MAPPINGS_CHANGED_EVENT = 'ticker-mappings-changed'
 const ACTIVE_MAPPING_SET_DEFAULTS: TickerMappingSet[] = [
   { id: 'set-1', name: 'Mapping Set 1', mappings: [] },
   { id: 'set-2', name: 'Mapping Set 2', mappings: [] },
@@ -102,6 +103,10 @@ export function saveTickerMappingSettings(settings: TickerMappingSettings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeTickerMappingSettings(settings)))
 }
 
+export function notifyTickerMappingsChanged() {
+  window.dispatchEvent(new Event(TICKER_MAPPINGS_CHANGED_EVENT))
+}
+
 export function mappingSetSummary(set: TickerMappingSet | null | undefined) {
   const count = usableTickerMappings(set?.mappings ?? []).length
   if (count === 0) return 'No mappings'
@@ -114,6 +119,39 @@ export function selectedTickerMappingSet(settings: TickerMappingSettings) {
 
 export function usableTickerMappings(mappings: TickerMapping[]) {
   return mappings.filter(mapping => mapping.from && mapping.to && !/\s/.test(mapping.from))
+}
+
+export function normalizeTickerMappingSets(value: unknown): TickerMappingSet[] {
+  if (!Array.isArray(value)) return []
+  const usedIds = new Set<string>()
+  const byName = new Map<string, TickerMappingSet>()
+
+  value.forEach((item, idx) => {
+    const set = normalizeSet(item as Partial<TickerMappingSet>, idx, usedIds)
+    const name = set.name.trim()
+    if (!name || usableTickerMappings(set.mappings).length === 0) return
+    byName.set(name.toLowerCase(), { ...set, name, mappings: usableTickerMappings(set.mappings) })
+  })
+
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function exportableSavedTickerMappings(settings: TickerMappingSettings) {
+  return normalizeTickerMappingSets(settings.savedSets)
+}
+
+export function mergeSavedTickerMappings(
+  settings: TickerMappingSettings,
+  importedSets: TickerMappingSet[],
+): TickerMappingSettings {
+  if (importedSets.length === 0) return normalizeTickerMappingSettings(settings)
+
+  const importedByName = new Map(importedSets.map(set => [set.name.trim().toLowerCase(), set]))
+  const retainedSavedSets = settings.savedSets.filter(set => !importedByName.has(set.name.trim().toLowerCase()))
+  return normalizeTickerMappingSettings({
+    ...settings,
+    savedSets: [...retainedSavedSets, ...importedSets],
+  })
 }
 
 function isModifierToken(token: string) {
