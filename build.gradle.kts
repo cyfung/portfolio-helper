@@ -1,6 +1,7 @@
 import com.github.jk1.license.render.ReportRenderer
 import com.github.jk1.license.render.TextReportRenderer
 import com.github.gradle.node.npm.task.NpmTask
+import org.gradle.api.file.CopySpec
 import org.gradle.api.tasks.bundling.Jar
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
 import org.panteleyev.jpackage.ImageType
@@ -254,6 +255,36 @@ launch4j {
 //}
 
 // Portable Distribution Tasks
+fun CopySpec.includeThirdPartyNotices(destinationDir: String) {
+    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
+        into(destinationDir)
+    }
+}
+
+fun CopySpec.includeRuntimeReadme(destinationDir: String) {
+    from("docs") {
+        into(destinationDir)
+        include("RUNNING.md")
+        rename("RUNNING.md", "README.md")
+    }
+}
+
+fun CopySpec.includeLogbackConfig(destinationDir: String) {
+    from("src/main/resources") {
+        into("$destinationDir/config")
+        include("logback.xml")
+    }
+}
+
+fun CopySpec.includePortableDistributionContents(destinationDir: String) {
+    includeThirdPartyNotices(destinationDir)
+    from(tasks.shadowJar) {
+        into(destinationDir)
+    }
+    includeRuntimeReadme(destinationDir)
+    includeLogbackConfig(destinationDir)
+}
+
 tasks.register<Zip>("portableDistZip") {
     group = "distribution"
     description =
@@ -262,25 +293,7 @@ tasks.register<Zip>("portableDistZip") {
     archiveClassifier.set("complete")
 
     dependsOn(tasks.named("generateLicenseReport"))
-
-    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into(project.name)
-    }
-
-    from(tasks.shadowJar) {
-        into(project.name)
-    }
-
-    from("docs") {
-        into(project.name)
-        include("RUNNING.md")
-        rename("RUNNING.md", "README.md")
-    }
-
-    from("src/main/resources") {
-        into("${project.name}/config")
-        include("logback.xml")
-    }
+    includePortableDistributionContents(project.name)
 }
 
 tasks.register<Tar>("portableDistTar") {
@@ -293,25 +306,7 @@ tasks.register<Tar>("portableDistTar") {
     archiveExtension.set("tar.gz")
 
     dependsOn(tasks.named("generateLicenseReport"))
-
-    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into(project.name)
-    }
-
-    from(tasks.shadowJar) {
-        into(project.name)
-    }
-
-    from("docs") {
-        into(project.name)
-        include("RUNNING.md")
-        rename("RUNNING.md", "README.md")
-    }
-
-    from("src/main/resources") {
-        into("${project.name}/config")
-        include("logback.xml")
-    }
+    includePortableDistributionContents(project.name)
 }
 
 tasks.register<Zip>("windowsDistZip") {
@@ -322,29 +317,16 @@ tasks.register<Zip>("windowsDistZip") {
 
     dependsOn(tasks.named("createExe"), tasks.named("generateLicenseReport"))
 
-    from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt")) {
-        into(project.name)
-    }
-
+    includeThirdPartyNotices(project.name)
     from(layout.buildDirectory.dir("launch4j")) {
         into(project.name)
         include("portfolio-helper.exe")
     }
-
     from(tasks.shadowJar) {
         into("${project.name}/lib")
     }
-
-    from("docs") {
-        into(project.name)
-        include("RUNNING.md")
-        rename("RUNNING.md", "README.md")
-    }
-
-    from("src/main/resources") {
-        into("${project.name}/config")
-        include("logback.xml")
-    }
+    includeRuntimeReadme(project.name)
+    includeLogbackConfig(project.name)
 }
 
 tasks.register<Zip>("jpackageDistZip") {
@@ -369,87 +351,157 @@ licenseReport {
     excludeGroups = arrayOf("com.portfoliohelper")
 }
 
+data class GithubReleaseConfig(
+    val token: String,
+    val repo: String,
+    val version: String,
+    val tagName: String
+)
+
+data class GithubReleaseArtifact(
+    val file: File,
+    val contentType: String,
+    val uploadName: String
+)
+
+fun loadLocalReleaseProperties(): Properties =
+    Properties().apply {
+        rootProject.file("../local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+    }
+
+fun releaseSetting(
+    envName: String,
+    localProps: Properties,
+    localName: String,
+    gradleName: String,
+    missingMessage: String
+): String =
+    System.getenv(envName)
+        ?: localProps.getProperty(localName)
+        ?: (project.findProperty(gradleName) as? String)
+        ?: error(missingMessage)
+
+fun githubReleaseConfig(): GithubReleaseConfig {
+    val localProps = loadLocalReleaseProperties()
+    val version = project.version.toString()
+    return GithubReleaseConfig(
+        token = releaseSetting(
+            envName = "GITHUB_TOKEN",
+            localProps = localProps,
+            localName = "githubToken",
+            gradleName = "githubToken",
+            missingMessage = "GITHUB_TOKEN env var or githubToken in local.properties / ~/.gradle/gradle.properties required"
+        ),
+        repo = releaseSetting(
+            envName = "GITHUB_REPO",
+            localProps = localProps,
+            localName = "githubRepo",
+            gradleName = "githubRepo",
+            missingMessage = "GITHUB_REPO env var or githubRepo in local.properties / ~/.gradle/gradle.properties required"
+        ),
+        version = version,
+        tagName = "v$version"
+    )
+}
+
+fun String.escapeJson(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+
+fun releaseBody(config: GithubReleaseConfig): String =
+    """## Portfolio Helper ${config.tagName}
+
+### Downloads
+- **Self-contained app** (no Java required): `portfolio-helper-jpackage-${config.version}.zip`"""
+
+fun HttpURLConnection.githubApiDefaults(config: GithubReleaseConfig, contentType: String) {
+    setRequestProperty("Authorization", "Bearer ${config.token}")
+    setRequestProperty("Content-Type", contentType)
+    setRequestProperty("Accept", "application/vnd.github+json")
+    setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+}
+
+fun HttpURLConnection.responseText(): String =
+    if (responseCode in 200..299) {
+        inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+    } else {
+        errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+    }
+
+fun createGithubRelease(config: GithubReleaseConfig): String {
+    val payload = """{"tag_name":"${config.tagName}","name":"Portfolio Helper ${config.tagName}","body":"${releaseBody(config).escapeJson()}","draft":false,"prerelease":false}"""
+    val conn = URI("https://api.github.com/repos/${config.repo}/releases").toURL().openConnection() as HttpURLConnection
+    conn.requestMethod = "POST"
+    conn.githubApiDefaults(config, "application/json")
+    conn.doOutput = true
+    conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+
+    val code = conn.responseCode
+    val text = conn.responseText()
+    if (code !in 200..299) error("Failed to create release (HTTP $code): $text")
+    return text
+}
+
+fun uploadBaseUrlFromRelease(responseText: String): String =
+    Regex("\"upload_url\"\\s*:\\s*\"([^\"]+)\"").find(responseText)?.groupValues?.get(1)
+        ?.substringBefore("{")
+        ?: error("No upload_url in response: $responseText")
+
+fun githubReleaseArtifacts(config: GithubReleaseConfig): List<GithubReleaseArtifact> {
+    val distDir = layout.buildDirectory.dir("distributions").get().asFile
+    val shadowJarFile = tasks.shadowJar.get().archiveFile.get().asFile
+    return listOf(
+        GithubReleaseArtifact(
+            File(distDir, "${project.name}-jpackage-${config.version}.zip"),
+            "application/zip",
+            "${project.name}-jpackage-${config.version}.zip"
+        ),
+        GithubReleaseArtifact(
+            shadowJarFile,
+            "application/java-archive",
+            "${project.name}-jpackage-${config.version}.jar"
+        )
+    )
+}
+
+fun uploadGithubReleaseArtifact(
+    config: GithubReleaseConfig,
+    uploadBaseUrl: String,
+    artifact: GithubReleaseArtifact
+) {
+    val (file, contentType, uploadName) = artifact
+    if (!file.exists()) error("Artifact not found: ${file.absolutePath}")
+    println("Uploading $uploadName (${"%.1f".format(file.length() / 1024.0 / 1024.0)} MB)...")
+
+    val uploadUrl = URI("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}").toURL()
+    val conn = uploadUrl.openConnection() as HttpURLConnection
+    conn.requestMethod = "POST"
+    conn.githubApiDefaults(config, contentType)
+    conn.doOutput = true
+    conn.setFixedLengthStreamingMode(file.length())
+    conn.outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+
+    val code = conn.responseCode
+    if (code !in 200..299) {
+        error("Failed to upload $uploadName (HTTP $code): ${conn.responseText()}")
+    }
+    println("  Uploaded $uploadName")
+}
+
 // GitHub Release Task
 tasks.register("githubRelease") {
     group = "distribution"
     description = "Creates a GitHub release and uploads distribution artifacts. Requires GITHUB_TOKEN env var and a pre-existing git tag matching v{version}."
     dependsOn(tasks.named("jpackageDistZip"), tasks.shadowJar)
     doLast {
-        val localProps = Properties().apply {
-            rootProject.file("../local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-        }
-        val token = System.getenv("GITHUB_TOKEN")
-            ?: localProps.getProperty("githubToken")
-            ?: (project.findProperty("githubToken") as? String)
-            ?: error("GITHUB_TOKEN env var or githubToken in local.properties / ~/.gradle/gradle.properties required")
-        val repo = System.getenv("GITHUB_REPO")
-            ?: localProps.getProperty("githubRepo")
-            ?: (project.findProperty("githubRepo") as? String)
-            ?: error("GITHUB_REPO env var or githubRepo in local.properties / ~/.gradle/gradle.properties required")
-        val ver = project.version.toString()
-        val tagName = "v$ver"
-
-        fun String.escapeJson() = replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
-
-        val releaseBody = """## Portfolio Helper $tagName
-
-### Downloads
-- **Self-contained app** (no Java required): `portfolio-helper-jpackage-$ver.zip`"""
-
-        // Step 1: Create release
-        println("Creating GitHub release $tagName on $repo...")
-        val releasePayload = """{"tag_name":"$tagName","name":"Portfolio Helper $tagName","body":"${releaseBody.escapeJson()}","draft":false,"prerelease":false}"""
-        val releaseConn = URI("https://api.github.com/repos/$repo/releases").toURL().openConnection() as HttpURLConnection
-        releaseConn.requestMethod = "POST"
-        releaseConn.setRequestProperty("Authorization", "Bearer $token")
-        releaseConn.setRequestProperty("Content-Type", "application/json")
-        releaseConn.setRequestProperty("Accept", "application/vnd.github+json")
-        releaseConn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-        releaseConn.doOutput = true
-        releaseConn.outputStream.use { it.write(releasePayload.toByteArray(Charsets.UTF_8)) }
-
-        val releaseCode = releaseConn.responseCode
-        val releaseText = if (releaseCode in 200..299)
-            releaseConn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-        else
-            releaseConn.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
-
-        if (releaseCode !in 200..299) error("Failed to create release (HTTP $releaseCode): $releaseText")
-
-        val uploadUrlTemplate = Regex("\"upload_url\"\\s*:\\s*\"([^\"]+)\"").find(releaseText)?.groupValues?.get(1)
-            ?: error("No upload_url in response: $releaseText")
-        val uploadBaseUrl = uploadUrlTemplate.substringBefore("{")
+        val config = githubReleaseConfig()
+        println("Creating GitHub release ${config.tagName} on ${config.repo}...")
+        val uploadBaseUrl = uploadBaseUrlFromRelease(createGithubRelease(config))
         println("Release created. Uploading artifacts...")
 
-        // Step 2: Upload artifacts
-        data class Artifact(val file: File, val contentType: String, val uploadName: String)
-        val distDir = layout.buildDirectory.dir("distributions").get().asFile
-        val shadowJarFile = tasks.shadowJar.get().archiveFile.get().asFile
-        val artifacts = listOf(
-            Artifact(File(distDir, "${project.name}-jpackage-$ver.zip"), "application/zip", "${project.name}-jpackage-$ver.zip"),
-            Artifact(shadowJarFile, "application/java-archive", "${project.name}-jpackage-$ver.jar")
-        )
-        for ((file, contentType, uploadName) in artifacts) {
-            if (!file.exists()) error("Artifact not found: ${file.absolutePath}")
-            println("Uploading $uploadName (${"%.1f".format(file.length() / 1024.0 / 1024.0)} MB)...")
-            val uploadUrl = URI("$uploadBaseUrl?name=${URLEncoder.encode(uploadName, "UTF-8")}").toURL()
-            val uploadConn = uploadUrl.openConnection() as HttpURLConnection
-            uploadConn.requestMethod = "POST"
-            uploadConn.setRequestProperty("Authorization", "Bearer $token")
-            uploadConn.setRequestProperty("Content-Type", contentType)
-            uploadConn.setRequestProperty("Accept", "application/vnd.github+json")
-            uploadConn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            uploadConn.doOutput = true
-            uploadConn.setFixedLengthStreamingMode(file.length())
-            uploadConn.outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
-            val upCode = uploadConn.responseCode
-            if (upCode !in 200..299) {
-                val err = uploadConn.errorStream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
-                error("Failed to upload $uploadName (HTTP $upCode): $err")
-            }
-            println("  Uploaded $uploadName")
+        for (artifact in githubReleaseArtifacts(config)) {
+            uploadGithubReleaseArtifact(config, uploadBaseUrl, artifact)
         }
-        println("GitHub release $tagName created successfully!")
+        println("GitHub release ${config.tagName} created successfully!")
     }
 }
 

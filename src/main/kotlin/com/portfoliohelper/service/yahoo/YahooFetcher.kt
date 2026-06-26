@@ -1,35 +1,13 @@
-/**
- * YahooFetcher.kt
- *
- * Fetches daily adjusted-close prices for VTI, CTA, and DBMF
- * from Yahoo Finance and writes them to a CSV file.
- *
- * Each row = one trading day where ALL three tickers have data.
- * Columns: date, vti_adj_close, cta_adj_close, dbmf_adj_close
- *
- * Requirements (add to build.gradle.kts):
- *   implementation("com.squareup.okhttp3:okhttp:4.12.0")
- *   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
- *
- * Run:
- *   kotlinc YahooFetcher.kt -include-runtime -cp okhttp-4.12.0.jar:kotlinx-serialization-json-1.8.0.jar -d fetcher.jar
- *   java -cp fetcher.jar:okhttp-4.12.0.jar:kotlinx-serialization-json-1.8.0.jar YahooFetcherKt
- *
- * Or just use Gradle (see README at bottom of this file).
- */
-
 package com.portfoliohelper.service.yahoo
 
 import com.portfoliohelper.util.appJson
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.slf4j.LoggerFactory
-import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
-import java.util.concurrent.*
-import kotlin.math.abs
+import java.util.concurrent.TimeUnit
 
 class YahooHistoricalDataException(message: String) : IllegalStateException(message)
 
@@ -38,13 +16,8 @@ data class YahooAdjustedCloseResult(
     val warnings: List<String> = emptyList()
 )
 
-// ── Reusable historical fetcher ───────────────────────────────────────────────
-
 object YahooHistoricalFetcher {
     private val logger = LoggerFactory.getLogger(YahooHistoricalFetcher::class.java)
-    private val loggedNullAdjustedCloseWarnings = ConcurrentHashMap.newKeySet<String>()
-    private val loggedSplitRepairWarnings = ConcurrentHashMap.newKeySet<String>()
-    private val commonSplitFactors = listOf(3.0, 4.0, 5.0, 10.0)
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -61,7 +34,6 @@ object YahooHistoricalFetcher {
         }
         .build()
 
-    /** Fetches adjusted-close prices for [ticker] in the given date range. Returns date → price. */
     fun fetchAdjustedClose(
         ticker: String,
         startDate: LocalDate,
@@ -76,19 +48,12 @@ object YahooHistoricalFetcher {
     ): YahooAdjustedCloseResult {
         val p1 = startDate.minusDays(5).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
                 "?period1=$p1&period2=$p2&interval=1d" +
                 "&events=history%7Cadjclose&includeAdjustedClose=true"
 
         logger.info("Fetching historical $ticker from $startDate to $endDate")
-
-        val request = Request.Builder().url(url).build()
-        val body = http.newCall(request).execute().use { resp ->
-            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker" }
-            resp.body!!.string()
-        }
-
+        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker" }
         val result = parseAdjustedCloseResponseWithWarnings(
             ticker,
             startDate,
@@ -115,130 +80,9 @@ object YahooHistoricalFetcher {
         endDate: LocalDate,
         body: String,
         tailQuoteProvider: (() -> YahooQuote?)? = null
-    ): YahooAdjustedCloseResult {
-        val response = appJson.decodeFromString<YahooChartResponse>(body)
-        val result = response.chart.result?.firstOrNull()
-            ?: error("No result in Yahoo response for $ticker")
-        val timestamps = result.timestamp ?: error("No timestamps for $ticker")
-        val indicators = result.indicators ?: error("No indicators for $ticker")
-        val adjCloseList = indicators.adjClose?.firstOrNull()?.adjClose
-            ?: error("No adjclose data for $ticker")
-        val closeList = indicators.quote?.firstOrNull()?.close
+    ): YahooAdjustedCloseResult =
+        YahooAdjustedCloseParser.parse(ticker, startDate, endDate, body, tailQuoteProvider)
 
-        val marketDate = result.meta?.currentTradingDate()
-        val rows = timestamps.indices.mapNotNull { i ->
-            val date = Instant.ofEpochSecond(timestamps[i]).atZone(ZoneOffset.UTC).toLocalDate()
-            if (date <= endDate) YahooPriceRow(
-                date = date,
-                price = adjCloseList.getOrNull(i),
-                close = closeList?.getOrNull(i)
-            ) else null
-        }
-        val nullRows = rows.filter { it.price == null }
-        val currentTradingNullDate = marketDate
-            ?.takeIf { date -> nullRows.any { it.date == date } }
-        val latestBeforeMarketDate = marketDate
-            ?.let { date -> rows.filter { it.date < date }.maxByOrNull { it.date } }
-        val previousCloseNullDate = latestBeforeMarketDate
-            ?.takeIf { it.price == null }
-            ?.date
-        val latestPricedDate = rows.filter { it.price != null }.maxOfOrNull { it.date }
-        val skippableTrailingNullDates = latestPricedDate
-            ?.let { lastPriced ->
-                nullRows
-                    .filter {
-                        it.date > lastPriced &&
-                                it.date != currentTradingNullDate &&
-                                it.date != previousCloseNullDate
-                    }
-                    .map { it.date }
-                    .toSet()
-            }
-            ?: emptySet()
-        val expectedNullDates = buildSet {
-            currentTradingNullDate?.let { add(it) }
-            previousCloseNullDate?.let { add(it) }
-            addAll(skippableTrailingNullDates)
-        }
-        val invalidNullRows = nullRows.filter {
-            it.date !in expectedNullDates
-        }
-        val warnings = mutableListOf<String>()
-        // Null adjusted-close rows are data-quality failures unless they match one of the
-        // known Yahoo shapes below:
-        // 1. The currentTradingDate row can be null after fetching on a non-trading day;
-        //    fill it from regularMarketPrice, which Yahoo still reports for that session.
-        // 2. The latest row before currentTradingDate can be null while quote.previousClose
-        //    already has the official prior close; fill exactly that row from the quote API.
-        // 3. Extra null rows after the last priced row are incomplete trailing records; drop
-        //    them without assuming anything about weekends or exchange holidays.
-        // Any other null is logged and surfaced as a data-quality warning, then
-        // omitted from the returned series so backtests can still run on the usable dates.
-        if (invalidNullRows.isNotEmpty()) {
-            warnings += logNullAdjustedCloseWarning(
-                ticker,
-                startDate,
-                endDate,
-                marketDate,
-                "invalid null rows: ${invalidNullRows.joinToString { it.date.toString() }}"
-            )
-        }
-
-        val prices = mutableMapOf<LocalDate, Double>()
-        for (row in rows) {
-            val price = row.price ?: continue
-            prices[row.date] = price
-        }
-
-        val tailQuote = if (currentTradingNullDate != null || previousCloseNullDate != null) {
-            tailQuoteProvider?.invoke()
-        } else {
-            null
-        }
-        if (previousCloseNullDate != null) {
-            val previousClose = tailQuote?.previousClose
-            if (previousClose == null) {
-                warnings += logNullAdjustedCloseWarning(
-                    ticker,
-                    startDate,
-                    endDate,
-                    marketDate,
-                    "tail null row $previousCloseNullDate could not be filled because quote previousClose was null"
-                )
-            } else {
-                prices[previousCloseNullDate] = previousClose
-                logger.info(
-                    "Filled $ticker null adjclose tail row for $previousCloseNullDate from quote previousClose=$previousClose"
-                )
-            }
-        }
-
-        val marketPrice = tailQuote?.regularMarketPrice ?: result.meta?.regularMarketPrice
-        if (currentTradingNullDate != null) {
-            if (marketPrice == null) {
-                warnings += logNullAdjustedCloseWarning(
-                    ticker,
-                    startDate,
-                    endDate,
-                    marketDate,
-                    "current trading date null row $currentTradingNullDate could not be filled because regularMarketPrice was null"
-                )
-            } else {
-                prices[currentTradingNullDate] = marketPrice
-                logger.info(
-                    "Filled $ticker null adjclose current trading row for $currentTradingNullDate from regularMarketPrice=$marketPrice"
-                )
-            }
-        } else if (marketDate != null && marketPrice != null && marketDate in startDate..endDate) {
-            prices[marketDate] = marketPrice
-        }
-
-        warnings += repairSplitLikeAdjustedCloseBreaks(ticker, prices, rows)
-
-        return YahooAdjustedCloseResult(prices, warnings)
-    }
-
-    /** Fetches dividend events for [ticker] in the given date range. Returns ex-date → amount per share. */
     fun fetchDividends(
         ticker: String,
         startDate: LocalDate,
@@ -246,46 +90,28 @@ object YahooHistoricalFetcher {
     ): Map<LocalDate, Double> {
         val p1 = startDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
                 "?period1=$p1&period2=$p2&interval=1d&events=div"
 
         logger.info("Fetching dividends for $ticker from $startDate to $endDate")
-
-        val request = Request.Builder().url(url).build()
-        val body = http.newCall(request).execute().use { resp ->
-            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker dividends" }
-            resp.body!!.string()
-        }
-
+        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker dividends" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull() ?: return emptyMap()
         val dividends = result.events?.dividends ?: return emptyMap()
-
-        val out = mutableMapOf<LocalDate, Double>()
-        for ((_, div) in dividends) {
-            val date = Instant.ofEpochSecond(div.date).atZone(ZoneOffset.UTC).toLocalDate()
-            if (date in startDate..endDate) out[date] = div.amount
-        }
+        val out = dividends.values
+            .mapNotNull { dividend ->
+                val date = Instant.ofEpochSecond(dividend.date).atZone(ZoneOffset.UTC).toLocalDate()
+                if (date in startDate..endDate) date to dividend.amount else null
+            }
+            .toMap()
 
         logger.info("Fetched ${out.size} dividend events for $ticker")
         return out
     }
 
-    private fun YahooMeta.currentTradingDate(): LocalDate? {
-        val regular = currentTradingPeriod?.regular ?: return null
-        val end = regular.end ?: return null
-        val offset = ZoneOffset.ofTotalSeconds(regular.gmtoffset ?: 0)
-        return Instant.ofEpochSecond(end).atOffset(offset).toLocalDate()
-    }
-
     private fun fetchCurrentQuote(ticker: String): YahooQuote {
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1d&range=1d"
-        val request = Request.Builder().url(url).build()
-        val body = http.newCall(request).execute().use { resp ->
-            check(resp.isSuccessful) { "HTTP ${resp.code} for $ticker quote" }
-            resp.body!!.string()
-        }
+        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker quote" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
             ?: error("No quote result in Yahoo response for $ticker")
@@ -302,233 +128,11 @@ object YahooHistoricalFetcher {
         )
     }
 
-    private fun logNullAdjustedCloseWarning(
-        ticker: String,
-        startDate: LocalDate,
-        endDate: LocalDate,
-        marketDate: LocalDate?,
-        reason: String
-    ): String {
-        val message = "Yahoo adjusted-close data for $ticker contains unsupported null rows; $reason;"
-        if (loggedNullAdjustedCloseWarnings.add("$ticker|$reason")) {
-            logger.error(
-                "$message first seen for range $startDate..$endDate (currentTradingDate=$marketDate)"
-            )
-        }
-        return message
-    }
-
-    private fun repairSplitLikeAdjustedCloseBreaks(
-        ticker: String,
-        prices: MutableMap<LocalDate, Double>,
-        rows: List<YahooPriceRow>
-    ): List<String> {
-        val pricedRows = rows
-            .filter { row ->
-                row.price?.takeIf { it > 0.0 } != null &&
-                        row.close?.takeIf { it > 0.0 } != null &&
-                        prices.containsKey(row.date)
-            }
-            .sortedBy { it.date }
-        if (pricedRows.size < 2) return emptyList()
-
-        val warnings = mutableListOf<String>()
-        for (i in 1 until pricedRows.size) {
-            val prev = pricedRows[i - 1]
-            val cur = pricedRows[i]
-            val prevClose = prev.close ?: continue
-            val curClose = cur.close ?: continue
-            val prevAdj = prices[prev.date] ?: continue
-            val curAdj = prices[cur.date] ?: continue
-            val rawRatio = curClose / prevClose
-            val adjRatio = curAdj / prevAdj
-            val splitFactor = matchingSplitFactor(rawRatio, adjRatio, prevAdj / prevClose, curAdj / curClose)
-                ?: continue
-            val historicalMultiplier = if (rawRatio < 1.0) 1.0 / splitFactor else splitFactor
-
-            val datesToRepair = prices.keys.filter { it < cur.date }
-            for (date in datesToRepair) {
-                prices[date] = (prices[date] ?: continue) * historicalMultiplier
-            }
-
-            val message = "Yahoo adjusted-close data for $ticker contained split-like break on ${cur.date}; " +
-                    "repaired earlier prices by multiplier $historicalMultiplier (detected split factor $splitFactor)."
-            if (loggedSplitRepairWarnings.add("$ticker|${cur.date}|$splitFactor")) {
-                logger.warn(message)
-            }
-            warnings += message
-        }
-        return warnings
-    }
-
-    private fun matchingSplitFactor(
-        rawRatio: Double,
-        adjRatio: Double,
-        prevAdjToClose: Double,
-        curAdjToClose: Double
-    ): Double? {
-        if (rawRatio <= 0.0 || adjRatio <= 0.0 || prevAdjToClose <= 0.0 || curAdjToClose <= 0.0) return null
-        val rawJump = if (rawRatio >= 1.0) rawRatio else 1.0 / rawRatio
-        val adjJump = if (adjRatio >= 1.0) adjRatio else 1.0 / adjRatio
-        if (rawJump < 1.2 || abs(rawJump - adjJump) / rawJump > 0.025) return null
-        if (abs(prevAdjToClose - curAdjToClose) / prevAdjToClose > 0.025) return null
-
-        return commonSplitFactors.firstOrNull { factor ->
-            abs(rawJump - factor) / factor <= 0.025
+    private fun executeTextRequest(url: String, errorMessage: (okhttp3.Response) -> String): String {
+        val request = Request.Builder().url(url).build()
+        return http.newCall(request).execute().use { resp ->
+            check(resp.isSuccessful) { errorMessage(resp) }
+            resp.body!!.string()
         }
     }
-
-    private data class YahooPriceRow(
-        val date: LocalDate,
-        val price: Double?,
-        val close: Double?
-    )
 }
-
-// ── Config ────────────────────────────────────────────────────────────────────
-
-val TICKERS = listOf("SPY")
-val START_DATE: LocalDate = LocalDate.of(2007, 1, 1)   // CTA inception date
-val END_DATE: LocalDate = LocalDate.now()
-const val OUTPUT_CSV = "portfolio_prices.csv"
-
-// ── HTTP client (standalone use) ──────────────────────────────────────────────
-
-val http = OkHttpClient.Builder()
-    .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(30, TimeUnit.SECONDS)
-    .addInterceptor { chain ->
-        // Yahoo Finance requires a browser-like User-Agent
-        val req = chain.request().newBuilder()
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Accept", "application/json")
-            .build()
-        chain.proceed(req)
-    }
-    .build()
-
-// ── Data model ────────────────────────────────────────────────────────────────
-
-data class PriceSeries(
-    val ticker: String,
-    val prices: Map<LocalDate, Double>   // date → adjusted close
-)
-
-// ── Yahoo Finance fetch ───────────────────────────────────────────────────────
-
-fun fetchYahoo(ticker: String): PriceSeries {
-    val prices = YahooHistoricalFetcher.fetchAdjustedClose(ticker, START_DATE, END_DATE)
-    println("    → ${prices.size} trading days for $ticker")
-    return PriceSeries(ticker, prices)
-}
-
-// ── CSV writer ────────────────────────────────────────────────────────────────
-
-fun writeCsv(series: List<PriceSeries>, outputPath: String) {
-    // Intersect dates where every ticker has a price
-    val commonDates = series
-        .map { it.prices.keys }
-        .reduce { acc, dates -> acc intersect dates }
-        .sorted()
-
-    println("\nWriting $outputPath …")
-    println("  Common trading days: ${commonDates.size}")
-    println("  Range: ${commonDates.first()} → ${commonDates.last()}")
-
-    val file = File(outputPath)
-    file.bufferedWriter().use { out ->
-        // Header
-        val header = listOf("date") + series.map { it.ticker.lowercase() + "_adj_close" }
-        out.write(header.joinToString(","))
-        out.newLine()
-
-        // Rows
-        for (date in commonDates) {
-            val row = mutableListOf(date.toString())
-            for (s in series) {
-                val price = s.prices[date]!!
-                row.add("%.6f".format(price))
-            }
-            out.write(row.joinToString(","))
-            out.newLine()
-        }
-    }
-
-    println("  Done → ${file.absolutePath}")
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
-
-fun main() {
-    println("=== Yahoo Finance Daily Price Fetcher ===")
-    println("Tickers : ${TICKERS.joinToString(", ")}")
-    println("From    : $START_DATE")
-    println("To      : $END_DATE")
-    println("Output  : $OUTPUT_CSV")
-    println()
-
-    val series = try {
-        TICKERS.map { fetchYahoo(it) }
-    } catch (e: Exception) {
-        System.err.println("\nERROR: ${e.message}")
-        System.err.println("Make sure okhttp and org.json are on the classpath.")
-        return
-    }
-
-    writeCsv(series, OUTPUT_CSV)
-
-    println()
-    println("Preview (first 5 rows):")
-    println("date,vti_adj_close,cta_adj_close,dbmf_adj_close")
-    File(OUTPUT_CSV).bufferedReader().use { br ->
-        br.readLine() // skip header
-        repeat(5) { br.readLine()?.let { println(it) } }
-    }
-
-    println()
-    println("All done. Load '$OUTPUT_CSV' into Excel, Python, R, or any tool for further analysis.")
-}
-
-
-/*
- * ─────────────────────────────────────────────────────────────────────────────
- * README — Gradle build (copy-paste into a new project)
- * ─────────────────────────────────────────────────────────────────────────────
- *
- * build.gradle.kts:
- * -----------------
- *
- *   plugins {
- *       kotlin("jvm") version "2.0.0"
- *       application
- *   }
- *
- *   application {
- *       mainClass.set("YahooFetcherKt")
- *   }
- *
- *   repositories { mavenCentral() }
- *
- *   dependencies {
- *       implementation("com.squareup.okhttp3:okhttp:4.12.0")
- *       implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
- *   }
- *
- * Place YahooFetcher.kt in src/main/kotlin/ then run:
- *   ./gradlew run
- *
- * The file portfolio_prices.csv will be created in the project root.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * CSV output format:
- * ─────────────────────────────────────────────────────────────────────────────
- *
- *   date,vti_adj_close,cta_adj_close,dbmf_adj_close
- *   2022-03-07,209.123456,24.500000,21.340000
- *   2022-03-08,207.654321,24.320000,21.100000
- *   ...
- *
- * Only dates where ALL three tickers have traded are included.
- * CTA started on 2022-03-07 so that is the first row.
- * ─────────────────────────────────────────────────────────────────────────────
- */
