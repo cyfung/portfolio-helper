@@ -1,59 +1,37 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="1000"
     android:viewportHeight="1000">
 
-    <!-- Background white with rounded corners -->
     <path
-        android:pathData="M100,0 L900,0 A100,100 0 0 1 1000,100 L1000,900 A100,100 0 0 1 900,1000 L100,1000 A100,100 0 0 1 0,900 L0,100 A100,100 0 0 1 100,0 Z"
-        android:fillColor="#FFFFFF" />
+        android:fillColor="#95D6F3"
+        android:pathData="M174,700 L226,700 Q240,700 240,714 L240,826 Q240,840 226,840 L174,840 Q160,840 160,826 L160,714 Q160,700 174,700 Z" />
+    <path
+        android:fillColor="#95D6F3"
+        android:pathData="M294,640 L346,640 Q360,640 360,654 L360,826 Q360,840 346,840 L294,840 Q280,840 280,826 L280,654 Q280,640 294,640 Z" />
+    <path
+        android:fillColor="#95D6F3"
+        android:pathData="M414,720 L466,720 Q480,720 480,734 L480,826 Q480,840 466,840 L414,840 Q400,840 400,826 L400,734 Q400,720 414,720 Z" />
+    <path
+        android:fillColor="#95D6F3"
+        android:pathData="M534,600 L586,600 Q600,600 600,614 L600,826 Q600,840 586,840 L534,840 Q520,840 520,826 L520,614 Q520,600 534,600 Z" />
+    <path
+        android:fillColor="#95D6F3"
+        android:pathData="M654,660 L706,660 Q720,660 720,674 L720,826 Q720,840 706,840 L654,840 Q640,840 640,826 L640,674 Q640,660 654,660 Z" />
+    <path
+        android:fillColor="#95D6F3"
+        android:pathData="M774,560 L826,560 Q840,560 840,574 L840,826 Q840,840 826,840 L774,840 Q760,840 760,826 L760,574 Q760,560 774,560 Z" />
 
-    <!-- Area fill with Gradient -->
     <path
-        android:pathData="M116,786 L116,626 L276,498 L404,562 L564,338 L724,402 L884,242 L884,786 Z">
-        <fill android:type="linear"
-              android:startX="500" android:startY="242"
-              android:endX="500" android:endY="786">
-            <item android:offset="0" android:color="#331A56FF" /> <!-- 0.2 opacity -->
-            <item android:offset="1" android:color="#001A56FF" /> <!-- 0 opacity -->
-        </fill>
-    </path>
-
-    <!-- Chart line -->
-    <path
-        android:pathData="M116,626 L276,498 L404,562 L564,338 L724,402 L884,242"
-        android:strokeColor="#1A56FF"
-        android:strokeWidth="48"
+        android:fillColor="#00000000"
+        android:pathData="M140,460 C260,320 380,320 480,420 C580,500 700,280 860,220"
+        android:strokeColor="#0EA5E9"
+        android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeLineCap="round" />
+        android:strokeWidth="64" />
 
-    <!-- Dots -->
-    <!-- First dot (white fill, blue stroke) -->
     <path
-        android:pathData="M564,338m-56,0a56,56 0 1,1 112,0a56,56 0 1,1 -112,0"
-        android:fillColor="#FFFFFF"
-        android:strokeColor="#1A56FF"
-        android:strokeWidth="40" />
-
-    <!-- Second dot (solid blue) -->
-    <path
-        android:pathData="M884,242m-56,0a56,56 0 1,1 112,0a56,56 0 1,1 -112,0"
-        android:fillColor="#1A56FF" />
-
-    <!-- Bottom axis -->
-    <path
-        android:pathData="M116,850 L884,850"
-        android:strokeColor="#1A56FF"
-        android:strokeWidth="24"
-        android:fillAlpha="0.25" />
-
-    <!-- Tick marks -->
-    <path
-        android:pathData="M276,850 L276,898 M564,850 L564,898 M884,850 L884,898"
-        android:strokeColor="#1A56FF"
-        android:strokeWidth="24"
-        android:fillAlpha="0.4" />
-
+        android:fillColor="#0EA5E9"
+        android:pathData="M860,220m-60,0a60,60 0,1 1,120 0a60,60 0,1 1,-120 0" />
 </vector>
