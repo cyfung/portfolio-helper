@@ -1,6 +1,7 @@
 // ── BacktestPage.tsx — Full React port of backtest runner ─────────────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush, ReferenceDot,
@@ -251,6 +252,64 @@ function realPortfolioDataFromResponse(d: Partial<RealPortfolioData>, navScaleFa
     navScaleFactor,
   }
 }
+
+interface ChartRenderBoundaryProps {
+  render: () => ReactNode
+  displayResults: BacktestResults | null
+  chartData: unknown
+  selected: Set<string>
+  allChecked: boolean
+  anyChecked: boolean
+  realSlug: string
+  realData: RealPortfolioData | null
+  isDark: boolean
+  gridColor: string
+  textColor: string
+  logScale: boolean
+  scaleToNav: boolean
+  chartWidth: number
+  visibleActionPointTypes: Set<string>
+  actionPointChartVisibility: Record<ActionPointChartKey, boolean>
+  forceActionPointChartDots: Record<ActionPointChartKey, boolean>
+  selectedActionCurve: unknown
+  selectedActionPointGroups: unknown
+  showNavScaleBtn: boolean
+  navSecondAxis: boolean
+  shouldScaleToNav: boolean
+  chartRightMargin: number
+  legendMetaMap: unknown
+}
+
+const ChartRenderBoundary = memo(
+  function ChartRenderBoundary({ render }: ChartRenderBoundaryProps) {
+    return <>{render()}</>
+  },
+  (prev, next) => (
+    prev.displayResults === next.displayResults &&
+    prev.chartData === next.chartData &&
+    prev.selected === next.selected &&
+    prev.allChecked === next.allChecked &&
+    prev.anyChecked === next.anyChecked &&
+    prev.realSlug === next.realSlug &&
+    prev.realData === next.realData &&
+    prev.isDark === next.isDark &&
+    prev.gridColor === next.gridColor &&
+    prev.textColor === next.textColor &&
+    prev.logScale === next.logScale &&
+    prev.scaleToNav === next.scaleToNav &&
+    prev.chartWidth === next.chartWidth &&
+    prev.visibleActionPointTypes === next.visibleActionPointTypes &&
+    prev.actionPointChartVisibility === next.actionPointChartVisibility &&
+    prev.forceActionPointChartDots === next.forceActionPointChartDots &&
+    prev.selectedActionCurve === next.selectedActionCurve &&
+    prev.selectedActionPointGroups === next.selectedActionPointGroups &&
+    prev.showNavScaleBtn === next.showNavScaleBtn &&
+    prev.navSecondAxis === next.navSecondAxis &&
+    prev.shouldScaleToNav === next.shouldScaleToNav &&
+    prev.chartRightMargin === next.chartRightMargin &&
+    prev.legendMetaMap === next.legendMetaMap
+  ),
+)
 
 function withoutRealCurveKeys(selected: Set<string>) {
   return new Set([...selected].filter(key => !key.startsWith('real-')))
@@ -1171,8 +1230,32 @@ export default function BacktestPage() {
         </div>
       )}
 
-      {displayResults && chartData && (
-        <>
+      <ChartRenderBoundary
+        displayResults={displayResults}
+        chartData={chartData}
+        selected={selected}
+        allChecked={allChecked}
+        anyChecked={anyChecked}
+        realSlug={realSlug}
+        realData={realData}
+        isDark={isDark}
+        gridColor={gridColor}
+        textColor={textColor}
+        logScale={logScale}
+        scaleToNav={scaleToNav}
+        chartWidth={chartWidth}
+        visibleActionPointTypes={visibleActionPointTypes}
+        actionPointChartVisibility={actionPointChartVisibility}
+        forceActionPointChartDots={forceActionPointChartDots}
+        selectedActionCurve={selectedActionCurve}
+        selectedActionPointGroups={selectedActionPointGroups}
+        showNavScaleBtn={showNavScaleBtn}
+        navSecondAxis={navSecondAxis}
+        shouldScaleToNav={shouldScaleToNav}
+        chartRightMargin={chartRightMargin}
+        legendMetaMap={legendMetaMap}
+        render={() => displayResults && chartData ? (
+          <>
           {/* Stats table */}
           <div className="stats-container">
             <table className="backtest-stats-table">
@@ -1504,8 +1587,9 @@ export default function BacktestPage() {
               </div>
             </>
           )}
-        </>
-      )}
+          </>
+        ) : null}
+      />
 
       {pendingImport && (
         <ImportDependenciesDialog
