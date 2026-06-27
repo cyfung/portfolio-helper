@@ -47,7 +47,7 @@ fun SettingsScreen(vm: MainViewModel, onAskPermission: () -> Unit) {
     val portfolioAlerts by vm.portfolioAlerts.collectAsState()
     val marginStats by vm.marginCheckStats.collectAsState()
     val notificationsEnabled by vm.marginCheckNotificationsEnabled.collectAsState()
-    val scalingPercent by vm.scalingPercent.collectAsState()
+    val scalingPercent by vm.configuredScalingPercent.collectAsState()
     val afterHoursGray by vm.afterHoursGray.collectAsState()
     val currencySuggestionThreshold by vm.currencySuggestionThresholdUsd.collectAsState()
     val workerStatus by vm.workerStatus.collectAsState()

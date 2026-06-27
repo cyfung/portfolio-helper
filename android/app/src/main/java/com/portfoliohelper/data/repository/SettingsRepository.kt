@@ -27,6 +27,7 @@ object PrefsKeys {
     val SELECTED_PORTFOLIO_ID   = intPreferencesKey("selected_portfolio_id")
     val MARGIN_CHECK_NOTIFICATIONS_ENABLED = booleanPreferencesKey("margin_check_notifications_enabled")
     val SCALING_PERCENT         = intPreferencesKey("scaling_percent")
+    val SCALING_ENABLED         = booleanPreferencesKey("scaling_enabled")
     val AFTER_HOURS_GRAY        = booleanPreferencesKey("after_hours_gray")
 
     // Margin check stats
@@ -38,6 +39,9 @@ object PrefsKeys {
     val MARGIN_CHECK_RUN_START      = longPreferencesKey("margin_check_run_start")
     val CURRENCY_SUGGESTION_THRESHOLD_USD = doublePreferencesKey("currency_suggestion_threshold_usd")
     val CURRENCY_SUGGESTION_TEXT    = stringPreferencesKey("currency_suggestion_text")
+
+    fun REBALANCE_TARGET_MARGIN_PCT(portfolioId: Int) =
+        doublePreferencesKey("rebalance_target_margin_pct_$portfolioId")
 }
 
 data class MarginCheckStats(
@@ -140,8 +144,18 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[PrefsKeys.MARGIN_CHECK_NOTIFICATIONS_ENABLED] = enabled }
     }
 
-    val scalingPercent: Flow<Int?> = context.dataStore.data.map { prefs ->
+    val configuredScalingPercent: Flow<Int?> = context.dataStore.data.map { prefs ->
         prefs[PrefsKeys.SCALING_PERCENT]
+    }
+
+    val scalingEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.SCALING_ENABLED] ?: true
+    }
+
+    val scalingPercent: Flow<Int?> = context.dataStore.data.map { prefs ->
+        val configured = prefs[PrefsKeys.SCALING_PERCENT]
+        val enabled = prefs[PrefsKeys.SCALING_ENABLED] ?: true
+        if (enabled) configured else null
     }
 
     suspend fun saveScalingPercent(percent: Int?) {
@@ -216,6 +230,25 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun saveCurrencySuggestionThresholdUsd(usd: Double) {
         context.dataStore.edit { it[PrefsKeys.CURRENCY_SUGGESTION_THRESHOLD_USD] = usd }
+    }
+
+    fun rebalanceTargetMarginPct(portfolioId: Int): Flow<Double?> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.REBALANCE_TARGET_MARGIN_PCT(portfolioId)]
+    }
+
+    suspend fun saveRebalanceTargetMarginPct(portfolioId: Int, pct: Double?) {
+        context.dataStore.edit { prefs ->
+            val key = PrefsKeys.REBALANCE_TARGET_MARGIN_PCT(portfolioId)
+            if (pct == null) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = pct
+            }
+        }
+    }
+
+    suspend fun saveScalingEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PrefsKeys.SCALING_ENABLED] = enabled }
     }
 
     suspend fun setMarginCheckRunning(isRunning: Boolean, startTime: Long = 0L) {

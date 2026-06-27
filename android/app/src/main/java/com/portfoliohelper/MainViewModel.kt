@@ -122,6 +122,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "Loading…")
 
+    val configuredScalingPercent: StateFlow<Int?> = settings.configuredScalingPercent
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val scalingEnabled: StateFlow<Boolean> = settings.scalingEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     val scalingPercent: StateFlow<Int?> = settings.scalingPercent
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -130,6 +136,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val currencySuggestionThresholdUsd: StateFlow<Double> = settings.currencySuggestionThresholdUsd
         .stateIn(viewModelScope, SharingStarted.Eagerly, 2.0)
+
+    val rebalanceTargetMarginPct: StateFlow<Double?> = selectedPortfolioId
+        .flatMapLatest { pid -> settings.rebalanceTargetMarginPct(pid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // ── Cash screen navigation (triggered by notification tap) ───────────────
 
@@ -257,6 +267,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Derived: groups ───────────────────────────────────────────────────────
 
+    val portfolioTotalsUsd: StateFlow<PortfolioCalculator.PortfolioTotals> =
+        combine(positions, cashEntries, marketData, allPortfolioStockValuesUsd, scalingPercent) { pos, cash, prices, stockValues, scaling ->
+            PortfolioCalculator.computeTotals(pos, cash, prices, "USD", stockValues, scaling)
+        }.stateIn(
+            viewModelScope, SharingStarted.Eagerly,
+            PortfolioCalculator.PortfolioTotals(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false)
+        )
+
     val groupRows: StateFlow<List<GroupRow>> =
         combine(positions, marketData, portfolioTotals, scalingPercent) { pos, prices, totals, scaling ->
             PortfolioCalculator.computeGroups(pos, prices, totals.stockGrossValue, scaling)
@@ -314,12 +332,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.saveScalingPercent(percent)
     }
 
+    fun saveScalingEnabled(enabled: Boolean) = viewModelScope.launch {
+        settings.saveScalingEnabled(enabled)
+    }
+
     fun saveAfterHoursGray(gray: Boolean) = viewModelScope.launch {
         settings.saveAfterHoursGray(gray)
     }
 
     fun saveCurrencySuggestionThresholdUsd(usd: Double) = viewModelScope.launch {
         settings.saveCurrencySuggestionThresholdUsd(usd)
+    }
+
+    fun saveRebalanceTargetMarginPct(pct: Double?) = viewModelScope.launch {
+        settings.saveRebalanceTargetMarginPct(selectedPortfolioId.value, pct)
     }
 
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────

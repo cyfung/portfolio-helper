@@ -22,8 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,6 +56,7 @@ import com.portfoliohelper.ui.components.UpdateTimestamp
 import com.portfoliohelper.ui.screens.CashScreen
 import com.portfoliohelper.ui.screens.GroupsScreen
 import com.portfoliohelper.ui.screens.PortfolioScreen
+import com.portfoliohelper.ui.screens.RebalanceScreen
 import com.portfoliohelper.ui.screens.SettingsScreen
 import com.portfoliohelper.ui.theme.PortfolioHelperTheme
 import com.portfoliohelper.ui.theme.ext
@@ -63,6 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 @Serializable object PortfolioRoute
+@Serializable object RebalanceRoute
 @Serializable object GroupsRoute
 @Serializable object CashRoute
 @Serializable object SettingsRoute
@@ -145,6 +150,7 @@ data class NavItem<T : Any>(val route: T, val label: String, val icon: ImageVect
 
 val navItems = listOf(
     NavItem(PortfolioRoute, "Portfolio", Icons.Default.ShowChart),
+    NavItem(RebalanceRoute, "Rebal", Icons.Default.Calculate),
     NavItem(GroupsRoute, "Groups", Icons.Default.AccountTree),
     NavItem(CashRoute, "Cash", Icons.Default.AccountBalance),
     NavItem(SettingsRoute, "Settings", Icons.Default.Settings)
@@ -195,6 +201,58 @@ fun PortfolioSelectorTitle(
     }
 }
 
+@Composable
+private fun PrivacyScalingToggleButton(
+    configuredPercent: Int?,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit
+) {
+    if (configuredPercent == null) return
+
+    val ext = MaterialTheme.ext
+    var showDisableConfirm by remember { mutableStateOf(false) }
+    val label = if (enabled) "Privacy scaling on" else "Privacy scaling off"
+
+    IconButton(
+        onClick = {
+            if (enabled) {
+                showDisableConfirm = true
+            } else {
+                onEnabledChange(true)
+            }
+        },
+        colors = IconButtonDefaults.iconButtonColors(
+            contentColor = if (enabled) ext.actionPositive else ext.textSecondary
+        )
+    ) {
+        Icon(
+            imageVector = if (enabled) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+            contentDescription = label
+        )
+    }
+
+    if (showDisableConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDisableConfirm = false },
+            title = { Text("Disable privacy scaling?") },
+            text = { Text("Real values will become visible.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDisableConfirm = false
+                    onEnabledChange(false)
+                }) {
+                    Text("Disable")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisableConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
@@ -219,6 +277,8 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
     val selectedPortfolioId by vm.selectedPortfolioId.collectAsState()
     val marketData by vm.marketData.collectAsState()
     val activeSymbols by vm.activeSymbols.collectAsState()
+    val configuredScalingPercent by vm.configuredScalingPercent.collectAsState()
+    val scalingEnabled by vm.scalingEnabled.collectAsState()
 
     // Dynamic list taking currency from Cash across all portfolios, with USD always first
     val currencies = (listOf("USD") + allCashEntries.map { it.currency }).distinct()
@@ -263,6 +323,11 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
                     }
                 },
                 actions = {
+                    PrivacyScalingToggleButton(
+                        configuredPercent = configuredScalingPercent,
+                        enabled = scalingEnabled,
+                        onEnabledChange = vm::saveScalingEnabled
+                    )
                     DynamicCurrencySwitcher(
                         currencies = currencies,
                         selected = selectedCurrency,
@@ -307,6 +372,7 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable<PortfolioRoute> { PortfolioScreen(vm) }
+            composable<RebalanceRoute> { RebalanceScreen(vm) }
             composable<GroupsRoute> { GroupsScreen(vm) }
             composable<CashRoute> { CashScreen(vm) }
             composable<SettingsRoute> { SettingsScreen(vm, onAskPermission = onAskPermission) }
