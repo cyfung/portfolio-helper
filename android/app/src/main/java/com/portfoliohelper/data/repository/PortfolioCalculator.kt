@@ -195,7 +195,13 @@ object PortfolioCalculator {
         positions: List<Position>,
         cashEntries: List<CashEntry>
     ): Map<String, YahooQuote> {
-        val initialSymbols = positions.filter { !it.isDeleted }.map { it.symbol }.distinct().toMutableSet()
+        val activePositions = positions.filter { !it.isDeleted }
+        val initialSymbols = activePositions
+            .flatMap { position ->
+                listOf(position.symbol) + parseLetfDefinition(position.letf).map { it.second }
+            }
+            .distinct()
+            .toMutableSet()
         val cashCurrencies = cashEntries.mapNotNull { if (it.portfolioRef == null) it.currency else null }
             .distinct()
             .filter { it != "USD" }

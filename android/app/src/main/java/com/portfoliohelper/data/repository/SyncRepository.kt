@@ -275,7 +275,14 @@ class SyncRepository(
 
                 entry.stocks.forEach { s ->
                     db.positionDao().upsert(
-                        Position(portfolioId = serialId, symbol = s.symbol, quantity = s.amount, targetWeight = s.targetWeight, groups = s.groups)
+                        Position(
+                            portfolioId = serialId,
+                            symbol = s.symbol,
+                            quantity = s.amount,
+                            targetWeight = s.targetWeight,
+                            letf = s.letf,
+                            groups = s.groups
+                        )
                     )
                 }
 

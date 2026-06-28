@@ -14,14 +14,18 @@ import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import com.portfoliohelper.data.repository.AndroidNavService
 import com.portfoliohelper.data.repository.IbkrInterestCalculator
 import com.portfoliohelper.data.repository.IbkrInterestResult
 import com.portfoliohelper.data.repository.IbkrRateFetcher
 import com.portfoliohelper.data.repository.IbkrRatesSnapshot
+import com.portfoliohelper.data.repository.LetfEstPriceCalculator
 import com.portfoliohelper.data.repository.MarginCheckRunner
 import com.portfoliohelper.data.repository.MarginCheckStats
+import com.portfoliohelper.data.repository.NavSnapshot
 import com.portfoliohelper.data.repository.PortfolioCalculator
 import com.portfoliohelper.data.repository.SyncServerInfo
+import com.portfoliohelper.data.repository.YahooFinanceClient
 import com.portfoliohelper.data.repository.YahooQuote
 import com.portfoliohelper.debug.WidgetPreviewMocks
 import com.portfoliohelper.debug.WidgetPreviewState
@@ -37,8 +41,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import com.portfoliohelper.data.repository.parseLetfDefinition
 
 sealed class SyncStatus {
     object Idle : SyncStatus()
@@ -161,11 +169,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     it.isMarketClosed,
                     it.currency,
                     it.timestamp,
+                    localDate = it.localDate,
                     tradingPeriodStart = it.tradingPeriodStart
                 )
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val navRefreshVersion = MutableStateFlow(0L)
+
+    val navData: StateFlow<Map<String, NavSnapshot>> = combine(positions, navRefreshVersion) { pos, _ ->
+        pos.map { it.symbol }
+    }.mapLatest { symbols ->
+        if (symbols.isEmpty()) {
+            emptyMap()
+        } else {
+            AndroidNavService.fetchNavs(symbols)
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    val estPrices: StateFlow<Map<String, Double>> = combine(positions, marketData, navData) { pos, prices, nav ->
+        EstInputs(pos, prices, nav)
+    }.mapLatest { input ->
+        computeEstimates(input)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    val estWaitingSymbols: StateFlow<Set<String>> = combine(positions, navData) { pos, nav ->
+        pos.asSequence()
+            .filter { parseLetfDefinition(it.letf).isNotEmpty() }
+            .filter { AndroidNavService.supports(it.symbol) && it.symbol !in nav }
+            .map { it.symbol }
+            .toSet()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     // ── Active Symbols ────────────────────────────────────────────────────────
 
@@ -175,7 +210,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         marketData,
         displayCurrency
     ) { allPos, cash, data, displayCcy ->
-        val symbols = allPos.filter { !it.isDeleted }.map { it.symbol }.toMutableSet()
+        val symbols = allPos
+            .filter { !it.isDeleted }
+            .flatMap { position ->
+                listOf(position.symbol) + parseLetfDefinition(position.letf).map { it.second }
+            }
+            .toMutableSet()
 
         val cashCurrencies = cash.filter { it.portfolioRef == null }.map { it.currency }.distinct().filter { it != "USD" }
         cashCurrencies.forEach { symbols.add("${it}USD=X") }
@@ -460,6 +500,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (symbols.isNotEmpty()) {
             PortfolioCalculator.fetchAndCacheMarketData(db, pos, cash)
         }
+        navRefreshVersion.update { it + 1 }
+    }
+
+    private suspend fun computeEstimates(input: EstInputs): Map<String, Double> {
+        val historyCache = mutableMapOf<HistoricalPriceKey, Map<LocalDate, Double>>()
+        suspend fun historicalPrices(symbol: String, start: LocalDate, end: LocalDate): Map<LocalDate, Double> {
+            val key = HistoricalPriceKey(symbol, start, end)
+            return historyCache.getOrPut(key) {
+                runCatching { YahooFinanceClient.fetchAdjustedClose(symbol, start, end) }.getOrDefault(emptyMap())
+            }
+        }
+
+        return input.positions.mapNotNull { position ->
+            val components = parseLetfDefinition(position.letf)
+            if (components.isEmpty()) return@mapNotNull null
+            val nav = input.navData[position.symbol]
+            if (AndroidNavService.supports(position.symbol) && nav == null) return@mapNotNull null
+            val est = LetfEstPriceCalculator.compute(
+                components = components,
+                quote = input.prices[position.symbol],
+                nav = nav,
+                quoteProvider = { input.prices[it] },
+                historicalPriceProvider = ::historicalPrices
+            ) ?: return@mapNotNull null
+            position.symbol to est
+        }.toMap()
     }
 
     // ── Dev: widget state preview (debug only) ───────────────────────────────
@@ -518,3 +584,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 data class CashTotals(val cashTotal: Double, val margin: Double, val isReady: Boolean)
+
+private data class EstInputs(
+    val positions: List<Position>,
+    val prices: Map<String, YahooQuote>,
+    val navData: Map<String, NavSnapshot>
+)
+
+private data class HistoricalPriceKey(
+    val symbol: String,
+    val start: LocalDate,
+    val end: LocalDate
+)

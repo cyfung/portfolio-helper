@@ -54,7 +54,7 @@ import com.portfoliohelper.ui.components.MonoText
 import com.portfoliohelper.ui.components.SummaryCard
 import com.portfoliohelper.ui.components.TableHeader
 import com.portfoliohelper.ui.components.TableLayout
-import com.portfoliohelper.ui.components.WeightBreakdown
+import com.portfoliohelper.ui.components.WeightDiffPill
 import com.portfoliohelper.ui.components.changeColor
 import com.portfoliohelper.ui.components.formatCurrency
 import com.portfoliohelper.ui.components.formatPct
@@ -67,14 +67,17 @@ import kotlin.math.abs
 import kotlin.math.round
 
 private const val COL_WEIGHT = 0
-private const val COL_REBAL_DOLLARS = 1
-private const val COL_REBAL_QTY = 2
-private val COLUMN_LABELS = listOf("Weight", "Rebal $", "Rebal Qty")
+private const val COL_EST = 1
+private const val COL_REBAL_DOLLARS = 2
+private const val COL_REBAL_QTY = 3
+private val COLUMN_LABELS = listOf("Weight", "EST", "Rebal💰", "Rebal Qty")
 
 private data class RebalanceStockDisplayData(
     val symbol: String,
     val currentWeight: Double,
     val targetWeight: Double,
+    val estPriceNative: Double?,
+    val estWaiting: Boolean,
     val rebalDollars: Double?,
     val rebalQty: Double?,
 )
@@ -90,6 +93,8 @@ fun RebalanceScreen(vm: MainViewModel) {
     val displayCcy by vm.displayCurrency.collectAsState()
     val scaling by vm.scalingPercent.collectAsState()
     val targetMarginPct by vm.rebalanceTargetMarginPct.collectAsState()
+    val estPrices by vm.estPrices.collectAsState()
+    val estWaitingSymbols by vm.estWaitingSymbols.collectAsState()
 
     val scrollState = rememberScrollState()
     val hasTargetWeights = positions.any { it.targetWeight > 0 }
@@ -115,6 +120,8 @@ fun RebalanceScreen(vm: MainViewModel) {
                 rebalTotalUsd = rebalTotalUsd,
                 scaling = scaling,
                 hasTargetWeights = hasTargetWeights,
+                estPriceNative = estPrices[pos.symbol],
+                estWaiting = pos.symbol in estWaitingSymbols,
             )
         }
 
@@ -122,14 +129,19 @@ fun RebalanceScreen(vm: MainViewModel) {
             symbol = "WWWW.PA",
             currentWeight = 22.2,
             targetWeight = 99.9,
+            estPriceNative = 888.88,
+            estWaiting = false,
             rebalDollars = -88888.88,
             rebalQty = -888.88,
         )
         val sampleSymbol = widthMeasureData.maxBy { it.symbol.length }.symbol
         val sampleWeight = widthMeasureData.maxBy {
             val diffWeight = it.currentWeight - it.targetWeight
-            "%.1f%.1f%.1f".format(it.currentWeight, it.targetWeight, diffWeight).length
+            formatSignedPct(diffWeight).length
         }
+        val sampleEst = widthMeasureData.maxBy {
+            (estText(it)).length
+        }.estPriceNative ?: 0.0
         val sampleRebalDollars = widthMeasureData.maxBy {
             (it.rebalDollars?.let(::formatSigned) ?: "---").length
         }.rebalDollars ?: 0.0
@@ -149,9 +161,13 @@ fun RebalanceScreen(vm: MainViewModel) {
             },
             columnContents = listOf(
                 {
-                    WeightBreakdown(
-                        current = sampleWeight.currentWeight,
-                        target = sampleWeight.targetWeight,
+                    WeightDiffPill(sampleWeight.currentWeight - sampleWeight.targetWeight)
+                },
+                {
+                    MonoText(
+                        text = formatSmart(sampleEst),
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 15.sp,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 },
@@ -403,6 +419,7 @@ private fun RebalancePositionRow(
 ) {
     val ext = MaterialTheme.ext
     val weightW = layout.columnWidths[COL_WEIGHT]
+    val estW = layout.columnWidths[COL_EST]
     val rebalDollarsW = layout.columnWidths[COL_REBAL_DOLLARS]
     val rebalQtyW = layout.columnWidths[COL_REBAL_QTY]
     val scrollMod = if (layout.isScrollable) Modifier.horizontalScroll(scrollState) else Modifier
@@ -427,10 +444,20 @@ private fun RebalancePositionRow(
             modifier = scrollMod.padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            WeightBreakdown(
-                current = display.currentWeight,
-                target = display.targetWeight,
+            val weightDiff = display.currentWeight - display.targetWeight
+            Row(
                 modifier = Modifier.width(weightW),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WeightDiffPill(weightDiff)
+            }
+            MonoText(
+                text = estText(display),
+                color = if (display.estPriceNative != null) ext.textPrimary else ext.textTertiary,
+                fontWeight = FontWeight.Normal,
+                fontSize = 15.sp,
+                modifier = Modifier.width(estW),
             )
             MonoText(
                 text = display.rebalDollars?.let(::formatSigned) ?: "-",
@@ -468,6 +495,8 @@ private fun buildRebalanceStockDisplayData(
     rebalTotalUsd: Double,
     scaling: Int?,
     hasTargetWeights: Boolean,
+    estPriceNative: Double?,
+    estWaiting: Boolean,
 ): RebalanceStockDisplayData {
     val rawMark = quote?.regularMarketPrice ?: quote?.previousClose
     val multiplierToUsd = quote?.let { quoteToUsdMultiplier(it, prices) }
@@ -488,10 +517,19 @@ private fun buildRebalanceStockDisplayData(
         symbol = pos.symbol,
         currentWeight = currentWeight,
         targetWeight = pos.targetWeight,
+        estPriceNative = estPriceNative,
+        estWaiting = estWaiting,
         rebalDollars = rebalNative,
         rebalQty = rebalQty,
     )
 }
+
+private fun estText(display: RebalanceStockDisplayData): String =
+    when {
+        display.estPriceNative != null -> formatSmart(display.estPriceNative)
+        display.estWaiting -> "⏳"
+        else -> "-"
+    }
 
 private fun quoteToUsdMultiplier(quote: YahooQuote, prices: Map<String, YahooQuote>): Double? {
     val currency = quote.currency ?: "USD"

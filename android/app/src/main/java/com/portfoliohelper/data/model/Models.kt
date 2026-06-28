@@ -22,6 +22,7 @@ data class Position(
     val symbol: String,
     val quantity: Double,
     val targetWeight: Double,     // % 0–100
+    val letf: String = "",
     val groups: String = "",      // semicolon-separated "multiplier name" entries
     val isDeleted: Boolean = false
 )
@@ -60,7 +61,7 @@ data class MarketPrice(
     val isMarketClosed: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
     val currency: String? = null,
-    val localDate: String? = null,          // local trading date "YYYY-MM-DD"
+    val localDate: String? = null,          // local mark-price date "YYYY-MM-DD"
     val tradingPeriodStart: Long? = null    // regular session start (Unix seconds)
 )
 
