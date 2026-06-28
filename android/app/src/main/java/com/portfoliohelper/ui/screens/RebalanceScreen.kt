@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -72,7 +73,8 @@ private const val COL_WEIGHT = 0
 private const val COL_EST = 1
 private const val COL_REBAL_DOLLARS = 2
 private const val COL_REBAL_QTY = 3
-private val COLUMN_LABELS = listOf("Weight", "EST", "Rebal💰", "Rebal Qty")
+private const val COL_CCY = 4
+private val COLUMN_LABELS = listOf("Weight", "EST", "Rebal💰", "Rebal Qty", "CCY")
 
 private data class RebalanceStockDisplayData(
     val symbol: String,
@@ -82,6 +84,7 @@ private data class RebalanceStockDisplayData(
     val estWaiting: Boolean,
     val rebalDollars: Double?,
     val rebalQty: Double?,
+    val currency: String?,
 )
 
 @Composable
@@ -136,7 +139,14 @@ fun RebalanceScreen(vm: MainViewModel) {
             estWaiting = false,
             rebalDollars = -88888.88,
             rebalQty = -888.88,
+            currency = "USD",
         )
+        val sortedCcys = remember(displayCcy, stockData) {
+            (listOf(displayCcy) + stockData.mapNotNull { it.currency })
+                .filter { it != "P" }
+                .distinct()
+                .sorted()
+        }
         val sampleSymbol = widthMeasureData.maxBy { it.symbol.length }.symbol
         val sampleWeight = widthMeasureData.maxBy {
             val diffWeight = it.currentWeight - it.targetWeight
@@ -190,6 +200,13 @@ fun RebalanceScreen(vm: MainViewModel) {
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
                 },
+                {
+                    CcyPill(
+                        currency = "USD",
+                        sortedCcys = sortedCcys,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                },
             ),
         ) { layout ->
             Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0)) { padding ->
@@ -232,6 +249,7 @@ fun RebalanceScreen(vm: MainViewModel) {
                             display = display,
                             scrollState = scrollState,
                             layout = layout,
+                            sortedCcys = sortedCcys,
                         )
                         Divider()
                     }
@@ -421,12 +439,14 @@ private fun RebalancePositionRow(
     display: RebalanceStockDisplayData,
     scrollState: ScrollState,
     layout: TableLayout,
+    sortedCcys: List<String>,
 ) {
     val ext = MaterialTheme.ext
     val weightW = layout.columnWidths[COL_WEIGHT]
     val estW = layout.columnWidths[COL_EST]
     val rebalDollarsW = layout.columnWidths[COL_REBAL_DOLLARS]
     val rebalQtyW = layout.columnWidths[COL_REBAL_QTY]
+    val ccyW = layout.columnWidths[COL_CCY]
     val scrollMod = if (layout.isScrollable) Modifier.horizontalScroll(scrollState) else Modifier
 
     Row(
@@ -478,7 +498,40 @@ private fun RebalancePositionRow(
                 fontSize = 15.sp,
                 modifier = Modifier.width(rebalQtyW),
             )
+            Box(
+                modifier = Modifier.width(ccyW),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                display.currency?.let {
+                    CcyPill(currency = it, sortedCcys = sortedCcys)
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun CcyPill(
+    currency: String,
+    sortedCcys: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ccyPillColors(currency, sortedCcys, isSystemInDarkTheme())
+    Surface(
+        modifier = modifier.width(34.dp),
+        shape = RoundedCornerShape(4.dp),
+        color = colors.background,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border),
+    ) {
+        Text(
+            text = currency,
+            modifier = Modifier.padding(vertical = 1.dp),
+            color = colors.text,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+        )
     }
 }
 
@@ -490,6 +543,42 @@ private fun actionColor(value: Double): Color {
         value < -0.01 -> ext.actionNegative
         else -> ext.textTertiary
     }
+}
+
+private data class CcyPillColors(
+    val background: Color,
+    val border: Color,
+    val text: Color,
+)
+
+private fun ccyPillColors(currency: String, sortedCcys: List<String>, dark: Boolean): CcyPillColors {
+    val index = sortedCcys.indexOf(currency).takeIf { it in 0..6 } ?: -1
+    if (index < 0) {
+        return if (dark) {
+            CcyPillColors(Color(0x1F8B949E), Color(0x408B949E), Color(0xFF8B949E))
+        } else {
+            CcyPillColors(Color(0x1F495057), Color(0x40495057), Color(0xFF495057))
+        }
+    }
+    val darkColors = listOf(
+        CcyPillColors(Color(0xFF1A3D2E), Color(0xFF2A6648), Color(0xFF5DD898)),
+        CcyPillColors(Color(0xFF3A1A3A), Color(0xFF6A2A7A), Color(0xFFD47AEE)),
+        CcyPillColors(Color(0xFF3A1A20), Color(0xFF7A2030), Color(0xFFF07090)),
+        CcyPillColors(Color(0xFF2A2A10), Color(0xFF5A5A18), Color(0xFFC8CC44)),
+        CcyPillColors(Color(0xFF1A3A5C), Color(0xFF2A5A8C), Color(0xFF6FB3F2)),
+        CcyPillColors(Color(0xFF3D2A10), Color(0xFF7A5020), Color(0xFFE8A44A)),
+        CcyPillColors(Color(0xFF1A3D3D), Color(0xFF2A7070), Color(0xFF4DD6D6)),
+    )
+    val lightColors = listOf(
+        CcyPillColors(Color(0xFFD6F5E6), Color(0xFF2A9050), Color(0xFF0F4A28)),
+        CcyPillColors(Color(0xFFF2D6F8), Color(0xFF9040B8), Color(0xFF52116E)),
+        CcyPillColors(Color(0xFFFDD6DF), Color(0xFFC83050), Color(0xFF7A0E24)),
+        CcyPillColors(Color(0xFFF0F0C4), Color(0xFF8A8A10), Color(0xFF404400)),
+        CcyPillColors(Color(0xFFDDEEFF), Color(0xFF4A90D0), Color(0xFF1A4A80)),
+        CcyPillColors(Color(0xFFFDECD4), Color(0xFFC87820), Color(0xFF7A3E00)),
+        CcyPillColors(Color(0xFFD0F4F4), Color(0xFF1A9494), Color(0xFF0A4848)),
+    )
+    return if (dark) darkColors[index] else lightColors[index]
 }
 
 private fun buildRebalanceStockDisplayData(
@@ -504,6 +593,7 @@ private fun buildRebalanceStockDisplayData(
     estWaiting: Boolean,
 ): RebalanceStockDisplayData {
     val rawMark = quote?.regularMarketPrice ?: quote?.previousClose
+    val currency = quote?.currency
     val multiplierToUsd = quote?.let { quoteToUsdMultiplier(it, prices) }
     val scaledQty = if (scaling != null) round(pos.quantity * scaling / 100.0) else pos.quantity
     val priceUsd = if (rawMark != null && multiplierToUsd != null) rawMark * multiplierToUsd else null
@@ -526,6 +616,7 @@ private fun buildRebalanceStockDisplayData(
         estWaiting = estWaiting,
         rebalDollars = rebalNative,
         rebalQty = rebalQty,
+        currency = currency,
     )
 }
 
