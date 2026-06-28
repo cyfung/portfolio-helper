@@ -633,7 +633,8 @@ private data class TwsSnapshotResponse(
     val account: String,
     val positions: List<TwsPositionItem>,
     val cashBalances: Map<String, Double>,
-    val accruedCash: Map<String, Double>
+    val accruedCash: Map<String, Double>,
+    val pendingDividends: Map<String, Double>
 )
 
 // ── SPA API DTOs ─────────────────────────────────────────────────────────────
@@ -1725,7 +1726,8 @@ fun Application.configureRouting() {
                         TwsPositionItem(symbolWithSuffix(pos.exchange, pos.symbol), pos.qty)
                     },
                     cashBalances = snapshot.summary.cashBalances,
-                    accruedCash = snapshot.summary.accruedCash
+                    accruedCash = snapshot.summary.accruedCash,
+                    pendingDividends = snapshot.summary.pendingDividends
                 )
                 call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
             } catch (e: Exception) {

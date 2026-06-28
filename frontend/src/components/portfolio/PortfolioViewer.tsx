@@ -137,7 +137,7 @@ export default function PortfolioViewer() {
         }
       }
 
-      // Stage TWS cash balances and accrued cash for edit mode.
+      // Stage TWS cash balances, accrued cash, and pending dividends for edit mode.
       let updatedCash: CashData[] = [...store.cash]
       const upsertCash = (label: string, currency: string, amount: number, marginFlag: boolean) => {
         const idx = updatedCash.findIndex(c =>
@@ -152,6 +152,9 @@ export default function PortfolioViewer() {
       }
       for (const [ccy, amt] of Object.entries(snap.accruedCash as Record<string, number>)) {
         upsertCash('MTD Interest', ccy, amt, false)
+      }
+      for (const [ccy, amt] of Object.entries((snap.pendingDividends ?? {}) as Record<string, number>)) {
+        upsertCash('Pending Dividend', ccy, amt, false)
       }
 
       enterEditMode(updatedStocks, updatedCash)

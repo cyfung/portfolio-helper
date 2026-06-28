@@ -214,4 +214,5 @@ export interface TwsSnapshotResponse {
   positions: { symbol: string; qty: number }[]
   cashBalances: Record<string, number>
   accruedCash: Record<string, number>
+  pendingDividends: Record<string, number>
 }
