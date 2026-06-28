@@ -66,6 +66,7 @@ import com.portfoliohelper.ui.components.formatSmart
 import com.portfoliohelper.ui.theme.ext
 import kotlin.math.abs
 import kotlin.math.round
+import kotlin.math.roundToLong
 
 private const val COL_WEIGHT = 0
 private const val COL_EST = 1
@@ -148,7 +149,7 @@ fun RebalanceScreen(vm: MainViewModel) {
             (it.rebalDollars?.let(::formatSigned) ?: "---").length
         }.rebalDollars ?: 0.0
         val sampleRebalQty = widthMeasureData.maxBy {
-            (it.rebalQty?.let { qty -> "%+.2f".format(qty) } ?: "---").length
+            (it.rebalQty?.let(::formatSignedQty) ?: "---").length
         }.rebalQty ?: 0.0
 
         MeasureTableLayout(
@@ -183,7 +184,7 @@ fun RebalanceScreen(vm: MainViewModel) {
                 },
                 {
                     MonoText(
-                        text = "%+.2f".format(sampleRebalQty),
+                        text = formatSignedQty(sampleRebalQty),
                         fontWeight = FontWeight.Normal,
                         fontSize = 15.sp,
                         modifier = Modifier.padding(horizontal = 4.dp),
@@ -471,7 +472,7 @@ private fun RebalancePositionRow(
                 modifier = Modifier.width(rebalDollarsW),
             )
             MonoText(
-                text = display.rebalQty?.let { "%+.2f".format(it) } ?: "-",
+                text = display.rebalQty?.let(::formatSignedQty) ?: "-",
                 color = display.rebalQty?.let { actionColor(it) } ?: ext.textTertiary,
                 fontWeight = FontWeight.Normal,
                 fontSize = 15.sp,
@@ -534,6 +535,11 @@ private fun estText(display: RebalanceStockDisplayData): String =
         display.estWaiting -> "⏳"
         else -> "-"
     }
+
+private fun formatSignedQty(value: Double): String {
+    val rounded = value.roundToLong()
+    return "%+d".format(rounded)
+}
 
 private fun quoteToUsdMultiplier(quote: YahooQuote, prices: Map<String, YahooQuote>): Double? {
     val currency = quote.currency ?: "USD"

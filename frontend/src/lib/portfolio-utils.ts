@@ -62,10 +62,21 @@ export function formatSignedDisplayCurrency(
 
 // ── Quantity formatting ───────────────────────────────────────────────────────
 
-/** Display integer quantities without decimals */
+/** Display quantities as whole shares without decimals. */
 export function formatQty(amount: number): string {
-  if (amount === Math.trunc(amount)) return amount.toString()
-  return amount.toString()
+  const rounded = Math.round(amount)
+  const normalized = Object.is(rounded, -0) ? 0 : rounded
+  return normalized.toLocaleString('en-US', {
+    maximumFractionDigits: 0,
+  })
+}
+
+export function formatSignedQty(amount: number): string {
+  const rounded = Math.round(amount)
+  const normalized = Object.is(rounded, -0) ? 0 : rounded
+  return (normalized >= 0 ? '+' : '') + normalized.toLocaleString('en-US', {
+    maximumFractionDigits: 0,
+  })
 }
 
 // ── LETF / groups parsing ─────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
 import {
-  formatCurrency, formatQty, convertFromUsd,
+  formatCurrency, formatQty, formatSignedQty, convertFromUsd,
   parseLetfAttr, formatSignedCurrency,
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
@@ -282,13 +282,13 @@ export default function StockTable() {
                     {rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '—'}
                   </td>
                   <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>
-                    {rebalQty !== null ? rebalQty.toFixed(2) : ''}
+                    {rebalQty !== null ? formatSignedQty(rebalQty) : ''}
                   </td>
                   <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>
                     {allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
                   </td>
                   <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>
-                    {allocQty !== null ? allocQty.toFixed(2) : ''}
+                    {allocQty !== null ? formatSignedQty(allocQty) : ''}
                   </td>
                 </>
               )
