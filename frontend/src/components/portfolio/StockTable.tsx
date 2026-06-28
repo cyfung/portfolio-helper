@@ -178,10 +178,10 @@ export default function StockTable() {
             <th className="col-num">
               Weight <span className="th-sub">Cur / Tgt / Dev</span>
             </th>
-            <th className="rebal-column">Rebal💰</th>
             <th className="rebal-column col-moreinfo">Rebal Qty</th>
-            <th className="alloc-column">Alloc💰</th>
+            <th className="rebal-column">Rebal💰</th>
             <th className="alloc-column col-moreinfo">Alloc Qty</th>
+            <th className="alloc-column">Alloc💰</th>
             <th className="col-ccy">CCY</th>
           </tr>
         </thead>
@@ -278,17 +278,17 @@ export default function StockTable() {
                       {pillSign}{weightDiff.toFixed(1)}%
                     </span>
                   </td>
-                  <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>
-                    {rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '—'}
-                  </td>
                   <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>
                     {rebalQty !== null ? formatSignedQty(rebalQty) : ''}
                   </td>
-                  <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>
-                    {allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
+                  <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>
+                    {rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '—'}
                   </td>
                   <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>
                     {allocQty !== null ? formatSignedQty(allocQty) : ''}
+                  </td>
+                  <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>
+                    {allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
                   </td>
                 </>
               )
@@ -296,10 +296,10 @@ export default function StockTable() {
               weightCells = (
                 <>
                   <td className="weight-display col-num" id={`current-weight-${sym}`} />
-                  <td className="action-neutral rebal-column" id={`rebal-dollars-${sym}`} />
                   <td className="action-neutral rebal-column col-moreinfo" id={`rebal-qty-${sym}`} />
-                  <td className="action-neutral alloc-column" id={`alloc-dollars-${sym}`} />
+                  <td className="action-neutral rebal-column" id={`rebal-dollars-${sym}`} />
                   <td className="action-neutral alloc-column col-moreinfo" id={`alloc-qty-${sym}`} />
+                  <td className="action-neutral alloc-column" id={`alloc-dollars-${sym}`} />
                 </>
               )
             }

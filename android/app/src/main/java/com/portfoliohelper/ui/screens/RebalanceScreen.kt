@@ -71,10 +71,10 @@ import kotlin.math.roundToLong
 
 private const val COL_WEIGHT = 0
 private const val COL_EST = 1
-private const val COL_REBAL_DOLLARS = 2
-private const val COL_REBAL_QTY = 3
+private const val COL_REBAL_QTY = 2
+private const val COL_REBAL_DOLLARS = 3
 private const val COL_CCY = 4
-private val COLUMN_LABELS = listOf("Weight", "EST", "Rebal💰", "Rebal Qty", "CCY")
+private val COLUMN_LABELS = listOf("Weight", "EST", "Rebal Qty", "Rebal💰", "CCY")
 
 private data class RebalanceStockDisplayData(
     val symbol: String,
@@ -186,7 +186,7 @@ fun RebalanceScreen(vm: MainViewModel) {
                 },
                 {
                     MonoText(
-                        text = formatSigned(sampleRebalDollars),
+                        text = formatSignedQty(sampleRebalQty),
                         fontWeight = FontWeight.Normal,
                         fontSize = 15.sp,
                         modifier = Modifier.padding(horizontal = 4.dp),
@@ -194,7 +194,7 @@ fun RebalanceScreen(vm: MainViewModel) {
                 },
                 {
                     MonoText(
-                        text = formatSignedQty(sampleRebalQty),
+                        text = formatSigned(sampleRebalDollars),
                         fontWeight = FontWeight.Normal,
                         fontSize = 15.sp,
                         modifier = Modifier.padding(horizontal = 4.dp),
@@ -485,18 +485,18 @@ private fun RebalancePositionRow(
                 modifier = Modifier.width(estW),
             )
             MonoText(
-                text = display.rebalDollars?.let(::formatSigned) ?: "-",
-                color = display.rebalDollars?.let { actionColor(it) } ?: ext.textTertiary,
-                fontWeight = FontWeight.Normal,
-                fontSize = 15.sp,
-                modifier = Modifier.width(rebalDollarsW),
-            )
-            MonoText(
                 text = display.rebalQty?.let(::formatSignedQty) ?: "-",
                 color = display.rebalQty?.let { actionColor(it) } ?: ext.textTertiary,
                 fontWeight = FontWeight.Normal,
                 fontSize = 15.sp,
                 modifier = Modifier.width(rebalQtyW),
+            )
+            MonoText(
+                text = display.rebalDollars?.let(::formatSigned) ?: "-",
+                color = display.rebalDollars?.let { actionColor(it) } ?: ext.textTertiary,
+                fontWeight = FontWeight.Normal,
+                fontSize = 15.sp,
+                modifier = Modifier.width(rebalDollarsW),
             )
             Box(
                 modifier = Modifier.width(ccyW),
