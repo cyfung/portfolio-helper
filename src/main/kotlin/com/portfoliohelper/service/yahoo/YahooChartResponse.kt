@@ -21,6 +21,7 @@ data class YahooChartResult(
 data class YahooMeta(
     val currency: String? = null,
     val regularMarketPrice: Double? = null,
+    val regularMarketTime: Long? = null,
     val chartPreviousClose: Double? = null,
     val currentTradingPeriod: YahooTradingPeriods? = null
 )

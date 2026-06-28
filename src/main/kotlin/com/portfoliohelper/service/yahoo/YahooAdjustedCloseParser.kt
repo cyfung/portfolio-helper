@@ -216,9 +216,9 @@ internal object YahooAdjustedCloseParser {
 
     private fun YahooMeta.currentTradingDate(): LocalDate? {
         val regular = currentTradingPeriod?.regular ?: return null
-        val end = regular.end ?: return null
         val offset = ZoneOffset.ofTotalSeconds(regular.gmtoffset ?: 0)
-        return Instant.ofEpochSecond(end).atOffset(offset).toLocalDate()
+        val epochSecond = regularMarketTime ?: regular.end ?: return null
+        return Instant.ofEpochSecond(epochSecond).atOffset(offset).toLocalDate()
     }
 
     private fun logNullAdjustedCloseWarning(

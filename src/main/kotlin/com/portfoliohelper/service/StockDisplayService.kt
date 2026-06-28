@@ -114,7 +114,7 @@ class StockDisplayService(
             val dayChangePct = if (dayChangeNative != null && closePrice != null && closePrice != 0.0)
                 dayChangeNative / closePrice * 100.0 else null
 
-            val localDate = computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset)?.toString()
+            val localDate = (quote?.markPriceDate ?: computeLocalDate(quote?.tradingPeriodEnd, quote?.gmtoffset))?.toString()
             val sessionStarted = quote?.tradingPeriodStart?.let { nowMs / 1000 >= it } ?: false
             val estPriceNative = letfEstPriceCalculator.compute(
                 stock.letfComponents, quote, navData?.nav, navData?.asOfDate
@@ -215,19 +215,36 @@ internal class LetfEstPriceCalculator(
     ): Double? {
         if (components.isNullOrEmpty()) return null
         quote ?: return null
-        val stockDate = quote.tradingDate()
+        val stockDate = quote.markPriceDate ?: quote.tradingDate()
 
         if (nav != null && navDate != null && stockDate != null) {
             when {
                 navDate == stockDate -> return nav
-                navDate < stockDate && isPreviousTradingDate(quote.symbol, stockDate, navDate) ->
-                    return computeFromReferenceCloses(components, nav) { sym ->
-                        quoteProvider(sym)?.previousClose
-                    }
-                navDate < stockDate ->
-                    return computeFromReferenceCloses(components, nav) { sym ->
+                navDate < stockDate -> {
+                    computeFromReferenceCloses(components, nav) { sym ->
                         historicalAdjustedClose(sym, navDate)
+                    }?.let { return it }
+
+                    if (isPreviousTradingDate(quote.symbol, stockDate, navDate)) {
+                        return computeFromReferenceCloses(components, nav) { sym ->
+                            quoteProvider(sym)?.previousClose
+                        }
                     }
+
+                    return null
+                }
+            }
+        }
+
+        if (nav == null && stockDate != null) {
+            val referenceDate = latestTradingDateBefore(quote.symbol, stockDate)
+            if (referenceDate != null) {
+                val basePrice = historicalAdjustedClose(quote.symbol, referenceDate)
+                if (basePrice != null) {
+                    computeFromReferenceCloses(components, basePrice) { sym ->
+                        historicalAdjustedClose(sym, referenceDate)
+                    }?.let { return it }
+                }
             }
         }
 
@@ -257,12 +274,18 @@ internal class LetfEstPriceCalculator(
     private fun isPreviousTradingDate(symbol: String, stockDate: LocalDate, candidateDate: LocalDate): Boolean {
         val endDate = stockDate.minusDays(1)
         if (candidateDate > endDate) return false
-        val previousTradingDate = historicalPrices(symbol, candidateDate, endDate)
-            .keys
-            .filter { it < stockDate }
-            .maxOrNull()
+        val previousTradingDate = latestTradingDate(symbol, candidateDate, endDate)
         return previousTradingDate == candidateDate
     }
+
+    private fun latestTradingDateBefore(symbol: String, stockDate: LocalDate): LocalDate? =
+        latestTradingDate(symbol, stockDate.minusDays(10), stockDate.minusDays(1))
+
+    private fun latestTradingDate(symbol: String, startDate: LocalDate, endDate: LocalDate): LocalDate? =
+        historicalPrices(symbol, startDate, endDate)
+            .keys
+            .filter { it <= endDate }
+            .maxOrNull()
 
     private fun historicalAdjustedClose(symbol: String, date: LocalDate): Double? =
         historicalPrices(symbol, date, date)[date]

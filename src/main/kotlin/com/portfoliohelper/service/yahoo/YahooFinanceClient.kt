@@ -7,6 +7,9 @@ import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import org.slf4j.LoggerFactory
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 object YahooFinanceClient {
     private val logger = LoggerFactory.getLogger(YahooFinanceClient::class.java)
@@ -53,6 +56,8 @@ object YahooFinanceClient {
             val tradingPeriodStart = regularPeriod?.start
             val tradingPeriodEnd = regularPeriod?.end
             val gmtoffset = regularPeriod?.gmtoffset
+            val markPriceDate = marketDate(meta?.regularMarketTime, gmtoffset)
+                ?: marketDate(tradingPeriodEnd, gmtoffset)
 
             // Determine if market is closed (before open or after close).
             // Null trading period = unknown, assume closed.
@@ -71,7 +76,8 @@ object YahooFinanceClient {
                 tradingPeriodEnd = tradingPeriodEnd,
                 gmtoffset = gmtoffset,
                 isMarketClosed = isMarketClosed,
-                currency = currency
+                currency = currency,
+                markPriceDate = markPriceDate
             )
         } catch (e: YahooFinanceException) {
             throw e
@@ -82,5 +88,12 @@ object YahooFinanceClient {
 
     fun shutdown() {
         httpClient.close()
+    }
+
+    private fun marketDate(epochSecond: Long?, gmtoffset: Int?): LocalDate? {
+        if (epochSecond == null || gmtoffset == null) return null
+        return Instant.ofEpochSecond(epochSecond)
+            .atOffset(ZoneOffset.ofTotalSeconds(gmtoffset))
+            .toLocalDate()
     }
 }

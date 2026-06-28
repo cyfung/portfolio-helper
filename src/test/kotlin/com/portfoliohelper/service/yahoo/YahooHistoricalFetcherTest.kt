@@ -46,6 +46,48 @@ class YahooHistoricalFetcherTest {
     }
 
     @Test
+    fun parseAdjustedCloseResponse_usesRegularMarketTimeDateForCurrentMarketPrice() {
+        val may3 = LocalDate.of(2026, 5, 3).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val may4MarketTime = LocalDate.of(2026, 5, 4).atTime(11, 0).toEpochSecond(ZoneOffset.ofHours(-4))
+        val may5End = LocalDate.of(2026, 5, 5).atTime(16, 0).toEpochSecond(ZoneOffset.ofHours(-4))
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "regularMarketPrice": 105.5,
+                    "regularMarketTime": $may4MarketTime,
+                    "currentTradingPeriod": {
+                      "regular": {
+                        "gmtoffset": -14400,
+                        "start": ${may5End - 23400},
+                        "end": $may5End
+                      }
+                    }
+                  },
+                  "timestamp": [$may3],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [100.0]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val prices = YahooHistoricalFetcher.parseAdjustedCloseResponse(
+            ticker = "SPY",
+            startDate = LocalDate.of(2026, 5, 1),
+            endDate = LocalDate.of(2026, 5, 5),
+            body = body
+        )
+
+        assertEquals(105.5, prices[LocalDate.of(2026, 5, 4)])
+        assertTrue(LocalDate.of(2026, 5, 5) !in prices)
+    }
+
+    @Test
     fun parseAdjustedCloseResponse_fillsKnownTailNullFromQuotePreviousClose() {
         val jun12 = LocalDate.of(2026, 6, 12).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun15 = LocalDate.of(2026, 6, 15).atStartOfDay().toEpochSecond(ZoneOffset.UTC)

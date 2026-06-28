@@ -117,6 +117,8 @@ object YahooHistoricalFetcher {
             ?: error("No quote result in Yahoo response for $ticker")
         val meta = result.meta
         val regular = meta?.currentTradingPeriod?.regular
+        val markPriceDate = marketDate(meta?.regularMarketTime, regular?.gmtoffset)
+            ?: marketDate(regular?.end, regular?.gmtoffset)
         return YahooQuote(
             symbol = ticker,
             regularMarketPrice = meta?.regularMarketPrice,
@@ -124,8 +126,16 @@ object YahooHistoricalFetcher {
             tradingPeriodStart = regular?.start,
             tradingPeriodEnd = regular?.end,
             gmtoffset = regular?.gmtoffset,
-            currency = meta?.currency
+            currency = meta?.currency,
+            markPriceDate = markPriceDate
         )
+    }
+
+    private fun marketDate(epochSecond: Long?, gmtoffset: Int?): LocalDate? {
+        if (epochSecond == null || gmtoffset == null) return null
+        return Instant.ofEpochSecond(epochSecond)
+            .atOffset(ZoneOffset.ofTotalSeconds(gmtoffset))
+            .toLocalDate()
     }
 
     private fun executeTextRequest(url: String, errorMessage: (okhttp3.Response) -> String): String {
