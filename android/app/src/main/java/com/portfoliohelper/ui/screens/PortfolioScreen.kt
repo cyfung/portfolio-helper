@@ -1,6 +1,7 @@
 package com.portfoliohelper.ui.screens
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -118,6 +119,7 @@ private fun buildStockDisplayData(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun PortfolioScreen(vm: MainViewModel) {
     val ext = MaterialTheme.ext
     val positions by vm.positions.collectAsState()
@@ -283,13 +285,15 @@ fun PortfolioScreen(vm: MainViewModel) {
                     }
 
                     // ── Table header ──────────────────────────────────────
-                    item {
-                        TableHeader(
-                            firstColumn = "Symbol" to layout.frozenWidth,
-                            otherColumns = COLUMN_LABELS.zip(layout.columnWidths),
-                            scrollState = if (layout.isScrollable) scrollState else null,
-                        )
-                        Divider()
+                    stickyHeader {
+                        Column {
+                            TableHeader(
+                                firstColumn = "Symbol" to layout.frozenWidth,
+                                otherColumns = COLUMN_LABELS.zip(layout.columnWidths),
+                                scrollState = if (layout.isScrollable) scrollState else null,
+                            )
+                            Divider()
+                        }
                     }
 
                     // ── Position rows ─────────────────────────────────────

@@ -1,6 +1,7 @@
 package com.portfoliohelper.ui.screens
 
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -78,6 +79,7 @@ private fun buildGroupDisplayData(
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun GroupsScreen(vm: MainViewModel) {
     val ext = MaterialTheme.ext
     val groups by vm.groupRows.collectAsState()
@@ -224,13 +226,15 @@ fun GroupsScreen(vm: MainViewModel) {
                     }
                 } else {
                     // ── Table header ─────────────────────────────────────────
-                    item {
-                        TableHeader(
-                            firstColumn = "Group" to layout.frozenWidth,
-                            otherColumns = COLUMN_LABELS.zip(layout.columnWidths),
-                            scrollState = if (layout.isScrollable) scrollState else null
-                        )
-                        Divider()
+                    stickyHeader {
+                        Column {
+                            TableHeader(
+                                firstColumn = "Group" to layout.frozenWidth,
+                                otherColumns = COLUMN_LABELS.zip(layout.columnWidths),
+                                scrollState = if (layout.isScrollable) scrollState else null
+                            )
+                            Divider()
+                        }
                     }
 
                     // ── Group rows ───────────────────────────────────────────
