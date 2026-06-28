@@ -204,7 +204,7 @@ fun TableHeader(columns: List<Pair<String, Float>>) {
                     fontSize   = 12.sp
                 ),
                 color     = ext.headerText,
-                textAlign = if (label == columns.first().first) TextAlign.Start else TextAlign.End
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -227,13 +227,13 @@ fun TableHeader(
             text = firstColumn.first,
             modifier = Modifier
                 .width(firstColumn.second)
-                .padding(start = 12.dp),
+                .padding(horizontal = 12.dp),
             style = MaterialTheme.typography.labelSmall.copy(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp
             ),
             color = ext.headerText,
-            textAlign = TextAlign.Start
+            textAlign = TextAlign.Center
         )
         val scrollModifier = if (scrollState != null) Modifier.horizontalScroll(scrollState) else Modifier
         Row(
@@ -248,7 +248,7 @@ fun TableHeader(
                         fontSize = 12.sp
                     ),
                     color = ext.headerText,
-                    textAlign = TextAlign.End
+                    textAlign = TextAlign.Center
                 )
             }
         }
