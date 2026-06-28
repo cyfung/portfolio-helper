@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { StockData, CashData } from '@/types/portfolio'
 import { computeDisplay, getRebalTotal } from '@/lib/rebalance'
+import { TWS_CASH_LABEL, isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
 function parseCashKey(key: string, value: string): CashData | null {
@@ -137,24 +138,21 @@ export default function PortfolioViewer() {
         }
       }
 
-      // Stage TWS cash balances, accrued cash, and pending dividends for edit mode.
-      let updatedCash: CashData[] = [...store.cash]
-      const upsertCash = (label: string, currency: string, amount: number, marginFlag: boolean) => {
-        const idx = updatedCash.findIndex(c =>
-          c.label.toLowerCase() === label.toLowerCase() &&
-          c.currency.toUpperCase() === currency.toUpperCase()
-        )
-        if (idx >= 0) updatedCash[idx] = { ...updatedCash[idx], amount }
-        else updatedCash.push({ label, currency, amount, marginFlag })
+      // TWS owns these reserved labels. Replace the whole reserved subset so
+      // stale currencies and zero balances disappear from the staged cash rows.
+      const updatedCash: CashData[] = store.cash.filter(c => !isTwsManagedCashLabel(c.label))
+      const addTwsCash = (label: string, currency: string, amount: number, marginFlag: boolean) => {
+        if (!Number.isFinite(amount) || amount === 0) return
+        updatedCash.push({ label, currency, amount, marginFlag })
       }
       for (const [ccy, amt] of Object.entries(snap.cashBalances as Record<string, number>)) {
-        upsertCash('Cash', ccy, amt, true)
+        addTwsCash(TWS_CASH_LABEL.CASH, ccy, amt, true)
       }
       for (const [ccy, amt] of Object.entries(snap.accruedCash as Record<string, number>)) {
-        upsertCash('MTD Interest', ccy, amt, false)
+        addTwsCash(TWS_CASH_LABEL.MTD_INTEREST, ccy, amt, false)
       }
       for (const [ccy, amt] of Object.entries((snap.pendingDividends ?? {}) as Record<string, number>)) {
-        upsertCash('Pending Dividend', ccy, amt, false)
+        addTwsCash(TWS_CASH_LABEL.PENDING_DIVIDEND, ccy, amt, false)
       }
 
       enterEditMode(updatedStocks, updatedCash)

@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { CashData, PortfolioOption } from '@/types/portfolio'
+import { isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 
 interface Props {
   allPortfolios: PortfolioOption[]
@@ -20,9 +22,11 @@ function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRow
     : entry.marginFlag ? 'margin'
     : 'normal'
   const [amountValue, setAmountValue] = useState(isRef ? '' : entry.amount.toString())
+  const [labelValue, setLabelValue] = useState(entry.label)
   const [multiplierValue, setMultiplierValue] = useState(isRef ? entry.amount.toString() : '1')
   const [amountFocused, setAmountFocused] = useState(false)
   const [multiplierFocused, setMultiplierFocused] = useState(false)
+  const twsManaged = isTwsManagedCashLabel(labelValue)
 
   return (
     <tr
@@ -36,12 +40,21 @@ function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRow
       data-original-portfolio-ref={isRef ? (entry.portfolioRef ?? '') : undefined}
       data-original-multiplier={isRef ? entry.amount.toString() : undefined}
     >
+      <td className="cash-sync-marker-cell">
+        {twsManaged && (
+          <span className="cash-type-badge cash-badge-sync" title="Managed by Sync TWS">
+            <RefreshCw size={12} strokeWidth={2.2} />
+          </span>
+        )}
+      </td>
+
       <td>
         <input
           type="text"
           className="edit-input cash-edit-label"
-          defaultValue={entry.label}
+          value={labelValue}
           placeholder="Label"
+          onChange={e => setLabelValue(e.target.value)}
         />
       </td>
 

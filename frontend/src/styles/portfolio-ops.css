@@ -318,6 +318,12 @@
     width: 12px;
     height: 12px;
 }
+.cash-badge-sync {
+    background: transparent;
+    color: var(--color-text-tertiary);
+    border: none;
+    opacity: 0.75;
+}
 
 /* CCY color pills */
 .ccy-pill {
