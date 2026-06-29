@@ -1,5 +1,5 @@
 // ── BackupPanel.tsx — Port of initBackupPanel from backup.js ─────────────────
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { formatSavedAt } from '@/lib/portfolio-utils'
 import type { BackupEntry } from '@/types/portfolio'
@@ -11,6 +11,8 @@ interface Props {
 }
 
 type GroupedBackups = Array<{ tabName: string; entries: BackupEntry[] }>
+type SortKey = 'updatedAt' | 'createdAt'
+type SortDir = 'asc' | 'desc'
 
 export default function BackupPanel({ onClose, onImportSuccess }: Props) {
   const { portfolioId } = usePortfolioStore()
@@ -18,6 +20,8 @@ export default function BackupPanel({ onClose, onImportSuccess }: Props) {
   const [activeTab, setActiveTab] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -106,6 +110,28 @@ export default function BackupPanel({ onClose, onImportSuccess }: Props) {
   }
 
   const allEntries = groups.flatMap(g => g.entries)
+  const sortedGroups = useMemo(() => groups.map(g => ({
+    ...g,
+    entries: [...g.entries].sort((a, b) => {
+      const primary = sortDir === 'asc' ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]
+      if (primary !== 0) return primary
+      return b.id - a.id
+    }),
+  })), [groups, sortDir, sortKey])
+
+  function handleSort(nextKey: SortKey) {
+    if (nextKey === sortKey) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(nextKey)
+      setSortDir('desc')
+    }
+  }
+
+  function sortLabel(key: SortKey): string {
+    if (key !== sortKey) return ''
+    return sortDir === 'asc' ? ' ↑' : ' ↓'
+  }
 
   return (
     <div
@@ -144,16 +170,34 @@ export default function BackupPanel({ onClose, onImportSuccess }: Props) {
                 ))}
               </div>
             )}
-            {groups.map(g => (
+            {sortedGroups.map(g => (
               <div
                 key={g.tabName}
                 className="backup-modal-panel"
                 hidden={g.tabName !== activeTab}
               >
+                <div className="backup-modal-list-header">
+                  <button
+                    type="button"
+                    className={sortKey === 'updatedAt' ? 'active' : ''}
+                    onClick={() => handleSort('updatedAt')}
+                  >
+                    Updated<span>{sortLabel('updatedAt')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={sortKey === 'createdAt' ? 'active' : ''}
+                    onClick={() => handleSort('createdAt')}
+                  >
+                    Created<span>{sortLabel('createdAt')}</span>
+                  </button>
+                  <span aria-hidden="true" />
+                </div>
                 <ul className="backup-modal-list">
                   {g.entries.map(entry => (
                     <li key={entry.id} className="backup-modal-item">
-                      <span>{formatSavedAt(entry.createdAt)}</span>
+                      <span className="backup-modal-date-cell updated">{formatSavedAt(entry.updatedAt)}</span>
+                      <span className="backup-modal-date-cell created">{formatSavedAt(entry.createdAt)}</span>
                       <div className="backup-modal-item-actions">
                         <button onClick={() => handleRestore(entry.id)}>Restore</button>
                         <button

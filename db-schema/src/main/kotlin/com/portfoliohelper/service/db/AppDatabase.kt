@@ -101,7 +101,9 @@ object PortfolioBackupsTable : Table("portfolio_backups") {
     val id = integer("id").autoIncrement()
     val portfolioId = integer("portfolio_id")
     val createdAt = long("created_at")         // Unix millis
+    val updatedAt = long("updated_at")         // Unix millis
     val label = varchar("label", 128).default("")   // "" = daily; "rebalance" etc = labelled tab
+    val contentHash = varchar("content_hash", 64)
     val data = text("data")               // JSON blob
     override val primaryKey = PrimaryKey(id)
 }

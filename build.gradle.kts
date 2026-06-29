@@ -22,7 +22,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.8.19"
+version = "0.8.20"
 
 repositories {
     mavenCentral()
@@ -139,6 +139,12 @@ val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
 
     val outFile = layout.buildDirectory.file("generated/db/data/app.db")
     outputs.file(outFile)
+    inputs.files(dbSchema.fileTree("src/main/kotlin"))
+        .withPropertyName("dbSchemaKotlinSources")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(dbSchema.fileTree("src/main/resources/db/migration"))
+        .withPropertyName("dbSchemaMigrations")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     argumentProviders.add(CommandLineArgumentProvider { listOf(outFile.get().asFile.absolutePath) })
     doFirst { outFile.get().asFile.parentFile.mkdirs() }
 }

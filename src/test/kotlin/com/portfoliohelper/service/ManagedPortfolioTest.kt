@@ -3,17 +3,21 @@ package com.portfoliohelper.service
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.CashTable
+import com.portfoliohelper.service.db.BackupContent
 import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.StockTickersTable
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.deleteAll
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ManagedPortfolioTest {
     private fun withDb(block: (ManagedPortfolio, ManagedPortfolio) -> Unit) {
@@ -122,6 +126,82 @@ class ManagedPortfolioTest {
                 .single()
             assertEquals("3 SPY", uproTicker[StockTickersTable.letf])
             assertEquals("1 Equity", uproTicker[StockTickersTable.groups])
+        }
+    }
+
+    @Test
+    fun `saving identical db backup updates timestamp instead of inserting row`() = withDb { first, _ ->
+        transaction {
+            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")))
+        }
+        BackupService.saveToDb(first, force = true)
+        transaction {
+            PortfolioBackupsTable.update({ PortfolioBackupsTable.portfolioId eq first.serialId }) {
+                it[createdAt] = 100L
+                it[updatedAt] = 100L
+            }
+        }
+
+        BackupService.saveToDb(first, force = true)
+
+        val entries = BackupService.listDbBackups(first)
+        assertEquals(1, entries.size)
+        assertEquals(100L, entries.single().createdAt)
+        assertTrue(entries.single().updatedAt > 100L)
+    }
+
+    @Test
+    fun `matching hash still requires full backup payload compare`() = withDb { first, _ ->
+        transaction {
+            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")))
+        }
+        val currentJson = BackupService.exportJson(first)
+        val differentJson = currentJson.replace("\"amount\":10.0", "\"amount\":99.0")
+
+        transaction {
+            PortfolioBackupsTable.insert {
+                it[portfolioId] = first.serialId
+                it[createdAt] = 100L
+                it[updatedAt] = 100L
+                it[label] = ""
+                it[contentHash] = BackupContent.contentHash(currentJson)
+                it[data] = differentJson
+            }
+        }
+
+        BackupService.saveToDb(first, force = true)
+
+        transaction {
+            assertEquals(
+                2,
+                PortfolioBackupsTable.selectAll()
+                    .where { PortfolioBackupsTable.portfolioId eq first.serialId }
+                    .count()
+                    .toInt()
+            )
+        }
+    }
+
+    @Test
+    fun `db backups keep only twenty most recently updated records`() = withDb { first, _ ->
+        transaction { PortfolioBackupsTable.deleteAll() }
+
+        repeat(22) { idx ->
+            transaction {
+                first.replacePositions(listOf(BackupStock("SSO", idx.toDouble(), 50.0, "2 SPY", "1 Equity")))
+            }
+            BackupService.saveToDb(first, force = true)
+        }
+
+        assertEquals(20, BackupService.listDbBackups(first).size)
+        transaction {
+            assertEquals(
+                20,
+                PortfolioBackupsTable.selectAll()
+                    .where { PortfolioBackupsTable.portfolioId eq first.serialId }
+                    .count()
+                    .toInt()
+            )
         }
     }
 }

@@ -79,9 +79,8 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     padding: 1.5rem;
-    min-width: 280px;
-    max-width: 400px;
-    width: 90%;
+    max-width: 760px;
+    width: min(94vw, 760px);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xl);
@@ -161,10 +160,56 @@
     gap: var(--spacing-sm);
 }
 
-.backup-modal-item {
-    display: flex;
-    justify-content: space-between;
+.backup-modal-list-header {
+    display: grid;
+    grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) 180px;
     align-items: center;
+    gap: var(--spacing-2xl);
+    padding: 0 var(--spacing-xl) var(--spacing-sm);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-xs);
+}
+
+.backup-modal-list-header button {
+    justify-self: start;
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    text-transform: uppercase;
+}
+
+.backup-modal-list-header button span {
+    margin-left: var(--spacing-xs);
+    color: var(--color-text-secondary);
+    text-transform: none;
+}
+
+.backup-modal-list-header button:nth-child(1),
+.backup-modal-list-header button:nth-child(1) span,
+.backup-modal-date-cell.updated {
+    color: var(--color-warning);
+}
+
+.backup-modal-list-header button:nth-child(2),
+.backup-modal-list-header button:nth-child(2) span,
+.backup-modal-date-cell.created {
+    color: var(--color-positive);
+}
+
+.backup-modal-list-header button:hover,
+.backup-modal-list-header button.active {
+    filter: brightness(1.15);
+}
+
+.backup-modal-item {
+    display: grid;
+    grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) 180px;
+    align-items: center;
+    gap: var(--spacing-2xl);
     padding: var(--spacing-lg) var(--spacing-xl);
     border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
@@ -196,7 +241,55 @@
 .backup-modal-item-actions {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    gap: var(--spacing-lg);
+}
+
+.backup-modal-date-cell {
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.backup-modal-date-cell.muted {
+    color: var(--color-text-tertiary);
+}
+
+@media (max-width: 520px) {
+    .backup-modal {
+        width: 94vw;
+        padding: var(--spacing-xl);
+    }
+
+    .backup-modal-item {
+        align-items: flex-start;
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+    }
+
+    .backup-modal-list-header {
+        display: none;
+    }
+
+    .backup-modal-date-cell::before {
+        display: block;
+        margin-bottom: var(--spacing-xs);
+        color: var(--color-text-tertiary);
+        font-size: var(--font-size-xs);
+        text-transform: uppercase;
+    }
+
+    .backup-modal-date-cell:first-child::before {
+        content: "Updated";
+    }
+
+    .backup-modal-date-cell.created::before {
+        content: "Created";
+    }
+
+    .backup-modal-item-actions {
+        align-self: flex-end;
+    }
 }
 
 /* backup-modal-item-del - base from .btn-remove */

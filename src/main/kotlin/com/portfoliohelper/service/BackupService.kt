@@ -1,6 +1,7 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.model.CashEntry
+import com.portfoliohelper.service.db.BackupContent
 import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PortfoliosTable
@@ -17,6 +18,7 @@ import org.apache.commons.csv.CSVFormat
 import org.apache.commons.csv.CSVParser
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.notInList
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.io.ByteArrayInputStream
@@ -24,7 +26,6 @@ import java.io.InputStreamReader
 import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.*
 import java.util.zip.*
 
 @Serializable
@@ -77,7 +78,7 @@ data class BackupCash(
 )
 
 @Serializable
-data class DbBackupEntry(val id: Int, val createdAt: Long, val label: String)
+data class DbBackupEntry(val id: Int, val createdAt: Long, val updatedAt: Long, val label: String)
 
 @Serializable
 data class ImportedStock(
@@ -100,7 +101,7 @@ data class ImportResult(
 
 object BackupService {
     private val logger = LoggerFactory.getLogger(BackupService::class.java)
-    private val lastSavedHash = ConcurrentHashMap<Int, String>()
+    private const val MAX_BACKUPS_PER_PORTFOLIO = 20
 
     fun start(scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
@@ -119,29 +120,46 @@ object BackupService {
         resolveUsd: Boolean = false,
         force: Boolean = false
     ) {
-        // Hash computed without snapshotUsd so P-entry price fluctuations don't trigger spurious backups
+        // Hash is a fast prefilter only. Canonical JSON is compared before deciding two backups are identical.
         val hashJson = serializeToJson(portfolio, resolveUsd = false)
-        val hash = sha256(hashJson)
-        // On first call after startup, seed the cache from the most recent DB backup so we don't
-        // create a duplicate row just because the in-memory map was empty.
-        val lastHash =
-            lastSavedHash.getOrPut(portfolio.serialId) { loadLastHashFromDb(portfolio.serialId) }
-        if (!force && lastHash == hash) {
-            logger.debug("No changes for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}, backup skipped")
-            return
-        }
+        val canonicalJson = BackupContent.canonicalJson(hashJson)
+        val hash = BackupContent.contentHash(hashJson)
         val storeJson = if (resolveUsd) serializeToJson(portfolio, true) else hashJson
         val nowMillis = System.currentTimeMillis()
+        var updatedExisting = false
         transaction {
-            PortfolioBackupsTable.insert {
-                it[portfolioId] = portfolio.serialId
-                it[createdAt] = nowMillis
-                it[PortfolioBackupsTable.label] = label
-                it[data] = storeJson
+            val identicalRow = PortfolioBackupsTable.selectAll()
+                .where {
+                    (PortfolioBackupsTable.portfolioId eq portfolio.serialId) and
+                            (PortfolioBackupsTable.contentHash eq hash)
+                }
+                .orderBy(PortfolioBackupsTable.createdAt, SortOrder.ASC)
+                .firstOrNull { row ->
+                    BackupContent.canonicalJson(row[PortfolioBackupsTable.data]) == canonicalJson
+                }
+
+            if (identicalRow != null) {
+                PortfolioBackupsTable.update({ PortfolioBackupsTable.id eq identicalRow[PortfolioBackupsTable.id] }) {
+                    it[updatedAt] = nowMillis
+                }
+                updatedExisting = true
+            } else {
+                PortfolioBackupsTable.insert {
+                    it[portfolioId] = portfolio.serialId
+                    it[createdAt] = nowMillis
+                    it[updatedAt] = nowMillis
+                    it[PortfolioBackupsTable.label] = label
+                    it[contentHash] = hash
+                    it[data] = storeJson
+                }
             }
+            pruneOldBackups(portfolio.serialId)
         }
-        lastSavedHash[portfolio.serialId] = hash
-        logger.info("DB backup saved for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}")
+        if (updatedExisting) {
+            logger.debug("DB backup timestamp updated for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}")
+        } else {
+            logger.info("DB backup saved for '${portfolio.slug}'${if (label.isNotEmpty()) " [$label]" else ""}")
+        }
     }
 
     fun deleteFromDb(portfolio: ManagedPortfolio, backupId: Int) {
@@ -158,19 +176,19 @@ object BackupService {
         transaction {
             PortfolioBackupsTable.deleteWhere { PortfolioBackupsTable.portfolioId eq portfolio.serialId }
         }
-        lastSavedHash.remove(portfolio.serialId)
         logger.info("Deleted all DB backups for '${portfolio.slug}'")
     }
 
     fun listDbBackups(portfolio: ManagedPortfolio): List<DbBackupEntry> = transaction {
         PortfolioBackupsTable.selectAll()
             .where { PortfolioBackupsTable.portfolioId eq portfolio.serialId }
-            .orderBy(PortfolioBackupsTable.createdAt, SortOrder.DESC)
-            .limit(50)
+            .orderBy(PortfolioBackupsTable.updatedAt, SortOrder.DESC)
+            .limit(MAX_BACKUPS_PER_PORTFOLIO)
             .map { row ->
                 DbBackupEntry(
                     id = row[PortfolioBackupsTable.id],
                     createdAt = row[PortfolioBackupsTable.createdAt],
+                    updatedAt = row[PortfolioBackupsTable.updatedAt],
                     label = row[PortfolioBackupsTable.label]
                 )
             }
@@ -227,26 +245,6 @@ object BackupService {
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────────
-
-    /** Loads the most recent backup from DB and returns a hash of its content without snapshotUsd.
-     *  Returns an empty string if no backup exists yet (guaranteeing a first-ever backup is saved). */
-    private fun loadLastHashFromDb(portfolioSerialId: Int): String {
-        val data = transaction {
-            PortfolioBackupsTable.selectAll()
-                .where { PortfolioBackupsTable.portfolioId eq portfolioSerialId }
-                .orderBy(PortfolioBackupsTable.createdAt, SortOrder.DESC)
-                .limit(1)
-                .firstOrNull()?.get(PortfolioBackupsTable.data)
-        } ?: return ""
-        return try {
-            val root = appJson.decodeFromString<BackupRoot>(data)
-            // snapshotUsd is already excluded from hash since serializeToJson(resolveUsd=null) doesn't set it
-            val stripped = root.copy(cash = root.cash.map { it.copy(snapshotUsd = null) })
-            sha256(appJson.encodeToString(stripped))
-        } catch (_: Exception) {
-            "" // unparseable old backup → treat as no prior backup
-        }
-    }
 
     private fun serializeToJson(
         portfolio: ManagedPortfolio,
@@ -323,11 +321,6 @@ object BackupService {
             cash = cashBackup
         )
         return root
-    }
-
-    private fun sha256(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     private fun appendMissingCurrentStocksWithZeroQty(
@@ -478,6 +471,22 @@ object BackupService {
             delay(delayMs)
             performBackups()
             scheduleDaily(scope)
+        }
+    }
+
+    private fun pruneOldBackups(portfolioSerialId: Int) {
+        val keepIds = PortfolioBackupsTable.selectAll()
+            .where { PortfolioBackupsTable.portfolioId eq portfolioSerialId }
+            .orderBy(
+                PortfolioBackupsTable.updatedAt to SortOrder.DESC,
+                PortfolioBackupsTable.id to SortOrder.DESC
+            )
+            .limit(MAX_BACKUPS_PER_PORTFOLIO)
+            .map { it[PortfolioBackupsTable.id] }
+        if (keepIds.size < MAX_BACKUPS_PER_PORTFOLIO) return
+        PortfolioBackupsTable.deleteWhere {
+            (PortfolioBackupsTable.portfolioId eq portfolioSerialId) and
+                    (PortfolioBackupsTable.id notInList keepIds)
         }
     }
 }

@@ -204,6 +204,7 @@ export interface StockDisplayState {
 export interface BackupEntry {
   id: number
   createdAt: number   // epoch ms (matches server JSON field name)
+  updatedAt: number   // epoch ms, used for restore-point sorting
   label: string
 }
 
