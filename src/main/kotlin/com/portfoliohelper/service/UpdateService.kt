@@ -15,6 +15,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.*
 import java.util.concurrent.atomic.*
+import java.util.jar.JarFile
 import kotlin.system.exitProcess
 
 object UpdateService {
@@ -200,6 +201,7 @@ object UpdateService {
                     }
                 }
             }
+            validatePendingJar(pendingJar)
             state.set(
                 state.get().copy(
                     download = state.get().download.copy(phase = DownloadPhase.READY),
@@ -245,6 +247,8 @@ object UpdateService {
 
     fun applyUpdate() {
         val dir = installDir ?: error("Not a jpackage install")
+        val pendingJar = dir.resolve("app/portfolio-helper-pending.jar")
+        validatePendingJar(pendingJar)
         state.set(
             state.get().copy(download = state.get().download.copy(phase = DownloadPhase.APPLYING))
         )
@@ -312,16 +316,34 @@ object UpdateService {
             "\"name\"\\s*:\\s*\"([^\"]+)\".*?\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"",
             RegexOption.DOT_MATCHES_ALL
         )
-        var fallbackUrl: String? = null
+        val jarCandidates = mutableListOf<Pair<String, String>>()
         for (match in pairRx.findAll(assetsSection)) {
             val name = match.groupValues[1]
             val url = match.groupValues[2]
-            if ("jpackage" in name.lowercase()) {
-                if (name.endsWith(".jar")) return url  // prefer JAR for in-place update
-                if (fallbackUrl == null) fallbackUrl = url
+            val lower = name.lowercase()
+            if (lower.endsWith(".jar") && "portfolio-helper" in lower) {
+                jarCandidates += name to url
             }
         }
-        return fallbackUrl
+        return jarCandidates.firstOrNull { (name, _) -> "update" in name.lowercase() }?.second
+            ?: jarCandidates.firstOrNull { (name, _) -> "jpackage" in name.lowercase() }?.second
+            ?: jarCandidates.firstOrNull()?.second
+    }
+
+    private fun validatePendingJar(path: Path) {
+        if (!Files.isRegularFile(path)) error("Downloaded update JAR is missing: $path")
+        try {
+            JarFile(path.toFile()).use { jar ->
+                val hasMainClass = jar.manifest?.mainAttributes?.getValue("Main-Class") == "com.portfoliohelper.ApplicationKt"
+                val hasAppEntry = jar.getEntry("com/portfoliohelper/ApplicationKt.class") != null
+                if (!hasMainClass || !hasAppEntry) {
+                    error("Downloaded update is not a Portfolio Helper runnable JAR")
+                }
+            }
+        } catch (e: Exception) {
+            runCatching { Files.deleteIfExists(path) }
+            throw IllegalStateException("Downloaded update is not a valid JAR: ${e.message}", e)
+        }
     }
 
     private fun isNewerVersion(latest: String, current: String): Boolean {

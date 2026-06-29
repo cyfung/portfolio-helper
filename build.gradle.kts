@@ -464,7 +464,7 @@ fun githubReleaseArtifacts(config: GithubReleaseConfig): List<GithubReleaseArtif
         GithubReleaseArtifact(
             shadowJarFile,
             "application/java-archive",
-            "${project.name}-jpackage-${config.version}.jar"
+            "${project.name}-update-${config.version}.jar"
         )
     )
 }
