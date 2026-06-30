@@ -4,7 +4,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import { resolveSavedPortfolioConfig, savedPortfolioConfig, savedPortfolioConfigMap } from '@/lib/portfolioRefs'
+import {
+  isPlaceholderTicker,
+  resolveSavedPortfolioConfig,
+  savedPortfolioConfig,
+  savedPortfolioConfigMap,
+  stripPlaceholderAndNormalizeResolvedRows,
+} from '@/lib/portfolioRefs'
 import type { SavedPortfolio } from '@/types/backtest'
 import type { StockData } from '@/types/portfolio'
 
@@ -28,7 +34,7 @@ interface StockRow {
 const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
 
 function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
-  const validRows = rows.filter(row => row.ticker.trim() && row.weight > 0)
+  const validRows = rows.filter(row => row.ticker.trim() && row.weight > 0 && !isPlaceholderTicker(row.ticker))
   const total = validRows.reduce((sum, row) => sum + row.weight, 0)
   if (total <= 0) return validRows
 
@@ -102,13 +108,15 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     !!appConfig?.privacyScaleEnabled && (parseFloat(appConfig.privacyScalePct ?? '') || 0) > 0
 
   const [stockRows, setStockRows] = useState<StockRow[]>(() =>
-    (initialStocks ?? stocks).map(s => ({
-      symbol: s.label,
-      qty: s.originalAmount ?? s.amount,
-      weight: s.targetWeight ?? 0,
-      letf: letfAttrToStr(s.letf),
-      groups: s.groups,
-    }))
+    (initialStocks ?? stocks)
+      .filter(s => !isPlaceholderTicker(s.label))
+      .map(s => ({
+        symbol: s.label,
+        qty: s.originalAmount ?? s.amount,
+        weight: s.targetWeight ?? 0,
+        letf: letfAttrToStr(s.letf),
+        groups: s.groups,
+      }))
   )
   const [saving, setSaving] = useState(false)
 
@@ -129,7 +137,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }, [])
 
   const totalWeight = stockRows
-    .filter(r => !r.deleted)
+    .filter(r => !r.deleted && !isPlaceholderTicker(r.symbol))
     .reduce((sum, r) => sum + (r.weight || 0), 0)
 
   // ── Trigger save when saveKey increments ──────────────────────────────────
@@ -143,7 +151,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
 
   async function doSave() {
     const updates = stockRows
-      .filter(r => !r.deleted && r.symbol.trim())
+      .filter(r => !r.deleted && r.symbol.trim() && !isPlaceholderTicker(r.symbol))
       .map(r => ({
         symbol: r.symbol.trim().toUpperCase(),
         amount: r.qty || 0,
@@ -203,7 +211,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         savedByName,
         [selected.name],
       )
-      const rounded = roundWeightsToHundred(resolved)
+      const rounded = roundWeightsToHundred(stripPlaceholderAndNormalizeResolvedRows(resolved))
 
       setStockRows(rows => {
         const next = rows.map(r => ({ ...r }))

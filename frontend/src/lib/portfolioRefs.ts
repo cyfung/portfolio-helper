@@ -53,7 +53,7 @@ function normalizeResolvedRows(rows: ResolvedStockWeight[]) {
   })
 }
 
-function stripAndNormalizeResolvedRows(rows: ResolvedStockWeight[]) {
+export function stripPlaceholderAndNormalizeResolvedRows(rows: ResolvedStockWeight[]) {
   return normalizeResolvedRows(rows.filter(row => !isPlaceholderTicker(row.ticker)))
 }
 
@@ -120,7 +120,7 @@ export function resolveBlockState(
       : { ticker: row.ticker, weight: rowWeight(row) }
     ),
   }
-  return stripAndNormalizeResolvedRows(
+  return stripPlaceholderAndNormalizeResolvedRows(
     resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : []),
   )
 }
