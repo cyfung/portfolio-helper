@@ -24,4 +24,25 @@ class BacktestModelsTest {
         assertTrue(kotlin.math.abs((targetWeights["AAA"] ?: 0.0) - 2.0 / 3.0) < 1e-15)
         assertTrue(kotlin.math.abs((targetWeights["BBB"] ?: 0.0) - 1.0 / 3.0) < 1e-15)
     }
+
+    @Test
+    fun mergeWeightsIgnoresDummyAndRenormalizesRemainingTickers() {
+        val portfolio = PortfolioConfig(
+            label = "test",
+            tickers = listOf(
+                TickerWeight("AAA", 35.0),
+                TickerWeight("dummy", 30.0),
+                TickerWeight("BBB", 35.0),
+            ),
+            rebalanceStrategy = RebalanceStrategy.NONE,
+            marginStrategies = emptyList(),
+        )
+
+        val (tickers, targetWeights) = portfolio.mergeWeights()
+
+        assertEquals(listOf("AAA", "BBB"), tickers)
+        assertEquals(1.0, targetWeights.values.sum())
+        assertTrue(kotlin.math.abs((targetWeights["AAA"] ?: 0.0) - 0.5) < 1e-15)
+        assertTrue(kotlin.math.abs((targetWeights["BBB"] ?: 0.0) - 0.5) < 1e-15)
+    }
 }

@@ -604,9 +604,10 @@ object RebalanceStrategyService {
     BacktestService.validateDateRange(fromDate, toDate)
     val effrx = BacktestService.loadEffrxSeries()
     val historyFrom = LocalDate.of(1990, 1, 1)
+    val sanitizedPortfolio = portfolio.withoutPlaceholderTickers()
     val portfolioNeededFrom = fromDate ?: historyFrom
 
-    val requestedTickers = (portfolio.tickers.map { it.ticker } + referenceTickers + extraTickers).distinct()
+    val requestedTickers = (sanitizedPortfolio.tickers.map { it.ticker } + referenceTickers + extraTickers).distinct()
     val referenceTickerSet = referenceTickers.toSet()
     fun neededFromForTicker(ticker: String) =
         if (ticker in referenceTickerSet) historyFrom else portfolioNeededFrom
@@ -625,7 +626,7 @@ object RebalanceStrategyService {
 
     if (overrideDates != null) return RunContext(rawSeriesMap, overrideDates, effrx)
 
-    val portfolioSeries = portfolio.tickers.map { tw ->
+    val portfolioSeries = sanitizedPortfolio.tickers.map { tw ->
       rawSeriesMap[tw.ticker] ?: error("Series for '${tw.ticker}' not found")
     }
     val dates = BacktestService.intersectDates(portfolioSeries, fromDate, toDate)

@@ -41,6 +41,7 @@ object BacktestService {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         validateDateRange(fromDate, toDate)
+        val portfolios = request.portfolios.map { it.withoutPlaceholderTickers() }
         val warnings = Collections.synchronizedSet(LinkedHashSet<String>())
         val warningCollector = { _: String, tickerWarnings: List<String> ->
             warnings.addAll(tickerWarnings)
@@ -50,7 +51,7 @@ object BacktestService {
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
 
         // Step 1: Collect all unique LETF definitions from all portfolio tickers
-        val requestedTickers = request.portfolios
+        val requestedTickers = portfolios
             .flatMap { it.tickers }
             .map { it.ticker }
             .distinct()
@@ -68,7 +69,7 @@ object BacktestService {
         // S= default 1.5%), so the string itself is the cache key — no outer portfolio dependency.
         // Step 5: Load real (non-LETF) ticker series
         // Step 6: Build allSeriesMaps and compute global date intersection.
-        val allSeriesMaps = request.portfolios.map { pConfig ->
+        val allSeriesMaps = portfolios.map { pConfig ->
             pConfig.tickers.associate { tw ->
                 tw.ticker to (seriesCache[tw.ticker]
                     ?: error("Series for '${tw.ticker}' not found in cache"))
@@ -80,8 +81,8 @@ object BacktestService {
         }
 
         // Step 7: Compute portfolio results (portfolios and strategies run in parallel)
-        val portfolioResults = request.portfolios.indices.toList().parallelStream().map { idx ->
-            val pConfig = request.portfolios[idx]
+        val portfolioResults = portfolios.indices.toList().parallelStream().map { idx ->
+            val pConfig = portfolios[idx]
             val seriesMap = allSeriesMaps[idx]
 
             val noMarginValues = computeNoMargin(
@@ -174,7 +175,9 @@ object BacktestService {
         validateDateRange(fromDate, toDate)
         val effrxSeries = loadEffrxSeries()
         val neededFrom = LocalDate.of(1990, 1, 1)
-        val portfolio = request.portfolio.copy(marginStrategies = emptyList(), rebalanceStrategies = emptyList())
+        val portfolio = request.portfolio
+            .copy(marginStrategies = emptyList(), rebalanceStrategies = emptyList())
+            .withoutPlaceholderTickers()
         val referenceTicker = request.referenceTicker
             ?.trim()
             ?.uppercase()

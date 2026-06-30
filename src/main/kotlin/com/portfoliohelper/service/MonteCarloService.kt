@@ -21,9 +21,10 @@ object MonteCarloService {
         BacktestService.validateDateRange(fromDate, toDate)
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
         val effrxSeries = BacktestService.loadEffrxSeries()
+        val portfolios = request.portfolios.map { it.withoutPlaceholderTickers() }
 
         // ── Step 1: Parse LETF definitions ───────────────────────────────────
-        val requestedTickers = request.portfolios
+        val requestedTickers = portfolios
             .flatMap { it.tickers }
             .map { it.ticker }
             .distinct()
@@ -39,7 +40,7 @@ object MonteCarloService {
         // ── Step 4: Compute virtual LETF series ───────────────────────────────
         // ── Step 5: Load real (non-LETF) ticker series ────────────────────────
         // ── Step 6: Build pool date list ──────────────────────────────────────
-        val allSeriesMaps = request.portfolios.map { pConfig ->
+        val allSeriesMaps = portfolios.map { pConfig ->
             pConfig.tickers.associate { tw ->
                 tw.ticker to (seriesCache[tw.ticker]
                     ?: error("Series for '${tw.ticker}' not found in cache"))
@@ -65,7 +66,7 @@ object MonteCarloService {
         }
 
         // ── Pre-compute return multipliers ────────────────────────────────────
-        val allTickers = request.portfolios.flatMap { it.tickers.map { tw -> tw.ticker } }.toSet()
+        val allTickers = portfolios.flatMap { it.tickers.map { tw -> tw.ticker } }.toSet()
 
         // tickerReturnsByDay[i] = returns for day i (transition poolDates[i] → poolDates[i+1])
         // indexed 0..poolSize-2
@@ -98,7 +99,7 @@ object MonteCarloService {
         fun modeAbbr(m: String) = HybridAllocStrategyRegistry.modeLabel(m)
 
         val portfolioCurveConfigs: List<Pair<PortfolioConfig, List<CurveConfig>>> =
-            request.portfolios.map { pConfig ->
+            portfolios.map { pConfig ->
                 val curves = mutableListOf<CurveConfig>()
                 if (pConfig.includeNoMargin) curves.add(CurveConfig("No Margin", null))
                 pConfig.marginStrategies.forEachIndexed { mIdx, mc ->

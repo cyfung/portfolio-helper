@@ -8,6 +8,12 @@ export interface ResolvedStockWeight {
   weight: number
 }
 
+export const DUMMY_TICKER = 'DUMMY'
+
+export function isPlaceholderTicker(ticker: string) {
+  return ticker.trim().toUpperCase() === DUMMY_TICKER
+}
+
 export async function fetchSavedPortfolios(): Promise<SavedPortfolio[]> {
   try {
     const res = await fetch('/api/backtest/savedPortfolios')
@@ -34,6 +40,21 @@ function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = ticker.trim().toUpperCase()
   if (!key || weight <= 0) return
   map.set(key, (map.get(key) ?? 0) + weight)
+}
+
+function normalizeResolvedRows(rows: ResolvedStockWeight[]) {
+  const total = rows.reduce((sum, row) => sum + row.weight, 0)
+  if (total <= 0) return rows
+  let allocated = 0
+  return rows.map((row, index) => {
+    const weight = index === rows.length - 1 ? 100 - allocated : row.weight * 100 / total
+    allocated += weight
+    return { ...row, weight }
+  })
+}
+
+function stripAndNormalizeResolvedRows(rows: ResolvedStockWeight[]) {
+  return normalizeResolvedRows(rows.filter(row => !isPlaceholderTicker(row.ticker)))
 }
 
 function scaledChildRows(parentWeight: number, childStocks: ResolvedStockWeight[]) {
@@ -99,7 +120,9 @@ export function resolveBlockState(
       : { ticker: row.ticker, weight: rowWeight(row) }
     ),
   }
-  return resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : [])
+  return stripAndNormalizeResolvedRows(
+    resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : []),
+  )
 }
 
 export function resolvedBlockStateToAPIPortfolio(
