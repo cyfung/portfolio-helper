@@ -222,7 +222,7 @@ private fun isPortfolioRef(obj: JsonObject): Boolean =
         obj["type"]?.jsonPrimitive?.contentOrNull == "PORTFOLIO_REF" ||
         obj["portfolioRef"]?.jsonPrimitive?.contentOrNull != null
 
-private fun resolveTickerWeights(
+internal fun resolveTickerWeights(
     rows: JsonArray?,
     savedConfigs: Map<String, JsonObject>,
     stack: List<String>
@@ -232,6 +232,23 @@ private fun resolveTickerWeights(
     fun add(ticker: String, weight: Double) {
         val key = ticker.trim().uppercase()
         if (key.isNotBlank() && weight > 0.0) merged[key] = (merged[key] ?: 0.0) + weight
+    }
+
+    fun scaledChildTickers(parentWeight: Double, childTickers: List<TickerWeight>): List<TickerWeight> {
+        val childTotal = childTickers.sumOf { it.weight }
+        var allocated = 0.0
+        return childTickers.mapIndexed { index, tickerWeight ->
+            val scaledWeight =
+                if (childTotal <= 0.0) {
+                    0.0
+                } else if (index == childTickers.lastIndex) {
+                    parentWeight - allocated
+                } else {
+                    parentWeight * tickerWeight.weight / childTotal
+                }
+            allocated += scaledWeight
+            tickerWeight.copy(weight = scaledWeight)
+        }
     }
 
     rows?.forEach { el ->
@@ -248,8 +265,8 @@ private fun resolveTickerWeights(
             if (refName in stack) {
                 throw IllegalArgumentException("Circular portfolio reference: ${(stack + refName).joinToString(" -> ")}")
             }
-            resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
-                .forEach { add(it.ticker, weight * it.weight / 100.0) }
+            val childTickers = resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
+            scaledChildTickers(weight, childTickers).forEach { add(it.ticker, it.weight) }
         } else {
             val rawTicker = obj["ticker"]?.jsonPrimitive?.content ?: ""
             add(rawTicker, weight)
@@ -607,15 +624,15 @@ private suspend fun ApplicationCall.receiveDisplayNameAndSlug(): Pair<String, St
     val slug = displayName.toSlug().takeIf { it.isNotBlank() } ?: return null
     return displayName to slug
 }
-private fun JsonArray.parseCashEntries() = mapNotNull { el ->
+internal fun JsonArray.parseCashEntries() = mapNotNull { el ->
     val obj = el.jsonObject
     val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
     val currency = obj["currency"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase() ?: return@mapNotNull null
     val marginFlag = obj["marginFlag"]?.jsonPrimitive?.booleanOrNull ?: false
     if (currency == "P") {
         val ref = obj["portfolioRef"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-        val sign = if ((obj["amount"]?.jsonPrimitive?.doubleOrNull ?: 1.0) < 0) -1.0 else 1.0
-        com.portfoliohelper.model.CashEntry(label, "P", marginFlag, sign, portfolioRef = ref)
+        val multiplier = obj["amount"]?.jsonPrimitive?.doubleOrNull ?: 1.0
+        com.portfoliohelper.model.CashEntry(label, "P", marginFlag, multiplier, portfolioRef = ref)
     } else {
         val amount = obj["amount"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
         com.portfoliohelper.model.CashEntry(label, currency, marginFlag, amount)

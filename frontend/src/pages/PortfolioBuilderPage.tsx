@@ -115,7 +115,12 @@ function expandLetfRows(rows: ResolvedStockWeight[], tickerConfigs: Record<strin
 function normalizeRows(rows: ResolvedStockWeight[]) {
   const total = rows.reduce((sum, row) => sum + row.weight, 0)
   if (total <= 0) return rows
-  return rows.map(row => ({ ...row, weight: row.weight * 100 / total }))
+  let allocated = 0
+  return rows.map((row, index) => {
+    const weight = index === rows.length - 1 ? 100 - allocated : row.weight * 100 / total
+    allocated += weight
+    return { ...row, weight }
+  })
 }
 
 function buildGroupRows(rows: ResolvedStockWeight[], tickerConfigs: Record<string, TickerConfig>) {
@@ -363,23 +368,24 @@ export default function PortfolioBuilderPage() {
         <div className="portfolio-builder-results">
           {results.map((rows, i) => {
             const block = blocks[i]
-            const letfResult = expandLetfRows(rows, tickerConfigs)
+            const baseRows = normalizeRows(rows)
+            const letfResult = expandLetfRows(baseRows, tickerConfigs)
             const showLetfExpanded = letfResult.expanded && (showLetfExpandedByBlock[i] ?? true)
-            const rawDisplayRows = showLetfExpanded ? letfResult.rows : rows
-            const normalizedRows = normalizeRows(rawDisplayRows)
+            const marginExposureRows = showLetfExpanded ? letfResult.rows : baseRows
+            const normalizedRows = normalizeRows(marginExposureRows)
             const groupRows = buildGroupRows(normalizedRows, tickerConfigs)
-            const rawGroupRows = buildGroupRows(rawDisplayRows, tickerConfigs)
+            const marginGroupRows = buildGroupRows(marginExposureRows, tickerConfigs)
             const editableSymbols = editableTickerSymbols(rows, letfResult.rows)
             const activeGroupName = pinnedGroupByBlock[i] ?? hoveredGroupByBlock[i]
             const activeGroup = groupRows.find(group => group.name === activeGroupName)
-            const activeRawGroup = rawGroupRows.find(group => group.name === activeGroupName)
+            const activeMarginGroup = marginGroupRows.find(group => group.name === activeGroupName)
             const hasMargin = block.margins.length > 0
             const selectedMarginIndex = hasMargin
               ? Math.min(selectedMarginByBlock[i] ?? 0, block.margins.length - 1)
               : 0
             const multiplier = 1 + marginRatio(block, selectedMarginIndex) / 100
             const totalWeight = normalizedRows.reduce((sum, row) => sum + row.weight, 0)
-            const totalMarginScaled = rawDisplayRows.reduce((sum, row) => sum + row.weight * multiplier, 0)
+            const totalMarginScaled = marginExposureRows.reduce((sum, row) => sum + row.weight * multiplier, 0)
 
             return (
               <div key={i} className="portfolio-builder-result-block">
@@ -434,11 +440,13 @@ export default function PortfolioBuilderPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {normalizedRows.map((row, rowIndex) => (
+                      {normalizedRows.map(row => (
                         <tr key={row.ticker}>
                           <td>{row.ticker}</td>
                           <td>{row.weight.toFixed(2)}%</td>
-                          {hasMargin && <td>{(rawDisplayRows[rowIndex].weight * multiplier).toFixed(2)}%</td>}
+                          {hasMargin && (
+                            <td>{(((marginExposureRows.find(marginRow => marginRow.ticker === row.ticker)?.weight) ?? 0) * multiplier).toFixed(2)}%</td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -499,7 +507,7 @@ export default function PortfolioBuilderPage() {
                             </td>
                             <td>{group.weight.toFixed(2)}%</td>
                             {hasMargin && (
-                              <td>{((rawGroupRows.find(raw => raw.name === group.name)?.weight ?? 0) * multiplier).toFixed(2)}%</td>
+                              <td>{((marginGroupRows.find(marginGroup => marginGroup.name === group.name)?.weight ?? 0) * multiplier).toFixed(2)}%</td>
                             )}
                           </tr>
                         ))}
@@ -521,9 +529,9 @@ export default function PortfolioBuilderPage() {
                         </thead>
                         <tbody>
                           {activeGroup.children.map(child => {
-                            const rawChild = activeRawGroup?.children.find(raw => raw.ticker === child.ticker)
+                            const marginChild = activeMarginGroup?.children.find(marginRow => marginRow.ticker === child.ticker)
                             const groupWeight = activeGroup.weight > 0 ? child.weight * 100 / activeGroup.weight : 0
-                            const marginScaled = (rawChild?.weight ?? 0) * multiplier
+                            const marginScaled = (marginChild?.weight ?? 0) * multiplier
 
                             return (
                               <tr key={child.ticker}>

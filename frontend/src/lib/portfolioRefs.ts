@@ -36,6 +36,20 @@ function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   map.set(key, (map.get(key) ?? 0) + weight)
 }
 
+function scaledChildRows(parentWeight: number, childStocks: ResolvedStockWeight[]) {
+  const childTotal = childStocks.reduce((sum, childStock) => sum + childStock.weight, 0)
+  let allocated = 0
+
+  return childStocks.map((childStock, index) => {
+    const isLast = index === childStocks.length - 1
+    const weight = childTotal > 0
+      ? isLast ? parentWeight - allocated : parentWeight * childStock.weight / childTotal
+      : 0
+    allocated += weight
+    return { ...childStock, weight }
+  })
+}
+
 export function savedPortfolioConfig(config: any) {
   return config?.portfolios?.[0] ?? config
 }
@@ -61,9 +75,8 @@ export function resolveSavedPortfolioConfig(
       if (!child) throw new Error(`Missing portfolio reference: ${name}`)
       if (stack.includes(name)) throw new Error(`Circular portfolio reference: ${[...stack, name].join(' -> ')}`)
 
-      const childStocks = resolveSavedPortfolioConfig(child, savedByName, [...stack, name])
-      for (const childStock of childStocks) {
-        addWeight(weights, childStock.ticker, weight * childStock.weight / 100)
+      for (const childStock of scaledChildRows(weight, resolveSavedPortfolioConfig(child, savedByName, [...stack, name]))) {
+        addWeight(weights, childStock.ticker, childStock.weight)
       }
     } else {
       addWeight(weights, String(row.ticker || ''), weight)

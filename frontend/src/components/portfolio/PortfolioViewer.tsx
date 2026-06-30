@@ -20,9 +20,12 @@ function parseCashKey(key: string, value: string): CashData | null {
   const label = mut.slice(0, -1).join('.')
   if (currency === 'P') {
     const trimmed = String(value).trim()
-    const signNeg = trimmed.startsWith('-')
-    const portfolioRef = trimmed.replace(/^[+-]/, '').toLowerCase()
-    return { label, currency: 'P', amount: signNeg ? -1 : 1, marginFlag, portfolioRef }
+    const multiplierMatch = trimmed.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+(.+)$/)
+    const multiplier = multiplierMatch
+      ? parseFloat(multiplierMatch[1])
+      : trimmed.startsWith('-') ? -1 : 1
+    const portfolioRef = (multiplierMatch?.[2] ?? trimmed.replace(/^[+-]/, '')).trim().toLowerCase()
+    return { label, currency: 'P', amount: Number.isFinite(multiplier) ? multiplier : 1, marginFlag, portfolioRef }
   }
   return { label, currency, amount: parseFloat(value) || 0, marginFlag }
 }

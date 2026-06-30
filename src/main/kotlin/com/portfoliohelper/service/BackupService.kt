@@ -342,7 +342,12 @@ object BackupService {
             }
             val cash = root.cash.map { c ->
                 val value = if (c.currency == "P") {
-                    (if (c.amount < 0) "-" else "") + (c.portfolioRef ?: "")
+                    val ref = c.portfolioRef ?: ""
+                    if (kotlin.math.abs(c.amount) == 1.0) {
+                        (if (c.amount < 0) "-" else "") + ref
+                    } else {
+                        "${c.amount} $ref"
+                    }
                 } else c.amount.toString()
                 ImportedCash(c.key, value)
             }

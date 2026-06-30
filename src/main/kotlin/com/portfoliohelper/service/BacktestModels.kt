@@ -204,10 +204,25 @@ data class MultiBacktestResult(
 
 /** Merges duplicate tickers by summing weights, then normalises to sum-to-1. */
 fun PortfolioConfig.mergeWeights(): Pair<List<String>, Map<String, Double>> {
-    val totalWeight = tickers.sumOf { it.weight }
     val merged = mutableMapOf<String, Double>()
     for (tw in tickers) merged[tw.ticker] = (merged[tw.ticker] ?: 0.0) + tw.weight
     val tickerList = merged.keys.toList()
-    val targetWeights = merged.mapValues { (_, w) -> w / totalWeight }
+    val totalWeight = tickerList.sumOf { merged[it] ?: 0.0 }
+    var allocated = 0.0
+    val targetWeights =
+        if (totalWeight > 0.0) {
+            tickerList.mapIndexed { index, ticker ->
+                val weight =
+                    if (index == tickerList.lastIndex) {
+                        1.0 - allocated
+                    } else {
+                        (merged[ticker] ?: 0.0) / totalWeight
+                    }
+                allocated += weight
+                ticker to weight
+            }.toMap()
+        } else {
+            tickerList.associateWith { 0.0 }
+        }
     return tickerList to targetWeights
 }
