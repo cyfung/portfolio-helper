@@ -125,6 +125,23 @@ export function resolveBlockState(
   )
 }
 
+export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
+  const apiPortfolio = blockStateToAPIPortfolio(block, idx)
+  const tickers = block.tickers
+    .map(row => {
+      const isRef = row.isPortfolioRef === true
+      const ticker = isRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
+      return { ticker, weight: rowWeight(row), isRef }
+    })
+    .filter(row => row.ticker && (row.weight > 0 || (!row.isRef && isPlaceholderTicker(row.ticker))))
+    .map(row => row.isRef
+      ? { ticker: row.ticker, weight: row.weight, isPortfolioRef: true, portfolioRef: row.ticker }
+      : { ticker: row.ticker, weight: row.weight }
+    )
+
+  return { ...apiPortfolio, tickers }
+}
+
 export function resolvedBlockStateToAPIPortfolio(
   block: BlockState,
   idx: number,

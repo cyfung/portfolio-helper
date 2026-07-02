@@ -32,7 +32,7 @@ import {
   cashflowStateFromSettings, cashflowToPayload, configToBlockInputLabel,
   DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
-import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 // ── Effective curves helper ───────────────────────────────────────────────────
 
@@ -174,7 +174,7 @@ export default function MonteCarloPage() {
     }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
-    const settingsPortfolios = runBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
+    const settingsPortfolios = runBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i))
     let portfolios
     try {
       const savedPortfolios = await fetchSavedPortfolios()

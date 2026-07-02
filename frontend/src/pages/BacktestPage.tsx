@@ -37,7 +37,7 @@ import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
-import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { validateDateRange } from '@/lib/dateRange'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
@@ -763,7 +763,7 @@ export default function BacktestPage() {
     }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
-    const settingsPortfolios = runBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
+    const settingsPortfolios = runBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i))
     let portfolios
     let mappingWarnings: string[]
     try {

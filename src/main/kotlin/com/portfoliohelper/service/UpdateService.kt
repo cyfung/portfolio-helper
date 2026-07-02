@@ -45,6 +45,12 @@ object UpdateService {
         val pendingJarPath: String?
     )
 
+    private data class ReleaseDetails(
+        val latestVersion: String?,
+        val releaseUrl: String?,
+        val jpackageAssetUrl: String?
+    )
+
     val isJpackageInstall: Boolean
     val installDir: Path?
 
@@ -118,34 +124,23 @@ object UpdateService {
 
     suspend fun checkForUpdate() {
         val repo = AppConfig.githubRepo.ifBlank { "cyfung/portfolio-helper" }
-        val request = Request.Builder()
-            .url("https://api.github.com/repos/$repo/releases/latest")
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "portfolio-helper/$APP_VERSION")
-            .build()
         try {
-            withContext(Dispatchers.IO) {
-                httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) error("GitHub API returned ${response.code}")
-                    val text = response.body?.string() ?: error("Empty response")
-                    val tagName = parseJsonString(text, "tag_name")
-                    val latestVersion = tagName?.removePrefix("v")
-                    val htmlUrl = parseJsonString(text, "html_url")
-                    val jpackageAssetUrl = parseAssetsForJpackage(text)
-                    val hasUpdate = latestVersion != null && isNewerVersion(latestVersion, APP_VERSION)
-                    state.set(
-                        state.get().copy(
-                            latestVersion = latestVersion,
-                            releaseUrl = htmlUrl,
-                            jpackageAssetUrl = jpackageAssetUrl,
-                            hasUpdate = hasUpdate,
-                            lastCheckedMs = System.currentTimeMillis(),
-                            lastCheckError = null
-                        )
-                    )
-                    logger.info("Update check: currentVersion=$APP_VERSION, latestVersion=$latestVersion, hasUpdate=$hasUpdate")
-                }
+            val release = withContext(Dispatchers.IO) {
+                fetchLatestRelease(repo)
             }
+            val latestVersion = release.latestVersion
+            val hasUpdate = latestVersion != null && isNewerVersion(latestVersion, APP_VERSION)
+            state.set(
+                state.get().copy(
+                    latestVersion = latestVersion,
+                    releaseUrl = release.releaseUrl,
+                    jpackageAssetUrl = release.jpackageAssetUrl,
+                    hasUpdate = hasUpdate,
+                    lastCheckedMs = System.currentTimeMillis(),
+                    lastCheckError = null
+                )
+            )
+            logger.info("Update check: currentVersion=$APP_VERSION, latestVersion=$latestVersion, hasUpdate=$hasUpdate")
         } catch (e: Exception) {
             state.set(
                 state.get().copy(
@@ -173,10 +168,10 @@ object UpdateService {
             withContext(Dispatchers.IO) {
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "portfolio-helper/$APP_VERSION")
+                    .githubDefaults()
                     .build()
                 httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) error("HTTP ${response.code}")
+                    if (!response.isSuccessful) error(githubHttpError("GitHub asset download", response.code, response.body?.string()))
                     val body = response.body ?: error("Empty response body")
                     val totalBytes = body.contentLength()
                     Files.newOutputStream(pendingJar).use { out ->
@@ -219,6 +214,53 @@ object UpdateService {
                 )
             )
             throw e
+        }
+    }
+
+    private fun fetchLatestRelease(repo: String): ReleaseDetails =
+        try {
+            fetchLatestReleaseFromApi(repo)
+        } catch (e: Exception) {
+            logger.warn("GitHub API update check failed, using release feed fallback: ${e.message}")
+            fetchLatestReleaseFromAtom(repo)
+        }
+
+    private fun fetchLatestReleaseFromApi(repo: String): ReleaseDetails {
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/$repo/releases/latest")
+            .githubDefaults("application/vnd.github+json")
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val text = response.body?.string() ?: ""
+            if (!response.isSuccessful) error(githubHttpError("GitHub API", response.code, text))
+            val tagName = parseJsonString(text, "tag_name")
+            val latestVersion = tagName?.removePrefix("v")
+            val htmlUrl = parseJsonString(text, "html_url")
+            val jpackageAssetUrl = parseAssetsForJpackage(text)
+                ?: latestVersion?.let { jpackageAssetDownloadUrl(repo, it) }
+            return ReleaseDetails(latestVersion, htmlUrl, jpackageAssetUrl)
+        }
+    }
+
+    private fun fetchLatestReleaseFromAtom(repo: String): ReleaseDetails {
+        val request = Request.Builder()
+            .url("https://github.com/$repo/releases.atom")
+            .githubDefaults("application/atom+xml")
+            .build()
+
+        httpClient.newCall(request).execute().use { response ->
+            val text = response.body?.string() ?: ""
+            if (!response.isSuccessful) error(githubHttpError("GitHub releases feed", response.code, text))
+            val tagName = parseLatestReleaseTagFromAtom(text)
+                ?: error("GitHub releases feed did not include a release tag")
+            val latestVersion = tagName.removePrefix("v")
+            val releaseUrl = "https://github.com/$repo/releases/tag/$tagName"
+            return ReleaseDetails(
+                latestVersion = latestVersion,
+                releaseUrl = releaseUrl,
+                jpackageAssetUrl = jpackageAssetDownloadUrl(repo, latestVersion)
+            )
         }
     }
 
@@ -328,6 +370,35 @@ object UpdateService {
         return jarCandidates.firstOrNull { (name, _) -> "update" in name.lowercase() }?.second
             ?: jarCandidates.firstOrNull { (name, _) -> "jpackage" in name.lowercase() }?.second
             ?: jarCandidates.firstOrNull()?.second
+    }
+
+    private fun parseLatestReleaseTagFromAtom(xml: String): String? {
+        val entry = Regex("<entry\\b.*?</entry>", RegexOption.DOT_MATCHES_ALL)
+            .find(xml)?.value ?: return null
+        return Regex("/releases/tag/(v?[0-9][^\"'<\\s]*)").find(entry)?.groupValues?.get(1)
+            ?: Regex("<title>\\s*(v?[0-9][^<\\s]*)\\s*</title>").find(entry)?.groupValues?.get(1)
+    }
+
+    private fun jpackageAssetDownloadUrl(repo: String, version: String): String =
+        "https://github.com/$repo/releases/download/v$version/portfolio-helper-jpackage-$version.jar"
+
+    private fun Request.Builder.githubDefaults(accept: String = "*/*"): Request.Builder {
+        header("Accept", accept)
+        header("User-Agent", "portfolio-helper/$APP_VERSION")
+        if (accept == "application/vnd.github+json") {
+            header("X-GitHub-Api-Version", "2022-11-28")
+        }
+        githubToken()?.let { header("Authorization", "Bearer $it") }
+        return this
+    }
+
+    private fun githubToken(): String? =
+        System.getenv("GITHUB_TOKEN")?.takeIf { it.isNotBlank() }
+            ?: System.getenv("GH_TOKEN")?.takeIf { it.isNotBlank() }
+
+    private fun githubHttpError(source: String, code: Int, body: String?): String {
+        val message = body?.let { parseJsonString(it, "message") }?.takeIf { it.isNotBlank() }
+        return if (message != null) "$source returned HTTP $code: $message" else "$source returned HTTP $code"
     }
 
     private fun validatePendingJar(path: Path) {

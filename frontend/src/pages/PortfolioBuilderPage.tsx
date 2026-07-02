@@ -5,8 +5,8 @@ import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { BlockState } from '@/types/backtest'
 import type { SavedPortfolio } from '@/types/backtest'
-import { blockStateToAPIPortfolio, configToBlockInputLabel, configToBlockState } from '@/types/backtest'
-import { resolveBlockState, type ResolvedStockWeight } from '@/lib/portfolioRefs'
+import { configToBlockInputLabel, configToBlockState } from '@/types/backtest'
+import { blockStateToSettingsPortfolio, resolveBlockState, type ResolvedStockWeight } from '@/lib/portfolioRefs'
 import { parseGroupsAttr } from '@/lib/portfolio-utils'
 
 interface TickerConfig {
@@ -204,7 +204,7 @@ export default function PortfolioBuilderPage() {
           settings.portfolios.forEach((portfolio: any, i: number) => {
             if (i < next.length) next[i] = configToBlockState(portfolio, configToBlockInputLabel(portfolio, i))
           })
-          lastSavedPortfoliosRef.current = JSON.stringify(next.map((block, i) => blockStateToAPIPortfolio(block, i)))
+          lastSavedPortfoliosRef.current = JSON.stringify(next.map((block, i) => blockStateToSettingsPortfolio(block, i)))
           return next
         })
       })
@@ -214,7 +214,7 @@ export default function PortfolioBuilderPage() {
 
   useEffect(() => {
     if (!settingsLoadedRef.current) return
-    const portfolios = blocks.map((block, i) => blockStateToAPIPortfolio(block, i))
+    const portfolios = blocks.map((block, i) => blockStateToSettingsPortfolio(block, i))
     const serialized = JSON.stringify(portfolios)
     if (serialized === lastSavedPortfoliosRef.current) return
     lastSavedPortfoliosRef.current = serialized

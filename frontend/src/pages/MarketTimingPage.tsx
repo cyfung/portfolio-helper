@@ -19,7 +19,7 @@ import {
 } from '@/lib/marketTiming/chartData'
 import { parseUsCapeCsv, parseWorldCapeCsv } from '@/lib/marketTiming/capeCsv'
 import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
-import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import {
   applyImportDependencyPreview,
@@ -291,7 +291,7 @@ export default function MarketTimingPage() {
       if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
       const savedPortfolios = await fetchSavedPortfolios()
       const apiPortfolio = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, savedPortfolios)
-      const settingsPortfolio = blockStateToAPIPortfolio(runPortfolio, 0)
+      const settingsPortfolio = blockStateToSettingsPortfolio(runPortfolio, 0)
       const runAnnualSpread = interestMode === 'SPREAD'
         ? normalizeNumberInput(annualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
         : annualSpread

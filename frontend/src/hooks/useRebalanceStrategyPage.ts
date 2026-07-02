@@ -12,7 +12,7 @@ import {
   withPortfolioExportDependencies,
   type ImportDependencyPreview,
 } from '@/lib/configImportExport'
-import { fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { makeUniqueStrategyLabels } from '@/lib/rebalanceStrategyConfig'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
@@ -168,7 +168,7 @@ export function useRebalanceStrategyPage() {
       selectedTickerMappingSet,
     )
     const portfolioApi = mappedPortfolio.value
-    const settingsPortfolio = blockStateToAPIPortfolio(runPortfolio, 0)
+    const settingsPortfolio = blockStateToSettingsPortfolio(runPortfolio, 0)
     if (portfolioApi.tickers.length === 0) {
       throw new Error('Add at least one ticker with a positive weight to the portfolio.')
     }
