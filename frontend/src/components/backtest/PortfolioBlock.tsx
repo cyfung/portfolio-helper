@@ -10,7 +10,8 @@ import {
 import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
 import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
-import { SAVED_PORTFOLIOS_CHANGED_EVENT, fetchSavedPortfolios, savedPortfolioConfig } from '@/lib/portfolioRefs'
+import { isPlaceholderTicker, SAVED_PORTFOLIOS_CHANGED_EVENT, fetchSavedPortfolios, savedPortfolioConfig } from '@/lib/portfolioRefs'
+import { parseSwapExpression } from '@/lib/tickerExpressions'
 
 interface Props {
   idx: number
@@ -130,9 +131,16 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       rows: TickerRowState[]
       weight: number
       firstIndex: number
+      sortRank: number
     }
 
     const groups = new Map<string, TickerGroup>()
+    const tickerSortRank = (label: string, isPortfolioRef: boolean) => {
+      if (isPortfolioRef) return 1
+      if (parseSwapExpression(label)) return 2
+      if (isPlaceholderTicker(label)) return 3
+      return 0
+    }
 
     localRef.current.tickers.forEach((row, index) => {
       const isPortfolioRef = row.isPortfolioRef === true
@@ -152,6 +160,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         rows: [row],
         weight,
         firstIndex: index,
+        sortRank: tickerSortRank(label, isPortfolioRef),
       })
     })
 
@@ -160,7 +169,10 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       .sort((a, b) => {
         if (!a.label && b.label) return 1
         if (a.label && !b.label) return -1
-        return a.label.localeCompare(b.label) || Number(a.isPortfolioRef) - Number(b.isPortfolioRef) || a.firstIndex - b.firstIndex
+        return a.sortRank - b.sortRank ||
+          a.label.localeCompare(b.label) ||
+          Number(a.isPortfolioRef) - Number(b.isPortfolioRef) ||
+          a.firstIndex - b.firstIndex
       })
       .map(group => {
         const first = group.rows[0]
