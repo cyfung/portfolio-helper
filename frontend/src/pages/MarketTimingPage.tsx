@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import { BacktestPageHeader } from '@/components/backtest/CommonBacktestSections'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
+import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { UsCapeHistoryChart, WorldCapeHistoryChart } from '@/components/marketTiming/CapeHistoryCharts'
 import MarketTimingResultsCharts from '@/components/marketTiming/MarketTimingResultsCharts'
@@ -130,6 +131,7 @@ export default function MarketTimingPage() {
   const [fixedAnnualRate, setFixedAnnualRate] = useState('5')
   const [importCode, setImportCode] = useState('')
   const [configError, setConfigError] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: MarketTimingImportConfig; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -146,6 +148,29 @@ export default function MarketTimingPage() {
   const { toast: importToast, showToast: showImportToast } = useTransientToast()
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const dateRangeError = validateDateRange(fromDate, toDate)
+  const settingsPayload = useMemo(() => ({
+    fromDate: fromDate || null,
+    toDate: toDate || null,
+    drawdownConfigs,
+    referenceSource,
+    referenceTicker,
+    interestMode,
+    annualSpread,
+    fixedAnnualRate,
+    settingsPortfolio: blockStateToSettingsPortfolio(portfolio, 0),
+  }), [
+    annualSpread,
+    drawdownConfigs,
+    fixedAnnualRate,
+    fromDate,
+    interestMode,
+    portfolio,
+    referenceSource,
+    referenceTicker,
+    toDate,
+  ])
+
+  useSettingsAutosave('/api/market-timing/settings', settingsPayload, settingsLoaded)
 
   useEffect(() => {
     fetch('/api/backtest/settings')
@@ -170,6 +195,7 @@ export default function MarketTimingPage() {
         if (cachedPortfolio) setPortfolio(configToBlockState(cachedPortfolio, configToBlockInputLabel(cachedPortfolio, 0)))
       })
       .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
   }, [])
 
   useEffect(() => {

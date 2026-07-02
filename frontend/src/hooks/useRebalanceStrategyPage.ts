@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import type { RebalanceStrategyBlockRef } from '@/components/rebalance/RebalanceStrategyBlock'
 import type { SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
+import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { validateDateRange } from '@/lib/dateRange'
@@ -105,6 +106,7 @@ export function useRebalanceStrategyPage() {
   const [includeActionDiagnostics, setIncludeActionDiagnostics] = useState(false)
   const [importCode, setImportCode] = useState('')
   const [configError, setConfigError] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: PageConfigLike; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -125,6 +127,27 @@ export function useRebalanceStrategyPage() {
     () => resolveSelectedTickerMappingSet(tickerMappingSettings),
     [tickerMappingSettings],
   )
+  const settingsPayload = useMemo(() => ({
+    fromDate: fromDate || null,
+    toDate: toDate || null,
+    startingBalance: startingBalanceToPayload(startingBalance),
+    cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+    includeActionDiagnostics,
+    settingsPortfolio: blockStateToSettingsPortfolio(portfolio, 0),
+    strategies: strategies.map(strategy => strategyStateToAPI(strategy)),
+    strategyStates: strategies,
+  }), [
+    cashflowAmount,
+    cashflowFrequency,
+    fromDate,
+    includeActionDiagnostics,
+    portfolio,
+    startingBalance,
+    strategies,
+    toDate,
+  ])
+
+  useSettingsAutosave('/api/rebalance-strategy/settings', settingsPayload, settingsLoaded)
 
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
@@ -149,6 +172,7 @@ export function useRebalanceStrategyPage() {
         if (restoredStrategies) setStrategies(restoredStrategies)
       })
       .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
   }, [])
 
   const currentNormalizedStrategies = useCallback(() => {

@@ -11,6 +11,7 @@ import {
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
+import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { getChartTheme } from '@/lib/chartTheme'
 import { scaleDash } from '@/lib/colorScheme'
@@ -70,6 +71,7 @@ export default function MonteCarloPage() {
   const [numSims, setNumSims]         = useState('500')
   const [importCode, setImportCode]   = useState('')
   const [configError, setConfigError] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: any; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -87,6 +89,19 @@ export default function MonteCarloPage() {
   const pollRef           = useRef<number | null>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
   const dateRangeError = validateDateRange(fromDate, toDate)
+  const settingsPayload = useMemo(() => ({
+    fromDate: fromDate || null,
+    toDate: toDate || null,
+    minChunkYears: parseFloat(minChunk) || 3,
+    maxChunkYears: parseFloat(maxChunk) || 8,
+    simulatedYears: parseInt(simYears, 10) || 20,
+    numSimulations: parseInt(numSims, 10) || 500,
+    startingBalance: startingBalanceToPayload(startingBalance),
+    cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+    settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
+  }), [blocks, cashflowAmount, cashflowFrequency, fromDate, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
+
+  useSettingsAutosave('/api/montecarlo/settings', settingsPayload, settingsLoaded)
 
   // Restore settings on mount
   useEffect(() => {
@@ -115,6 +130,7 @@ export default function MonteCarloPage() {
         }
       })
       .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
   }, [])
 
   // ── Computed chart data ───────────────────────────────────────────────────

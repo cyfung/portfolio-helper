@@ -982,6 +982,13 @@ fun Application.configureRouting() {
             )
         }
 
+        post("/api/backtest/settings") {
+            val body = call.receiveText()
+            val json = Json.parseToJsonElement(body).jsonObject
+            saveMergedBacktestSettings(json, "backtest.settings")
+            call.respondOk()
+        }
+
         post("/api/backtest/settings/portfolios") {
             val body = call.receiveText()
             val json = Json.parseToJsonElement(body).jsonObject
@@ -994,6 +1001,13 @@ fun Application.configureRouting() {
                 loadBacktestSettings("backtest.mc-settings"),
                 ContentType.Application.Json
             )
+        }
+
+        post("/api/montecarlo/settings") {
+            val body = call.receiveText()
+            val json = Json.parseToJsonElement(body).jsonObject
+            saveBacktestSettings(json, "backtest.mc-settings")
+            call.respondOk()
         }
 
         get("/api/backtest/savedPortfolios") {
@@ -1124,6 +1138,13 @@ fun Application.configureRouting() {
             }
         }
 
+        post("/api/market-timing/settings") {
+            val body = call.receiveText()
+            val json = Json.parseToJsonElement(body).jsonObject
+            saveBacktestSettingsFirstPortfolio(json, "backtest.settings", marketTimingSettingsKeys)
+            call.respondOk()
+        }
+
         get("/api/rebalance-strategy/savedStrategies") {
             val rows = listSavedJsonConfigs(
                 SavedRebalanceStrategiesTable,
@@ -1198,6 +1219,13 @@ fun Application.configureRouting() {
                     HttpStatusCode.InternalServerError
                 )
             }
+        }
+
+        post("/api/rebalance-strategy/settings") {
+            val body = call.receiveText()
+            val json = Json.parseToJsonElement(body).jsonObject
+            saveBacktestSettingsFirstPortfolio(json, "backtest.settings", rebalanceStrategySettingsKeys)
+            call.respondOk()
         }
 
         post("/api/rebalance-strategy/score-batch") {

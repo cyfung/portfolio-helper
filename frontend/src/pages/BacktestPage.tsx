@@ -16,6 +16,7 @@ import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfolio
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
+import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import {
@@ -348,6 +349,7 @@ export default function BacktestPage() {
   const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: StoredBacktestConfig; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -390,6 +392,15 @@ export default function BacktestPage() {
     () => resolveSelectedTickerMappingSet(tickerMappingSettings),
     [tickerMappingSettings],
   )
+  const settingsPayload = useMemo(() => ({
+    fromDate: fromDate || null,
+    toDate: toDate || null,
+    startingBalance: startingBalanceToPayload(startingBalance),
+    cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+    settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
+  }), [blocks, cashflowAmount, cashflowFrequency, fromDate, startingBalance, toDate])
+
+  useSettingsAutosave('/api/backtest/settings', settingsPayload, settingsLoaded)
 
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
@@ -411,6 +422,7 @@ export default function BacktestPage() {
         })))
       })
       .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
   }, [])
 
   const fetchRealPortfolioData = useCallback(async (slug: string, signal?: AbortSignal) => {
