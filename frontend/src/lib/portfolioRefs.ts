@@ -38,13 +38,14 @@ function rowWeight(row: any) {
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = ticker.trim().toUpperCase()
-  if (!key || weight <= 0) return
+  if (!key || weight === 0) return
   map.set(key, (map.get(key) ?? 0) + weight)
 }
 
 function normalizeResolvedRows(rows: ResolvedStockWeight[]) {
+  if (rows.length === 0) return rows
   const total = rows.reduce((sum, row) => sum + row.weight, 0)
-  if (total <= 0) return rows
+  if (total <= 0) throw new Error('Portfolio net weight must be positive after merging signed rows.')
   let allocated = 0
   return rows.map((row, index) => {
     const weight = index === rows.length - 1 ? 100 - allocated : row.weight * 100 / total
@@ -57,15 +58,25 @@ export function stripPlaceholderAndNormalizeResolvedRows(rows: ResolvedStockWeig
   return normalizeResolvedRows(rows.filter(row => !isPlaceholderTicker(row.ticker)))
 }
 
+function mergedNonZeroRows(rows: ResolvedStockWeight[]) {
+  const weights = new Map<string, number>()
+  rows.forEach(row => addWeight(weights, row.ticker, row.weight))
+  return [...weights.entries()]
+    .filter(([, weight]) => weight !== 0)
+    .map(([ticker, weight]) => ({ ticker, weight }))
+    .sort((a, b) => a.ticker.localeCompare(b.ticker))
+}
+
 function scaledChildRows(parentWeight: number, childStocks: ResolvedStockWeight[]) {
   const childTotal = childStocks.reduce((sum, childStock) => sum + childStock.weight, 0)
+  if (childTotal === 0) throw new Error('Portfolio reference net weight cannot be zero after merging signed rows.')
+  const denominator = Math.abs(childTotal)
+  const targetTotal = parentWeight * (childTotal < 0 ? -1 : 1)
   let allocated = 0
 
   return childStocks.map((childStock, index) => {
     const isLast = index === childStocks.length - 1
-    const weight = childTotal > 0
-      ? isLast ? parentWeight - allocated : parentWeight * childStock.weight / childTotal
-      : 0
+    const weight = isLast ? targetTotal - allocated : parentWeight * childStock.weight / denominator
     allocated += weight
     return { ...childStock, weight }
   })
@@ -88,10 +99,12 @@ export function resolveSavedPortfolioConfig(
 
   for (const row of config?.tickers ?? []) {
     const weight = rowWeight(row)
-    if (weight <= 0) continue
+    const portfolioRef = isPortfolioRef(row)
+    const ticker = portfolioRef ? refName(row) : String(row.ticker || '')
+    if (weight === 0) continue
 
-    if (isPortfolioRef(row)) {
-      const name = refName(row)
+    if (portfolioRef) {
+      const name = ticker
       const child = savedByName.get(name)
       if (!child) throw new Error(`Missing portfolio reference: ${name}`)
       if (stack.includes(name)) throw new Error(`Circular portfolio reference: ${[...stack, name].join(' -> ')}`)
@@ -100,13 +113,11 @@ export function resolveSavedPortfolioConfig(
         addWeight(weights, childStock.ticker, childStock.weight)
       }
     } else {
-      addWeight(weights, String(row.ticker || ''), weight)
+      addWeight(weights, ticker, weight)
     }
   }
 
-  return [...weights.entries()]
-    .map(([ticker, weight]) => ({ ticker, weight }))
-    .sort((a, b) => a.ticker.localeCompare(b.ticker))
+  return mergedNonZeroRows([...weights.entries()].map(([ticker, weight]) => ({ ticker, weight })))
 }
 
 export function resolveBlockState(
@@ -133,7 +144,7 @@ export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
       const ticker = isRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
       return { ticker, weight: rowWeight(row), isRef }
     })
-    .filter(row => row.ticker && (row.weight > 0 || (!row.isRef && isPlaceholderTicker(row.ticker))))
+    .filter(row => row.ticker && row.weight !== 0)
     .map(row => row.isRef
       ? { ticker: row.ticker, weight: row.weight, isPortfolioRef: true, portfolioRef: row.ticker }
       : { ticker: row.ticker, weight: row.weight }
@@ -148,9 +159,7 @@ export function resolvedBlockStateToAPIPortfolio(
   savedPortfolios: SavedPortfolio[],
 ) {
   const apiPortfolio = blockStateToAPIPortfolio(block, idx)
-  const tickers = resolveBlockState(block, savedPortfolios)
-    .map(row => ({ ticker: row.ticker, weight: row.weight }))
-    .filter(row => row.ticker && row.weight > 0)
+  const tickers = mergedNonZeroRows(resolveBlockState(block, savedPortfolios))
 
   return { ...apiPortfolio, tickers }
 }

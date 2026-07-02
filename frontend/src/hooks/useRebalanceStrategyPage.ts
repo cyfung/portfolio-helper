@@ -194,7 +194,7 @@ export function useRebalanceStrategyPage() {
     const portfolioApi = mappedPortfolio.value
     const settingsPortfolio = blockStateToSettingsPortfolio(runPortfolio, 0)
     if (portfolioApi.tickers.length === 0) {
-      throw new Error('Add at least one ticker with a positive weight to the portfolio.')
+      throw new Error('Add at least one ticker with a positive net weight to the portfolio.')
     }
 
     const currentStrategies = currentNormalizedStrategies()

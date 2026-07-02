@@ -73,6 +73,107 @@ class RebalanceStrategyRoutesTest {
     }
 
     @Test
+    fun resolveTickerWeightsUsesNegativeDummyInChildReferenceScaling() {
+        val savedConfigs = mapOf(
+            "Child" to buildJsonObject {
+                put("tickers", buildJsonArray {
+                    add(buildJsonObject {
+                        put("ticker", JsonPrimitive("AAA"))
+                        put("weight", JsonPrimitive(100))
+                    })
+                    add(buildJsonObject {
+                        put("ticker", JsonPrimitive("DUMMY"))
+                        put("weight", JsonPrimitive(-50))
+                    })
+                })
+            },
+        )
+        val rows = buildJsonArray {
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("Child"))
+                put("portfolioRef", JsonPrimitive("Child"))
+                put("isPortfolioRef", JsonPrimitive(true))
+                put("weight", JsonPrimitive(50))
+            })
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("CCC"))
+                put("weight", JsonPrimitive(50))
+            })
+        }
+
+        val resolved = resolveTickerWeights(rows, savedConfigs, emptyList()).associate { it.ticker to it.weight }
+
+        assertEquals(100.0, resolved["AAA"])
+        assertEquals(-50.0, resolved["DUMMY"])
+        assertEquals(50.0, resolved["CCC"])
+        assertEquals(100.0, resolved.values.sum())
+    }
+
+    @Test
+    fun resolveTickerWeightsKeepsNegativeChildTickerAfterReferenceScaling() {
+        val savedConfigs = mapOf(
+            "Child" to buildJsonObject {
+                put("tickers", buildJsonArray {
+                    add(buildJsonObject {
+                        put("ticker", JsonPrimitive("AAA"))
+                        put("weight", JsonPrimitive(100))
+                    })
+                    add(buildJsonObject {
+                        put("ticker", JsonPrimitive("BBB"))
+                        put("weight", JsonPrimitive(-50))
+                    })
+                })
+            },
+        )
+        val rows = buildJsonArray {
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("Child"))
+                put("portfolioRef", JsonPrimitive("Child"))
+                put("isPortfolioRef", JsonPrimitive(true))
+                put("weight", JsonPrimitive(50))
+            })
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("CCC"))
+                put("weight", JsonPrimitive(50))
+            })
+        }
+
+        val resolved = resolveTickerWeights(rows, savedConfigs, emptyList()).associate { it.ticker to it.weight }
+
+        assertEquals(100.0, resolved["AAA"])
+        assertEquals(-50.0, resolved["BBB"])
+        assertEquals(50.0, resolved["CCC"])
+        assertEquals(100.0, resolved.values.sum())
+    }
+
+    @Test
+    fun resolveTickerWeightsKeepsNetShortChildReferenceForParentMerge() {
+        val savedConfigs = mapOf(
+            "Child" to buildJsonObject {
+                put("tickers", buildJsonArray {
+                    add(buildJsonObject {
+                        put("ticker", JsonPrimitive("AAA"))
+                        put("weight", JsonPrimitive(-100))
+                    })
+                })
+            },
+        )
+        val rows = buildJsonArray {
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("Child"))
+                put("portfolioRef", JsonPrimitive("Child"))
+                put("isPortfolioRef", JsonPrimitive(true))
+                put("weight", JsonPrimitive(50))
+            })
+        }
+
+        val resolved = resolveTickerWeights(rows, savedConfigs, emptyList()).associate { it.ticker to it.weight }
+
+        assertEquals(-50.0, resolved["AAA"])
+        assertEquals(-50.0, resolved.values.sum())
+    }
+
+    @Test
     fun parseCashEntriesPreservesPortfolioReferenceMultiplier() {
         val rows = buildJsonArray {
             add(buildJsonObject {

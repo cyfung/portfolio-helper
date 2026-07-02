@@ -792,7 +792,7 @@ export default function BacktestPage() {
       return
     }
     if (portfolios.length === 0) {
-      setError('Add at least one ticker with a positive weight to any portfolio block.')
+      setError('Add at least one portfolio block with a positive net weight.')
       return
     }
     if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && (p.rebalanceStrategies?.length ?? 0) === 0)) {

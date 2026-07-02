@@ -42,7 +42,7 @@ function marginRatio(block: BlockState, marginIndex: number) {
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = ticker.trim().toUpperCase()
-  if (!key || weight <= 0) return
+  if (!key || weight === 0) return
   map.set(key, (map.get(key) ?? 0) + weight)
 }
 
@@ -132,7 +132,7 @@ function buildGroupRows(rows: ResolvedStockWeight[], tickerConfigs: Record<strin
 
     for (const group of parseGroupsAttr(groupConfig, row.ticker)) {
       const weight = row.weight * group.multiplier
-      if (weight <= 0) continue
+      if (weight === 0) continue
 
       const existing = groups.get(group.name) ?? { name: group.name, weight: 0, children: [] }
       existing.weight += weight
@@ -530,7 +530,7 @@ export default function PortfolioBuilderPage() {
                         <tbody>
                           {activeGroup.children.map(child => {
                             const marginChild = activeMarginGroup?.children.find(marginRow => marginRow.ticker === child.ticker)
-                            const groupWeight = activeGroup.weight > 0 ? child.weight * 100 / activeGroup.weight : 0
+                            const groupWeight = activeGroup.weight !== 0 ? child.weight * 100 / activeGroup.weight : 0
                             const marginScaled = (marginChild?.weight ?? 0) * multiplier
 
                             return (

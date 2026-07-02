@@ -180,13 +180,27 @@ export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
   return changed ? { ...state, margins } : state
 }
 
+function mergeAPITickerRows<T extends { ticker: string; weight: number; isPortfolioRef?: boolean; portfolioRef?: string }>(rows: T[]): T[] {
+  const merged = new Map<string, T>()
+  rows.forEach(row => {
+    if (!row.ticker || row.weight === 0) return
+    const key = row.isPortfolioRef ? `P:${row.portfolioRef || row.ticker}` : `T:${row.ticker}`
+    const existing = merged.get(key)
+    if (existing) existing.weight += row.weight
+    else merged.set(key, { ...row })
+  })
+  return [...merged.values()]
+    .filter(row => row.weight !== 0)
+    .sort((a, b) => a.ticker.localeCompare(b.ticker))
+}
+
 function blockStateToAPITickers(state: BlockState) {
-  return state.tickers
+  return mergeAPITickerRows(state.tickers
     .map(t => t.isPortfolioRef
       ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
       : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
     )
-    .filter(t => t.ticker && t.weight > 0)
+    .filter(t => t.ticker && t.weight !== 0))
 }
 
 function blockStateToAPILabel(state: BlockState, idx: number, tickers: ReturnType<typeof blockStateToAPITickers>) {

@@ -231,20 +231,25 @@ internal fun resolveTickerWeights(
 
     fun add(ticker: String, weight: Double) {
         val key = ticker.trim().uppercase()
-        if (key.isNotBlank() && weight > 0.0) merged[key] = (merged[key] ?: 0.0) + weight
+        if (key.isNotBlank() && weight != 0.0) {
+            merged[key] = (merged[key] ?: 0.0) + weight
+        }
     }
 
     fun scaledChildTickers(parentWeight: Double, childTickers: List<TickerWeight>): List<TickerWeight> {
         val childTotal = childTickers.sumOf { it.weight }
+        if (childTotal == 0.0) {
+            throw IllegalArgumentException("Portfolio reference net weight cannot be zero after merging signed rows.")
+        }
+        val denominator = kotlin.math.abs(childTotal)
+        val targetTotal = parentWeight * if (childTotal < 0.0) -1.0 else 1.0
         var allocated = 0.0
         return childTickers.mapIndexed { index, tickerWeight ->
             val scaledWeight =
-                if (childTotal <= 0.0) {
-                    0.0
-                } else if (index == childTickers.lastIndex) {
-                    parentWeight - allocated
+                if (index == childTickers.lastIndex) {
+                    targetTotal - allocated
                 } else {
-                    parentWeight * tickerWeight.weight / childTotal
+                    parentWeight * tickerWeight.weight / denominator
                 }
             allocated += scaledWeight
             tickerWeight.copy(weight = scaledWeight)
@@ -254,11 +259,13 @@ internal fun resolveTickerWeights(
     rows?.forEach { el ->
         val obj = el.jsonObject
         val weight = obj["weight"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-        if (weight <= 0.0) return@forEach
+        val portfolioRef = isPortfolioRef(obj)
+        val rawTicker = obj["ticker"]?.jsonPrimitive?.content ?: ""
+        if (weight == 0.0) return@forEach
 
-        if (isPortfolioRef(obj)) {
+        if (portfolioRef) {
             val refName = obj["portfolioRef"]?.jsonPrimitive?.contentOrNull
-                ?: obj["ticker"]?.jsonPrimitive?.contentOrNull
+                ?: rawTicker.takeIf { it.isNotBlank() }
                 ?: throw IllegalArgumentException("Portfolio reference row is missing a name")
             val child = savedConfigs[refName]
                 ?: throw IllegalArgumentException("Missing portfolio reference: $refName")
@@ -268,12 +275,13 @@ internal fun resolveTickerWeights(
             val childTickers = resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
             scaledChildTickers(weight, childTickers).forEach { add(it.ticker, it.weight) }
         } else {
-            val rawTicker = obj["ticker"]?.jsonPrimitive?.content ?: ""
             add(rawTicker, weight)
         }
     }
 
-    return merged.map { (ticker, weight) -> TickerWeight(ticker, weight) }
+    return merged
+        .filterValues { it != 0.0 }
+        .map { (ticker, weight) -> TickerWeight(ticker, weight) }
 }
 
 private fun parseSinglePortfolioConfig(

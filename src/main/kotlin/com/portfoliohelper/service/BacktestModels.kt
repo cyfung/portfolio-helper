@@ -214,13 +214,17 @@ data class MultiBacktestResult(
 
 /** Merges duplicate tickers by summing weights, then normalises to sum-to-1. */
 fun PortfolioConfig.mergeWeights(): Pair<List<String>, Map<String, Double>> {
-    val merged = mutableMapOf<String, Double>()
+    val merged = linkedMapOf<String, Double>()
     for (tw in tickers) {
         if (isPlaceholderTicker(tw.ticker)) continue
         merged[tw.ticker] = (merged[tw.ticker] ?: 0.0) + tw.weight
     }
+    merged.entries.removeIf { it.value == 0.0 }
     val tickerList = merged.keys.toList()
     val totalWeight = tickerList.sumOf { merged[it] ?: 0.0 }
+    if (tickerList.isNotEmpty() && totalWeight <= 0.0) {
+        throw IllegalArgumentException("Portfolio net weight must be positive after merging signed rows.")
+    }
     var allocated = 0.0
     val targetWeights =
         if (totalWeight > 0.0) {

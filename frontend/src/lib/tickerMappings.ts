@@ -329,11 +329,12 @@ export function applyTickerMappingsToRowsWithWarnings(
     const mapped = mapTickerExpressionWithWarnings(row.ticker, mappingSet)
     const mappedTicker = mapped.value
     mapped.warnings.forEach(warning => warnings.add(warning))
-    if (!mappedTicker || row.weight <= 0) continue
+    if (!mappedTicker || row.weight === 0) continue
     weights.set(mappedTicker, (weights.get(mappedTicker) ?? 0) + row.weight)
   }
   return {
     value: [...weights.entries()]
+      .filter(([, weight]) => weight !== 0)
       .map(([ticker, weight]) => ({ ticker, weight }))
       .sort((a, b) => a.ticker.localeCompare(b.ticker)),
     warnings: [...warnings],

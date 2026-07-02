@@ -34,24 +34,25 @@ interface StockRow {
 const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
 
 function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
-  const validRows = rows.filter(row => row.ticker.trim() && row.weight > 0 && !isPlaceholderTicker(row.ticker))
+  const validRows = rows.filter(row => row.ticker.trim() && row.weight !== 0 && !isPlaceholderTicker(row.ticker))
   const total = validRows.reduce((sum, row) => sum + row.weight, 0)
   if (total <= 0) return validRows
 
   const scaled = validRows.map(row => {
     const exactCents = row.weight * 10000 / total
-    const cents = Math.floor(exactCents)
+    const cents = exactCents < 0 ? Math.ceil(exactCents) : Math.floor(exactCents)
     return {
       ticker: row.ticker,
       cents,
-      remainder: exactCents - cents,
+      remainder: Math.abs(exactCents - cents),
     }
   })
 
   let diff = 10000 - scaled.reduce((sum, row) => sum + row.cents, 0)
   const byRemainder = [...scaled].sort((a, b) => b.remainder - a.remainder || a.ticker.localeCompare(b.ticker))
-  for (let i = 0; diff > 0 && byRemainder.length > 0; i += 1, diff -= 1) {
-    byRemainder[i % byRemainder.length].cents += 1
+  const step = diff < 0 ? -1 : 1
+  for (let i = 0; diff !== 0 && byRemainder.length > 0; i += 1, diff -= step) {
+    byRemainder[i % byRemainder.length].cents += step
   }
 
   return scaled.map(row => ({ ticker: row.ticker, weight: row.cents / 100 }))
