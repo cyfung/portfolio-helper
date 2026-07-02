@@ -906,9 +906,9 @@ object BacktestService {
      */
     internal fun parseTickerChain(ticker: String): List<String>? {
         if (!ticker.contains('>')) return null
-        val parts = ticker.split(">").map { it.trim() }
+        val parts = splitTopLevelTickerChain(ticker).map { it.trim() }
+        if (parts.size < 2) return null
         require(parts.all { it.isNotEmpty() }) { "Ticker chain contains an empty segment: $ticker" }
-        require(parts.size >= 2) { "Ticker chain must contain at least two segments: $ticker" }
         return parts.map(::normalizeTickerExpression)
     }
 

@@ -6,8 +6,9 @@ import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/bac
 import { BlockState } from '@/types/backtest'
 import type { SavedPortfolio } from '@/types/backtest'
 import { configToBlockInputLabel, configToBlockState } from '@/types/backtest'
-import { blockStateToSettingsPortfolio, resolveBlockState, type ResolvedStockWeight } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, isPlaceholderTicker, resolveBlockStateRows, type ResolvedStockWeight } from '@/lib/portfolioRefs'
 import { parseGroupsAttr } from '@/lib/portfolio-utils'
+import { expandLetfRows, normalizeTickerExpression, parseLetfComponents } from '@/lib/tickerExpressions'
 
 interface TickerConfig {
   letf: string
@@ -55,61 +56,9 @@ function editableTickerSymbols(...rowGroups: ResolvedStockWeight[][]) {
   const symbols = new Set<string>()
   rowGroups.flat().forEach(row => {
     const symbol = row.ticker.trim().toUpperCase()
-    if (isEditableTicker(symbol)) symbols.add(symbol)
+    if (!isPlaceholderTicker(symbol) && isEditableTicker(symbol)) symbols.add(symbol)
   })
   return [...symbols].sort((a, b) => a.localeCompare(b))
-}
-
-function parseLetfDefinition(raw: string) {
-  const tokens = raw.trim().replace(/,/g, ' ').split(/\s+/).filter(Boolean)
-  const components: ResolvedStockWeight[] = []
-
-  for (let i = 0; i < tokens.length;) {
-    const token = tokens[i]
-    if (/^(?:[SREV]|VOL)=/i.test(token)) {
-      i += 1
-      continue
-    }
-
-    const multiplier = parseFloat(token)
-    if (Number.isFinite(multiplier) && i + 1 < tokens.length && !/^(?:[SREV]|VOL)=/i.test(tokens[i + 1])) {
-      components.push({ ticker: tokens[i + 1].toUpperCase(), weight: multiplier })
-      i += 2
-    } else if (!Number.isFinite(multiplier)) {
-      components.push({ ticker: token.toUpperCase(), weight: 1 })
-      i += 1
-    } else {
-      i += 1
-    }
-  }
-
-  return components
-}
-
-function expandLetfRows(rows: ResolvedStockWeight[], tickerConfigs: Record<string, TickerConfig>) {
-  const weights = new Map<string, number>()
-  let expanded = false
-
-  for (const row of rows) {
-    const letf = tickerConfigs[row.ticker.toUpperCase()]?.letf?.trim() || (row.ticker.includes(' ') ? row.ticker : '')
-    const components = letf ? parseLetfDefinition(letf) : []
-    if (components.length === 0) {
-      addWeight(weights, row.ticker, row.weight)
-      continue
-    }
-
-    expanded = true
-    for (const component of components) {
-      addWeight(weights, component.ticker, row.weight * component.weight)
-    }
-  }
-
-  return {
-    expanded,
-    rows: [...weights.entries()]
-      .map(([ticker, weight]) => ({ ticker, weight }))
-      .sort((a, b) => a.ticker.localeCompare(b.ticker)),
-  }
 }
 
 function normalizeRows(rows: ResolvedStockWeight[]) {
@@ -238,7 +187,9 @@ export default function PortfolioBuilderPage() {
 
   async function loadTickerConfigs(rowsByBlock: ResolvedStockWeight[][]) {
     const configs: Record<string, TickerConfig> = {}
-    const queue = new Set(rowsByBlock.flatMap(rows => rows.map(row => row.ticker.toUpperCase())))
+    const queue = new Set(rowsByBlock
+      .flatMap(rows => rows.map(row => normalizeTickerExpression(row.ticker)))
+      .filter(ticker => !isPlaceholderTicker(ticker)))
 
     while (queue.size > 0) {
       const batch = [...queue].filter(ticker => !configs[ticker])
@@ -255,7 +206,7 @@ export default function PortfolioBuilderPage() {
       for (const [ticker, config] of entries) {
         configs[ticker] = config
         const letf = config.letf.trim() || (ticker.includes(' ') ? ticker : '')
-        for (const component of parseLetfDefinition(letf)) {
+        for (const component of parseLetfComponents(letf)) {
           if (!configs[component.ticker]) queue.add(component.ticker)
         }
       }
@@ -267,7 +218,7 @@ export default function PortfolioBuilderPage() {
   async function handleAnalyse() {
     try {
       setError('')
-      const nextResults = blocks.map(block => resolveBlockState(block, savedPortfolios))
+      const nextResults = blocks.map(block => resolveBlockStateRows(block, savedPortfolios, { normalize: false }))
       setTickerConfigs(await loadTickerConfigs(nextResults))
       setShowLetfExpandedByBlock({})
       setHoveredGroupByBlock({})

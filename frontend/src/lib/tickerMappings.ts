@@ -1,3 +1,12 @@
+import {
+  formatSwapExpression,
+  isModifierToken,
+  normalizeTickerExpression,
+  parseSwapExpression,
+  splitTickerChain,
+  tokenizeDefinition,
+} from '@/lib/tickerExpressions'
+
 export interface TickerMapping {
   id: string
   from: string
@@ -165,18 +174,6 @@ export function mergeSavedTickerMappings(
   })
 }
 
-function isModifierToken(token: string) {
-  return /^(?:S|R|E|V|VOL)=/i.test(token)
-}
-
-function tokenizeDefinition(raw: string) {
-  return raw.trim().replace(/,/g, ' ').split(/\s+/).filter(Boolean)
-}
-
-function splitTickerChain(raw: string) {
-  return raw.trim().split(/\s*>\s*/).map(segment => segment.trim()).filter(Boolean)
-}
-
 function hasModifierTokens(raw: string) {
   return tokenizeDefinition(raw).some(isModifierToken)
 }
@@ -223,7 +220,7 @@ function applySingleTickerMappingWithWarnings(ticker: string, mapping: TickerMap
   if (!rawTicker) return { value: '', warnings: [] }
 
   if (rawTicker.toUpperCase() === mapping.from && !rawTicker.includes(' ')) return { value: mapping.to, warnings: [] }
-  if (!rawTicker.includes(' ')) return { value: rawTicker.toUpperCase(), warnings: [] }
+  if (!rawTicker.includes(' ')) return { value: normalizeTickerExpression(rawTicker), warnings: [] }
 
   const tokens = tokenizeDefinition(rawTicker)
   const output: string[] = []
@@ -278,6 +275,73 @@ function normalizeMappedTickerSegment(ticker: string) {
   return applySingleTickerMapping(ticker, { id: '', from: '__NO_TICKER_MAPPING__', to: '' })
 }
 
+function normalizeMappedTickerExpression(ticker: string): string {
+  const swap = parseSwapExpression(ticker)
+  if (swap) {
+    return formatSwapExpression(
+      normalizeMappedTickerExpression(swap.from),
+      normalizeMappedTickerExpression(swap.to),
+      swap.factor,
+    )
+  }
+
+  const chain = splitTickerChain(ticker)
+  if (chain.length > 1) return chain.map(normalizeMappedTickerExpression).join(' > ')
+  return normalizeMappedTickerSegment(ticker)
+}
+
+function mapTickerExpressionForSingleMapping(
+  ticker: string,
+  mapping: TickerMapping,
+  prependOnly: boolean,
+): TickerMappingResult<string> {
+  const rawTicker = ticker.trim()
+  if (!rawTicker) return { value: '', warnings: [] }
+
+  const swap = parseSwapExpression(rawTicker)
+  if (swap) {
+    const from = mapTickerExpressionForSingleMapping(swap.from, mapping, prependOnly)
+    const to = mapTickerExpressionForSingleMapping(swap.to, mapping, prependOnly)
+    return {
+      value: formatSwapExpression(from.value, to.value, swap.factor),
+      warnings: [...from.warnings, ...to.warnings],
+    }
+  }
+
+  const chain = splitTickerChain(rawTicker)
+  if (chain.length > 1) {
+    if (prependOnly) {
+      const lastSegment = chain[chain.length - 1]
+      const mapped = applySingleTickerMappingWithWarnings(lastSegment, mapping)
+      const normalizedLastSegment = normalizeMappedTickerSegment(lastSegment)
+      if (mapped.value === normalizedLastSegment) {
+        return { value: chain.map(normalizeMappedTickerExpression).join(' > '), warnings: [] }
+      }
+      return {
+        value: `${chain.map(normalizeMappedTickerExpression).join(' > ')} > ${mapped.value}`,
+        warnings: mapped.warnings,
+      }
+    }
+
+    const warnings = new Set<string>()
+    const mappedSegments = chain.map(segment => {
+      const mapped = applySingleTickerMappingWithWarnings(segment, mapping)
+      mapped.warnings.forEach(warning => warnings.add(warning))
+      return mapped.value
+    })
+    return { value: mappedSegments.join(' > '), warnings: [...warnings] }
+  }
+
+  if (prependOnly) {
+    const mapped = applySingleTickerMappingWithWarnings(rawTicker, mapping)
+    const normalized = normalizeMappedTickerSegment(rawTicker)
+    if (mapped.value === normalized) return { value: normalized, warnings: [] }
+    return { value: `${normalized} > ${mapped.value}`, warnings: mapped.warnings }
+  }
+
+  return applySingleTickerMappingWithWarnings(rawTicker, mapping)
+}
+
 export function mapTickerExpression(ticker: string, mappingSet: TickerMappingSet | null | undefined) {
   return mapTickerExpressionWithWarnings(ticker, mappingSet).value
 }
@@ -287,27 +351,14 @@ export function mapTickerExpressionWithWarnings(
   mappingSet: TickerMappingSet | null | undefined,
 ): TickerMappingResult<string> {
   const mappings = usableTickerMappings(mappingSet?.mappings ?? [])
-  if (mappings.length === 0) return { value: ticker.trim().toUpperCase(), warnings: [] }
+  if (mappings.length === 0) return { value: normalizeMappedTickerExpression(ticker), warnings: [] }
 
   const warnings = new Set<string>()
   const value = mappings.reduce(
     (current, mapping) => {
-      if (!mappingSet?.prependOnly) {
-        const mapped = applySingleTickerMappingWithWarnings(current, mapping)
-        mapped.warnings.forEach(warning => warnings.add(warning))
-        return mapped.value
-      }
-
-      const chain = splitTickerChain(current)
-      if (chain.length === 0) return ''
-
-      const lastSegment = chain[chain.length - 1]
-      const mapped = applySingleTickerMappingWithWarnings(lastSegment, mapping)
-      const mappedLastSegment = mapped.value
-      if (mappedLastSegment === normalizeMappedTickerSegment(lastSegment)) return current.trim()
-
+      const mapped = mapTickerExpressionForSingleMapping(current, mapping, mappingSet?.prependOnly === true)
       mapped.warnings.forEach(warning => warnings.add(warning))
-      return `${chain.join(' > ')} > ${mappedLastSegment}`
+      return mapped.value
     },
     ticker.trim(),
   )

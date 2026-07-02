@@ -147,6 +147,28 @@ class RebalanceStrategyRoutesTest {
     }
 
     @Test
+    fun resolveTickerWeightsScalesSwapLikeInlineDummyFilledChildPortfolio() {
+        val rows = buildJsonArray {
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("SWAP(AAA, BBB, 1.5)"))
+                put("weight", JsonPrimitive(50))
+            })
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("CCC"))
+                put("weight", JsonPrimitive(50))
+            })
+        }
+
+        val resolved = resolveTickerWeights(rows, emptyMap(), emptyList()).associate { it.ticker to it.weight }
+
+        assertEquals(-50.0, resolved["AAA"])
+        assertEquals(75.0, resolved["BBB"])
+        assertEquals(25.0, resolved["DUMMY"])
+        assertEquals(50.0, resolved["CCC"])
+        assertEquals(100.0, resolved.values.sum())
+    }
+
+    @Test
     fun resolveTickerWeightsKeepsNetShortChildReferenceForParentMerge() {
         val savedConfigs = mapOf(
             "Child" to buildJsonObject {

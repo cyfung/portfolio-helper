@@ -18,6 +18,11 @@ class BacktestChainExtendTest {
     }
 
     @Test
+    fun parseTickerChainIgnoresExtendInsideSwapExpression() {
+        assertNull(BacktestService.parseTickerChain("SWAP(CTAP > 1 CTA 1 SPY E=1.5, SSO)"))
+    }
+
+    @Test
     fun spliceTickerSeriesScalesBaseHistoryToOverwriteConnectionDate() {
         val jan1 = LocalDate.of(2026, 1, 1)
         val jan2 = LocalDate.of(2026, 1, 2)

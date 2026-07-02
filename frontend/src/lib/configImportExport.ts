@@ -9,6 +9,7 @@ import {
   saveTickerMappingSettings,
   type TickerMappingSet,
 } from '@/lib/tickerMappings'
+import { parseLetfComponents } from '@/lib/tickerExpressions'
 
 export interface TickerConfigExport {
   symbol: string
@@ -156,32 +157,6 @@ function normalizeSavedTickerMappingsFromPayload(payload: ConfigPayload) {
   )
 }
 
-function parseLetfDefinition(raw: string) {
-  const tokens = raw.trim().replace(/,/g, ' ').split(/\s+/).filter(Boolean)
-  const components: { ticker: string; weight: number }[] = []
-
-  for (let i = 0; i < tokens.length;) {
-    const token = tokens[i]
-    if (/^(?:[SREV]|VOL)=/i.test(token)) {
-      i += 1
-      continue
-    }
-
-    const multiplier = parseFloat(token)
-    if (Number.isFinite(multiplier) && i + 1 < tokens.length && !/^(?:[SREV]|VOL)=/i.test(tokens[i + 1])) {
-      components.push({ ticker: tokens[i + 1].toUpperCase(), weight: multiplier })
-      i += 2
-    } else if (!Number.isFinite(multiplier)) {
-      components.push({ ticker: token.toUpperCase(), weight: 1 })
-      i += 1
-    } else {
-      i += 1
-    }
-  }
-
-  return components
-}
-
 function collectPortfolioRefNames(configs: any[], savedPortfolios: SavedPortfolio[]) {
   const savedByName = savedPortfolioConfigMap(savedPortfolios)
   const names = new Set<string>()
@@ -295,7 +270,7 @@ async function collectTickerConfigs(initialSymbols: Iterable<string>) {
       seen.add(config.symbol)
       if (config.letf || config.groups) configs.set(config.symbol, config)
       const letf = config.letf || (config.symbol.includes(' ') ? config.symbol : '')
-      parseLetfDefinition(letf).forEach(component => {
+      parseLetfComponents(letf).forEach(component => {
         if (!seen.has(component.ticker)) queue.add(component.ticker)
       })
     })

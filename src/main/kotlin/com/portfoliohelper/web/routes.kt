@@ -279,7 +279,14 @@ internal fun resolveTickerWeights(
         }
     }
 
-    return merged
+    val expanded = expandTickerWeightExpressions(
+        merged
+            .filterValues { it != 0.0 }
+            .map { (ticker, weight) -> TickerWeight(ticker, weight) }
+    )
+    return expanded
+        .groupBy { it.ticker }
+        .mapValues { (_, rows) -> rows.sumOf { it.weight } }
         .filterValues { it != 0.0 }
         .map { (ticker, weight) -> TickerWeight(ticker, weight) }
 }

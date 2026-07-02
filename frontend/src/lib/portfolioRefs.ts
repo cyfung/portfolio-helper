@@ -1,5 +1,6 @@
 import { blockStateToAPIPortfolio } from '@/types/backtest'
 import type { BlockState, SavedPortfolio } from '@/types/backtest'
+import { expandSwapTickerRows } from '@/lib/tickerExpressions'
 
 export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
 
@@ -55,7 +56,11 @@ function normalizeResolvedRows(rows: ResolvedStockWeight[]) {
 }
 
 export function stripPlaceholderAndNormalizeResolvedRows(rows: ResolvedStockWeight[]) {
-  return normalizeResolvedRows(rows.filter(row => !isPlaceholderTicker(row.ticker)))
+  return normalizeResolvedRows(stripPlaceholderResolvedRows(rows))
+}
+
+export function stripPlaceholderResolvedRows(rows: ResolvedStockWeight[]) {
+  return mergedNonZeroRows(expandSwapTickerRows(rows).filter(row => !isPlaceholderTicker(row.ticker)))
 }
 
 function mergedNonZeroRows(rows: ResolvedStockWeight[]) {
@@ -117,12 +122,20 @@ export function resolveSavedPortfolioConfig(
     }
   }
 
-  return mergedNonZeroRows([...weights.entries()].map(([ticker, weight]) => ({ ticker, weight })))
+  return mergedNonZeroRows(expandSwapTickerRows([...weights.entries()].map(([ticker, weight]) => ({ ticker, weight }))))
 }
 
 export function resolveBlockState(
   block: BlockState,
   savedPortfolios: SavedPortfolio[],
+): ResolvedStockWeight[] {
+  return resolveBlockStateRows(block, savedPortfolios, { normalize: true })
+}
+
+export function resolveBlockStateRows(
+  block: BlockState,
+  savedPortfolios: SavedPortfolio[],
+  options: { normalize?: boolean } = {},
 ): ResolvedStockWeight[] {
   const savedByName = savedPortfolioConfigMap(savedPortfolios)
   const config = {
@@ -131,9 +144,10 @@ export function resolveBlockState(
       : { ticker: row.ticker, weight: rowWeight(row) }
     ),
   }
-  return stripPlaceholderAndNormalizeResolvedRows(
-    resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : []),
-  )
+  const rows = resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : [])
+  return options.normalize === false
+    ? stripPlaceholderResolvedRows(rows)
+    : stripPlaceholderAndNormalizeResolvedRows(rows)
 }
 
 export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
