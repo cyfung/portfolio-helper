@@ -3,6 +3,7 @@ package com.portfoliohelper.service
 import com.portfoliohelper.model.CashEntry
 import com.portfoliohelper.service.db.BackupContent
 import com.portfoliohelper.service.db.CashTable
+import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.PortfolioBackupsTable
 import com.portfoliohelper.service.db.PortfoliosTable
 import com.portfoliohelper.service.db.PositionsTable
@@ -54,7 +55,8 @@ data class BackupRoot(
     val version: Int = 1,
     val portfolioSlug: String,
     val stocks: List<BackupStock>,
-    val cash: List<BackupCash>
+    val cash: List<BackupCash>,
+    val dividendStartDate: String? = null
 )
 
 @Serializable
@@ -96,7 +98,8 @@ data class ImportedCash(val key: String, val value: String)
 data class ImportResult(
     val stocks: List<ImportedStock>?,  // null = not present in file
     val cash: List<ImportedCash>?,     // null = not present in file
-    val error: String?
+    val error: String?,
+    val dividendStartDate: String? = null
 )
 
 object BackupService {
@@ -206,12 +209,13 @@ object BackupService {
             ?: throw IllegalArgumentException("Backup $backupId not found for portfolio '${portfolio.slug}'")
 
         val root = appJson.decodeFromString<BackupRoot>(json)
-        val currentStocks = root(portfolio, resolveUsd = false).stocks
+        val currentStocks = root(portfolio, resolveUsd = false, includeTickerMetadata = true).stocks
         val restoredStocks = appendMissingCurrentStocksWithZeroQty(root.stocks, currentStocks)
         val cashEntries = root.cash.map { c -> CashEntry(c.label, c.currency, c.marginFlag, c.amount, c.portfolioRef) }
         transaction {
             portfolio.replacePositions(restoredStocks)
             portfolio.replaceCash(cashEntries)
+            root.dividendStartDate?.let { restoreDividendStartDate(portfolio.serialId, it) }
         }
         logger.info("Restored '${portfolio.slug}' from DB backup $backupId")
     }
@@ -273,7 +277,8 @@ object BackupService {
 
     private fun root(
         portfolio: ManagedPortfolio,
-        resolveUsd: Boolean = false
+        resolveUsd: Boolean = false,
+        includeTickerMetadata: Boolean = false
     ): BackupRoot {
         val pid = portfolio.serialId
         val stocks = transaction {
@@ -285,8 +290,8 @@ object BackupService {
                         symbol = row[PositionsTable.symbol],
                         amount = row[PositionsTable.amount],
                         targetWeight = row[PositionsTable.targetWeight],
-                        letf = row.getOrNull(StockTickersTable.letf) ?: "",
-                        groups = row.getOrNull(StockTickersTable.groups) ?: ""
+                        letf = if (includeTickerMetadata) row.getOrNull(StockTickersTable.letf) ?: "" else "",
+                        groups = if (includeTickerMetadata) row.getOrNull(StockTickersTable.groups) ?: "" else ""
                     )
                 }
         }
@@ -318,27 +323,51 @@ object BackupService {
         val root = BackupRoot(
             portfolioSlug = portfolio.slug,
             stocks = stocks,
-            cash = cashBackup
+            cash = cashBackup,
+            dividendStartDate = portfolio.getConfig("dividendStartDate") ?: ""
         )
         return root
+    }
+
+    private fun restoreDividendStartDate(portfolioId: Int, date: String) {
+        if (date.isBlank()) {
+            PortfolioCfgTable.deleteWhere {
+                (PortfolioCfgTable.portfolioId eq portfolioId) and
+                        (PortfolioCfgTable.cfgKey eq "dividendStartDate")
+            }
+        } else {
+            PortfolioCfgTable.upsert {
+                it[PortfolioCfgTable.portfolioId] = portfolioId
+                it[PortfolioCfgTable.cfgKey] = "dividendStartDate"
+                it[PortfolioCfgTable.cfgValue] = date
+            }
+        }
     }
 
     private fun appendMissingCurrentStocksWithZeroQty(
         restoredStocks: List<BackupStock>,
         currentStocks: List<BackupStock>
     ): List<BackupStock> {
+        val currentBySymbol = currentStocks.associateBy { it.symbol.trim().uppercase() }
         val restoredSymbols = restoredStocks.map { it.symbol.trim().uppercase() }.toSet()
+        val restoredWithoutBackupMetadata = restoredStocks.map { restored ->
+            val current = currentBySymbol[restored.symbol.trim().uppercase()]
+            restored.copy(
+                letf = current?.letf ?: "",
+                groups = current?.groups ?: ""
+            )
+        }
         val missingCurrentStocks = currentStocks
             .filter { it.symbol.trim().uppercase() !in restoredSymbols }
-            .map { it.copy(amount = 0.0) }
-        return restoredStocks + missingCurrentStocks
+            .map { it.copy(amount = 0.0, targetWeight = 0.0) }
+        return restoredWithoutBackupMetadata + missingCurrentStocks
     }
 
     private fun parseJsonImport(bytes: ByteArray): ImportResult {
         return try {
             val root = appJson.decodeFromString<BackupRoot>(String(bytes))
             val stocks = root.stocks.map { s ->
-                ImportedStock(s.symbol, s.amount, s.targetWeight, s.letf, s.groups)
+                ImportedStock(s.symbol, s.amount, s.targetWeight, "", "")
             }
             val cash = root.cash.map { c ->
                 val value = if (c.currency == "P") {
@@ -354,7 +383,7 @@ object BackupService {
             if (stocks.isEmpty() && cash.isEmpty())
                 ImportResult(null, null, "JSON backup has no stocks or cash entries")
             else
-                ImportResult(stocks, cash, null)
+                ImportResult(stocks, cash, null, root.dividendStartDate)
         } catch (e: Exception) {
             ImportResult(null, null, "Invalid JSON: ${e.message}")
         }
@@ -377,17 +406,7 @@ object BackupService {
                         } catch (_: Exception) {
                             0.0
                         }
-                        val letf = try {
-                            record.get("letf")?.trim() ?: ""
-                        } catch (_: Exception) {
-                            ""
-                        }
-                        val groups = try {
-                            record.get("groups")?.trim() ?: ""
-                        } catch (_: Exception) {
-                            ""
-                        }
-                        rows.add(ImportedStock(symbol, amount, targetWeight, letf, groups))
+                        rows.add(ImportedStock(symbol, amount, targetWeight, "", ""))
                     } catch (_: Exception) { /* skip bad rows */
                     }
                 }

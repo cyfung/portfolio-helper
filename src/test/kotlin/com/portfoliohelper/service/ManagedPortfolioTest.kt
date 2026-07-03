@@ -5,6 +5,7 @@ import com.portfoliohelper.service.db.PositionsTable
 import com.portfoliohelper.service.db.CashTable
 import com.portfoliohelper.service.db.BackupContent
 import com.portfoliohelper.service.db.PortfolioBackupsTable
+import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.StockTickersTable
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -25,7 +26,7 @@ class ManagedPortfolioTest {
         try {
             Database.connect("jdbc:sqlite:${dbFile.absolutePath}", driver = "org.sqlite.JDBC")
             val portfolios = transaction {
-                SchemaUtils.create(PortfoliosTable, PositionsTable, StockTickersTable, CashTable, PortfolioBackupsTable)
+                SchemaUtils.create(PortfoliosTable, PositionsTable, StockTickersTable, CashTable, PortfolioCfgTable, PortfolioBackupsTable)
                 val firstId = PortfoliosTable.insert {
                     it[slug] = "first"
                     it[name] = "First"
@@ -95,18 +96,34 @@ class ManagedPortfolioTest {
     }
 
     @Test
-    fun `restoring db backup keeps missing current ticker with zero amount`() = withDb { first, _ ->
+    fun `restoring db backup keeps missing current ticker with zero amount and zero target weight`() = withDb { first, _ ->
         transaction {
-            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")))
+            first.replacePositions(listOf(BackupStock("SSO", 10.0, 100.0, "2 SPY", "1 Equity")))
         }
+        first.saveConfig("dividendStartDate", "2026-01-15")
         BackupService.saveToDb(first, force = true)
         val backupId = BackupService.listDbBackups(first).single().id
+        val exportedJson = BackupService.exportJson(first)
+        assertTrue("\"letf\"" !in exportedJson)
+        assertTrue("\"groups\"" !in exportedJson)
 
+        transaction {
+            val oldBackupJson = exportedJson.replace(
+                "\"targetWeight\":100.0",
+                "\"targetWeight\":100.0,\"letf\":\"9 BAD\",\"groups\":\"9 Bad\""
+            )
+            assertTrue(oldBackupJson != exportedJson)
+            PortfolioBackupsTable.update({ PortfolioBackupsTable.id eq backupId }) {
+                it[data] = oldBackupJson
+            }
+        }
+
+        first.saveConfig("dividendStartDate", "2026-02-20")
         transaction {
             first.replacePositions(
                 listOf(
-                    BackupStock("SSO", 20.0, 45.0, "2 SPY", "1 Equity"),
-                    BackupStock("UPRO", 3.0, 55.0, "3 SPY", "1 Equity"),
+                    BackupStock("SSO", 20.0, 0.0, "2 SPY", "1 Equity"),
+                    BackupStock("UPRO", 3.0, 100.0, "3 SPY", "1 Equity"),
                 )
             )
         }
@@ -118,8 +135,21 @@ class ManagedPortfolioTest {
                 .where { PositionsTable.portfolioId eq first.serialId }
                 .associateBy { it[PositionsTable.symbol] }
             assertEquals(10.0, restored.getValue("SSO")[PositionsTable.amount])
+            assertEquals(100.0, restored.getValue("SSO")[PositionsTable.targetWeight])
             assertEquals(0.0, restored.getValue("UPRO")[PositionsTable.amount])
-            assertEquals(55.0, restored.getValue("UPRO")[PositionsTable.targetWeight])
+            assertEquals(0.0, restored.getValue("UPRO")[PositionsTable.targetWeight])
+            assertEquals(100.0, restored.values.sumOf { it[PositionsTable.targetWeight] })
+            val dividendStartDate = PortfolioCfgTable.selectAll()
+                .where { (PortfolioCfgTable.portfolioId eq first.serialId) and (PortfolioCfgTable.cfgKey eq "dividendStartDate") }
+                .single()
+                .get(PortfolioCfgTable.cfgValue)
+            assertEquals("2026-01-15", dividendStartDate)
+
+            val ssoTicker = StockTickersTable.selectAll()
+                .where { StockTickersTable.symbol eq "SSO" }
+                .single()
+            assertEquals("2 SPY", ssoTicker[StockTickersTable.letf])
+            assertEquals("1 Equity", ssoTicker[StockTickersTable.groups])
 
             val uproTicker = StockTickersTable.selectAll()
                 .where { StockTickersTable.symbol eq "UPRO" }

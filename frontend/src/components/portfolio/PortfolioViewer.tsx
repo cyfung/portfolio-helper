@@ -38,7 +38,7 @@ function appendMissingStocksWithZeroQty(imported: StockData[], current: StockDat
   const importedSymbols = new Set(imported.map(s => stockKey(s.label)).filter(Boolean))
   const missing = current
     .filter(s => !importedSymbols.has(stockKey(s.label)))
-    .map(s => ({ ...s, originalAmount: 0 }))
+    .map(s => ({ ...s, originalAmount: 0, targetWeight: 0 }))
   return [...imported, ...missing]
 }
 
@@ -179,13 +179,14 @@ export default function PortfolioViewer() {
     let importedStocks: StockData[] | null = null
     let importedCash: CashData[] | null = null
     if (json.stocks) {
+      const currentStocksBySymbol = new Map(store.stocks.map(s => [stockKey(s.label), s]))
       const parsedStocks = (json.stocks as Array<any>).map(s => ({
         label: s.symbol ?? s.label ?? '',
         amount: s.amount ?? 0,
         originalAmount: s.amount ?? 0,
         targetWeight: s.targetWeight ?? 0,
-        letf: s.letf ?? '',
-        groups: s.groups ?? '',
+        letf: currentStocksBySymbol.get(stockKey(s.symbol ?? s.label ?? ''))?.letf ?? '',
+        groups: currentStocksBySymbol.get(stockKey(s.symbol ?? s.label ?? ''))?.groups ?? '',
       }))
       importedStocks = appendMissingStocksWithZeroQty(parsedStocks, store.stocks)
     }
@@ -194,7 +195,10 @@ export default function PortfolioViewer() {
         .map(c => parseCashKey(c.key, c.value))
         .filter((c): c is CashData => c !== null)
     }
-    enterEditMode(importedStocks, importedCash)
+    const importedDividendDate = typeof json.dividendStartDate === 'string'
+      ? json.dividendStartDate
+      : undefined
+    enterEditMode(importedStocks, importedCash, importedDividendDate)
   }, [store, setEditModeActive])
 
   // ── Save to backtest ───────────────────────────────────────────────────────

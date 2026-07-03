@@ -1671,6 +1671,7 @@ fun Application.configureRouting() {
                 val id = call.request.queryParameters["id"]?.toIntOrNull()
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
                 BackupService.restoreFromDb(portfolioEntry, id)
+                PortfolioMasterService.get(portfolioEntry.slug)?.refreshConfig()
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
                 PortfolioUpdateBroadcaster.broadcastReload()
