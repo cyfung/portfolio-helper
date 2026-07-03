@@ -8,13 +8,14 @@ import { showConfirm } from '@/components/ConfirmDialog'
 interface Props {
   onClose: () => void
   onImportSuccess?: (json: any) => void
+  onRestorePreview?: (json: any, backupId: number) => void
 }
 
 type GroupedBackups = Array<{ tabName: string; entries: BackupEntry[] }>
 type SortKey = 'updatedAt' | 'createdAt'
 type SortDir = 'asc' | 'desc'
 
-export default function BackupPanel({ onClose, onImportSuccess }: Props) {
+export default function BackupPanel({ onClose, onImportSuccess, onRestorePreview }: Props) {
   const { portfolioId } = usePortfolioStore()
   const [groups, setGroups] = useState<GroupedBackups>([])
   const [activeTab, setActiveTab] = useState<string>('')
@@ -53,6 +54,17 @@ export default function BackupPanel({ onClose, onImportSuccess }: Props) {
 
   async function handleRestore(id: number) {
     try {
+      if (onRestorePreview) {
+        const r = await fetch(`/api/backup/restore-preview?portfolio=${portfolioId}&id=${id}`)
+        const json = await r.json()
+        if (!r.ok || json.error || json.status === 'error') {
+          alert('Restore failed: ' + (json.message ?? json.error ?? 'Unknown error'))
+          return
+        }
+        onClose()
+        onRestorePreview(json, id)
+        return
+      }
       const r = await fetch(`/api/backup/restore-db?portfolio=${portfolioId}&id=${id}`, { method: 'POST' })
       const json = await r.json()
       if (json.status === 'ok') { onClose(); window.location.reload() }

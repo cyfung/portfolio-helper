@@ -153,6 +153,13 @@ export default function ImportDependenciesDialog({
     }))
   }
 
+  function disableAllTickerConfigs() {
+    setDraft(current => ({
+      ...current,
+      tickerConfigs: current.tickerConfigs.map(row => ({ ...row, enabled: false })),
+    }))
+  }
+
   function setNamedEnabled(section: NamedSection, originalName: string, enabled: boolean) {
     setDraft(current => ({
       ...current,
@@ -260,7 +267,16 @@ export default function ImportDependenciesDialog({
 
           {draft.tickerConfigs.length > 0 && (
             <section>
-              <h3>Ticker Settings</h3>
+              <div className="import-dependencies-section-heading">
+                <h3>Ticker Settings</h3>
+                <button
+                  type="button"
+                  disabled={applying || draft.tickerConfigs.every(row => row.enabled === false)}
+                  onClick={disableAllTickerConfigs}
+                >
+                  Disable all ticker changes
+                </button>
+              </div>
               <div className="import-dependencies-table-wrap">
                 <table className="portfolio-table import-dependencies-table">
                   <thead>

@@ -34,6 +34,10 @@ function stockKey(symbol: string): string {
   return symbol.trim().toUpperCase()
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function appendMissingStocksWithZeroQty(imported: StockData[], current: StockData[]): StockData[] {
   const importedSymbols = new Set(imported.map(s => stockKey(s.label)).filter(Boolean))
   const missing = current
@@ -60,6 +64,25 @@ import StockTable from './StockTable'
 import GroupsView from './GroupsView'
 import EditMode from './EditMode'
 import BackupPanel from './BackupPanel'
+import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
+import {
+  applyImportDependencyPreview,
+  buildImportDependencyPreview,
+  hasImportDependencyPreview,
+  type ImportDependencyPreview,
+} from '@/lib/configImportExport'
+
+type BackupImportPayload = {
+  stocks?: Array<any> | null
+  cash?: Array<{ key: string; value: string }> | null
+  dividendStartDate?: string | null
+}
+
+type PendingBackupDependencyImport = {
+  json: BackupImportPayload
+  preview: ImportDependencyPreview
+  mode: 'fileImport' | 'dbRestore'
+}
 
 export default function PortfolioViewer() {
   const navigate = useNavigate()
@@ -83,6 +106,9 @@ export default function PortfolioViewer() {
   const [syncToast, setSyncToast] = useState({ msg: '', type: '' })
   const [stagedEditStocks, setStagedEditStocks] = useState<StockData[] | null>(null)
   const [stagedEditCash, setStagedEditCash] = useState<CashData[] | null>(null)
+  const [pendingBackupDependencyImport, setPendingBackupDependencyImport] = useState<PendingBackupDependencyImport | null>(null)
+  const [importDependencyApplying, setImportDependencyApplying] = useState(false)
+  const [importDependencyError, setImportDependencyError] = useState('')
   const syncToastTimer = useRef<number | null>(null)
 
   function showSyncToast(msg: string, type: string) {
@@ -122,6 +148,82 @@ export default function PortfolioViewer() {
     } else {
       enterEditMode()
     }
+  }
+
+  function dependencyPayloadFromBackupImport(json: BackupImportPayload) {
+    const tickerConfigs = new Map<string, { symbol: string; letf: string; groups: string }>()
+    ;(json.stocks ?? []).forEach(stock => {
+      const symbol = stockKey(String(stock.symbol ?? stock.label ?? ''))
+      const letf = String(stock.letf ?? '').trim()
+      const groups = String(stock.groups ?? '').trim()
+      if (!symbol || (!letf && !groups)) return
+      tickerConfigs.set(symbol, { symbol, letf, groups })
+    })
+    return { tickerConfigs: [...tickerConfigs.values()] }
+  }
+
+  function importedStocksFromBackup(
+    json: BackupImportPayload,
+    preview?: ImportDependencyPreview,
+  ): StockData[] | null {
+    if (!json.stocks) return null
+
+    const currentStocksBySymbol = new Map(store.stocks.map(s => [stockKey(s.label), s]))
+    const previewBySymbol = new Map((preview?.tickerConfigs ?? []).map(row => [stockKey(row.symbol), row]))
+    const parsedStocks = json.stocks.map(s => {
+      const symbol = String(s.symbol ?? s.label ?? '')
+      const key = stockKey(symbol)
+      const current = currentStocksBySymbol.get(key)
+      const previewRow = previewBySymbol.get(key)
+      const importedLetf = String(s.letf ?? '').trim()
+      const importedGroups = String(s.groups ?? '').trim()
+      const letf = previewRow
+        ? (previewRow.enabled === false ? previewRow.current.letf : previewRow.next.letf)
+        : (importedLetf || current?.letf || '')
+      const groups = previewRow
+        ? (previewRow.enabled === false ? previewRow.current.groups : previewRow.next.groups)
+        : (importedGroups || current?.groups || '')
+
+      return {
+        label: symbol,
+        amount: s.amount ?? 0,
+        originalAmount: s.amount ?? 0,
+        targetWeight: s.targetWeight ?? 0,
+        letf,
+        groups,
+      }
+    })
+    return appendMissingStocksWithZeroQty(parsedStocks, store.stocks)
+  }
+
+  function importedCashFromBackup(json: BackupImportPayload): CashData[] | null {
+    if (!json.cash) return null
+    return json.cash
+      .map(c => parseCashKey(c.key, c.value))
+      .filter((c): c is CashData => c !== null)
+  }
+
+  function enterBackupImportEditMode(json: BackupImportPayload, preview?: ImportDependencyPreview) {
+    const importedStocks = importedStocksFromBackup(json, preview)
+    const importedCash = importedCashFromBackup(json)
+    const importedDividendDate = typeof json.dividendStartDate === 'string'
+      ? json.dividendStartDate
+      : undefined
+    enterEditMode(importedStocks, importedCash, importedDividendDate)
+  }
+
+  async function maybeShowBackupDependencyDialog(
+    json: BackupImportPayload,
+    mode: PendingBackupDependencyImport['mode'],
+  ) {
+    const dependencyPayload = dependencyPayloadFromBackupImport(json)
+    const preview = await buildImportDependencyPreview(dependencyPayload)
+    if (hasImportDependencyPreview(preview)) {
+      setPendingBackupDependencyImport({ json, preview, mode })
+      setImportDependencyError('')
+      return true
+    }
+    return false
   }
 
   const displayCurrencies = appConfig?.displayCurrencies ?? ['USD']
@@ -174,32 +276,73 @@ export default function PortfolioViewer() {
     }
   }, [portfolioId, store, setEditModeActive])
 
-  // ── Import success callback (from BackupPanel) ─────────────────────────────
-  const handleImportSuccess = useCallback((json: any) => {
-    let importedStocks: StockData[] | null = null
-    let importedCash: CashData[] | null = null
-    if (json.stocks) {
-      const currentStocksBySymbol = new Map(store.stocks.map(s => [stockKey(s.label), s]))
-      const parsedStocks = (json.stocks as Array<any>).map(s => ({
-        label: s.symbol ?? s.label ?? '',
-        amount: s.amount ?? 0,
-        originalAmount: s.amount ?? 0,
-        targetWeight: s.targetWeight ?? 0,
-        letf: currentStocksBySymbol.get(stockKey(s.symbol ?? s.label ?? ''))?.letf ?? '',
-        groups: currentStocksBySymbol.get(stockKey(s.symbol ?? s.label ?? ''))?.groups ?? '',
-      }))
-      importedStocks = appendMissingStocksWithZeroQty(parsedStocks, store.stocks)
-    }
-    if (json.cash) {
-      importedCash = (json.cash as Array<{ key: string; value: string }>)
-        .map(c => parseCashKey(c.key, c.value))
-        .filter((c): c is CashData => c !== null)
-    }
-    const importedDividendDate = typeof json.dividendStartDate === 'string'
+  async function restoreDbBackupFromPayload(json: BackupImportPayload, preview?: ImportDependencyPreview) {
+    const importedStocks = importedStocksFromBackup(json, preview) ?? store.stocks
+    const importedCash = importedCashFromBackup(json) ?? store.cash
+    const dividendDateToSave = typeof json.dividendStartDate === 'string'
       ? json.dividendStartDate
-      : undefined
-    enterEditMode(importedStocks, importedCash, importedDividendDate)
-  }, [store, setEditModeActive])
+      : store.config.dividendStartDate ?? ''
+
+    const r = await fetch(`/api/portfolio/save-all?portfolio=${portfolioId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stocks: importedStocks.map(s => ({
+          symbol: s.label.trim().toUpperCase(),
+          amount: s.originalAmount ?? s.amount ?? 0,
+          targetWeight: s.targetWeight ?? 0,
+          letf: s.letf ?? '',
+          groups: s.groups ?? '',
+        })),
+        cash: importedCash,
+        dividendStartDate: dividendDateToSave || null,
+      }),
+    })
+    if (!r.ok) throw new Error(await r.text())
+    navigate(0)
+  }
+
+  // ── Import success callback (from BackupPanel) ─────────────────────────────
+  const handleImportSuccess = useCallback(async (json: BackupImportPayload) => {
+    try {
+      setBackupOpen(false)
+      if (await maybeShowBackupDependencyDialog(json, 'fileImport')) return
+      enterBackupImportEditMode(json)
+    } catch (e) {
+      showSyncToast(`Import failed: ${errorMessage(e)}`, 'error')
+    }
+  }, [store])
+
+  const handleRestorePreview = useCallback(async (json: BackupImportPayload, _backupId: number) => {
+    try {
+      setBackupOpen(false)
+      if (await maybeShowBackupDependencyDialog(json, 'dbRestore')) return
+      await restoreDbBackupFromPayload(json)
+    } catch (e) {
+      showSyncToast(`Restore failed: ${errorMessage(e)}`, 'error')
+    }
+  }, [store, portfolioId, navigate])
+
+  async function confirmPendingBackupDependencyImport(previewArg?: ImportDependencyPreview) {
+    if (!pendingBackupDependencyImport || importDependencyApplying) return
+    const preview = previewArg ?? pendingBackupDependencyImport.preview
+    setImportDependencyApplying(true)
+    setImportDependencyError('')
+    try {
+      await applyImportDependencyPreview(preview)
+      if (pendingBackupDependencyImport.mode === 'dbRestore') {
+        await restoreDbBackupFromPayload(pendingBackupDependencyImport.json, preview)
+      } else {
+        enterBackupImportEditMode(pendingBackupDependencyImport.json, preview)
+        showSyncToast('Import staged.', 'ok')
+      }
+      setPendingBackupDependencyImport(null)
+    } catch (e) {
+      setImportDependencyError(errorMessage(e))
+    } finally {
+      setImportDependencyApplying(false)
+    }
+  }
 
   // ── Save to backtest ───────────────────────────────────────────────────────
   const handleSaveToBacktest = useCallback(async () => {
@@ -511,7 +654,19 @@ export default function PortfolioViewer() {
       {backupOpen && (
         <BackupPanel
           onClose={() => setBackupOpen(false)}
-          onImportSuccess={json => { setBackupOpen(false); handleImportSuccess(json) }}
+          onImportSuccess={handleImportSuccess}
+          onRestorePreview={handleRestorePreview}
+        />
+      )}
+
+      {pendingBackupDependencyImport && (
+        <ImportDependenciesDialog
+          preview={pendingBackupDependencyImport.preview}
+          config={dependencyPayloadFromBackupImport(pendingBackupDependencyImport.json)}
+          applying={importDependencyApplying}
+          error={importDependencyError}
+          onCancel={() => setPendingBackupDependencyImport(null)}
+          onConfirm={preview => confirmPendingBackupDependencyImport(preview)}
         />
       )}
     </div>

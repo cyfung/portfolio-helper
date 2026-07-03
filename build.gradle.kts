@@ -22,7 +22,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.8.25"
+version = "0.8.26"
 
 repositories {
     mavenCentral()

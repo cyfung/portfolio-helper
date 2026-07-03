@@ -1663,6 +1663,20 @@ fun Application.configureRouting() {
             call.respondText(appJson.encodeToString(entries), ContentType.Application.Json)
         }
 
+        // Preview a DB backup row as import data before mutating the portfolio.
+        get("/api/backup/restore-preview") {
+            try {
+                val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                val id = call.request.queryParameters["id"]?.toIntOrNull()
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val result = BackupService.previewRestoreFromDb(portfolioEntry, id)
+                call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
         // Restore a portfolio from a DB backup row
         post("/api/backup/restore-db") {
             try {

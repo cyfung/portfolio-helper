@@ -198,17 +198,7 @@ object BackupService {
     }
 
     fun restoreFromDb(portfolio: ManagedPortfolio, backupId: Int) {
-        val json = transaction {
-            PortfolioBackupsTable.selectAll()
-                .where {
-                    (PortfolioBackupsTable.id eq backupId) and
-                            (PortfolioBackupsTable.portfolioId eq portfolio.serialId)
-                }
-                .firstOrNull()?.get(PortfolioBackupsTable.data)
-        }
-            ?: throw IllegalArgumentException("Backup $backupId not found for portfolio '${portfolio.slug}'")
-
-        val root = appJson.decodeFromString<BackupRoot>(json)
+        val root = loadDbBackupRoot(portfolio, backupId)
         val currentStocks = root(portfolio, resolveUsd = false, includeTickerMetadata = true).stocks
         val restoredStocks = appendMissingCurrentStocksWithZeroQty(root.stocks, currentStocks)
         val cashEntries = root.cash.map { c -> CashEntry(c.label, c.currency, c.marginFlag, c.amount, c.portfolioRef) }
@@ -220,11 +210,14 @@ object BackupService {
         logger.info("Restored '${portfolio.slug}' from DB backup $backupId")
     }
 
+    fun previewRestoreFromDb(portfolio: ManagedPortfolio, backupId: Int): ImportResult =
+        importResultFromRoot(loadDbBackupRoot(portfolio, backupId))
+
     fun exportJson(portfolio: ManagedPortfolio): String =
-        serializeToJson(portfolio, true)
+        serializeToJson(portfolio, resolveUsd = true, includeTickerMetadata = true)
 
     fun exportRoot(portfolio: ManagedPortfolio): BackupRoot =
-        root(portfolio, true)
+        root(portfolio, resolveUsd = true, includeTickerMetadata = true)
 
     fun exportSyncEntry(portfolio: ManagedPortfolio): PortfolioSyncEntry {
         val r = root(portfolio, resolveUsd = true)
@@ -252,9 +245,10 @@ object BackupService {
 
     private fun serializeToJson(
         portfolio: ManagedPortfolio,
-        resolveUsd: Boolean = false
+        resolveUsd: Boolean = false,
+        includeTickerMetadata: Boolean = true
     ): String {
-        val root = root(portfolio, resolveUsd)
+        val root = root(portfolio, resolveUsd, includeTickerMetadata)
         return appJson.encodeToString(root)
     }
 
@@ -353,8 +347,8 @@ object BackupService {
         val restoredWithoutBackupMetadata = restoredStocks.map { restored ->
             val current = currentBySymbol[restored.symbol.trim().uppercase()]
             restored.copy(
-                letf = current?.letf ?: "",
-                groups = current?.groups ?: ""
+                letf = restored.letf.takeIf { it.isNotBlank() } ?: current?.letf ?: "",
+                groups = restored.groups.takeIf { it.isNotBlank() } ?: current?.groups ?: ""
             )
         }
         val missingCurrentStocks = currentStocks
@@ -366,26 +360,45 @@ object BackupService {
     private fun parseJsonImport(bytes: ByteArray): ImportResult {
         return try {
             val root = appJson.decodeFromString<BackupRoot>(String(bytes))
-            val stocks = root.stocks.map { s ->
-                ImportedStock(s.symbol, s.amount, s.targetWeight, "", "")
-            }
-            val cash = root.cash.map { c ->
-                val value = if (c.currency == "P") {
-                    val ref = c.portfolioRef ?: ""
-                    if (kotlin.math.abs(c.amount) == 1.0) {
-                        (if (c.amount < 0) "-" else "") + ref
-                    } else {
-                        "${c.amount} $ref"
-                    }
-                } else c.amount.toString()
-                ImportedCash(c.key, value)
-            }
-            if (stocks.isEmpty() && cash.isEmpty())
-                ImportResult(null, null, "JSON backup has no stocks or cash entries")
-            else
-                ImportResult(stocks, cash, null, root.dividendStartDate)
+            importResultFromRoot(root)
         } catch (e: Exception) {
             ImportResult(null, null, "Invalid JSON: ${e.message}")
+        }
+    }
+
+    private fun loadDbBackupRoot(portfolio: ManagedPortfolio, backupId: Int): BackupRoot {
+        val json = transaction {
+            PortfolioBackupsTable.selectAll()
+                .where {
+                    (PortfolioBackupsTable.id eq backupId) and
+                            (PortfolioBackupsTable.portfolioId eq portfolio.serialId)
+                }
+                .firstOrNull()?.get(PortfolioBackupsTable.data)
+        }
+            ?: throw IllegalArgumentException("Backup $backupId not found for portfolio '${portfolio.slug}'")
+
+        return appJson.decodeFromString<BackupRoot>(json)
+    }
+
+    private fun importResultFromRoot(root: BackupRoot): ImportResult {
+        val stocks = root.stocks.map { s ->
+            ImportedStock(s.symbol, s.amount, s.targetWeight, s.letf, s.groups)
+        }
+        val cash = root.cash.map { c ->
+            val value = if (c.currency == "P") {
+                val ref = c.portfolioRef ?: ""
+                if (kotlin.math.abs(c.amount) == 1.0) {
+                    (if (c.amount < 0) "-" else "") + ref
+                } else {
+                    "${c.amount} $ref"
+                }
+            } else c.amount.toString()
+            ImportedCash(c.key, value)
+        }
+        return if (stocks.isEmpty() && cash.isEmpty()) {
+            ImportResult(null, null, "JSON backup has no stocks or cash entries")
+        } else {
+            ImportResult(stocks, cash, null, root.dividendStartDate)
         }
     }
 
