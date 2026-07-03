@@ -2,8 +2,8 @@
 import { useState, useCallback, useRef, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import type { StockData, CashData } from '@/types/portfolio'
-import { computeDisplay, getRebalTotal } from '@/lib/rebalance'
+import type { StockData, CashData, StockDisplayItem } from '@/types/portfolio'
+import { computeDisplay } from '@/lib/rebalance'
 import { TWS_CASH_LABEL, isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
@@ -41,6 +41,15 @@ function appendMissingStocksWithZeroQty(imported: StockData[], current: StockDat
     .map(s => ({ ...s, originalAmount: 0 }))
   return [...imported, ...missing]
 }
+
+function getLivePriceUsd(live: StockDisplayItem | undefined, fxRates: Record<string, number>): number | null {
+  const price = live?.markPrice ?? live?.estPriceNative ?? live?.closePrice ?? live?.lastNav ?? null
+  if (price === null || price <= 0) return null
+  const currency = live?.currency ?? 'USD'
+  const fxRate = currency === 'USD' ? 1 : fxRates[currency]
+  if (!Number.isFinite(fxRate) || fxRate <= 0) return null
+  return price * fxRate
+}
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioTabs from './PortfolioTabs'
 import SummaryTable from './SummaryTable'
@@ -60,7 +69,7 @@ export default function PortfolioViewer() {
     currentDisplayCurrency, moreInfoVisible, rebalVisible,
     groupViewActive, editModeActive, afterHoursGray,
     portfolioContentScale,
-    allPortfolios, appConfig, lastStockDisplay,
+    allPortfolios, appConfig, lastStockDisplay, fxRates,
     rebalTargetUsd, marginTargetUsd, allocReduceMode,
     setMoreInfoVisible, setRebalVisible, setGroupViewActive, setEditModeActive,
     setPortfolioContentScale,
@@ -93,9 +102,14 @@ export default function PortfolioViewer() {
     setStagedEditCash(null)
   }
 
-  function enterEditMode(stocks?: StockData[] | null, cashEntries?: CashData[] | null) {
+  function enterEditMode(
+    stocks?: StockData[] | null,
+    cashEntries?: CashData[] | null,
+    dividendDateOverride?: string | null
+  ) {
     setStagedEditStocks(stocks ?? null)
     setStagedEditCash(cashEntries ?? null)
+    setDividendDate(dividendDateOverride ?? store.config.dividendStartDate ?? '')
     setEditResetKey(k => k + 1)
     setEditModeActive(true)
   }
@@ -103,19 +117,13 @@ export default function PortfolioViewer() {
   function toggleEditMode() {
     if (editModeActive) {
       clearStagedEditData()
+      setDividendDate(store.config.dividendStartDate ?? '')
       setEditModeActive(false)
     } else {
       enterEditMode()
     }
   }
 
-  async function saveDividendDate(date: string) {
-    await fetch(`/api/portfolio/dividend-start-date?portfolio=${portfolioId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: date || null }),
-    })
-  }
   const displayCurrencies = appConfig?.displayCurrencies ?? ['USD']
 
   // ── TWS sync ──────────────────────────────────────────────────────────────
@@ -404,7 +412,6 @@ export default function PortfolioViewer() {
                 value={dividendDate}
                 autoComplete="off"
                 onChange={e => setDividendDate(e.target.value)}
-                onBlur={e => saveDividendDate(e.target.value)}
               />
             </div>
           )}
@@ -478,14 +485,16 @@ export default function PortfolioViewer() {
                   store.appConfig?.hybridAllocStrategies,
                 )
                 const updated = store.stocks.map(s => {
-                  const delta = result.rebalQty[s.label]
+                  const computedDelta = result.rebalQty[s.label]
+                  const delta = computedDelta && computedDelta !== 0
+                    ? computedDelta
+                    : (result.rebalDollars[s.label] ?? 0) / (getLivePriceUsd(liveBySymbol.get(s.label), fxRates) ?? Infinity)
                   if (!delta || delta === 0) return s
                   const nextAmount = parseFloat(((s.originalAmount ?? s.amount) + delta).toFixed(2))
                   return { ...s, originalAmount: nextAmount }
                 })
                 const pendingDate = store.config.dividendCalcUpToDate || store.config.dividendStartDate || ''
-                setDividendDate(pendingDate)
-                enterEditMode(updated)
+                enterEditMode(updated, null, pendingDate)
               }}
             >
               <span className="toggle-label">Virtual Rebalance</span>

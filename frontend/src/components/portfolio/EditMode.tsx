@@ -100,7 +100,7 @@ function flashCopyButton(btn: HTMLElement) {
 
 export default function EditMode({ saveKey, onSaved, pendingDividendDate, initialStocks }: Props) {
   const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
-  const [dividendDate] = useState(pendingDividendDate ?? config.dividendStartDate ?? '')
+  const dividendDate = pendingDividendDate ?? config.dividendStartDate ?? ''
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedImportName, setSelectedImportName] = useState('')
   const [importStatus, setImportStatus] = useState('')
