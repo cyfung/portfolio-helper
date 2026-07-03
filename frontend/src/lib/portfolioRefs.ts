@@ -1,6 +1,6 @@
 import { blockStateToAPIPortfolio } from '@/types/backtest'
 import type { BlockState, SavedPortfolio } from '@/types/backtest'
-import { expandSwapTickerRows } from '@/lib/tickerExpressions'
+import { expandSwapTickerRows, isResolvedNonZeroWeight } from '@/lib/tickerExpressions'
 
 export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
 
@@ -39,7 +39,7 @@ function rowWeight(row: any) {
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = ticker.trim().toUpperCase()
-  if (!key || weight === 0) return
+  if (!key || !isResolvedNonZeroWeight(weight)) return
   map.set(key, (map.get(key) ?? 0) + weight)
 }
 
@@ -67,7 +67,7 @@ function mergedNonZeroRows(rows: ResolvedStockWeight[]) {
   const weights = new Map<string, number>()
   rows.forEach(row => addWeight(weights, row.ticker, row.weight))
   return [...weights.entries()]
-    .filter(([, weight]) => weight !== 0)
+    .filter(([, weight]) => isResolvedNonZeroWeight(weight))
     .map(([ticker, weight]) => ({ ticker, weight }))
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
@@ -106,7 +106,7 @@ export function resolveSavedPortfolioConfig(
     const weight = rowWeight(row)
     const portfolioRef = isPortfolioRef(row)
     const ticker = portfolioRef ? refName(row) : String(row.ticker || '')
-    if (weight === 0) continue
+    if (!isResolvedNonZeroWeight(weight)) continue
 
     if (portfolioRef) {
       const name = ticker

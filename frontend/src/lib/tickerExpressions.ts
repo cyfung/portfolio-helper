@@ -7,6 +7,12 @@ export interface TickerExpressionConfig {
   letf?: string
 }
 
+const RESOLVED_WEIGHT_EPSILON = 1e-10
+
+export function isResolvedNonZeroWeight(weight: number) {
+  return Number.isFinite(weight) && Math.abs(weight) > RESOLVED_WEIGHT_EPSILON
+}
+
 export function normalizeTickerExpression(value: string) {
   return value.trim().replace(/\s+/g, ' ').toUpperCase()
 }
@@ -128,7 +134,7 @@ export function expandSwapTickerRows(rows: WeightedTickerExpression[]): Weighted
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
   const key = normalizeTickerExpression(ticker)
-  if (!key || weight === 0) return
+  if (!key || !isResolvedNonZeroWeight(weight)) return
   map.set(key, (map.get(key) ?? 0) + weight)
 }
 
@@ -157,6 +163,7 @@ export function expandLetfRows(
   return {
     expanded,
     rows: [...weights.entries()]
+      .filter(([, weight]) => isResolvedNonZeroWeight(weight))
       .map(([ticker, weight]) => ({ ticker, weight }))
       .sort((a, b) => a.ticker.localeCompare(b.ticker)),
   }
