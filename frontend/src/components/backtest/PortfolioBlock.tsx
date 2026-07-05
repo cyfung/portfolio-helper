@@ -10,7 +10,13 @@ import {
 import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
 import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
-import { isPlaceholderTicker, SAVED_PORTFOLIOS_CHANGED_EVENT, fetchSavedPortfolios, savedPortfolioConfig } from '@/lib/portfolioRefs'
+import {
+  isPlaceholderTicker,
+  SAVED_PORTFOLIOS_CHANGED_EVENT,
+  fetchSavedPortfolios,
+  resolveSavedPortfolioConfig,
+  savedPortfolioConfigMap,
+} from '@/lib/portfolioRefs'
 import { parseSwapExpression } from '@/lib/tickerExpressions'
 
 interface Props {
@@ -222,8 +228,13 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
     const refName = row.ticker.trim()
     const saved = await refreshSavedPortfolioNames()
-    const savedConfig = savedPortfolioConfig(saved.find(p => p.name === refName)?.config)
+    const savedByName = savedPortfolioConfigMap(saved)
+    const savedConfig = savedByName.get(refName)
     if (!savedConfig) return
+    const resolvedChildRows = resolveSavedPortfolioConfig(savedConfig, savedByName, [refName])
+    const resolvedChildTotal = resolvedChildRows.reduce((sum, child) => sum + child.weight, 0)
+    if (resolvedChildTotal === 0) return
+    const childScale = rowWeight / Math.abs(resolvedChildTotal)
     const childRows = (savedConfig?.tickers ?? [])
       .map((child: any) => {
         const childWeight = parseStrictNumberInput(child?.weight)
@@ -236,7 +247,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         return {
           id: newId(),
           ticker,
-          weight: String(rowWeight * childWeight / 100),
+          weight: String(childWeight * childScale),
           ...(isPortfolioRef ? { isPortfolioRef: true } : {}),
         }
       })
