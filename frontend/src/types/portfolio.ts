@@ -49,6 +49,7 @@ export interface AppConfig {
   privacyScalePct: string
   privacyScaleEnabled: boolean
   hybridAllocStrategies: HybridAllocStrategyConfig[]
+  portfolioColumnModes: string
 }
 
 export interface PortfolioData {

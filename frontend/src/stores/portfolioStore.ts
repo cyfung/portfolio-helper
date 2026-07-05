@@ -5,6 +5,7 @@ import type {
   StockDisplayEvent, CashDisplayEvent, PortfolioTotalsEvent,
   IbkrDisplayEvent, GroupAllocEvent, AllocMode, SseStatus,
 } from '@/types/portfolio'
+import { legacyVisibilityToDefaultModeId, normalizePortfolioColumnModes } from '@/lib/portfolioColumns'
 
 interface PortfolioState {
   // ── Loaded portfolio data ─────────────────────────────────────────────────
@@ -34,6 +35,7 @@ interface PortfolioState {
   afterHoursGray: boolean
   showStockDisplayCurrency: boolean
   portfolioContentScale: number
+  portfolioColumnModeId: string
 
   // ── Rebal/alloc targets ────────────────────────────────────────────────────
   rebalTargetUsd: number | null
@@ -58,6 +60,7 @@ interface PortfolioState {
   setGroupViewActive: (v: boolean) => void
   setEditModeActive: (v: boolean) => void
   setPortfolioContentScale: (v: number) => void
+  setPortfolioColumnModeId: (id: string) => void
   setRebalTargetUsd: (v: number | null) => void
   setMarginTargetPct: (v: number | null) => void
   setMarginTargetUsd: (v: number | null) => void
@@ -78,6 +81,7 @@ const LS_KEYS = {
   theme: 'portfolio-helper-theme',
   stockGroupBy: 'portfolio-helper-stock-group-by',
   contentScale: 'portfolio-helper-portfolio-content-scale',
+  columnMode: 'portfolio-helper-portfolio-column-mode',
 }
 
 function lsGet(key: string): string | null {
@@ -93,6 +97,12 @@ function readContentScale(): number {
   const raw = lsGet(LS_KEYS.contentScale)
   if (!raw) return 1
   return clampContentScale(parseFloat(raw))
+}
+
+function readInitialColumnMode(): string {
+  const saved = lsGet(LS_KEYS.columnMode)
+  if (saved) return saved
+  return legacyVisibilityToDefaultModeId(lsGet(LS_KEYS.moreInfo) === 'true', lsGet(LS_KEYS.rebal) === 'true')
 }
 
 const DEFAULT_CONFIG: PortfolioConfig = {
@@ -132,6 +142,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   afterHoursGray: true,
   showStockDisplayCurrency: false,
   portfolioContentScale: readContentScale(),
+  portfolioColumnModeId: readInitialColumnMode(),
 
   rebalTargetUsd: null,
   marginTargetPct: null,
@@ -154,6 +165,8 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     // Alloc modes: prefer server-saved config over localStorage
     const allocAdd = config.allocAddMode as AllocMode
     const allocReduce = config.allocReduceMode as AllocMode
+    const columnModes = normalizePortfolioColumnModes(appConfig.portfolioColumnModes)
+    const currentColumnModeId = get().portfolioColumnModeId
 
     set({
       portfolioId: data.portfolioId,
@@ -171,6 +184,9 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
       marginTargetUsd: marginUsdTarget,
       allocAddMode: allocAdd,
       allocReduceMode: allocReduce,
+      portfolioColumnModeId: columnModes.some(mode => mode.id === currentColumnModeId)
+        ? currentColumnModeId
+        : columnModes[0].id,
       // SSE data is NOT reset here — useSSE reconnects on portfolioId change,
       // which triggers fresh StateFlow emissions from the server immediately.
     })
@@ -226,6 +242,10 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     const scale = clampContentScale(v)
     localStorage.setItem(LS_KEYS.contentScale, String(scale))
     set({ portfolioContentScale: scale })
+  },
+  setPortfolioColumnModeId: (id) => {
+    localStorage.setItem(LS_KEYS.columnMode, id)
+    set({ portfolioColumnModeId: id })
   },
 
   setRebalTargetUsd: (v) => set({ rebalTargetUsd: v, marginTargetPct: null, marginTargetUsd: null }),

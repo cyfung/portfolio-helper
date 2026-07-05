@@ -24,6 +24,7 @@ object AppConfig {
     const val KEY_PRIVACY_SCALE_ENABLED = "privacyScaleEnabled"
     const val KEY_AFTER_HOURS_GRAY      = "afterHoursGray"
     const val KEY_HYBRID_ALLOC_STRATEGIES = "hybridAllocStrategies"
+    const val KEY_PORTFOLIO_COLUMN_MODES = "portfolioColumnModes"
 
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
@@ -41,6 +42,7 @@ object AppConfig {
         KEY_PRIVACY_SCALE_ENABLED to "true",
         KEY_AFTER_HOURS_GRAY    to "true",
         KEY_HYBRID_ALLOC_STRATEGIES to "",
+        KEY_PORTFOLIO_COLUMN_MODES to "",
     )
 
     fun get(key: String): String {

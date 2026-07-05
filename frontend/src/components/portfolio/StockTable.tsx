@@ -1,5 +1,4 @@
-// ── StockTable.tsx — Port of buildStockTable from PortfolioRenderer.kt ────────
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
 import {
@@ -8,8 +7,12 @@ import {
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
 import { computeDisplay } from '@/lib/rebalance'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+import {
+  getPortfolioColumnMode,
+  normalizePortfolioColumnModes,
+  PORTFOLIO_STOCK_COLUMNS,
+  type PortfolioColumnId,
+} from '@/lib/portfolioColumns'
 
 function getMainGroup(groups: string): string {
   if (!groups) return ''
@@ -18,7 +21,37 @@ function getMainGroup(groups: string): string {
   return sp >= 0 ? first.slice(sp + 1).trim() : ''
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+const COLUMN_LABELS = new Map(PORTFOLIO_STOCK_COLUMNS.map(column => [column.id, column.label]))
+
+function headerClassName(columnId: PortfolioColumnId): string {
+  return [
+    ['qty', 'lastNav', 'est', 'last', 'mark', 'change', 'pnl', 'mktVal', 'weight'].includes(columnId) ? 'col-num' : '',
+    ['lastNav', 'est', 'last', 'mark', 'change', 'pnl', 'mktVal'].includes(columnId) ? 'col-market-data' : '',
+    ['qty', 'lastNav', 'last', 'mktVal', 'rebalQty', 'allocQty'].includes(columnId) ? 'col-moreinfo' : '',
+    ['rebalQty', 'rebalDollars'].includes(columnId) ? 'rebal-column' : '',
+    ['allocQty', 'allocDollars'].includes(columnId) ? 'alloc-column' : '',
+    columnId === 'ccy' ? 'col-ccy' : '',
+  ].filter(Boolean).join(' ')
+}
+
+function columnHeader(columnId: PortfolioColumnId): ReactNode {
+  const className = headerClassName(columnId) || undefined
+  if (columnId === 'est') {
+    return (
+      <th className={className} id="th-est-val">
+        EST <span className="col-info-hint" title="Hover a cell to see price targets">(i)</span>
+      </th>
+    )
+  }
+  if (columnId === 'weight') {
+    return (
+      <th className={className}>
+        Weight <span className="th-sub">Cur / Tgt / Dev</span>
+      </th>
+    )
+  }
+  return <th className={className}>{COLUMN_LABELS.get(columnId) ?? columnId}</th>
+}
 
 export default function StockTable() {
   const {
@@ -27,7 +60,7 @@ export default function StockTable() {
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     allocAddMode, allocReduceMode,
     showStockDisplayCurrency, groupViewActive,
-    appConfig, stockGroupBy,
+    appConfig, stockGroupBy, portfolioColumnModeId,
   } = usePortfolioStore()
   const [freshAt, setFreshAt] = useState<Date | null>(null)
 
@@ -40,11 +73,16 @@ export default function StockTable() {
     (lastStockDisplay?.stocks ?? []).map(s => s.currency).filter(Boolean),
   ), [appConfig?.displayCurrencies, lastStockDisplay?.stocks])
 
+  const columnModes = useMemo(
+    () => normalizePortfolioColumnModes(appConfig?.portfolioColumnModes),
+    [appConfig?.portfolioColumnModes],
+  )
+  const visibleColumnIds = getPortfolioColumnMode(columnModes, portfolioColumnModeId).columns
+
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
   const marginUsd = lastPortfolioTotals?.marginUsd ?? 0
 
-  // Index SSE market data by symbol
   const liveBySymbol = useMemo(() => new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
   ), [lastStockDisplay])
@@ -69,13 +107,11 @@ export default function StockTable() {
     return entries.map(([key, stocks]) => ({ key, stocks }))
   }, [stocks, stockGroupBy, liveBySymbol])
 
-  // For group portfolios: pass GA server alloc as serverAllocDollars so waterfall uses it
   const hasGroups = stocks.some(s => s.groups)
   const serverAllocDollars = (hasGroups && groupViewActive)
     ? Object.fromEntries((lastGroupAllocData?.stocks ?? []).map(s => [s.symbol, s.allocDollars]))
     : undefined
 
-  // Client-side alloc computation for all modes (matches original display-worker.js behaviour)
   const computedAlloc = (stockGrossKnown && stockGrossUsd > 0)
     ? computeDisplay(
         stocks.map(s => ({
@@ -99,14 +135,12 @@ export default function StockTable() {
   const fmt = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
       ? formatCurrency(convertFromUsd(usd, fxRates, currentDisplayCurrency))
-      : '—'
+      : '-'
 
-  // Check if any stock has target weight > 0 (for rebal warning)
   const totalTargetWeight = stocks.reduce((sum, s) => sum + (s.targetWeight ?? 0), 0)
   const showWeightWarning = totalTargetWeight > 0 && Math.abs(totalTargetWeight - 100) > 1
   const freshAtLabel = freshAt?.toLocaleTimeString(undefined, { hour12: false }) ?? 'Waiting for data'
 
-  // ── EST price ladder tooltip ───────────────────────────────────────────────
   useEffect(() => {
     let tooltip: HTMLElement | null = null
     function getTooltip() {
@@ -129,7 +163,7 @@ export default function StockTable() {
         if (d === 0) {
           html += '<hr class="ladder-separator">'
         } else {
-          const sign = d > 0 ? '+' : '−'
+          const sign = d > 0 ? '+' : '-'
           const label = sign + Math.abs(d * 100).toFixed(1) + '%'
           const cls = d > 0 ? 'ladder-up' : 'ladder-down'
           html += `<span class="${cls}">${label}  ${price.toFixed(2)}</span>\n`
@@ -160,250 +194,172 @@ export default function StockTable() {
   return (
     <>
       <div className="stock-table-block">
-      <table className="portfolio-table" id="stock-view-table">
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th className="col-num col-moreinfo">Qty</th>
-            <th className="col-num col-market-data col-moreinfo">Last NAV</th>
-            <th className="col-num col-market-data" id="th-est-val">
-              EST{' '}
-              <span className="col-info-hint" title="Hover a cell to see price targets">ⓘ</span>
-            </th>
-            <th className="col-num col-market-data col-moreinfo">Last</th>
-            <th className="col-num col-market-data">Mark</th>
-            <th className="col-num col-market-data">CHG</th>
-            <th className="col-num col-market-data">P&amp;L</th>
-            <th className="col-num col-market-data col-moreinfo">Mkt Val</th>
-            <th className="col-num">
-              Weight <span className="th-sub">Cur / Tgt / Dev</span>
-            </th>
-            <th className="rebal-column col-moreinfo">Rebal Qty</th>
-            <th className="rebal-column">Rebal💰</th>
-            <th className="alloc-column col-moreinfo">Alloc Qty</th>
-            <th className="alloc-column">Alloc💰</th>
-            <th className="col-ccy">CCY</th>
-          </tr>
-        </thead>
-        <tbody>
-          {groupedStocks.map(({ key, stocks: groupStocks }) => (
-            <Fragment key={key ?? '__all'}>
-              {key !== null && (
-                <tr className="stock-group-header">
-                  <td colSpan={15}>
-                    {stockGroupBy === 'ccy'
-                      ? <span className={`ccy-pill ccy-color-${getCcyClass(key, sortedCcys)}`}>{key}</span>
-                      : key}
-                  </td>
-                </tr>
-              )}
-              {groupStocks.map((stock) => {
-            const sym = stock.label
-            const live = liveBySymbol.get(sym) ?? null
-            const targetWeight = stock.targetWeight ?? 0
+        <table className="portfolio-table" id="stock-view-table">
+          <thead>
+            <tr>
+              {visibleColumnIds.map(columnId => <Fragment key={columnId}>{columnHeader(columnId)}</Fragment>)}
+            </tr>
+          </thead>
+          <tbody>
+            {groupedStocks.map(({ key, stocks: groupStocks }) => (
+              <Fragment key={key ?? '__all'}>
+                {key !== null && (
+                  <tr className="stock-group-header">
+                    <td colSpan={visibleColumnIds.length}>
+                      {stockGroupBy === 'ccy'
+                        ? <span className={`ccy-pill ccy-color-${getCcyClass(key, sortedCcys)}`}>{key}</span>
+                        : key}
+                    </td>
+                  </tr>
+                )}
+                {groupStocks.map((stock) => {
+                  const sym = stock.label
+                  const live = liveBySymbol.get(sym) ?? null
+                  const targetWeight = stock.targetWeight ?? 0
+                  const qty = stock.amount
+                  const markPrice = live?.markPrice ?? null
+                  const closePrice = live?.closePrice ?? null
+                  const navPrice = live?.lastNav ?? null
+                  const navDate = live?.lastNavDate ?? null
+                  const estPrice = live?.estPriceNative ?? null
+                  const posVal = live?.positionValueUsd ?? null
+                  const dayCh = live?.dayChangeNative ?? null
+                  const stockCcy = live?.currency ?? null
+                  const fxRate = stockCcy ? (fxRates[stockCcy] ?? null) : null
+                  const isAfterHours = live?.isMarketClosed ?? false
+                  const markStr = markPrice !== null ? formatCurrency(markPrice) : '-'
+                  const dayPct = live?.dayChangePct ?? null
+                  const dayPctCls = `${dayPct === null ? '' : dayPct > 0 ? 'positive' : dayPct < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
+                  const dayPctStr = dayPct !== null
+                    ? `${dayPct >= 0 ? '+' : ''}${dayPct.toFixed(2)}%` : ''
+                  const hasNativeRate = stockCcy === 'USD' || fxRate !== null
+                  const mktValStr = posVal !== null
+                    ? (showStockDisplayCurrency
+                        ? fmt(posVal)
+                        : (stockCcy && hasNativeRate) ? formatCurrency(convertFromUsd(posVal, fxRates, stockCcy)) : '-')
+                    : '-'
+                  const dayChStr = dayCh !== null ? formatSignedCurrency(dayCh) : ''
+                  const dayChCls = `${dayCh === null ? 'neutral' : dayCh > 0 ? 'positive' : dayCh < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
+                  const liveQty = live?.qty ?? null
+                  const pnlUsd = (dayCh !== null && liveQty !== null && fxRate !== null)
+                    ? dayCh * liveQty * fxRate : null
+                  const pnlNative = (dayCh !== null && liveQty !== null) ? dayCh * liveQty : null
+                  const pnlStr = showStockDisplayCurrency
+                    ? (pnlUsd !== null
+                        ? (hasFxRate(fxRates, currentDisplayCurrency)
+                            ? formatSignedCurrency(convertFromUsd(pnlUsd, fxRates, currentDisplayCurrency))
+                            : '-')
+                        : '')
+                    : (pnlNative !== null
+                        ? (hasNativeRate ? formatSignedCurrency(pnlNative) : '-')
+                        : '')
+                  const pnlCls = `${pnlUsd === null ? 'neutral' : pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
 
-            // ── Computed values ──────────────────────────────────────────
-            const qty = stock.amount
-            const markPrice = live?.markPrice ?? null
-            const closePrice = live?.closePrice ?? null
-            const navPrice = live?.lastNav ?? null
-            const navDate = live?.lastNavDate ?? null
-            const estPrice = live?.estPriceNative ?? null
-            const posVal = live?.positionValueUsd ?? null
-            const dayCh = live?.dayChangeNative ?? null
-            const stockCcy = live?.currency ?? null
-            const fxRate = stockCcy ? (fxRates[stockCcy] ?? null) : null
+                  const curWeight = stockGrossKnown && posVal !== null ? (posVal / stockGrossUsd) * 100 : 0
+                  const weightDiff = curWeight - targetWeight
+                  const diffCls = weightDiffCls(weightDiff)
+                  const pillSign = weightDiff >= 0 ? '+' : ''
+                  const rebalDollars = stockGrossKnown ? (computedAlloc?.rebalDollars[sym] ?? null) : null
+                  const rebalQty = (rebalDollars !== null && markPrice && markPrice > 0 && fxRate)
+                    ? rebalDollars / (markPrice * fxRate) : null
+                  const allocDollars = stockGrossKnown ? (computedAlloc?.allocDollars[sym] ?? null) : null
+                  const allocQty = (allocDollars !== null && markPrice && markPrice > 0 && fxRate)
+                    ? allocDollars / (markPrice * fxRate) : null
 
-            // Mark value (native currency)
-            const isAfterHours = live?.isMarketClosed ?? false
-            const markStr = markPrice !== null ? formatCurrency(markPrice) : '—'
-            const dayPct = live?.dayChangePct ?? null
-            const dayPctCls = `${dayPct === null ? '' : dayPct > 0 ? 'positive' : dayPct < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
-            const dayPctStr = dayPct !== null
-              ? `${dayPct >= 0 ? '+' : ''}${dayPct.toFixed(2)}%` : ''
+                  const letfTokens = parseLetfAttr(stock.letf)
+                  const letfAttr = letfTokens.map(t => `${t.mult},${t.sym}`).join(',')
 
-            // Mkt Val: display currency or native
-            const hasNativeRate = stockCcy === 'USD' || fxRate !== null
-            const mktValStr = posVal !== null
-              ? (showStockDisplayCurrency
-                  ? fmt(posVal)
-                  : (stockCcy && hasNativeRate) ? formatCurrency(convertFromUsd(posVal, fxRates, stockCcy)) : '—')
-              : '—'
+                  const cells: Record<PortfolioColumnId, ReactNode> = {
+                    symbol: <td>{sym}</td>,
+                    qty: <td className="amount col-moreinfo" id={`amount-${sym}`}>{formatQty(qty)}</td>,
+                    lastNav: (
+                      <td className="col-market-data price muted col-moreinfo" id={`nav-${sym}`}>
+                        {navPrice !== null ? (
+                          <>
+                            <span className="nav-price-value">{formatCurrency(navPrice)}</span>
+                            {navDate && <span className="nav-date">as of {navDate}</span>}
+                          </>
+                        ) : '-'}
+                      </td>
+                    ),
+                    est: (
+                      <td
+                        className={`col-market-data price${estPrice !== null ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`}
+                        id={`est-val-${sym}`}
+                        data-est-val={estPrice ?? undefined}
+                      >
+                        {estPrice !== null ? formatCurrency(estPrice) : '-'}
+                      </td>
+                    ),
+                    last: <td className="col-market-data price col-moreinfo" id={`close-${sym}`}>{closePrice !== null ? formatCurrency(closePrice) : '-'}</td>,
+                    mark: (
+                      <td className={`col-market-data price${markPrice !== null ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`} id={`mark-${sym}`}>
+                        <span className="mark-price-value">{markStr}</span>
+                        {dayPctStr && (
+                          <span className={`mark-day-pct ${dayPctCls}`} id={`day-percent-${sym}`}>
+                            {dayPctStr}
+                          </span>
+                        )}
+                      </td>
+                    ),
+                    change: <td className={`col-market-data price-change ${dayChCls}`} id={`day-change-${sym}`}>{dayChStr}</td>,
+                    pnl: <td className={`col-market-data price-change ${pnlCls}`} id={`position-change-${sym}`}>{pnlStr}</td>,
+                    mktVal: <td className="col-market-data value col-moreinfo" id={`value-${sym}`}>{mktValStr}</td>,
+                    weight: (
+                      <td className="weight-display col-num" id={`current-weight-${sym}`}>
+                        {stockGrossKnown && (
+                          <>
+                            <span className="weight-cur">{curWeight.toFixed(1)}%</span>
+                            <span className="weight-sep">/</span>
+                            <span className="weight-tgt">{targetWeight.toFixed(1)}%</span>
+                            <span className={`weight-diff ${diffCls}`}>{pillSign}{weightDiff.toFixed(1)}%</span>
+                          </>
+                        )}
+                      </td>
+                    ),
+                    rebalQty: <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>{rebalQty !== null ? formatSignedQty(rebalQty) : ''}</td>,
+                    rebalDollars: <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>{rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '-'}</td>,
+                    allocQty: <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>{allocQty !== null ? formatSignedQty(allocQty) : ''}</td>,
+                    allocDollars: <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>{allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '-'}</td>,
+                    ccy: (
+                      <td className="col-ccy text-center">
+                        {stockCcy && (
+                          <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
+                            {stockCcy}
+                          </span>
+                        )}
+                      </td>
+                    ),
+                  }
 
-            // Day change (CHG) always in native currency (dayChangeNative is per-share, native)
-            const dayChStr = dayCh !== null ? formatSignedCurrency(dayCh) : ''
-            const dayChCls = `${dayCh === null ? 'neutral' : dayCh > 0 ? 'positive' : dayCh < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
+                  return (
+                    <tr
+                      key={sym}
+                      className="leading-[1.4]"
+                      data-symbol={sym}
+                      data-qty={formatQty(qty)}
+                      data-raw-qty={qty.toString()}
+                      data-weight={targetWeight.toString()}
+                      data-letf={letfAttr || undefined}
+                      data-groups={stock.groups || undefined}
+                    >
+                      {visibleColumnIds.map(columnId => <Fragment key={columnId}>{cells[columnId]}</Fragment>)}
+                    </tr>
+                  )
+                })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
 
-            // Position P&L = per-share change × scaled qty (from SSE) × fx → USD → display
-            const liveQty = live?.qty ?? null
-            const pnlUsd = (dayCh !== null && liveQty !== null && fxRate !== null)
-              ? dayCh * liveQty * fxRate : null
-            const pnlNative = (dayCh !== null && liveQty !== null) ? dayCh * liveQty : null
-            const pnlStr = showStockDisplayCurrency
-              ? (pnlUsd !== null
-                  ? (hasFxRate(fxRates, currentDisplayCurrency)
-                      ? formatSignedCurrency(convertFromUsd(pnlUsd, fxRates, currentDisplayCurrency))
-                      : '—')
-                  : '')
-              : (pnlNative !== null
-                  ? (hasNativeRate ? formatSignedCurrency(pnlNative) : '—')
-                  : '')
-            const pnlCls = `${pnlUsd === null ? 'neutral' : pnlUsd > 0 ? 'positive' : pnlUsd < 0 ? 'negative' : 'neutral'}${isAfterHours ? ' after-hours' : ''}`
-
-            // Weight columns (only when stock gross known)
-            let weightCells = null
-            if (stockGrossKnown) {
-              const curWeight = posVal !== null ? (posVal / stockGrossUsd) * 100 : 0
-              const weightDiff = curWeight - targetWeight
-              const diffCls = weightDiffCls(weightDiff)
-              const pillSign = weightDiff >= 0 ? '+' : ''
-
-              // Rebal
-              const rebalDollars = computedAlloc?.rebalDollars[sym] ?? null
-              const rebalQty = (rebalDollars !== null && markPrice && markPrice > 0 && fxRate)
-                ? rebalDollars / (markPrice * fxRate) : null
-
-                  // Alloc: client-side computed for all modes
-              const allocDollars = computedAlloc?.allocDollars[sym] ?? null
-              const allocQty = (allocDollars !== null && markPrice && markPrice > 0 && fxRate)
-                ? allocDollars / (markPrice * fxRate) : null
-
-              weightCells = (
-                <>
-                  <td className="weight-display col-num" id={`current-weight-${sym}`}>
-                    <span className="weight-cur">{curWeight.toFixed(1)}%</span>
-                    <span className="weight-sep">/</span>
-                    <span className="weight-tgt">{targetWeight.toFixed(1)}%</span>
-                    <span className={`weight-diff ${diffCls}`}>
-                      {pillSign}{weightDiff.toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>
-                    {rebalQty !== null ? formatSignedQty(rebalQty) : ''}
-                  </td>
-                  <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>
-                    {rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '—'}
-                  </td>
-                  <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>
-                    {allocQty !== null ? formatSignedQty(allocQty) : ''}
-                  </td>
-                  <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>
-                    {allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '—'}
-                  </td>
-                </>
-              )
-            } else {
-              weightCells = (
-                <>
-                  <td className="weight-display col-num" id={`current-weight-${sym}`} />
-                  <td className="action-neutral rebal-column col-moreinfo" id={`rebal-qty-${sym}`} />
-                  <td className="action-neutral rebal-column" id={`rebal-dollars-${sym}`} />
-                  <td className="action-neutral alloc-column col-moreinfo" id={`alloc-qty-${sym}`} />
-                  <td className="action-neutral alloc-column" id={`alloc-dollars-${sym}`} />
-                </>
-              )
-            }
-
-            // Build letf string for data attr
-            const letfTokens = parseLetfAttr(stock.letf)
-            const letfAttr = letfTokens.map(t => `${t.mult},${t.sym}`).join(',')
-
-            return (
-              <tr
-                key={sym}
-                className="leading-[1.4]"
-                data-symbol={sym}
-                data-qty={formatQty(qty)}
-                data-raw-qty={qty.toString()}
-                data-weight={targetWeight.toString()}
-                data-letf={letfAttr || undefined}
-                data-groups={stock.groups || undefined}
-              >
-                {/* Symbol */}
-                <td>
-                  {sym}
-                </td>
-
-                {/* Qty */}
-                <td className="amount col-moreinfo" id={`amount-${sym}`}>
-                  {formatQty(qty)}
-                </td>
-
-                {/* Last NAV */}
-                <td className="col-market-data price muted col-moreinfo" id={`nav-${sym}`}>
-                  {navPrice !== null ? (
-                    <>
-                      <span className="nav-price-value">{formatCurrency(navPrice)}</span>
-                      {navDate && <span className="nav-date">as of {navDate}</span>}
-                    </>
-                  ) : '—'}
-                </td>
-
-                {/* EST */}
-                <td
-                  className={`col-market-data price${estPrice !== null ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`}
-                  id={`est-val-${sym}`}
-                  data-est-val={estPrice ?? undefined}
-                >
-                  {estPrice !== null ? formatCurrency(estPrice) : '—'}
-                </td>
-
-                {/* Last (close) */}
-                <td className="col-market-data price col-moreinfo" id={`close-${sym}`}>
-                  {closePrice !== null ? formatCurrency(closePrice) : '—'}
-                </td>
-
-                {/* Mark + day % */}
-                <td className={`col-market-data price${markPrice !== null ? ' loaded' : ''}${isAfterHours ? ' after-hours' : ''}`} id={`mark-${sym}`}>
-                  <span className="mark-price-value">{markStr}</span>
-                  {dayPctStr && (
-                    <span className={`mark-day-pct ${dayPctCls}`} id={`day-percent-${sym}`}>
-                      {dayPctStr}
-                    </span>
-                  )}
-                </td>
-
-                {/* CHG */}
-                <td className={`col-market-data price-change ${dayChCls}`} id={`day-change-${sym}`}>
-                  {dayChStr}
-                </td>
-
-                {/* P&L (position day change) */}
-                <td className={`col-market-data price-change ${pnlCls}`} id={`position-change-${sym}`}>
-                  {pnlStr}
-                </td>
-
-                {/* Mkt Val */}
-                <td className="col-market-data value col-moreinfo" id={`value-${sym}`}>
-                  {mktValStr}
-                </td>
-
-                {/* Weight / Rebal / Alloc */}
-                {weightCells}
-
-                {/* CCY */}
-                <td className="col-ccy text-center">
-                  {stockCcy && (
-                    <span className={`ccy-pill ccy-color-${getCcyClass(stockCcy, sortedCcys)}`}>
-                      {stockCcy}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            )})}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="stock-table-freshness">
-        <span className="stock-table-freshness-label">Data freshness:</span>
-        {freshAt ? (
-          <time dateTime={freshAt.toISOString()}>{freshAtLabel}</time>
-        ) : (
-          <span className="stock-table-freshness-value">{freshAtLabel}</span>
-        )}
-      </div>
+        <div className="stock-table-freshness">
+          <span className="stock-table-freshness-label">Data freshness:</span>
+          {freshAt ? (
+            <time dateTime={freshAt.toISOString()}>{freshAtLabel}</time>
+          ) : (
+            <span className="stock-table-freshness-value">{freshAtLabel}</span>
+          )}
+        </div>
       </div>
 
       {showWeightWarning && (

@@ -789,7 +789,8 @@ private data class AppConfigDto(
     val autoUpdate: Boolean,
     val privacyScalePct: String,
     val privacyScaleEnabled: Boolean,
-    val hybridAllocStrategies: List<HybridAllocStrategyConfig>
+    val hybridAllocStrategies: List<HybridAllocStrategyConfig>,
+    val portfolioColumnModes: String
 )
 
 @Serializable
@@ -943,7 +944,8 @@ fun Application.configureRouting() {
                     autoUpdate = AppConfig.autoUpdate,
                     privacyScalePct = AppConfig.get(AppConfig.KEY_PRIVACY_SCALE_PCT),
                     privacyScaleEnabled = AppConfig.privacyScaleEnabled,
-                    hybridAllocStrategies = HybridAllocStrategyRegistry.strategies()
+                    hybridAllocStrategies = HybridAllocStrategyRegistry.strategies(),
+                    portfolioColumnModes = AppConfig.get(AppConfig.KEY_PORTFOLIO_COLUMN_MODES)
                 )
             )
 

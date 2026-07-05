@@ -185,6 +185,7 @@ fun Route.configureAdminRoutes() {
             AppConfig.KEY_UPDATE_CHECK_INTERVAL,
             AppConfig.KEY_AUTO_UPDATE,
             AppConfig.KEY_HYBRID_ALLOC_STRATEGIES,
+            AppConfig.KEY_PORTFOLIO_COLUMN_MODES,
         )
         val values = keys.associateWith { AppConfig.get(it) }
         val updateInfo = UpdateService.getInfo()

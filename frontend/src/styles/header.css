@@ -375,7 +375,9 @@ h1 {
 
 /* Currency controls in portfolio header */
 .portfolio-header .currency-toggle,
-.portfolio-header .currency-pill {
+.portfolio-header .currency-pill,
+.portfolio-header .portfolio-column-mode-toggle,
+.portfolio-header .portfolio-column-mode-pill {
     display: inline-flex; align-items: center; gap: 6px;
     height: 30px; padding: 0 10px;
     border: 1px solid color-mix(in srgb, var(--color-positive) 40%, transparent);
@@ -384,9 +386,20 @@ h1 {
     color: var(--color-positive); font: inherit; font-size: 12.5px;
     text-transform: none; letter-spacing: 0;
 }
-.portfolio-header .currency-toggle:hover {
+.portfolio-header .currency-toggle:hover,
+.portfolio-header .portfolio-column-mode-toggle:hover {
     background: color-mix(in srgb, var(--color-positive) 18%, transparent);
     border-color: color-mix(in srgb, var(--color-positive) 55%, transparent);
+}
+.portfolio-header .portfolio-column-mode-toggle,
+.portfolio-header .portfolio-column-mode-pill {
+    border-color: color-mix(in srgb, var(--color-accent-primary) 45%, transparent);
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, transparent);
+    color: var(--color-accent-primary);
+}
+.portfolio-header .portfolio-column-mode-toggle:hover {
+    background: color-mix(in srgb, var(--color-accent-primary) 16%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent-primary) 58%, transparent);
 }
 .portfolio-header .currency-select {
     height: 30px; padding: 0 8px;

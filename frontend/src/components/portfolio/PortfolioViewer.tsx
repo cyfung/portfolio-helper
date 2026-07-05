@@ -71,6 +71,12 @@ import {
   hasImportDependencyPreview,
   type ImportDependencyPreview,
 } from '@/lib/configImportExport'
+import {
+  getPortfolioColumnMode,
+  normalizePortfolioColumnModes,
+  portfolioModeHasMoreInfo,
+  portfolioModeHasRebal,
+} from '@/lib/portfolioColumns'
 
 type BackupImportPayload = {
   stocks?: Array<any> | null
@@ -89,13 +95,14 @@ export default function PortfolioViewer() {
   const store = usePortfolioStore()
   const {
     portfolioId, cash, lastPortfolioTotals,
-    currentDisplayCurrency, moreInfoVisible, rebalVisible,
+    currentDisplayCurrency, portfolioColumnModeId,
     groupViewActive, editModeActive, afterHoursGray,
     portfolioContentScale,
     allPortfolios, appConfig, lastStockDisplay, fxRates,
     rebalTargetUsd, marginTargetUsd, allocReduceMode,
-    setMoreInfoVisible, setRebalVisible, setGroupViewActive, setEditModeActive,
+    setGroupViewActive, setEditModeActive,
     setPortfolioContentScale,
+    setPortfolioColumnModeId,
   } = store
 
   const [backupOpen, setBackupOpen]           = useState(false)
@@ -227,6 +234,10 @@ export default function PortfolioViewer() {
   }
 
   const displayCurrencies = appConfig?.displayCurrencies ?? ['USD']
+  const portfolioColumnModes = normalizePortfolioColumnModes(appConfig?.portfolioColumnModes)
+  const activeColumnMode = getPortfolioColumnMode(portfolioColumnModes, portfolioColumnModeId)
+  const modeHasMoreInfo = portfolioModeHasMoreInfo(activeColumnMode.columns)
+  const modeHasRebal = portfolioModeHasRebal(activeColumnMode.columns)
 
   // ── TWS sync ──────────────────────────────────────────────────────────────
   const handleTwsSync = useCallback(async () => {
@@ -412,13 +423,34 @@ export default function PortfolioViewer() {
     )
   }
 
+  function renderColumnModeControl() {
+    if (portfolioColumnModes.length === 1) {
+      return <span className="portfolio-column-mode-pill">{activeColumnMode.name}</span>
+    }
+    return (
+      <button
+        className="portfolio-column-mode-toggle active"
+        type="button"
+        title="Switch portfolio column mode"
+        onClick={() => {
+          const idx = portfolioColumnModes.findIndex(mode => mode.id === activeColumnMode.id)
+          const next = portfolioColumnModes[(idx + 1) % portfolioColumnModes.length]
+          setPortfolioColumnModeId(next.id)
+        }}
+      >
+        <span className="currency-toggle-icon">⇄</span>
+        <span className="toggle-label">{activeColumnMode.name}</span>
+      </button>
+    )
+  }
+
   const contentScalePct = Math.round(portfolioContentScale * 100)
   const contentScaleStyle = {
     '--portfolio-content-scale': String(portfolioContentScale),
   } as CSSProperties
 
   return (
-    <div className={`container${afterHoursGray ? ' after-hours-gray' : ''}${moreInfoVisible ? ' more-info-visible' : ''}${rebalVisible ? ' rebalancing-visible' : ''}${editModeActive ? ' editing-active' : ''}`}>
+    <div className={`container${afterHoursGray ? ' after-hours-gray' : ''}${modeHasMoreInfo ? ' more-info-visible' : ''}${modeHasRebal ? ' rebalancing-visible' : ''}${editModeActive ? ' editing-active' : ''}`}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="portfolio-header">
         <div className="header-title-group">
@@ -464,13 +496,7 @@ export default function PortfolioViewer() {
             </button>
           )}
 
-          <button
-            className={`more-info-toggle h-btn subtle${moreInfoVisible ? ' active-edit' : ''}`}
-            id="more-info-toggle"
-            type="button"
-            title="Show/Hide Last NAV, Last, and Mkt Val columns"
-            onClick={() => setMoreInfoVisible(!moreInfoVisible)}
-          >More Info</button>
+          {renderColumnModeControl()}
 
           <button
             className={`groups-toggle h-btn subtle${groupViewActive ? ' active-edit' : ''}`}
@@ -479,15 +505,6 @@ export default function PortfolioViewer() {
             title="Switch between stock view and group view"
             onClick={() => setGroupViewActive(!groupViewActive)}
           >Groups</button>
-
-          <button
-            className={`rebal-toggle h-btn subtle${rebalVisible ? ' active-edit' : ''}`}
-            id="rebal-toggle"
-            type="button"
-            title="Show/Hide Weight and Rebalancing columns"
-            aria-label="Toggle rebalancing columns"
-            onClick={() => setRebalVisible(!rebalVisible)}
-          >Rebal</button>
 
           {/* Right group — data actions */}
           <div className="header-buttons-right">

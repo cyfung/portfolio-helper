@@ -1,6 +1,6 @@
 // ── ConfigPage.tsx — App Settings (full React port, no vanilla JS) ────────────
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 import { showConfirm } from '@/components/ConfirmDialog'
@@ -11,6 +11,15 @@ import {
   parseHybridStrategies,
   type HybridAllocStrategyConfig,
 } from '@/lib/allocStrategies'
+import {
+  DEFAULT_PORTFOLIO_COLUMN_MODES,
+  PORTFOLIO_STOCK_COLUMNS,
+  isPortfolioColumnId,
+  normalizePortfolioColumnModes,
+  serializePortfolioColumnModes,
+  type PortfolioColumnId,
+  type PortfolioColumnMode,
+} from '@/lib/portfolioColumns'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,6 +36,7 @@ interface ConfigValues {
   ibkrRateInterval?: string
   dividendSafeLagDays?: string
   hybridAllocStrategies?: string
+  portfolioColumnModes?: string
   updateCheckInterval?: string
   autoUpdate?: string
   _version?: string
@@ -357,6 +367,13 @@ export default function ConfigPage() {
   const [hybridStrategies, setHybridStrategies] = useState<HybridAllocStrategyRow[]>(
     DEFAULT_HYBRID_ALLOC_STRATEGIES.map(strategyToRow)
   )
+  const [columnModes, setColumnModes] = useState<PortfolioColumnMode[]>(DEFAULT_PORTFOLIO_COLUMN_MODES)
+  const [editingColumnModeId, setEditingColumnModeId] = useState<string | null>(null)
+  const [columnDropTarget, setColumnDropTarget] = useState<{
+    modeIndex: number
+    target: 'used' | 'unused'
+    beforeId?: PortfolioColumnId | null
+  } | null>(null)
   const saveTimers = useRef<Map<string, number>>(new Map())
   const statusTimer = useRef<number>(0)
   const downloadPollRef = useRef<number | null>(null)
@@ -371,6 +388,9 @@ export default function ConfigPage() {
       .then((data: ConfigValues) => {
         setCfg(data)
         setHybridStrategies(parseHybridStrategies(data.hybridAllocStrategies).map(strategyToRow))
+        const modes = normalizePortfolioColumnModes(data.portfolioColumnModes)
+        setColumnModes(modes)
+        setEditingColumnModeId(null)
         setLoaded(true)
         setHasUpdate(data._hasUpdate === 'true')
         setLatestVersion(data._latestVersion ?? '')
@@ -473,6 +493,250 @@ export default function ConfigPage() {
     saveHybridStrategies(rows)
   }
 
+  function nextColumnModeId(rows: PortfolioColumnMode[]) {
+    const used = new Set(rows.map(row => row.id))
+    let index = rows.length + 1
+    let id = `mode-${index}`
+    while (used.has(id)) {
+      index += 1
+      id = `mode-${index}`
+    }
+    return id
+  }
+
+  function commitColumnModes(rows: PortfolioColumnMode[]) {
+    const normalized = normalizePortfolioColumnModes(rows)
+    const value = serializePortfolioColumnModes(normalized)
+    setColumnModes(normalized)
+    setCfg(prev => ({ ...prev, portfolioColumnModes: value }))
+    if (!normalized.some(mode => mode.id === editingColumnModeId)) {
+      setEditingColumnModeId(null)
+    }
+    saveField('portfolioColumnModes', value)
+  }
+
+  function updateColumnMode(index: number, patch: Partial<PortfolioColumnMode>) {
+    commitColumnModes(columnModes.map((mode, i) => i === index ? { ...mode, ...patch } : mode))
+  }
+
+  function addColumnMode() {
+    const id = nextColumnModeId(columnModes)
+    const next = [
+      ...columnModes,
+      { id, name: `Mode ${columnModes.length + 1}`, columns: [...DEFAULT_PORTFOLIO_COLUMN_MODES[0].columns] },
+    ]
+    commitColumnModes(next)
+  }
+
+  function removeColumnMode(index: number) {
+    if (columnModes.length <= 1) return
+    commitColumnModes(columnModes.filter((_, i) => i !== index))
+  }
+
+  function restoreColumnModeDefaults() {
+    setEditingColumnModeId(null)
+    commitColumnModes(DEFAULT_PORTFOLIO_COLUMN_MODES)
+  }
+
+  function onColumnDragStart(e: DragEvent, modeIndex: number, columnId: PortfolioColumnId, source: 'used' | 'unused') {
+    e.dataTransfer.setData('application/x-portfolio-column', JSON.stringify({ modeIndex, columnId, source }))
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onColumnDragEnd() {
+    setColumnDropTarget(null)
+  }
+
+  function readColumnDrag(e: DragEvent): { modeIndex: number; columnId: PortfolioColumnId } | null {
+    const raw = e.dataTransfer.getData('application/x-portfolio-column')
+    if (!raw) return null
+    try {
+      const parsed = JSON.parse(raw)
+      if (typeof parsed.modeIndex !== 'number' || !isPortfolioColumnId(parsed.columnId)) return null
+      return { modeIndex: parsed.modeIndex, columnId: parsed.columnId }
+    } catch (_) {
+      return null
+    }
+  }
+
+  function moveColumn(modeIndex: number, columnId: PortfolioColumnId, target: 'used' | 'unused', beforeId?: PortfolioColumnId) {
+    if (target === 'used' && beforeId === columnId) return
+    const next = columnModes.map((mode, i) => {
+      if (i !== modeIndex) return mode
+      const without = mode.columns.filter(id => id !== columnId)
+      if (target === 'unused') return { ...mode, columns: without }
+      const insertAt = beforeId ? without.indexOf(beforeId) : -1
+      const columns = [...without]
+      columns.splice(insertAt >= 0 ? insertAt : columns.length, 0, columnId)
+      return { ...mode, columns }
+    })
+    commitColumnModes(next)
+  }
+
+  function handleColumnDrop(e: DragEvent, modeIndex: number, target: 'used' | 'unused', beforeId?: PortfolioColumnId) {
+    e.preventDefault()
+    e.stopPropagation()
+    const data = readColumnDrag(e)
+    setColumnDropTarget(null)
+    if (!data || data.modeIndex !== modeIndex) return
+    moveColumn(modeIndex, data.columnId, target, beforeId)
+  }
+
+  function markColumnDropTarget(e: DragEvent, modeIndex: number, target: 'used' | 'unused', beforeId?: PortfolioColumnId | null) {
+    e.preventDefault()
+    e.stopPropagation()
+    setColumnDropTarget({ modeIndex, target, beforeId: beforeId ?? null })
+  }
+
+  function beforeIdAfterColumn(modeIndex: number, columnId: PortfolioColumnId): PortfolioColumnId | undefined {
+    const mode = columnModes[modeIndex]
+    const index = mode?.columns.indexOf(columnId) ?? -1
+    return index >= 0 ? mode.columns[index + 1] : undefined
+  }
+
+  function beforeIdFromPillPointer(e: DragEvent, modeIndex: number, columnId: PortfolioColumnId): PortfolioColumnId | undefined {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    return e.clientX < rect.left + rect.width / 2
+      ? columnId
+      : beforeIdAfterColumn(modeIndex, columnId)
+  }
+
+  function beforeIdFromDropzonePointer(e: DragEvent): PortfolioColumnId | undefined {
+    const target = e.target as Element | null
+    const pill = target?.closest('.portfolio-column-pill[data-column-id]') as HTMLElement | null
+    if (!pill) return undefined
+    const columnId = pill.dataset.columnId
+    const modeIndex = Number(pill.dataset.modeIndex)
+    if (!isPortfolioColumnId(columnId) || !Number.isFinite(modeIndex)) return undefined
+    const rect = pill.getBoundingClientRect()
+    return e.clientX < rect.left + rect.width / 2
+      ? columnId
+      : beforeIdAfterColumn(modeIndex, columnId)
+  }
+
+  function markColumnPillDropTarget(e: DragEvent, modeIndex: number, columnId: PortfolioColumnId) {
+    markColumnDropTarget(e, modeIndex, 'used', beforeIdFromPillPointer(e, modeIndex, columnId) ?? null)
+  }
+
+  function handleColumnPillDrop(e: DragEvent, modeIndex: number, columnId: PortfolioColumnId) {
+    handleColumnDrop(e, modeIndex, 'used', beforeIdFromPillPointer(e, modeIndex, columnId))
+  }
+
+  function markColumnDropzoneTarget(e: DragEvent, modeIndex: number) {
+    markColumnDropTarget(e, modeIndex, 'used', beforeIdFromDropzonePointer(e) ?? null)
+  }
+
+  function handleColumnDropzoneDrop(e: DragEvent, modeIndex: number) {
+    handleColumnDrop(e, modeIndex, 'used', beforeIdFromDropzonePointer(e))
+  }
+
+  function isColumnDropTarget(modeIndex: number, target: 'used' | 'unused', beforeId?: PortfolioColumnId | null) {
+    return columnDropTarget?.modeIndex === modeIndex
+      && columnDropTarget.target === target
+      && (columnDropTarget.beforeId ?? null) === (beforeId ?? null)
+  }
+
+  function renderColumnPill(modeIndex: number, columnId: PortfolioColumnId, source: 'used' | 'unused') {
+    const nextColumnId = source === 'used' ? beforeIdAfterColumn(modeIndex, columnId) : undefined
+    const dropBefore = source === 'used' && isColumnDropTarget(modeIndex, 'used', columnId)
+    const dropAfter = source === 'used' && !nextColumnId && isColumnDropTarget(modeIndex, 'used', null)
+    return (
+      <button
+        key={columnId}
+        type="button"
+        className={`portfolio-column-pill${dropBefore ? ' drop-before' : ''}${dropAfter ? ' drop-after' : ''}`}
+        data-column-id={columnId}
+        data-mode-index={modeIndex}
+        draggable
+        onDragStart={e => onColumnDragStart(e, modeIndex, columnId, source)}
+        onDragEnd={onColumnDragEnd}
+        onDragEnter={source === 'used' ? e => markColumnPillDropTarget(e, modeIndex, columnId) : undefined}
+        onDragOver={source === 'used' ? e => markColumnPillDropTarget(e, modeIndex, columnId) : undefined}
+        onDrop={source === 'used' ? e => handleColumnPillDrop(e, modeIndex, columnId) : undefined}
+      >
+        {PORTFOLIO_STOCK_COLUMNS.find(column => column.id === columnId)?.label ?? columnId}
+      </button>
+    )
+  }
+
+  function renderColumnModeEditor() {
+    const editingIndex = columnModes.findIndex(mode => mode.id === editingColumnModeId)
+    const editingMode = editingIndex >= 0 ? columnModes[editingIndex] : null
+    const usedSet = new Set(editingMode?.columns ?? [])
+    const unusedColumns = PORTFOLIO_STOCK_COLUMNS.map(column => column.id).filter(id => !usedSet.has(id))
+
+    return (
+      <div className="portfolio-column-modes-config">
+        <table className="portfolio-config-table column-mode-table">
+          <thead>
+            <tr><th>Mode Name</th><th>Columns</th><th /></tr>
+          </thead>
+          <tbody>
+            {columnModes.map((mode, index) => (
+              <tr key={mode.id}>
+                <td>
+                  <input
+                    type="text"
+                    value={mode.name}
+                    onChange={e => updateColumnMode(index, { name: e.target.value })}
+                  />
+                </td>
+                <td>{mode.columns.length} shown</td>
+                <td className="portfolio-config-table-actions-col">
+                  <button type="button" className="config-restore-btn column-mode-edit-btn" onClick={() => setEditingColumnModeId(mode.id)}>Edit</button>
+                  <button type="button" className="management-table-remove-btn" disabled={columnModes.length <= 1} onClick={() => removeColumnMode(index)}>Remove</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="add-portfolio-form">
+          <button type="button" className="config-restore-btn" onClick={addColumnMode}>Add Mode</button>
+          <button type="button" className="config-restore-btn" onClick={restoreColumnModeDefaults}>Restore Defaults</button>
+        </div>
+
+        {editingMode && (
+          <div className="column-mode-overlay" role="dialog" aria-modal="true" onMouseDown={() => setEditingColumnModeId(null)}>
+            <div className="column-mode-dialog" onMouseDown={e => e.stopPropagation()}>
+              <div className="column-mode-editor-header">
+                <span>Editing {editingMode.name}</span>
+                <button type="button" className="ticker-config-close" onClick={() => setEditingColumnModeId(null)}>x</button>
+              </div>
+              <div className="column-pill-lists">
+                <div className="column-pill-list">
+                  <span className="column-pill-list-title">Unused Columns</span>
+                  <div
+                    className={`column-pill-dropzone${isColumnDropTarget(editingIndex, 'unused') ? ' drop-active' : ''}`}
+                    onDragEnter={e => markColumnDropTarget(e, editingIndex, 'unused')}
+                    onDragOver={e => markColumnDropTarget(e, editingIndex, 'unused')}
+                    onDrop={e => handleColumnDrop(e, editingIndex, 'unused')}
+                  >
+                    {unusedColumns.map(columnId => renderColumnPill(editingIndex, columnId, 'unused'))}
+                  </div>
+                </div>
+                <div className="column-pill-list">
+                  <span className="column-pill-list-title">In Use</span>
+                  <div
+                    className="column-pill-dropzone in-use"
+                    onDragEnter={e => markColumnDropzoneTarget(e, editingIndex)}
+                    onDragOver={e => markColumnDropzoneTarget(e, editingIndex)}
+                    onDrop={e => handleColumnDropzoneDrop(e, editingIndex)}
+                  >
+                    {editingMode.columns.map(columnId => renderColumnPill(editingIndex, columnId, 'used'))}
+                  </div>
+                </div>
+              </div>
+              <div className="column-mode-dialog-actions">
+                <button type="button" className="config-save-btn" onClick={() => setEditingColumnModeId(null)}>Done</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   function refreshIbkrConfig(slug: string) {
     fetch(`/api/portfolio/${slug}/ibkr-config`)
       .then(r => r.json())
@@ -538,6 +802,7 @@ export default function ConfigPage() {
     exchangeSuffixes: 'SBF=.PA,LSEETF=.L', twsHost: '127.0.0.1', twsPort: '7496',
     ibkrRateInterval: '3600', autoUpdate: 'true', updateCheckInterval: '86400',
     hybridAllocStrategies: '',
+    portfolioColumnModes: '',
   }
 
   async function handleRestoreDefaults() {
@@ -701,6 +966,17 @@ export default function ConfigPage() {
               onChange={e => saveField('afterHoursGray', String(e.target.checked))}
             />
           </ConfigField>
+
+          <div className="config-field column-modes-field">
+            <div className="config-field-label-row">
+              <span>Portfolio Column Modes</span>
+              <span className="config-badge config-badge-live">live</span>
+            </div>
+            <span className="config-field-description">Configure the stock table modes shown by the portfolio header mode button.</span>
+            <div className="config-field-input-col column-modes-input-col">
+              {renderColumnModeEditor()}
+            </div>
+          </div>
 
         </ConfigSection>
 
