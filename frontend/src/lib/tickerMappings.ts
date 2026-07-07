@@ -13,13 +13,19 @@ export interface TickerMapping {
   id: string
   from: string
   to: string
+  mode: 'prepend' | 'replaceAll'
+  applyTo: 'expression' | 'ticker'
 }
 
 export interface TickerMappingSet {
   id: string
   name: string
-  prependOnly: boolean
   mappings: TickerMapping[]
+  updatedAt?: string
+  sourceSavedSetId?: string
+  sourceSavedSetName?: string
+  sourceSavedSetHash?: string
+  sourceSavedSetUpdatedAt?: string
 }
 
 export interface TickerMappingSettings {
@@ -41,8 +47,7 @@ export interface TickerMappingResult<T> {
 const STORAGE_KEY = 'ticker-mapping-settings'
 export const TICKER_MAPPINGS_CHANGED_EVENT = 'ticker-mappings-changed'
 const ACTIVE_MAPPING_SET_DEFAULTS: TickerMappingSet[] = [
-  { id: 'set-1', name: 'Mapping Set 1', prependOnly: true, mappings: [] },
-  { id: 'set-2', name: 'Mapping Set 2', prependOnly: true, mappings: [] },
+  { id: 'set-1', name: 'Mapping Set 1', mappings: [] },
 ]
 
 export const DEFAULT_TICKER_MAPPING_SETTINGS: TickerMappingSettings = {
@@ -70,7 +75,9 @@ function normalizeTarget(value: string) {
 function normalizeMapping(mapping: Partial<TickerMapping>): TickerMapping | null {
   const from = normalizeSource(String(mapping.from ?? ''))
   const to = normalizeTarget(String(mapping.to ?? ''))
-  return { id: String(mapping.id || newMappingId()), from, to }
+  const mode = mapping.mode === 'replaceAll' ? 'replaceAll' : 'prepend'
+  const applyTo = mapping.applyTo === 'ticker' ? 'ticker' : 'expression'
+  return { id: String(mapping.id || newMappingId()), from, to, mode, applyTo }
 }
 
 function normalizeSet(
@@ -86,15 +93,16 @@ function normalizeSet(
   const mappings = Array.isArray(raw.mappings)
     ? raw.mappings.map(normalizeMapping).filter((m): m is TickerMapping => !!m)
     : []
-  const prependOnly = typeof raw.prependOnly === 'boolean'
-    ? raw.prependOnly
-    : fallback?.prependOnly ?? true
 
   return {
     id,
     name: String(raw.name || fallback?.name || `Mapping Set ${idx + 1}`).trim() || fallback?.name || `Mapping Set ${idx + 1}`,
-    prependOnly,
     mappings,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : fallback?.updatedAt,
+    sourceSavedSetId: typeof raw.sourceSavedSetId === 'string' ? raw.sourceSavedSetId : fallback?.sourceSavedSetId,
+    sourceSavedSetName: typeof raw.sourceSavedSetName === 'string' ? raw.sourceSavedSetName : fallback?.sourceSavedSetName,
+    sourceSavedSetHash: typeof raw.sourceSavedSetHash === 'string' ? raw.sourceSavedSetHash : fallback?.sourceSavedSetHash,
+    sourceSavedSetUpdatedAt: typeof raw.sourceSavedSetUpdatedAt === 'string' ? raw.sourceSavedSetUpdatedAt : fallback?.sourceSavedSetUpdatedAt,
   }
 }
 
@@ -108,7 +116,7 @@ export function normalizeTickerMappingSettings(raw: unknown): TickerMappingSetti
   ))
   const savedSets = [...rawSavedSets, ...rawSets.slice(ACTIVE_MAPPING_SET_DEFAULTS.length)]
     .map((set, idx) => normalizeSet(set as Partial<TickerMappingSet>, idx, usedIds))
-  const selectedSetId = [...sets, ...savedSets].some(set => set.id === obj.selectedSetId) ? String(obj.selectedSetId) : ''
+  const selectedSetId = savedSets.some(set => set.id === obj.selectedSetId) ? String(obj.selectedSetId) : ''
   return { selectedSetId, sets, savedSets }
 }
 
@@ -136,11 +144,44 @@ export function mappingSetSummary(set: TickerMappingSet | null | undefined) {
 }
 
 export function selectedTickerMappingSet(settings: TickerMappingSettings) {
-  return [...settings.sets, ...settings.savedSets].find(set => set.id === settings.selectedSetId) ?? null
+  return settings.savedSets.find(set => set.id === settings.selectedSetId) ?? null
 }
 
 export function usableTickerMappings(mappings: TickerMapping[]) {
   return mappings.filter(mapping => mapping.from && mapping.to && !/\s/.test(mapping.from))
+}
+
+export function tickerMappingSetContent(set: Pick<TickerMappingSet, 'name' | 'mappings'>) {
+  return {
+    name: set.name.trim(),
+    mappings: usableTickerMappings(set.mappings).map(mapping => ({
+      from: mapping.from,
+      to: mapping.to,
+      mode: mapping.mode,
+      applyTo: mapping.applyTo,
+    })),
+  }
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+export function tickerMappingSetHash(set: Pick<TickerMappingSet, 'name' | 'mappings'>) {
+  const text = stableStringify(tickerMappingSetContent(set))
+  let hash = 2166136261
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(36)
 }
 
 export function normalizeTickerMappingSets(value: unknown): TickerMappingSet[] {
@@ -176,10 +217,6 @@ export function mergeSavedTickerMappings(
   })
 }
 
-function hasModifierTokens(raw: string) {
-  return tokenizeDefinition(raw).some(isModifierToken)
-}
-
 function formatMultiplier(value: number) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10000000000) / 10000000000)
 }
@@ -213,8 +250,41 @@ function scaleMappedDefinition(target: string, multiplier: number) {
   return output
 }
 
-function letfModifierReplacementWarning(source: string, mapping: TickerMapping, mapped: string) {
-  return `Ticker mapping warning: replacing ${mapping.from} inside LETF expression. Example: ${source} with ${mapping.from} -> ${mapping.to} becomes ${mapped}. Replacement modifiers apply to the whole generated LETF expression, and duplicated modifiers are resolved by the last modifier.`
+function modifierKind(token: string) {
+  const upper = token.toUpperCase()
+  if (upper.startsWith('S=')) return 'S'
+  if (upper.startsWith('R=')) return 'R'
+  if (upper.startsWith('E=')) return 'E'
+  if (upper.startsWith('V=') || upper.startsWith('VOL=')) return 'V'
+  return null
+}
+
+function modifierKinds(raw: string) {
+  const kinds = new Set<string>()
+  tokenizeDefinition(raw).forEach(token => {
+    const kind = modifierKind(token)
+    if (kind) kinds.add(kind)
+  })
+  return kinds
+}
+
+function letfTokensContainMapping(tokens: string[], mapping: TickerMapping) {
+  for (let i = 0; i < tokens.length;) {
+    const token = tokens[i]
+    if (isModifierToken(token)) {
+      i += 1
+      continue
+    }
+    const multiplier = parseFloat(token)
+    if (Number.isFinite(multiplier) && i + 1 < tokens.length && !isModifierToken(tokens[i + 1])) {
+      if (tokens[i + 1].toUpperCase() === mapping.from) return true
+      i += 2
+      continue
+    }
+    if (!Number.isFinite(multiplier) && token.toUpperCase() === mapping.from) return true
+    i += 1
+  }
+  return false
 }
 
 function applySingleTickerMappingWithWarnings(ticker: string, mapping: TickerMapping): TickerMappingResult<string> {
@@ -226,11 +296,17 @@ function applySingleTickerMappingWithWarnings(ticker: string, mapping: TickerMap
 
   const tokens = tokenizeDefinition(rawTicker)
   const output: string[] = []
+  const replacementModifiers = modifierKinds(mapping.to)
+  const willReplaceAnyComponent = letfTokensContainMapping(tokens, mapping)
+  const applyToFullExpression = mapping.applyTo !== 'ticker'
+  const willReplaceComponent = applyToFullExpression && replacementModifiers.size > 0 && willReplaceAnyComponent
   let replacedComponent = false
   for (let i = 0; i < tokens.length;) {
     const token = tokens[i]
     if (isModifierToken(token)) {
-      output.push(token)
+      const kind = modifierKind(token)
+      if (!willReplaceAnyComponent) output.push(token)
+      else if (applyToFullExpression && (!willReplaceComponent || !kind || !replacementModifiers.has(kind))) output.push(token)
       i += 1
       continue
     }
@@ -263,9 +339,7 @@ function applySingleTickerMappingWithWarnings(ticker: string, mapping: TickerMap
   const mapped = output.join(' ')
   return {
     value: mapped,
-    warnings: replacedComponent && hasModifierTokens(mapping.to)
-      ? [letfModifierReplacementWarning(rawTicker, mapping, mapped)]
-      : [],
+    warnings: [],
   }
 }
 
@@ -274,7 +348,7 @@ function applySingleTickerMapping(ticker: string, mapping: TickerMapping) {
 }
 
 function normalizeMappedTickerSegment(ticker: string) {
-  return applySingleTickerMapping(ticker, { id: '', from: '__NO_TICKER_MAPPING__', to: '' })
+  return applySingleTickerMapping(ticker, { id: '', from: '__NO_TICKER_MAPPING__', to: '', mode: 'prepend', applyTo: 'expression' })
 }
 
 function formatSwapLeg(ticker: string, weight: number) {
@@ -304,18 +378,17 @@ function normalizeMappedTickerExpression(ticker: string): string {
 function mapTickerExpressionForSingleMapping(
   ticker: string,
   mapping: TickerMapping,
-  prependOnly: boolean,
 ): TickerMappingResult<string> {
   const rawTicker = ticker.trim()
   if (!rawTicker) return { value: '', warnings: [] }
 
   const swap = parseSwapExpression(rawTicker)
   if (swap) {
-    const from = mapTickerExpressionForSingleMapping(swap.from, mapping, prependOnly)
+    const from = mapTickerExpressionForSingleMapping(swap.from, mapping)
     if (swap.legs) {
       const mappedLegs = swap.legs.map(leg => ({
         ...leg,
-        mapped: mapTickerExpressionForSingleMapping(leg.ticker, mapping, prependOnly),
+        mapped: mapTickerExpressionForSingleMapping(leg.ticker, mapping),
       }))
       return {
         value: `${from.value} > ${mappedLegs.map(leg => formatSwapLeg(leg.mapped.value, leg.weight)).join(' + ')}`,
@@ -323,7 +396,7 @@ function mapTickerExpressionForSingleMapping(
       }
     }
 
-    const to = mapTickerExpressionForSingleMapping(swap.to, mapping, prependOnly)
+    const to = mapTickerExpressionForSingleMapping(swap.to, mapping)
     return {
       value: formatSwapExpression(from.value, to.value, swap.factor),
       warnings: [...from.warnings, ...to.warnings],
@@ -332,7 +405,7 @@ function mapTickerExpressionForSingleMapping(
 
   const chain = splitTickerChain(rawTicker)
   if (chain.length > 1) {
-    if (prependOnly) {
+    if (mapping.mode !== 'replaceAll') {
       const lastSegment = chain[chain.length - 1]
       const mapped = applySingleTickerMappingWithWarnings(lastSegment, mapping)
       const normalizedLastSegment = normalizeMappedTickerSegment(lastSegment)
@@ -354,7 +427,7 @@ function mapTickerExpressionForSingleMapping(
     return { value: mappedSegments.join(` ${TICKER_CHAIN_SEPARATOR} `), warnings: [...warnings] }
   }
 
-  if (prependOnly) {
+  if (mapping.mode !== 'replaceAll') {
     const mapped = applySingleTickerMappingWithWarnings(rawTicker, mapping)
     const normalized = normalizeMappedTickerSegment(rawTicker)
     if (mapped.value === normalized) return { value: normalized, warnings: [] }
@@ -378,7 +451,7 @@ export function mapTickerExpressionWithWarnings(
   const warnings = new Set<string>()
   const value = mappings.reduce(
     (current, mapping) => {
-      const mapped = mapTickerExpressionForSingleMapping(current, mapping, mappingSet?.prependOnly === true)
+      const mapped = mapTickerExpressionForSingleMapping(current, mapping)
       mapped.warnings.forEach(warning => warnings.add(warning))
       return mapped.value
     },

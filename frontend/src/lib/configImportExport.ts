@@ -25,11 +25,13 @@ export interface SavedStrategyExport {
 export interface SavedTickerMappingExport {
   id: string
   name: string
-  prependOnly: boolean
+  updatedAt?: string
   mappings: {
     id: string
     from: string
     to: string
+    mode: 'prepend' | 'replaceAll'
+    applyTo: 'expression' | 'ticker'
   }[]
 }
 
@@ -62,7 +64,7 @@ export interface ImportDependencyPreview {
   savedTickerMappings: {
     originalName: string
     name: string
-    prependOnly: boolean
+    updatedAt?: string
     mappings: TickerMappingSet['mappings']
     action: ImportDependencyAction
     enabled?: boolean
@@ -107,10 +109,9 @@ function sameJsonContent(a: unknown, b: unknown) {
   return stableStringify(a) === stableStringify(b)
 }
 
-function mappingContent(set: Pick<TickerMappingSet, 'mappings'> & Partial<Pick<TickerMappingSet, 'prependOnly'>>) {
+function mappingContent(set: Pick<TickerMappingSet, 'mappings'>) {
   return {
-    prependOnly: 'prependOnly' in set ? set.prependOnly !== false : true,
-    mappings: set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to })),
+    mappings: set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to, mode: mapping.mode, applyTo: mapping.applyTo })),
   }
 }
 
@@ -397,7 +398,7 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
       .map(set => ({
         originalName: set.name,
         name: set.name,
-        prependOnly: set.prependOnly,
+        updatedAt: set.updatedAt,
         mappings: set.mappings,
         action: currentMappingByName.has(set.name.trim().toLowerCase()) ? 'replace' as const : 'add' as const,
       }))
@@ -513,7 +514,7 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
     saveTickerMappingSettings(mergeSavedTickerMappings(currentSettings, enabledSavedTickerMappings.map(set => ({
       id: '',
       name: set.name.trim(),
-      prependOnly: set.prependOnly,
+      updatedAt: set.updatedAt ?? new Date().toISOString(),
       mappings: set.mappings,
     }))))
     notifyTickerMappingsChanged()

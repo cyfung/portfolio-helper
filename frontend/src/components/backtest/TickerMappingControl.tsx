@@ -7,6 +7,7 @@ import {
   mappingSetSummary,
   saveTickerMappingSettings,
   selectedTickerMappingSet,
+  tickerMappingSetHash,
   usableTickerMappings,
   type TickerMapping,
   type TickerMappingSettings,
@@ -43,10 +44,27 @@ function cloneMappings(mappings: TickerMapping[]) {
 
 function cloneMappingSet(set: TickerMappingSet) {
   return {
-    ...set,
     id: newMappingSetId(),
-    prependOnly: set.prependOnly,
+    name: set.name,
+    updatedAt: set.updatedAt,
     mappings: cloneMappings(set.mappings),
+  }
+}
+
+function sourceMetadata(saved: TickerMappingSet) {
+  return {
+    sourceSavedSetId: saved.id,
+    sourceSavedSetName: saved.name,
+    sourceSavedSetHash: tickerMappingSetHash(saved),
+    sourceSavedSetUpdatedAt: saved.updatedAt,
+  }
+}
+
+function editableFromSaved(saved: TickerMappingSet, targetSetId: string): TickerMappingSet {
+  return {
+    ...cloneMappingSet(saved),
+    id: targetSetId,
+    ...sourceMetadata(saved),
   }
 }
 
@@ -122,7 +140,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     updateDraft({
       ...draft,
       sets: draft.sets.map(set => set.id === setId
-        ? { ...set, mappings: [...set.mappings, { id: newMappingId(), from: '', to: '' }] }
+        ? { ...set, mappings: [...set.mappings, { id: newMappingId(), from: '', to: '', mode: 'prepend', applyTo: 'expression' }] }
         : set
       ),
     })
@@ -193,9 +211,19 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     }
 
     const existing = draft.savedSets.find(saved => saved.name.trim().toLowerCase() === name.toLowerCase())
-    const savedSet = { ...cloneMappingSet({ ...set, name, mappings }), id: existing?.id ?? newMappingSetId() }
+    const savedSet: TickerMappingSet = {
+      id: existing?.id ?? newMappingSetId(),
+      name,
+      mappings: cloneMappings(mappings),
+      updatedAt: new Date().toISOString(),
+    }
     updateDraft({
       ...draft,
+      selectedSetId: savedSet.id,
+      sets: draft.sets.map(item => item.id === setId
+        ? { ...set, name, mappings: cloneMappings(mappings), ...sourceMetadata(savedSet) }
+        : item
+      ),
       savedSets: [
         ...draft.savedSets.filter(saved => saved.name.trim().toLowerCase() !== name.toLowerCase()),
         savedSet,
@@ -219,7 +247,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     updateDraft({
       ...draft,
       sets: draft.sets.map(set => set.id === targetSetId
-        ? { ...set, name: saved.name, prependOnly: saved.prependOnly, mappings: cloneMappings(saved.mappings) }
+        ? editableFromSaved(saved, targetSetId)
         : set
       ),
     })
@@ -227,6 +255,28 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
   }
 
   const selectedSet = selectedTickerMappingSet(value)
+  const editSet = draft.sets[0]
+  const hasSourceReference = !!editSet?.sourceSavedSetHash && (!!editSet.sourceSavedSetId || !!editSet.sourceSavedSetName)
+  const referencedSavedSet = editSet && hasSourceReference
+    ? draft.savedSets.find(set => set.id === editSet.sourceSavedSetId) ??
+      draft.savedSets.find(set => set.name.trim().toLowerCase() === editSet.sourceSavedSetName?.trim().toLowerCase())
+    : null
+  const editSetHash = editSet ? tickerMappingSetHash(editSet) : ''
+  const referenceHash = referencedSavedSet ? tickerMappingSetHash(referencedSavedSet) : ''
+  const referenceLost = !!editSet && (!hasSourceReference || !referencedSavedSet)
+  const referenceUpdated = hasSourceReference && !!referencedSavedSet && referenceHash !== editSet.sourceSavedSetHash
+  const localUnsaved = !!editSet && hasSourceReference && editSetHash !== editSet.sourceSavedSetHash
+  const editSetStatus = referenceLost && localUnsaved
+    ? 'Unsaved changes + reference lost'
+    : referenceLost
+      ? 'Reference lost'
+      : referenceUpdated && localUnsaved
+        ? 'Unsaved changes + saved copy updated'
+        : referenceUpdated
+          ? 'Saved copy updated'
+          : localUnsaved
+            ? 'Unsaved changes'
+            : 'Saved'
 
   return (
     <>
@@ -239,11 +289,6 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             onChange={e => selectSet(e.target.value)}
           >
             <option value="">None</option>
-            <optgroup label="Active">
-              {value.sets.map(set => (
-                <option key={set.id} value={set.id}>{set.name} ({mappingSetSummary(set)})</option>
-              ))}
-            </optgroup>
             {value.savedSets.length > 0 && (
               <optgroup label="Saved">
                 {value.savedSets.map(set => (
@@ -289,6 +334,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                       className="saved-portfolio-chip ticker-mapping-saved-chip"
                       draggable
                       title={`${savedSet.name} (${mappingSetSummary(savedSet)})`}
+                      onClick={() => editSet && loadSavedSetIntoActive(savedSet.id, editSet.id)}
                       onDragStart={e => {
                         e.dataTransfer.setData('application/x-ticker-mapping-set', savedSet.id)
                         e.dataTransfer.effectAllowed = 'copy'
@@ -314,7 +360,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             </div>
 
             <div className="ticker-mapping-editor-grid">
-              {draft.sets.map(set => {
+              {editSet ? [editSet].map(set => {
                 return (
                   <section
                     className={`ticker-mapping-editor-set${dragOverSetId === set.id ? ' drag-over' : ''}`}
@@ -349,14 +395,9 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                           onChange={e => updateSet(set.id, { name: e.target.value })}
                         />
                       </label>
-                      <label className="ticker-mapping-set-prepend">
-                        <input
-                          type="checkbox"
-                          checked={set.prependOnly}
-                          onChange={e => updateSet(set.id, { prependOnly: e.target.checked })}
-                        />
-                        <span>Prepend only</span>
-                      </label>
+                      <span className={`ticker-mapping-save-state${localUnsaved ? ' unsaved' : ''}${referenceUpdated ? ' reference-updated' : ''}${referenceLost ? ' reference-lost' : ''}`}>
+                        {editSetStatus}
+                      </span>
                       <div className="ticker-mapping-set-actions">
                         <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id)}>+ Add Mapping</button>
                         <button
@@ -427,6 +468,24 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                             <GripVertical size={14} />
                           </button>
                           <span className="ticker-mapping-row-order">{mappingIndex + 1}</span>
+                          <select
+                            className="ticker-mapping-row-mode"
+                            value={mapping.mode}
+                            aria-label="Mapping mode"
+                            onChange={e => updateMapping(set.id, mapping.id, { mode: e.target.value === 'replaceAll' ? 'replaceAll' : 'prepend' })}
+                          >
+                            <option value="prepend">Add Chain Entry</option>
+                            <option value="replaceAll">Replace All</option>
+                          </select>
+                          <select
+                            className="ticker-mapping-row-apply-to"
+                            value={mapping.applyTo}
+                            aria-label="Apply mapping to"
+                            onChange={e => updateMapping(set.id, mapping.id, { applyTo: e.target.value === 'ticker' ? 'ticker' : 'expression' })}
+                          >
+                            <option value="expression">Full Expression</option>
+                            <option value="ticker">Ticker Only</option>
+                          </select>
                           <input
                             value={mapping.from}
                             placeholder="CTAP"
@@ -456,7 +515,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                     </div>
                   </section>
                 )
-              })}
+              }) : null}
             </div>
 
             {error && <div className="ticker-config-error">{error}</div>}
