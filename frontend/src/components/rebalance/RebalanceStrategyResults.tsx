@@ -64,6 +64,20 @@ function marginChartData(
   return chartData.marginData
 }
 
+function hasStrictlyPositiveSeries(chartData: ReturnType<typeof useRebalanceChartData>['mainData']) {
+  if (chartData.datasets.length === 0) return false
+  let hasValue = false
+  for (const row of chartData.rows) {
+    for (const dataset of chartData.datasets) {
+      const value = row[dataset.dataKey]
+      if (value == null) continue
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false
+      hasValue = true
+    }
+  }
+  return hasValue
+}
+
 function ActionPointTypeFilter({
   visibleTypes,
   onToggle,
@@ -131,10 +145,15 @@ export default function RebalanceStrategyResults({
     zeroMarginInterestChart && zeroMarginInterestResults
       ? zeroMarginInterestChartData
       : chartData
+  const canUseLogScale = useMemo(() => hasStrictlyPositiveSeries(chartData.mainData), [chartData.mainData])
 
   useEffect(() => {
     setZeroMarginInterestChart(false)
   }, [results])
+
+  useEffect(() => {
+    if (logScale && !canUseLogScale) setLogScale(false)
+  }, [canUseLogScale, logScale])
 
   const selectRiskChart = useCallback((tab: RiskChartTab) => {
     storeRiskChartTab(tab)
@@ -369,10 +388,12 @@ export default function RebalanceStrategyResults({
           <ActionPointTypeFilter visibleTypes={visibleActionPointTypes} onToggle={toggleActionPointType} />
         )}
         <button
-          className={`chart-scale-toggle${logScale ? ' active' : ''}`}
+          className={`chart-scale-toggle${logScale && canUseLogScale ? ' active' : ''}`}
           type="button"
           style={{ position: 'static' }}
+          disabled={!canUseLogScale}
           onClick={() => setLogScale(value => !value)}
+          title={canUseLogScale ? 'Use logarithmic value scale' : 'Log scale requires all selected portfolio values to be above zero'}
         >
           Log
         </button>
@@ -390,7 +411,7 @@ export default function RebalanceStrategyResults({
           renderActionMarkers={renderActionMarkers}
           actionChart="main"
           kind="money"
-          logScale={logScale}
+          logScale={logScale && canUseLogScale}
           brushFill={theme.isDark ? '#1a1a1a' : '#f8f8f8'}
         />
       </div>

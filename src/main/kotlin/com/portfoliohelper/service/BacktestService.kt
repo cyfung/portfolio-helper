@@ -937,12 +937,14 @@ object BacktestService {
             def.components.forEach { collectDependencies(it.ticker, neededFrom) }
         }
 
-        fun resolve(ticker: String): Map<LocalDate, Double> {
+        fun resolve(ticker: String, allowEmptySynthetic: Boolean = false): Map<LocalDate, Double> {
             val key = normalizeTickerExpression(ticker)
             seriesCache[key]?.let { return it }
 
             val series = parseTickerChain(key)?.let { chainParts ->
-                val segmentSeries = chainParts.map { part -> part to resolve(part) }
+                val segmentSeries = chainParts.mapIndexed { index, part ->
+                    part to resolve(part, allowEmptySynthetic = allowEmptySynthetic || index < chainParts.lastIndex)
+                }
                 computeTickerChainSeries(segmentSeries)
             } ?: parseLETFDefinition(key)?.let { def ->
                 val componentSeriesMap = def.components.associate { comp -> comp.ticker to resolve(comp.ticker) }
@@ -950,6 +952,7 @@ object BacktestService {
                     ?: error("No required start date recorded for synthetic ticker '$key'")
                 val dates = intersectDates(componentSeriesMap.values.toList(), neededFrom, toDate)
                 if (dates.size < 2) {
+                    if (allowEmptySynthetic) return emptyMap()
                     throw IllegalStateException("Not enough overlapping trading dates for LETF '$key'")
                 }
                 computeLetfSeries(def, componentSeriesMap, dates, effrx, def.rebalanceStrategy)

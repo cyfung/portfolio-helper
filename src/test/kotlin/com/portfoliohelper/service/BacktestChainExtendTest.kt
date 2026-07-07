@@ -73,6 +73,19 @@ class BacktestChainExtendTest {
     }
 
     @Test
+    fun computeTickerChainSeriesUsesBaseWhenOverwriteSegmentHasNoDates() {
+        val jan1 = LocalDate.of(2026, 1, 1)
+        val jan2 = LocalDate.of(2026, 1, 2)
+
+        val base = mapOf(jan1 to 100.0, jan2 to 110.0)
+        val chained = BacktestService.computeTickerChainSeries(
+            listOf("NEWER" to emptyMap(), "BASE" to base)
+        )
+
+        assertEquals(base, chained)
+    }
+
+    @Test
     fun chainExtendFromAnchorPreservesHistoryThroughAnchorAndRebuildsCachedTail() {
         val mar1 = LocalDate.of(2026, 3, 1)
         val mar2 = LocalDate.of(2026, 3, 2)

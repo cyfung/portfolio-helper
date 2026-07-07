@@ -51,7 +51,17 @@ export interface RebalanceStrategyBlockRef {
   commit: () => void
 }
 
+function safeDipSurgeScopes(value: DipSurgeScopeState | null | undefined): DipSurgeScopeState {
+  return {
+    basePortfolio: value?.basePortfolio ?? null,
+    individualStock: value?.individualStock ?? null,
+  }
+}
+
 function nextWithOptionalSection(current: RebalStrategyState, key: OptionalStrategySectionKey): Partial<RebalStrategyState> {
+  const buyTheDip = safeDipSurgeScopes(current.buyTheDip)
+  const sellOnSurge = safeDipSurgeScopes(current.sellOnSurge)
+
   switch (key) {
     case 'marginRebalance':
       return { marginRebalanceEnabled: true }
@@ -71,17 +81,20 @@ function nextWithOptionalSection(current: RebalStrategyState, key: OptionalStrat
         drawdownBuyOnLowMargin: { ...(current.drawdownBuyOnLowMargin ?? emptyDrawdownMarginTrigger('buy')), enabled: true },
       }
     case 'buyTheDipPortfolio':
-      return { buyTheDip: { ...current.buyTheDip, basePortfolio: current.buyTheDip.basePortfolio ?? emptyDipSurge('BASE_PORTFOLIO') } }
+      return { buyTheDip: { ...buyTheDip, basePortfolio: buyTheDip.basePortfolio ?? emptyDipSurge('BASE_PORTFOLIO') } }
     case 'buyTheDipIndividual':
-      return { buyTheDip: { ...current.buyTheDip, individualStock: current.buyTheDip.individualStock ?? emptyDipSurge('INDIVIDUAL_STOCK') } }
+      return { buyTheDip: { ...buyTheDip, individualStock: buyTheDip.individualStock ?? emptyDipSurge('INDIVIDUAL_STOCK') } }
     case 'sellOnSurgePortfolio':
-      return { sellOnSurge: { ...current.sellOnSurge, basePortfolio: current.sellOnSurge.basePortfolio ?? emptyDipSurge('BASE_PORTFOLIO') } }
+      return { sellOnSurge: { ...sellOnSurge, basePortfolio: sellOnSurge.basePortfolio ?? emptyDipSurge('BASE_PORTFOLIO') } }
     case 'sellOnSurgeIndividual':
-      return { sellOnSurge: { ...current.sellOnSurge, individualStock: current.sellOnSurge.individualStock ?? emptyDipSurge('INDIVIDUAL_STOCK') } }
+      return { sellOnSurge: { ...sellOnSurge, individualStock: sellOnSurge.individualStock ?? emptyDipSurge('INDIVIDUAL_STOCK') } }
   }
 }
 
 function nextWithoutOptionalSection(current: RebalStrategyState, key: OptionalStrategySectionKey): Partial<RebalStrategyState> {
+  const buyTheDip = safeDipSurgeScopes(current.buyTheDip)
+  const sellOnSurge = safeDipSurgeScopes(current.sellOnSurge)
+
   switch (key) {
     case 'marginRebalance':
       return {
@@ -101,13 +114,13 @@ function nextWithoutOptionalSection(current: RebalStrategyState, key: OptionalSt
         drawdownBuyOnLowMargin: { ...(current.drawdownBuyOnLowMargin ?? emptyDrawdownMarginTrigger('buy')), enabled: false },
       }
     case 'buyTheDipPortfolio':
-      return { buyTheDip: { ...current.buyTheDip, basePortfolio: null } }
+      return { buyTheDip: { ...buyTheDip, basePortfolio: null } }
     case 'buyTheDipIndividual':
-      return { buyTheDip: { ...current.buyTheDip, individualStock: null } }
+      return { buyTheDip: { ...buyTheDip, individualStock: null } }
     case 'sellOnSurgePortfolio':
-      return { sellOnSurge: { ...current.sellOnSurge, basePortfolio: null } }
+      return { sellOnSurge: { ...sellOnSurge, basePortfolio: null } }
     case 'sellOnSurgeIndividual':
-      return { sellOnSurge: { ...current.sellOnSurge, individualStock: null } }
+      return { sellOnSurge: { ...sellOnSurge, individualStock: null } }
   }
 }
 
@@ -186,6 +199,8 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const buyLowRestoreMargin = s.buyLowRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.buyLowRestorePointIndex)
   const sellHighTriggerMargin = s.sellHighTriggerMargin ?? marginValueFromLegacyPoint(marginPoints, s.sellHighTriggerPointIndex)
   const sellHighRestoreMargin = s.sellHighRestoreMargin ?? marginValueFromLegacyPoint(marginPoints, s.sellHighRestorePointIndex)
+  const buyTheDip = safeDipSurgeScopes(s.buyTheDip)
+  const sellOnSurge = safeDipSurgeScopes(s.sellOnSurge)
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
@@ -202,7 +217,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     scope: keyof DipSurgeScopeState,
     value: DipSurgeState | null,
   ) => {
-    set({ [key]: { ...localRef.current[key], [scope]: value } } as Partial<RebalStrategyState>)
+    set({ [key]: { ...safeDipSurgeScopes(localRef.current[key]), [scope]: value } } as Partial<RebalStrategyState>)
   }, [set])
 
   const updateDrawdownMarginOverride = useCallback((patch: Partial<DrawdownMarginOverrideState>) => {
@@ -380,26 +395,26 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         />
       )}
 
-      {(s.buyTheDip.basePortfolio || s.buyTheDip.individualStock) && (
+      {(buyTheDip.basePortfolio || buyTheDip.individualStock) && (
         <div className="strategy-subsection">
-          {s.buyTheDip.basePortfolio && (
+          {buyTheDip.basePortfolio && (
             <DipSurgeSection
               direction="buy"
               title="Buy the Dip - Portfolio Trigger"
               scope="BASE_PORTFOLIO"
-              value={s.buyTheDip.basePortfolio}
+              value={buyTheDip.basePortfolio}
               onChange={(value: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'basePortfolio', value)}
               marginPoints={marginPoints}
               sliderMax={sliderMax}
               removable
             />
           )}
-          {s.buyTheDip.individualStock && (
+          {buyTheDip.individualStock && (
             <DipSurgeSection
               direction="buy"
               title="Buy the Dip - Individual Stocks"
               scope="INDIVIDUAL_STOCK"
-              value={s.buyTheDip.individualStock}
+              value={buyTheDip.individualStock}
               onChange={(value: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'individualStock', value)}
               marginPoints={marginPoints}
               sliderMax={sliderMax}
@@ -409,26 +424,26 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         </div>
       )}
 
-      {(s.sellOnSurge.basePortfolio || s.sellOnSurge.individualStock) && (
+      {(sellOnSurge.basePortfolio || sellOnSurge.individualStock) && (
         <div className="strategy-subsection">
-          {s.sellOnSurge.basePortfolio && (
+          {sellOnSurge.basePortfolio && (
             <DipSurgeSection
               direction="sell"
               title="Sell on Surge - Portfolio Trigger"
               scope="BASE_PORTFOLIO"
-              value={s.sellOnSurge.basePortfolio}
+              value={sellOnSurge.basePortfolio}
               onChange={(value: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'basePortfolio', value)}
               marginPoints={marginPoints}
               sliderMax={sliderMax}
               removable
             />
           )}
-          {s.sellOnSurge.individualStock && (
+          {sellOnSurge.individualStock && (
             <DipSurgeSection
               direction="sell"
               title="Sell on Surge - Individual Stocks"
               scope="INDIVIDUAL_STOCK"
-              value={s.sellOnSurge.individualStock}
+              value={sellOnSurge.individualStock}
               onChange={(value: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'individualStock', value)}
               marginPoints={marginPoints}
               sliderMax={sliderMax}
