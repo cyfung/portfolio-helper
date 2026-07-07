@@ -245,12 +245,19 @@ export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]
   }
 
   swapRows.forEach(row => {
+    const from = normalizeTickerExpression(row.swap.from)
+
     if (row.weight !== '*') {
+      if (row.weight > 0) {
+        const available = weights.get(from) ?? 0
+        if (!isResolvedNonZeroWeight(available) || available < row.weight) {
+          throw new Error(`Not enough ${from} weight to swap.`)
+        }
+      }
       expand(row.ticker, row.weight)
       return
     }
 
-    const from = normalizeTickerExpression(row.swap.from)
     const available = weights.get(from) ?? 0
     if (!isResolvedNonZeroWeight(available) || available <= 0) {
       throw new Error(`No available ${from} weight to swap.`)
