@@ -136,11 +136,15 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     })
   }
 
-  function addMapping(setId: string) {
+  function newMapping(): TickerMapping {
+    return { id: newMappingId(), from: '', to: '', mode: 'prepend', applyTo: 'expression' }
+  }
+
+  function addMapping(setId: string, position: 'start' | 'end') {
     updateDraft({
       ...draft,
       sets: draft.sets.map(set => set.id === setId
-        ? { ...set, mappings: [...set.mappings, { id: newMappingId(), from: '', to: '', mode: 'prepend', applyTo: 'expression' }] }
+        ? { ...set, mappings: position === 'start' ? [newMapping(), ...set.mappings] : [...set.mappings, newMapping()] }
         : set
       ),
     })
@@ -399,7 +403,8 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                         {editSetStatus}
                       </span>
                       <div className="ticker-mapping-set-actions">
-                        <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id)}>+ Add Mapping</button>
+                        <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id, 'start')}>+ Add to Start</button>
+                        <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id, 'end')}>+ Add to End</button>
                         <button
                           type="button"
                           className="ticker-mapping-save-set"
