@@ -268,6 +268,7 @@ export interface BacktestCurveStats {
   longestDrawdownDays: number
   annualVolatility: number
   sharpe: number
+  sortino?: number
   ulcerIndex: number
   upi: number
   marginUpperTriggers?: number | null
@@ -341,6 +342,7 @@ export interface MonteCarloResults {
   numSimulations: number
   seed: number
   portfolios: McPortfolioResult[]
+  warnings?: string[]
   error?: string
 }
 

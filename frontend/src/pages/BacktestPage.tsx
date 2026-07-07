@@ -57,6 +57,7 @@ interface SeriesStats {
   longestDrawdownDays: number
   annualVolatility: number
   sharpe: number
+  sortino: number
   ulcerIndex: number
   upi: number
 }
@@ -157,6 +158,17 @@ function averageFinite(values: (number | null | undefined)[] | undefined) {
   return finiteValues.length > 0 ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length : null
 }
 
+function computeSortinoFromValues(values: number[], cagr: number) {
+  const logReturns: number[] = []
+  for (let i = 1; i < values.length; i++) {
+    if (values[i - 1] > 0 && values[i] > 0) logReturns.push(Math.log(values[i] / values[i - 1]))
+  }
+  const downsideReturns = logReturns.filter(r => r < 0)
+  const downsideVariance = downsideReturns.reduce((a, b) => a + b ** 2, 0) / Math.max(downsideReturns.length, 1)
+  const downsideDeviation = Math.sqrt(downsideVariance * 252)
+  return downsideDeviation > 0 ? cagr / downsideDeviation : 0
+}
+
 function addResultWarnings(results: BacktestResults, warnings: string[]) {
   if (warnings.length === 0) return results
   return {
@@ -183,6 +195,7 @@ function computeSeriesStats(dates: string[], values: number[]): SeriesStats | nu
   const variance = logReturns.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(logReturns.length - 1, 1)
   const annualVolatility = Math.sqrt(variance * 252)
   const sharpe = annualVolatility > 0 ? cagr / annualVolatility : 0
+  const sortino = computeSortinoFromValues(values, cagr)
 
   let peak = start, maxDrawdown = 0, longestDrawdownDays = 0
   let ddStart: Date | null = null
@@ -215,7 +228,7 @@ function computeSeriesStats(dates: string[], values: number[]): SeriesStats | nu
   const ulcerIndex = Math.sqrt(sumSq / n) / 100
   const upi = ulcerIndex > 0 ? cagr / ulcerIndex : 0
 
-  return { endingValue: end, cagr, maxDrawdown, longestDrawdownDays, annualVolatility, sharpe, ulcerIndex, upi }
+  return { endingValue: end, cagr, maxDrawdown, longestDrawdownDays, annualVolatility, sharpe, sortino, ulcerIndex, upi }
 }
 
 // ── Real portfolio data type ───────────────────────────────────────────────────
@@ -1133,6 +1146,7 @@ export default function BacktestPage() {
         <td>{dur(stats.longestDrawdownDays)}</td>
         <td>{pct(stats.annualVolatility)}</td>
         <td>{fmt2(stats.sharpe)}</td>
+        <td>{fmt2(stats.sortino)}</td>
         <td>{pct(stats.ulcerIndex)}</td>
         <td>{fmt2(stats.upi)}</td>
         <td>{avgMargin == null ? '-' : pct(avgMargin)}</td>
@@ -1285,6 +1299,7 @@ export default function BacktestPage() {
                   <th title="Peak-to-recovery duration of the worst drawdown">Longest DD</th>
                   <th title="Annualised volatility of daily returns">Volatility</th>
                   <th>Sharpe</th>
+                  <th>Sortino</th>
                   <th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>
                   <th title="Ulcer Performance Index (Martin Ratio)">UPI</th>
                   <th title="Average margin utilization">Avg Margin</th>
@@ -1301,6 +1316,9 @@ export default function BacktestPage() {
                     const s      = curve.stats
                     const factor = chartData.curveScaleFactors.get(key) ?? 1
                     const avgMargin = averageMarginUtilization(curve.marginPoints)
+                    const sortino = Number.isFinite(s.sortino)
+                      ? s.sortino!
+                      : computeSortinoFromValues(curve.points.map(p => p.value), s.cagr)
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
@@ -1311,6 +1329,7 @@ export default function BacktestPage() {
                         <td>{dur(s.longestDrawdownDays)}</td>
                         <td>{pct(s.annualVolatility)}</td>
                         <td>{fmt2(s.sharpe)}</td>
+                        <td>{fmt2(sortino)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
                         <td>{avgMargin == null ? '–' : pct(avgMargin)}</td>

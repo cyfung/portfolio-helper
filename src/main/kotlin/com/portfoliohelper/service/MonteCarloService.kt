@@ -20,6 +20,7 @@ object MonteCarloService {
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         BacktestService.validateDateRange(fromDate, toDate)
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
+        val fullHistoryFrom = LocalDate.of(1990, 1, 1)
         val effrxSeries = BacktestService.loadEffrxSeries()
         val portfolios = request.portfolios.map { it.withoutPlaceholderTickers() }
 
@@ -28,9 +29,12 @@ object MonteCarloService {
             .flatMap { it.tickers }
             .map { it.ticker }
             .distinct()
+        val hasPrependedChain = requestedTickers.any { BacktestService.parseTickerChain(it) != null }
         val seriesCache = BacktestService.resolveTickerSeries(
             requestedTickers,
-            neededFromForTicker = { neededFrom },
+            neededFromForTicker = { ticker ->
+                if (BacktestService.parseTickerChain(ticker) != null) fullHistoryFrom else neededFrom
+            },
             toDate = toDate,
             effrx = effrxSeries,
         )
@@ -47,7 +51,7 @@ object MonteCarloService {
             }
         }
         val poolDates = BacktestService.intersectDates(
-            allSeriesMaps.flatMap { it.values }, fromDate, toDate
+            allSeriesMaps.flatMap { it.values }, if (hasPrependedChain) null else fromDate, toDate
         )
         val poolSize = poolDates.size
 
@@ -58,8 +62,11 @@ object MonteCarloService {
         // Validation: pool must be large enough relative to chunk size
         val minForValidation = minOf(minChunkDays, targetDays)
         if (poolSize < 2 * minForValidation) {
+            val poolRangeDescription =
+                if (hasPrependedChain) "the full prepended ticker history through the selected to date"
+                else "the selected date range"
             throw IllegalStateException(
-                "Historical pool too small: $poolSize trading days in the selected date range. " +
+                "Historical pool too small: $poolSize trading days in $poolRangeDescription. " +
                 "Need at least ${2 * minForValidation} days (2 × min(minChunk, simulated)). " +
                 "Widen the date range or reduce minChunkYears / simulatedYears."
             )

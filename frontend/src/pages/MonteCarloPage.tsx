@@ -9,6 +9,7 @@ import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
+import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
@@ -26,6 +27,13 @@ import {
 } from '@/lib/configImportExport'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import { validateDateRange } from '@/lib/dateRange'
+import {
+  applyTickerMappingsToPortfolioWithWarnings,
+  loadTickerMappingSettings,
+  selectedTickerMappingSet as resolveSelectedTickerMappingSet,
+  TICKER_MAPPINGS_CHANGED_EVENT,
+  type TickerMappingSettings,
+} from '@/lib/tickerMappings'
 import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
@@ -56,6 +64,14 @@ const MC_COLS = [
   { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
 ]
 
+function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
+  if (warnings.length === 0) return results
+  return {
+    ...results,
+    warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function MonteCarloPage() {
@@ -71,6 +87,7 @@ export default function MonteCarloPage() {
   const [numSims, setNumSims]         = useState('500')
   const [importCode, setImportCode]   = useState('')
   const [configError, setConfigError] = useState('')
+  const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: any; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
@@ -89,6 +106,10 @@ export default function MonteCarloPage() {
   const pollRef           = useRef<number | null>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
   const dateRangeError = validateDateRange(fromDate, toDate)
+  const selectedTickerMappingSet = useMemo(
+    () => resolveSelectedTickerMappingSet(tickerMappingSettings),
+    [tickerMappingSettings],
+  )
   const settingsPayload = useMemo(() => ({
     fromDate: fromDate || null,
     toDate: toDate || null,
@@ -102,6 +123,12 @@ export default function MonteCarloPage() {
   }), [blocks, cashflowAmount, cashflowFrequency, fromDate, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
 
   useSettingsAutosave('/api/montecarlo/settings', settingsPayload, settingsLoaded)
+
+  useEffect(() => {
+    const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
+    window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    return () => window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+  }, [])
 
   // Restore settings on mount
   useEffect(() => {
@@ -192,10 +219,15 @@ export default function MonteCarloPage() {
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     const settingsPortfolios = runBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i))
     let portfolios
+    let mappingWarnings: string[]
     try {
       const savedPortfolios = await fetchSavedPortfolios()
-      portfolios = runBlocks
+      const mappedPortfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios))
+        .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
+      mappingWarnings = mappedPortfolios.flatMap(mapped => mapped.warnings)
+      portfolios = mappedPortfolios
+        .map(mapped => mapped.value)
         .filter(p => p.tickers.length > 0)
     } catch (e: any) {
       setError(e.message || 'Unable to resolve saved portfolio references.')
@@ -243,7 +275,7 @@ export default function MonteCarloPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(reqBody),
       })
-      const data: MonteCarloResults = await res.json()
+      const data: MonteCarloResults = addResultWarnings(await res.json(), mappingWarnings)
       if (!res.ok || data.error) { setError(data.error || `Server error ${res.status}`); return }
       if (data.seed != null) setLastSeed(data.seed)
       setSelected(new Set())
@@ -418,6 +450,14 @@ export default function MonteCarloPage() {
           onCashflowFrequencyChange={setCashflowFrequency}
         />
 
+        <TickerMappingControl
+          idPrefix="mc"
+          value={tickerMappingSettings}
+          onChange={setTickerMappingSettings}
+          onExportCode={setImportCode}
+          onToast={showImportToast}
+        />
+
         <div className="backtest-section mc-params-grid">
           {[
             { label: 'Min Chunk Years', val: minChunk, set: setMinChunk, id: 'mc-min-chunk' },
@@ -457,6 +497,14 @@ export default function MonteCarloPage() {
       </div>
 
       {error && <div className="backtest-error">{error}</div>}
+
+      {!!results?.warnings?.length && (
+        <div className="backtest-error">
+          {results.warnings.map((warning, i) => (
+            <div key={i}>{warning}</div>
+          ))}
+        </div>
+      )}
 
       {results && chartData && (
         <>
