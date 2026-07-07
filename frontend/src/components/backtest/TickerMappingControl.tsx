@@ -479,8 +479,8 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                             aria-label="Mapping mode"
                             onChange={e => updateMapping(set.id, mapping.id, { mode: e.target.value === 'replaceAll' ? 'replaceAll' : 'prepend' })}
                           >
-                            <option value="prepend">Add Chain Entry</option>
-                            <option value="replaceAll">Replace All</option>
+                            <option value="prepend">🟢 Add Chain Entry</option>
+                            <option value="replaceAll">🔴 Replace All</option>
                           </select>
                           <select
                             className="ticker-mapping-row-apply-to"
@@ -488,8 +488,8 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                             aria-label="Apply mapping to"
                             onChange={e => updateMapping(set.id, mapping.id, { applyTo: e.target.value === 'ticker' ? 'ticker' : 'expression' })}
                           >
-                            <option value="expression">Full Expression</option>
-                            <option value="ticker">Ticker Only</option>
+                            <option value="expression">🟣 Full Expression</option>
+                            <option value="ticker">🔵 Ticker Only</option>
                           </select>
                           <input
                             value={mapping.from}
