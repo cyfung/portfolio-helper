@@ -395,27 +395,22 @@ export function applyTickerMappingsToRowsWithWarnings(
   rows: WeightedTicker[],
   mappingSet: TickerMappingSet | null | undefined,
 ): TickerMappingResult<WeightedTicker[]> {
-  if (usableTickerMappings(mappingSet?.mappings ?? []).length === 0) return { value: rows, warnings: [] }
+  const expandedRows = expandSwapTickerRows(rows)
+    .filter(row => row.ticker.trim().toUpperCase() !== 'DUMMY')
+  if (usableTickerMappings(mappingSet?.mappings ?? []).length === 0) return { value: expandedRows, warnings: [] }
+
   const weights = new Map<string, number>()
   const warnings = new Set<string>()
-  for (const row of rows) {
+  for (const row of expandedRows) {
     const mapped = mapTickerExpressionWithWarnings(row.ticker, mappingSet)
     const mappedTicker = mapped.value
     mapped.warnings.forEach(warning => warnings.add(warning))
     if (!mappedTicker || row.weight === 0) continue
     weights.set(mappedTicker, (weights.get(mappedTicker) ?? 0) + row.weight)
   }
-  const expandedWeights = new Map<string, number>()
-  expandSwapTickerRows([...weights.entries()].map(([ticker, weight]) => ({ ticker, weight })))
-    .filter(row => row.ticker.trim().toUpperCase() !== 'DUMMY')
-    .forEach(row => {
-      const key = normalizeTickerExpression(row.ticker)
-      if (!key || row.weight === 0) return
-      expandedWeights.set(key, (expandedWeights.get(key) ?? 0) + row.weight)
-    })
 
   return {
-    value: [...expandedWeights.entries()]
+    value: [...weights.entries()]
       .filter(([, weight]) => weight !== 0)
       .map(([ticker, weight]) => ({ ticker, weight }))
       .sort((a, b) => a.ticker.localeCompare(b.ticker)),

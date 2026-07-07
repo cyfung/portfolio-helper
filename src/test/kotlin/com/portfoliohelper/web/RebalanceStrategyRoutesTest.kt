@@ -147,11 +147,19 @@ class RebalanceStrategyRoutesTest {
     }
 
     @Test
-    fun resolveTickerWeightsScalesSwapLikeInlineDummyFilledChildPortfolio() {
+    fun resolveTickerWeightsKeepsFrontendExpandedSwapRows() {
         val rows = buildJsonArray {
             add(buildJsonObject {
-                put("ticker", JsonPrimitive("SWAP(AAA, BBB, 1.5)"))
-                put("weight", JsonPrimitive(50))
+                put("ticker", JsonPrimitive("AAA"))
+                put("weight", JsonPrimitive(-50))
+            })
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("BBB"))
+                put("weight", JsonPrimitive(75))
+            })
+            add(buildJsonObject {
+                put("ticker", JsonPrimitive("DUMMY"))
+                put("weight", JsonPrimitive(25))
             })
             add(buildJsonObject {
                 put("ticker", JsonPrimitive("CCC"))

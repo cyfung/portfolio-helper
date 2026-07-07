@@ -905,7 +905,7 @@ object BacktestService {
      * R values: D=Daily, W=Weekly, M=Monthly, Q=Quarterly, Y=Yearly (default: null = inherit from outer portfolio).
      */
     internal fun parseTickerChain(ticker: String): List<String>? {
-        if (!ticker.contains('>')) return null
+        if (!ticker.contains('|')) return null
         val parts = splitTopLevelTickerChain(ticker).map { it.trim() }
         if (parts.size < 2) return null
         require(parts.all { it.isNotEmpty() }) { "Ticker chain contains an empty segment: $ticker" }

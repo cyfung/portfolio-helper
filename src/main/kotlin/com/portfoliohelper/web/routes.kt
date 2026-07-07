@@ -230,7 +230,7 @@ internal fun resolveTickerWeights(
     val merged = linkedMapOf<String, Double>()
 
     fun add(ticker: String, weight: Double) {
-        val key = ticker.trim().uppercase()
+        val key = normalizeTickerWeightExpression(ticker)
         if (key.isNotBlank() && weight != 0.0) {
             merged[key] = (merged[key] ?: 0.0) + weight
         }
@@ -279,14 +279,7 @@ internal fun resolveTickerWeights(
         }
     }
 
-    val expanded = expandTickerWeightExpressions(
-        merged
-            .filterValues { it != 0.0 }
-            .map { (ticker, weight) -> TickerWeight(ticker, weight) }
-    )
-    return expanded
-        .groupBy { it.ticker }
-        .mapValues { (_, rows) -> rows.sumOf { it.weight } }
+    return merged
         .filterValues { it != 0.0 }
         .map { (ticker, weight) -> TickerWeight(ticker, weight) }
 }

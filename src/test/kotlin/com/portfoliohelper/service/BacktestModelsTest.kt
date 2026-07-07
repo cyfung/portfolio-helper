@@ -71,27 +71,14 @@ class BacktestModelsTest {
     }
 
     @Test
-    fun mergeWeightsRejectsStandaloneOneToOneSwapAfterDummyIsStripped() {
+    fun mergeWeightsUsesFrontendExpandedSwapRowsAndStripsDummy() {
         val portfolio = PortfolioConfig(
             label = "test",
             tickers = listOf(
-                TickerWeight("SWAP(AAA, BBB)", 100.0),
-            ),
-            rebalanceStrategy = RebalanceStrategy.NONE,
-            marginStrategies = emptyList(),
-        )
-
-        assertFailsWith<IllegalArgumentException> {
-            portfolio.mergeWeights()
-        }
-    }
-
-    @Test
-    fun mergeWeightsAppliesSwapFactorAndDummyFiller() {
-        val portfolio = PortfolioConfig(
-            label = "test",
-            tickers = listOf(
-                TickerWeight("SWAP(AAA, BBB, 1.5)", 100.0),
+                TickerWeight("AAA", -100.0),
+                TickerWeight("BBB", 150.0),
+                TickerWeight("DUMMY", 50.0),
+                TickerWeight("CCC", 50.0),
             ),
             rebalanceStrategy = RebalanceStrategy.NONE,
             marginStrategies = emptyList(),
@@ -99,29 +86,10 @@ class BacktestModelsTest {
 
         val (tickers, targetWeights) = portfolio.mergeWeights()
 
-        assertEquals(listOf("AAA", "BBB"), tickers)
-        assertEquals(-2.0, targetWeights["AAA"])
-        assertEquals(3.0, targetWeights["BBB"])
-    }
-
-    @Test
-    fun mergeWeightsKeepsFullTickerExpressionsInsideSwapLegs() {
-        val portfolio = PortfolioConfig(
-            label = "test",
-            tickers = listOf(
-                TickerWeight("BASE", 100.0),
-                TickerWeight("SWAP(CTAP > 1 CTA 1 SPY E=1.5, 2 QQQ S=1.5 R=Q)", 50.0),
-            ),
-            rebalanceStrategy = RebalanceStrategy.NONE,
-            marginStrategies = emptyList(),
-        )
-
-        val (tickers, targetWeights) = portfolio.mergeWeights()
-
-        assertEquals(listOf("BASE", "CTAP > 1 CTA 1 SPY E=1.5", "2 QQQ S=1.5 R=Q"), tickers)
-        assertEquals(1.0, targetWeights["BASE"])
-        assertEquals(-0.5, targetWeights["CTAP > 1 CTA 1 SPY E=1.5"])
-        assertEquals(0.5, targetWeights["2 QQQ S=1.5 R=Q"])
+        assertEquals(listOf("AAA", "BBB", "CCC"), tickers)
+        assertEquals(-1.0, targetWeights["AAA"])
+        assertEquals(1.5, targetWeights["BBB"])
+        assertEquals(0.5, targetWeights["CCC"])
     }
 
     @Test

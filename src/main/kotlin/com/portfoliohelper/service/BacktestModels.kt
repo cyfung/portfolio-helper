@@ -65,30 +65,8 @@ const val DUMMY_TICKER = "DUMMY"
 fun isPlaceholderTicker(ticker: String): Boolean =
     ticker.trim().equals(DUMMY_TICKER, ignoreCase = true)
 
-data class SwapTickerExpression(val from: String, val to: String, val factor: Double = 1.0)
-
 fun normalizeTickerWeightExpression(ticker: String): String =
     ticker.trim().replace(Regex("\\s+"), " ").uppercase()
-
-private fun splitTopLevelComma(value: String): List<String> {
-    val parts = mutableListOf<String>()
-    var depth = 0
-    var start = 0
-
-    value.forEachIndexed { index, ch ->
-        when (ch) {
-            '(' -> depth++
-            ')' -> if (depth > 0) depth--
-            ',' -> if (depth == 0) {
-                parts += value.substring(start, index).trim()
-                start = index + 1
-            }
-        }
-    }
-
-    parts += value.substring(start).trim()
-    return parts
-}
 
 fun splitTopLevelTickerChain(value: String): List<String> {
     val parts = mutableListOf<String>()
@@ -99,7 +77,7 @@ fun splitTopLevelTickerChain(value: String): List<String> {
         when (ch) {
             '(' -> depth++
             ')' -> if (depth > 0) depth--
-            '>' -> if (depth == 0) {
+            '|' -> if (depth == 0) {
                 parts += value.substring(start, index).trim()
                 start = index + 1
             }
@@ -110,47 +88,10 @@ fun splitTopLevelTickerChain(value: String): List<String> {
     return parts
 }
 
-fun parseSwapTickerExpression(ticker: String): SwapTickerExpression? {
-    val trimmed = ticker.trim()
-    val prefix = Regex("^SWAP\\s*\\(", RegexOption.IGNORE_CASE).find(trimmed) ?: return null
-    if (!trimmed.endsWith(")")) return null
-
-    var depth = 0
-    var closeIndex = -1
-    for (i in prefix.value.length - 1 until trimmed.length) {
-        when (trimmed[i]) {
-            '(' -> depth++
-            ')' -> {
-                depth--
-                if (depth == 0) {
-                    closeIndex = i
-                    break
-                }
-            }
-        }
-    }
-    if (closeIndex != trimmed.lastIndex) return null
-
-    val args = splitTopLevelComma(trimmed.substring(prefix.value.length, closeIndex))
-    if ((args.size != 2 && args.size != 3) || args.take(2).any { it.isBlank() }) return null
-    val factor = if (args.size == 3) args[2].toDoubleOrNull() ?: return null else 1.0
-    return SwapTickerExpression(args[0], args[1], factor)
-}
-
-fun expandTickerWeightExpressions(tickers: List<TickerWeight>): List<TickerWeight> {
-    fun expand(ticker: String, weight: Double): List<TickerWeight> {
-        val swap = parseSwapTickerExpression(ticker)
-            ?: return listOf(TickerWeight(normalizeTickerWeightExpression(ticker), weight))
-        return expand(swap.from, -weight) +
-            expand(swap.to, weight * swap.factor) +
-            TickerWeight(DUMMY_TICKER, weight * (2.0 - swap.factor))
-    }
-
-    return tickers.flatMap { expand(it.ticker, it.weight) }
-}
-
 fun PortfolioConfig.withoutPlaceholderTickers(): PortfolioConfig {
-    val filtered = expandTickerWeightExpressions(tickers).filterNot { isPlaceholderTicker(it.ticker) }
+    val filtered = tickers
+        .filterNot { isPlaceholderTicker(it.ticker) }
+        .map { it.copy(ticker = normalizeTickerWeightExpression(it.ticker)) }
     return if (filtered == tickers) this else copy(tickers = filtered)
 }
 
@@ -299,9 +240,11 @@ data class MultiBacktestResult(
 /** Merges duplicate tickers by summing weights, then normalises to sum-to-1. */
 fun PortfolioConfig.mergeWeights(): Pair<List<String>, Map<String, Double>> {
     val merged = linkedMapOf<String, Double>()
-    for (tw in expandTickerWeightExpressions(tickers)) {
+    for (tw in tickers) {
         if (isPlaceholderTicker(tw.ticker)) continue
-        merged[tw.ticker] = (merged[tw.ticker] ?: 0.0) + tw.weight
+        val ticker = normalizeTickerWeightExpression(tw.ticker)
+        if (ticker.isBlank()) continue
+        merged[ticker] = (merged[ticker] ?: 0.0) + tw.weight
     }
     merged.entries.removeIf { it.value == 0.0 }
     val tickerList = merged.keys.toList()

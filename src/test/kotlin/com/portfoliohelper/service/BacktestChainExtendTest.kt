@@ -11,15 +11,15 @@ import kotlin.time.Duration.Companion.minutes
 class BacktestChainExtendTest {
     @Test
     fun parseTickerChainKeepsLetfSegmentAsBaseTicker() {
-        val chain = BacktestService.parseTickerChain("CTAP > 1 CTA 1 SPY E=1.5")
+        val chain = BacktestService.parseTickerChain("CTAP | 1 CTA 1 SPY E=1.5")
 
         assertEquals(listOf("CTAP", "1 CTA 1 SPY E=1.5"), chain)
-        assertNull(BacktestService.parseLETFDefinition("CTAP > 1 CTA 1 SPY E=1.5"))
+        assertNull(BacktestService.parseLETFDefinition("CTAP | 1 CTA 1 SPY E=1.5"))
     }
 
     @Test
     fun parseTickerChainIgnoresExtendInsideSwapExpression() {
-        assertNull(BacktestService.parseTickerChain("SWAP(CTAP > 1 CTA 1 SPY E=1.5, SSO)"))
+        assertNull(BacktestService.parseTickerChain("SWAP(CTAP | 1 CTA 1 SPY E=1.5, SSO)"))
     }
 
     @Test
