@@ -1,9 +1,11 @@
 import {
+  expandSwapTickerRows,
   formatSwapExpression,
   isModifierToken,
   normalizeTickerExpression,
   parseSwapExpression,
   splitTickerChain,
+  TICKER_CHAIN_SEPARATOR,
   tokenizeDefinition,
 } from '@/lib/tickerExpressions'
 
@@ -275,18 +277,27 @@ function normalizeMappedTickerSegment(ticker: string) {
   return applySingleTickerMapping(ticker, { id: '', from: '__NO_TICKER_MAPPING__', to: '' })
 }
 
+function formatSwapLeg(ticker: string, weight: number) {
+  return weight === 1 ? ticker : `${ticker} #${formatMultiplier(weight)}`
+}
+
+function formatMappedSwapExpression(
+  from: string,
+  swap: NonNullable<ReturnType<typeof parseSwapExpression>>,
+  mapSegment: (ticker: string) => string,
+) {
+  if (!swap.legs) return formatSwapExpression(mapSegment(from), mapSegment(swap.to), swap.factor)
+  return `${mapSegment(from)} > ${swap.legs.map(leg => formatSwapLeg(mapSegment(leg.ticker), leg.weight)).join(' + ')}`
+}
+
 function normalizeMappedTickerExpression(ticker: string): string {
   const swap = parseSwapExpression(ticker)
   if (swap) {
-    return formatSwapExpression(
-      normalizeMappedTickerExpression(swap.from),
-      normalizeMappedTickerExpression(swap.to),
-      swap.factor,
-    )
+    return formatMappedSwapExpression(swap.from, swap, normalizeMappedTickerExpression)
   }
 
   const chain = splitTickerChain(ticker)
-  if (chain.length > 1) return chain.map(normalizeMappedTickerExpression).join(' > ')
+  if (chain.length > 1) return chain.map(normalizeMappedTickerExpression).join(` ${TICKER_CHAIN_SEPARATOR} `)
   return normalizeMappedTickerSegment(ticker)
 }
 
@@ -301,6 +312,17 @@ function mapTickerExpressionForSingleMapping(
   const swap = parseSwapExpression(rawTicker)
   if (swap) {
     const from = mapTickerExpressionForSingleMapping(swap.from, mapping, prependOnly)
+    if (swap.legs) {
+      const mappedLegs = swap.legs.map(leg => ({
+        ...leg,
+        mapped: mapTickerExpressionForSingleMapping(leg.ticker, mapping, prependOnly),
+      }))
+      return {
+        value: `${from.value} > ${mappedLegs.map(leg => formatSwapLeg(leg.mapped.value, leg.weight)).join(' + ')}`,
+        warnings: [...from.warnings, ...mappedLegs.flatMap(leg => leg.mapped.warnings)],
+      }
+    }
+
     const to = mapTickerExpressionForSingleMapping(swap.to, mapping, prependOnly)
     return {
       value: formatSwapExpression(from.value, to.value, swap.factor),
@@ -315,10 +337,10 @@ function mapTickerExpressionForSingleMapping(
       const mapped = applySingleTickerMappingWithWarnings(lastSegment, mapping)
       const normalizedLastSegment = normalizeMappedTickerSegment(lastSegment)
       if (mapped.value === normalizedLastSegment) {
-        return { value: chain.map(normalizeMappedTickerExpression).join(' > '), warnings: [] }
+        return { value: chain.map(normalizeMappedTickerExpression).join(` ${TICKER_CHAIN_SEPARATOR} `), warnings: [] }
       }
       return {
-        value: `${chain.map(normalizeMappedTickerExpression).join(' > ')} > ${mapped.value}`,
+        value: `${chain.map(normalizeMappedTickerExpression).join(` ${TICKER_CHAIN_SEPARATOR} `)} ${TICKER_CHAIN_SEPARATOR} ${mapped.value}`,
         warnings: mapped.warnings,
       }
     }
@@ -329,14 +351,14 @@ function mapTickerExpressionForSingleMapping(
       mapped.warnings.forEach(warning => warnings.add(warning))
       return mapped.value
     })
-    return { value: mappedSegments.join(' > '), warnings: [...warnings] }
+    return { value: mappedSegments.join(` ${TICKER_CHAIN_SEPARATOR} `), warnings: [...warnings] }
   }
 
   if (prependOnly) {
     const mapped = applySingleTickerMappingWithWarnings(rawTicker, mapping)
     const normalized = normalizeMappedTickerSegment(rawTicker)
     if (mapped.value === normalized) return { value: normalized, warnings: [] }
-    return { value: `${normalized} > ${mapped.value}`, warnings: mapped.warnings }
+    return { value: `${normalized} ${TICKER_CHAIN_SEPARATOR} ${mapped.value}`, warnings: mapped.warnings }
   }
 
   return applySingleTickerMappingWithWarnings(rawTicker, mapping)
@@ -383,8 +405,17 @@ export function applyTickerMappingsToRowsWithWarnings(
     if (!mappedTicker || row.weight === 0) continue
     weights.set(mappedTicker, (weights.get(mappedTicker) ?? 0) + row.weight)
   }
+  const expandedWeights = new Map<string, number>()
+  expandSwapTickerRows([...weights.entries()].map(([ticker, weight]) => ({ ticker, weight })))
+    .filter(row => row.ticker.trim().toUpperCase() !== 'DUMMY')
+    .forEach(row => {
+      const key = normalizeTickerExpression(row.ticker)
+      if (!key || row.weight === 0) return
+      expandedWeights.set(key, (expandedWeights.get(key) ?? 0) + row.weight)
+    })
+
   return {
-    value: [...weights.entries()]
+    value: [...expandedWeights.entries()]
       .filter(([, weight]) => weight !== 0)
       .map(([ticker, weight]) => ({ ticker, weight }))
       .sort((a, b) => a.ticker.localeCompare(b.ticker)),

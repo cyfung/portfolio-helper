@@ -7,7 +7,8 @@ import {
 import { useChartTheme } from '@/lib/chartTheme'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { SavedPortfolio } from '@/types/backtest'
-import { blockStateToAPIPortfolio, configToBlockState } from '@/types/backtest'
+import { configToBlockState } from '@/types/backtest'
+import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
 interface Props {
   portfolioSlug: string
@@ -137,7 +138,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
 
-    const portfolio = blockStateToAPIPortfolio(benchmarkBlock, 0)
+    const portfolio = resolvedBlockStateToAPIPortfolio(benchmarkBlock, 0, savedPortfolios)
     if (!portfolio.tickers.length) return
 
     const marginKeys: string[] = ['none', ...benchmarkBlock.margins.map((_, i) => String(i))]
@@ -173,7 +174,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       .catch(() => { if (!cancelled) setBenchmarkCache({}) })
       .finally(() => { if (!cancelled) setBenchmarkLoading(false) })
     return () => { cancelled = true }
-  }, [selectedBenchmark, benchmarkBlock, resolvedFrom, resolvedTo])
+  }, [selectedBenchmark, benchmarkBlock, savedPortfolios, resolvedFrom, resolvedTo])
 
   // ── Import XML files ──────────────────────────────────────────────────────
   async function handleXmlImport(files: FileList) {

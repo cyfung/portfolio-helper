@@ -484,12 +484,13 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               className="ticker-modifier-hint"
               title={[
                 'Synthetic ticker syntax: use multiplier/ticker pairs, e.g. 1 KMLM 1 VT.',
-                'Swap syntax: SWAP(A,B,k) means -A + k*B plus DUMMY filler; k defaults to 1.',
+                'Swap syntax: A > B #m + C #n means -A + m*B + n*C plus DUMMY filler; # and multipliers are optional.',
+                'SWAP(A,B,k) is still supported; k defaults to 1.',
                 'S=<spread %>, e.g. S=1.5',
                 'R=<rebalance: D/W/M/Q/Y>, e.g. R=Q',
                 'E=<expense ratio or credit %>, e.g. E=0.95 or E=-1.5',
                 'V=<relative volatility change %>, e.g. V=20 or V=-25',
-                'Examples: 2 QQQ S=1.5 R=Q E=-1.5 V=20; SWAP(CTAP,SSO); SWAP(CTAP,SSO,1.5).',
+                'Examples: 2 QQQ S=1.5 R=Q E=-1.5 V=20; CTAP > SSO #1.5; SWAP(CTAP,SSO,1.5).',
               ].join('\n')}
               aria-label="Ticker modifier help"
               tabIndex={0}
@@ -549,7 +550,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 <input
                   type="text"
                   className="ticker-input"
-                  placeholder="e.g. VT, SWAP(CTAP,SSO,1.5), or: 1 KMLM 1 VT S=1.5 R=Q E=-1.5 V=20"
+                  placeholder="e.g. VT, CTAP > SSO #1.5, or: 1 KMLM 1 VT S=1.5 R=Q E=-1.5 V=20"
                   value={t.ticker}
                   onChange={e => updateTicker(t.id, e.target.value)}
                   onBlur={commitBlur}
@@ -732,7 +733,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                   <input
                     type="text"
                     value={tickerConfig.letf}
-                    placeholder="e.g. 2 QQQ S=1.5 R=Q E=-1.5 V=20 or SWAP(CTAP,SSO,1.5)"
+                    placeholder="e.g. 2 QQQ S=1.5 R=Q E=-1.5 V=20 or CTAP > SSO #1.5"
                     onChange={e => setTickerConfig({ ...tickerConfig, letf: e.target.value })}
                   />
                 </label>

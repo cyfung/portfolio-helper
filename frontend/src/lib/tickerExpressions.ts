@@ -44,17 +44,36 @@ function splitTopLevel(raw: string, separator: string) {
   return parts
 }
 
+export const TICKER_CHAIN_SEPARATOR = '|'
+
 export function splitTickerChain(raw: string) {
-  return splitTopLevel(raw.trim(), '>').filter(Boolean)
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+  const trimmed = raw.trim()
+
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const ch = trimmed[i]
+    if (ch === '(') depth += 1
+    else if (ch === ')') depth = Math.max(0, depth - 1)
+    else if (ch === TICKER_CHAIN_SEPARATOR && depth === 0) {
+      parts.push(trimmed.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+
+  parts.push(trimmed.slice(start).trim())
+  return parts.filter(Boolean)
 }
 
 export interface SwapExpression {
   from: string
   to: string
   factor: number
+  legs?: WeightedTickerExpression[]
 }
 
-export function parseSwapExpression(raw: string): SwapExpression | null {
+function parseLegacySwapExpression(raw: string): SwapExpression | null {
   const trimmed = raw.trim()
   const match = /^SWAP\s*\(/i.exec(trimmed)
   if (!match || !trimmed.endsWith(')')) return null
@@ -80,6 +99,69 @@ export function parseSwapExpression(raw: string): SwapExpression | null {
   const factor = args.length === 3 ? parseFloat(args[2]) : 1
   if (!Number.isFinite(factor)) return null
   return { from: args[0], to: args[1], factor }
+}
+
+function splitTopLevelPlus(raw: string) {
+  const parts: string[] = []
+  let depth = 0
+  let start = 0
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i]
+    if (ch === '(') depth += 1
+    else if (ch === ')') depth = Math.max(0, depth - 1)
+    else if (ch === '+' && depth === 0 && /\s/.test(raw[i - 1] ?? '') && /\s/.test(raw[i + 1] ?? '')) {
+      parts.push(raw.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+
+  parts.push(raw.slice(start).trim())
+  return parts
+}
+
+function parseSwapLeg(raw: string): WeightedTickerExpression | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+
+  const hashMatch = /^(.*?)\s*#\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(trimmed)
+  if (hashMatch) {
+    const ticker = hashMatch[1].trim()
+    const weight = parseFloat(hashMatch[2])
+    return ticker && Number.isFinite(weight) ? { ticker, weight } : null
+  }
+
+  const bareMatch = /^(.*?)\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(trimmed)
+  if (bareMatch) {
+    const ticker = bareMatch[1].trim()
+    const weight = parseFloat(bareMatch[2])
+    return ticker && Number.isFinite(weight) ? { ticker, weight } : null
+  }
+
+  return { ticker: trimmed, weight: 1 }
+}
+
+function parseShorthandSwapExpression(raw: string): SwapExpression | null {
+  const trimmed = raw.trim()
+  if (/^SWAP\s*\(/i.test(trimmed)) return null
+
+  const parts = splitTopLevel(trimmed, '>')
+  if (parts.length !== 2 || parts.some(part => !part)) return null
+
+  const legs = splitTopLevelPlus(parts[1]).map(parseSwapLeg)
+  if (legs.length === 0 || legs.some(leg => !leg)) return null
+
+  const usableLegs = legs as WeightedTickerExpression[]
+  return {
+    from: parts[0],
+    to: usableLegs[0].ticker,
+    factor: usableLegs[0].weight,
+    legs: usableLegs,
+  }
+}
+
+export function parseSwapExpression(raw: string): SwapExpression | null {
+  return parseLegacySwapExpression(raw) ?? parseShorthandSwapExpression(raw)
 }
 
 export function formatSwapExpression(from: string, to: string, factor = 1) {
@@ -122,10 +204,12 @@ export function expandSwapTickerRows(rows: WeightedTickerExpression[]): Weighted
   function expand(ticker: string, weight: number): WeightedTickerExpression[] {
     const swap = parseSwapExpression(ticker)
     if (!swap) return [{ ticker: normalizeTickerExpression(ticker), weight }]
+    const legs = swap.legs ?? [{ ticker: swap.to, weight: swap.factor }]
+    const legWeightTotal = legs.reduce((sum, leg) => sum + leg.weight, 0)
     return [
       ...expand(swap.from, -weight),
-      ...expand(swap.to, weight * swap.factor),
-      { ticker: 'DUMMY', weight: weight * (2 - swap.factor) },
+      ...legs.flatMap(leg => expand(leg.ticker, weight * leg.weight)),
+      { ticker: 'DUMMY', weight: weight * (2 - legWeightTotal) },
     ]
   }
 
