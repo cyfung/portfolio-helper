@@ -1,6 +1,11 @@
 import { blockStateToAPIPortfolio } from '@/types/backtest'
 import type { BlockState, SavedPortfolio } from '@/types/backtest'
-import { expandSwapTickerRows, isResolvedNonZeroWeight } from '@/lib/tickerExpressions'
+import {
+  expandSwapTickerRows,
+  isResolvedNonZeroWeight,
+  resolveSwapTickerRows,
+  type WeightedOrWildcardTickerExpression,
+} from '@/lib/tickerExpressions'
 
 export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
 
@@ -35,6 +40,12 @@ function refName(row: any) {
 
 function rowWeight(row: any) {
   return parseFloat(String(row?.weight ?? '')) || 0
+}
+
+function rowResolveWeight(row: any): number | '*' {
+  const raw = String(row?.weight ?? '').trim()
+  if (raw === '*') return '*'
+  return parseFloat(raw) || 0
 }
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
@@ -100,29 +111,30 @@ export function resolveSavedPortfolioConfig(
   savedByName: Map<string, any>,
   stack: string[] = [],
 ): ResolvedStockWeight[] {
-  const weights = new Map<string, number>()
+  const rows: WeightedOrWildcardTickerExpression[] = []
 
   for (const row of config?.tickers ?? []) {
-    const weight = rowWeight(row)
+    const weight = rowResolveWeight(row)
     const portfolioRef = isPortfolioRef(row)
     const ticker = portfolioRef ? refName(row) : String(row.ticker || '')
-    if (!isResolvedNonZeroWeight(weight)) continue
+    if (weight !== '*' && !isResolvedNonZeroWeight(weight)) continue
 
     if (portfolioRef) {
+      if (weight === '*') throw new Error('Portfolio reference weight cannot be *.')
       const name = ticker
       const child = savedByName.get(name)
       if (!child) throw new Error(`Missing portfolio reference: ${name}`)
       if (stack.includes(name)) throw new Error(`Circular portfolio reference: ${[...stack, name].join(' -> ')}`)
 
       for (const childStock of scaledChildRows(weight, resolveSavedPortfolioConfig(child, savedByName, [...stack, name]))) {
-        addWeight(weights, childStock.ticker, childStock.weight)
+        rows.push(childStock)
       }
     } else {
-      addWeight(weights, ticker, weight)
+      rows.push({ ticker, weight })
     }
   }
 
-  return mergedNonZeroRows(expandSwapTickerRows([...weights.entries()].map(([ticker, weight]) => ({ ticker, weight }))))
+  return mergedNonZeroRows(resolveSwapTickerRows(rows))
 }
 
 export function resolveBlockState(
@@ -140,8 +152,8 @@ export function resolveBlockStateRows(
   const savedByName = savedPortfolioConfigMap(savedPortfolios)
   const config = {
     tickers: block.tickers.map(row => row.isPortfolioRef
-      ? { ticker: row.ticker, portfolioRef: row.ticker, isPortfolioRef: true, weight: rowWeight(row) }
-      : { ticker: row.ticker, weight: rowWeight(row) }
+      ? { ticker: row.ticker, portfolioRef: row.ticker, isPortfolioRef: true, weight: row.weight }
+      : { ticker: row.ticker, weight: row.weight }
     ),
   }
   const rows = resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : [])
@@ -156,9 +168,9 @@ export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
     .map(row => {
       const isRef = row.isPortfolioRef === true
       const ticker = isRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
-      return { ticker, weight: rowWeight(row), isRef }
+      return { ticker, weight: rowResolveWeight(row), isRef }
     })
-    .filter(row => row.ticker && row.weight !== 0)
+    .filter(row => row.ticker && (row.weight === '*' || row.weight !== 0))
     .map(row => row.isRef
       ? { ticker: row.ticker, weight: row.weight, isPortfolioRef: true, portfolioRef: row.ticker }
       : { ticker: row.ticker, weight: row.weight }

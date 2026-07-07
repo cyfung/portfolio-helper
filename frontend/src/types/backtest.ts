@@ -5,6 +5,7 @@
 import { savedConfigToStrategyState, strategyStateToAPI } from './rebalanceStrategy'
 import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 import { allocOptionsFromHybridStrategies, DEFAULT_HYBRID_ALLOC_STRATEGIES } from '@/lib/allocStrategies'
+import { parseSwapExpression } from '@/lib/tickerExpressions'
 
 export interface TickerRow {
   id: string
@@ -180,6 +181,22 @@ export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
   return changed ? { ...state, margins } : state
 }
 
+type ApiTickerWeight = number | '*'
+
+function apiTickerWeight(value: string | number | null | undefined): ApiTickerWeight {
+  const raw = String(value ?? '').trim()
+  if (raw === '*') return '*'
+  return parseFloat(raw) || 0
+}
+
+function isNonZeroApiWeight(weight: ApiTickerWeight) {
+  return weight === '*' || weight !== 0
+}
+
+function hasOrderSensitiveTickerRows(rows: { ticker: string; weight: ApiTickerWeight }[]) {
+  return rows.some(row => row.weight === '*' || parseSwapExpression(row.ticker))
+}
+
 function mergeAPITickerRows<T extends { ticker: string; weight: number; isPortfolioRef?: boolean; portfolioRef?: string }>(rows: T[]): T[] {
   const merged = new Map<string, T>()
   rows.forEach(row => {
@@ -195,12 +212,15 @@ function mergeAPITickerRows<T extends { ticker: string; weight: number; isPortfo
 }
 
 function blockStateToAPITickers(state: BlockState) {
-  return mergeAPITickerRows(state.tickers
+  const rows = state.tickers
     .map(t => t.isPortfolioRef
-      ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
-      : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
+      ? { ticker: t.ticker.trim(), weight: apiTickerWeight(t.weight), isPortfolioRef: true, portfolioRef: t.ticker.trim() }
+      : { ticker: t.ticker.trim().toUpperCase(), weight: apiTickerWeight(t.weight) }
     )
-    .filter(t => t.ticker && t.weight !== 0))
+    .filter(t => t.ticker && isNonZeroApiWeight(t.weight))
+
+  if (hasOrderSensitiveTickerRows(rows)) return rows
+  return mergeAPITickerRows(rows as Array<{ ticker: string; weight: number; isPortfolioRef?: boolean; portfolioRef?: string }>)
 }
 
 function blockStateToAPILabel(state: BlockState, idx: number, tickers: ReturnType<typeof blockStateToAPITickers>) {
@@ -238,9 +258,10 @@ export function blockStateToSavedConfig(state: BlockState) {
   return {
     tickers: state.tickers
       .map(t => t.isPortfolioRef
-        ? { ticker: t.ticker.trim(), weight: parseFloat(t.weight) || 0, isPortfolioRef: true, portfolioRef: t.ticker.trim() }
-        : { ticker: t.ticker.trim().toUpperCase(), weight: parseFloat(t.weight) || 0 }
-      ),
+        ? { ticker: t.ticker.trim(), weight: apiTickerWeight(t.weight), isPortfolioRef: true, portfolioRef: t.ticker.trim() }
+        : { ticker: t.ticker.trim().toUpperCase(), weight: apiTickerWeight(t.weight) }
+      )
+      .filter(t => t.ticker && isNonZeroApiWeight(t.weight)),
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
       marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,

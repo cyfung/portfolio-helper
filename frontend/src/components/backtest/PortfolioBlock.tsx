@@ -134,6 +134,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       key: string
       label: string
       isPortfolioRef: boolean
+      isSwap: boolean
       rows: TickerRowState[]
       weight: number
       firstIndex: number
@@ -141,9 +142,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     }
 
     const groups = new Map<string, TickerGroup>()
-    const tickerSortRank = (label: string, isPortfolioRef: boolean) => {
+    const tickerSortRank = (label: string, isPortfolioRef: boolean, isSwap: boolean) => {
       if (isPortfolioRef) return 1
-      if (parseSwapExpression(label)) return 2
+      if (isSwap) return 2
       if (isPlaceholderTicker(label)) return 3
       return 0
     }
@@ -151,7 +152,10 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     localRef.current.tickers.forEach((row, index) => {
       const isPortfolioRef = row.isPortfolioRef === true
       const label = isPortfolioRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
-      const key = label ? `${isPortfolioRef ? 'portfolio' : 'ticker'}:${label}` : `empty:${row.id}`
+      const isSwap = !isPortfolioRef && parseSwapExpression(label) != null
+      const key = isSwap
+        ? `swap:${index}:${row.id}`
+        : label ? `${isPortfolioRef ? 'portfolio' : 'ticker'}:${label}` : `empty:${row.id}`
       const weight = parseStrictNumberInput(row.weight) ?? 0
       const group = groups.get(key)
       if (group) {
@@ -163,10 +167,11 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         key,
         label,
         isPortfolioRef,
+        isSwap,
         rows: [row],
         weight,
         firstIndex: index,
-        sortRank: tickerSortRank(label, isPortfolioRef),
+        sortRank: tickerSortRank(label, isPortfolioRef, isSwap),
       })
     })
 
@@ -175,6 +180,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       .sort((a, b) => {
         if (!a.label && b.label) return 1
         if (a.label && !b.label) return -1
+        if (a.isSwap && b.isSwap) {
+          return a.firstIndex - b.firstIndex
+        }
         return a.sortRank - b.sortRank ||
           a.label.localeCompare(b.label) ||
           Number(a.isPortfolioRef) - Number(b.isPortfolioRef) ||
@@ -485,12 +493,13 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               title={[
                 'Synthetic ticker syntax: use multiplier/ticker pairs, e.g. 1 KMLM 1 VT.',
                 'Swap syntax: A > B #m + C #n means -A + m*B + n*C plus DUMMY filler; # and multipliers are optional.',
+                'Use * as a swap row weight to swap all remaining source weight at that point in swap order.',
                 'SWAP(A,B,k) is still supported; k defaults to 1.',
                 'S=<spread %>, e.g. S=1.5',
                 'R=<rebalance: D/W/M/Q/Y>, e.g. R=Q',
                 'E=<expense ratio or credit %>, e.g. E=0.95 or E=-1.5',
                 'V=<relative volatility change %>, e.g. V=20 or V=-25',
-                'Examples: 2 QQQ S=1.5 R=Q E=-1.5 V=20; CTAP > SSO #1.5; SWAP(CTAP,SSO,1.5).',
+                'Examples: 2 QQQ S=1.5 R=Q E=-1.5 V=20; CTAP > SSO #1.5 with weight *; SWAP(CTAP,SSO,1.5).',
               ].join('\n')}
               aria-label="Ticker modifier help"
               tabIndex={0}

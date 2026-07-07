@@ -3,6 +3,11 @@ export interface WeightedTickerExpression {
   weight: number
 }
 
+export interface WeightedOrWildcardTickerExpression {
+  ticker: string
+  weight: number | '*'
+}
+
 export interface TickerExpressionConfig {
   letf?: string
 }
@@ -201,19 +206,59 @@ export function parseLetfComponents(raw: string): WeightedTickerExpression[] {
 }
 
 export function expandSwapTickerRows(rows: WeightedTickerExpression[]): WeightedTickerExpression[] {
-  function expand(ticker: string, weight: number): WeightedTickerExpression[] {
-    const swap = parseSwapExpression(ticker)
-    if (!swap) return [{ ticker: normalizeTickerExpression(ticker), weight }]
-    const legs = swap.legs ?? [{ ticker: swap.to, weight: swap.factor }]
-    const legWeightTotal = legs.reduce((sum, leg) => sum + leg.weight, 0)
-    return [
-      ...expand(swap.from, -weight),
-      ...legs.flatMap(leg => expand(leg.ticker, weight * leg.weight)),
-      { ticker: 'DUMMY', weight: weight * (2 - legWeightTotal) },
-    ]
+  return resolveSwapTickerRows(rows)
+}
+
+export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]): WeightedTickerExpression[] {
+  const weights = new Map<string, number>()
+  const swapRows: { ticker: string; weight: number | '*'; swap: SwapExpression }[] = []
+
+  function add(ticker: string, weight: number) {
+    const key = normalizeTickerExpression(ticker)
+    if (!key || !isResolvedNonZeroWeight(weight)) return
+    const next = (weights.get(key) ?? 0) + weight
+    if (isResolvedNonZeroWeight(next)) weights.set(key, next)
+    else weights.delete(key)
   }
 
-  return rows.flatMap(row => expand(row.ticker, row.weight))
+  function expand(ticker: string, weight: number): void {
+    const swap = parseSwapExpression(ticker)
+    if (!swap) {
+      add(ticker, weight)
+      return
+    }
+    const legs = swap.legs ?? [{ ticker: swap.to, weight: swap.factor }]
+    const legWeightTotal = legs.reduce((sum, leg) => sum + leg.weight, 0)
+    expand(swap.from, -weight)
+    legs.forEach(leg => expand(leg.ticker, weight * leg.weight))
+    add('DUMMY', weight * (2 - legWeightTotal))
+  }
+
+  for (const row of rows) {
+    const swap = parseSwapExpression(row.ticker)
+    if (swap) {
+      swapRows.push({ ticker: row.ticker, weight: row.weight, swap })
+    } else {
+      if (row.weight === '*') throw new Error('Wildcard weight * is only supported on swap rows.')
+      expand(row.ticker, row.weight)
+    }
+  }
+
+  swapRows.forEach(row => {
+    if (row.weight !== '*') {
+      expand(row.ticker, row.weight)
+      return
+    }
+
+    const from = normalizeTickerExpression(row.swap.from)
+    const available = weights.get(from) ?? 0
+    if (!isResolvedNonZeroWeight(available) || available <= 0) {
+      throw new Error(`No available ${from} weight to swap.`)
+    }
+    expand(row.ticker, available)
+  })
+
+  return [...weights.entries()].map(([ticker, weight]) => ({ ticker, weight }))
 }
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
