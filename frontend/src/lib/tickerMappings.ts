@@ -293,20 +293,20 @@ function applySingleTickerMappingWithWarnings(ticker: string, mapping: TickerMap
 
   if (rawTicker.toUpperCase() === mapping.from && !rawTicker.includes(' ')) return { value: mapping.to, warnings: [] }
   if (!rawTicker.includes(' ')) return { value: normalizeTickerExpression(rawTicker), warnings: [] }
+  if (mapping.applyTo === 'ticker') return { value: normalizeMappedTickerSegment(rawTicker), warnings: [] }
 
   const tokens = tokenizeDefinition(rawTicker)
   const output: string[] = []
   const replacementModifiers = modifierKinds(mapping.to)
   const willReplaceAnyComponent = letfTokensContainMapping(tokens, mapping)
-  const applyToFullExpression = mapping.applyTo !== 'ticker'
-  const willReplaceComponent = applyToFullExpression && replacementModifiers.size > 0 && willReplaceAnyComponent
+  const willReplaceComponent = replacementModifiers.size > 0 && willReplaceAnyComponent
   let replacedComponent = false
   for (let i = 0; i < tokens.length;) {
     const token = tokens[i]
     if (isModifierToken(token)) {
       const kind = modifierKind(token)
       if (!willReplaceAnyComponent) output.push(token)
-      else if (applyToFullExpression && (!willReplaceComponent || !kind || !replacementModifiers.has(kind))) output.push(token)
+      else if (!willReplaceComponent || !kind || !replacementModifiers.has(kind)) output.push(token)
       i += 1
       continue
     }
@@ -420,7 +420,7 @@ function mapTickerExpressionForSingleMapping(
 
     const warnings = new Set<string>()
     const mappedSegments = chain.map(segment => {
-      const mapped = applySingleTickerMappingWithWarnings(segment, mapping)
+      const mapped = mapTickerExpressionForSingleMapping(segment, mapping)
       mapped.warnings.forEach(warning => warnings.add(warning))
       return mapped.value
     })
