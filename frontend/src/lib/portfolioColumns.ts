@@ -10,9 +10,9 @@ export const PORTFOLIO_STOCK_COLUMNS = [
   { id: 'mktVal', label: 'Mkt Val' },
   { id: 'weight', label: 'Weight' },
   { id: 'rebalQty', label: 'Rebal Qty' },
-  { id: 'rebalDollars', label: 'Rebal $' },
+  { id: 'rebalDollars', label: 'Rebal💰' },
   { id: 'allocQty', label: 'Alloc Qty' },
-  { id: 'allocDollars', label: 'Alloc $' },
+  { id: 'allocDollars', label: 'Alloc💰' },
   { id: 'ccy', label: 'CCY' },
 ] as const
 
