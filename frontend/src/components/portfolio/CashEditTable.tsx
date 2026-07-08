@@ -15,15 +15,37 @@ interface CashEditRowProps {
   privacyScalingActive: boolean
 }
 
+function numberFromInputValue(value: string, allowCommas = false): number {
+  const raw = allowCommas ? value.replace(/,/g, '') : value
+  const parsed = parseFloat(raw)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function zeroAsEmpty(value: number): string {
+  return value === 0 ? '' : value.toString()
+}
+
+function normalizeNumberInputOnBlur(value: string, allowCommas = false): string {
+  if (value === '') return ''
+  const parsed = numberFromInputValue(value, allowCommas)
+  return parsed === 0 ? '' : value
+}
+
+function sanitizeNumberEditValue(value: string, allowCommas = false): string {
+  return allowCommas
+    ? value.replace(/[^0-9eE.+\-,]/g, '')
+    : value.replace(/[^0-9eE.+-]/g, '')
+}
+
 function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRowProps) {
   const isRef = entry.currency === 'P'
   const entryType = isRef && entry.marginFlag ? 'ref-margin'
     : isRef ? 'ref'
     : entry.marginFlag ? 'margin'
     : 'normal'
-  const [amountValue, setAmountValue] = useState(isRef ? '' : entry.amount.toString())
+  const [amountValue, setAmountValue] = useState(isRef ? '' : zeroAsEmpty(entry.amount))
   const [labelValue, setLabelValue] = useState(entry.label)
-  const [multiplierValue, setMultiplierValue] = useState(isRef ? entry.amount.toString() : '1')
+  const [multiplierValue, setMultiplierValue] = useState(isRef ? zeroAsEmpty(entry.amount) : '1')
   const [amountFocused, setAmountFocused] = useState(false)
   const [multiplierFocused, setMultiplierFocused] = useState(false)
   const twsManaged = isTwsManagedCashLabel(labelValue)
@@ -90,15 +112,21 @@ function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRow
           autoComplete="off"
         />
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           className="edit-input cash-edit-amount"
           value={privacyScalingActive && !amountFocused ? '' : amountValue}
           data-raw-value={amountValue}
           placeholder={privacyScalingActive && !amountFocused ? 'Set' : '0'}
-          step="any"
-          onFocus={() => setAmountFocused(true)}
-          onBlur={() => setAmountFocused(false)}
-          onChange={e => setAmountValue(e.target.value)}
+          onFocus={() => {
+            setAmountValue(current => numberFromInputValue(current, true) === 0 ? '' : current)
+            setAmountFocused(true)
+          }}
+          onBlur={() => {
+            setAmountValue(current => normalizeNumberInputOnBlur(current, true))
+            setAmountFocused(false)
+          }}
+          onChange={e => setAmountValue(sanitizeNumberEditValue(e.target.value, true))}
         />
       </td>
 
@@ -114,15 +142,21 @@ function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRow
           ))}
         </select>
         <input
-          type="number"
+          type="text"
+          inputMode="decimal"
           className="edit-input cash-edit-multiplier"
           value={privacyScalingActive && !multiplierFocused ? '' : multiplierValue}
           data-raw-value={multiplierValue}
           placeholder={privacyScalingActive && !multiplierFocused ? 'Set' : '1'}
-          step="any"
-          onFocus={() => setMultiplierFocused(true)}
-          onBlur={() => setMultiplierFocused(false)}
-          onChange={e => setMultiplierValue(e.target.value)}
+          onFocus={() => {
+            setMultiplierValue(current => numberFromInputValue(current) === 0 ? '' : current)
+            setMultiplierFocused(true)
+          }}
+          onBlur={() => {
+            setMultiplierValue(current => normalizeNumberInputOnBlur(current))
+            setMultiplierFocused(false)
+          }}
+          onChange={e => setMultiplierValue(sanitizeNumberEditValue(e.target.value))}
         />
       </td>
 

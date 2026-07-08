@@ -21,10 +21,12 @@ interface Props {
   initialStocks?: StockData[]
 }
 
+type NumericInputValue = number | string
+
 interface StockRow {
   symbol: string
-  qty: number
-  weight: number
+  qty: NumericInputValue
+  weight: NumericInputValue
   letf: string
   groups: string
   deleted?: boolean
@@ -70,6 +72,35 @@ function inputRawValue(input: HTMLInputElement | null): string {
   return input?.dataset.rawValue ?? input?.value ?? ''
 }
 
+function numberFromInputValue(value: NumericInputValue): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const parsed = parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function numberInputValue(value: NumericInputValue): string | number {
+  return value
+}
+
+function zeroAsEmpty(value: number): NumericInputValue {
+  return value === 0 ? '' : value
+}
+
+function normalizeNumberInputOnBlur(value: NumericInputValue): NumericInputValue {
+  if (value === '') return ''
+  const parsed = numberFromInputValue(value)
+  return parsed === 0 ? '' : value
+}
+
+function sanitizeNumberEditValue(value: string): string {
+  return value.replace(/[^0-9eE.+-]/g, '')
+}
+
+function numberClipboardValue(value: NumericInputValue): string {
+  if (value === '' || numberFromInputValue(value) === 0) return ''
+  return String(value)
+}
+
 /** Read all cash rows from the CashEditTable DOM (matching original JS save logic) */
 function readCashFromDom(): object[] {
   const cashUpdates: object[] = []
@@ -113,8 +144,8 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       .filter(s => !isPlaceholderTicker(s.label))
       .map(s => ({
         symbol: s.label,
-        qty: s.originalAmount ?? s.amount,
-        weight: s.targetWeight ?? 0,
+        qty: zeroAsEmpty(s.originalAmount ?? s.amount),
+        weight: zeroAsEmpty(s.targetWeight ?? 0),
         letf: letfAttrToStr(s.letf),
         groups: s.groups,
       }))
@@ -139,7 +170,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
 
   const totalWeight = stockRows
     .filter(r => !r.deleted && !isPlaceholderTicker(r.symbol))
-    .reduce((sum, r) => sum + (r.weight || 0), 0)
+    .reduce((sum, r) => sum + numberFromInputValue(r.weight), 0)
 
   // ── Trigger save when saveKey increments ──────────────────────────────────
   const prevSaveKey = useRef(saveKey)
@@ -155,8 +186,8 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       .filter(r => !r.deleted && r.symbol.trim() && !isPlaceholderTicker(r.symbol))
       .map(r => ({
         symbol: r.symbol.trim().toUpperCase(),
-        amount: r.qty || 0,
-        targetWeight: r.weight || 0,
+        amount: numberFromInputValue(r.qty),
+        targetWeight: numberFromInputValue(r.weight),
         letf: r.letf || '',
         groups: r.groups || '',
       }))
@@ -185,7 +216,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }
 
   function addStockRow() {
-    setStockRows(rows => [...rows, { symbol: '', qty: 0, weight: 0, letf: '', groups: '' }])
+    setStockRows(rows => [...rows, { symbol: '', qty: '', weight: '', letf: '', groups: '' }])
   }
 
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
@@ -199,6 +230,18 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       else next.delete(idx)
       return next
     })
+  }
+
+  function handleNumberFocus(idx: number, field: 'qty' | 'weight') {
+    setStockRows(rows => rows.map((r, i) => (
+      i === idx && numberFromInputValue(r[field]) === 0 ? { ...r, [field]: '' } : r
+    )))
+  }
+
+  function handleNumberBlur(idx: number, field: 'qty' | 'weight') {
+    setStockRows(rows => rows.map((r, i) => (
+      i === idx ? { ...r, [field]: normalizeNumberInputOnBlur(r[field]) } : r
+    )))
   }
 
   function importSavedPortfolioWeights() {
@@ -238,7 +281,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             next[existingIdx].weight = row.weight
           } else {
             rowBySymbol.set(symbol, next.length)
-            next.push({ symbol, qty: 0, weight: row.weight, letf: '', groups: '' })
+            next.push({ symbol, qty: '', weight: row.weight, letf: '', groups: '' })
           }
         }
         return next
@@ -321,7 +364,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           targetIdx = visibleIndices[visiblePos]
         } else {
           // Need to append a new row
-          next.push({ symbol: '', qty: 0, weight: 0, letf: '', groups: '' })
+          next.push({ symbol: '', qty: '', weight: '', letf: '', groups: '' })
           targetIdx = next.length - 1
           visibleIndices.push(targetIdx)
         }
@@ -332,7 +375,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           const isWeight = col === 'weight'
           const cleaned = isWeight ? val.replace(/%/g, '').trim() : val.trim()
           if (col === 'qty' || col === 'weight') {
-            ;(next[targetIdx] as any)[col] = parseFloat(cleaned) || 0
+            ;(next[targetIdx] as any)[col] = normalizeNumberInputOnBlur(cleaned)
           } else {
             ;(next[targetIdx] as any)[col] = cleaned
           }
@@ -355,7 +398,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     if (copyTableBtn) {
       const lines = stockRows
         .filter(r => !r.deleted)
-        .map(r => [r.symbol, r.qty, r.weight, r.letf, r.groups].join('\t'))
+        .map(r => [r.symbol, numberClipboardValue(r.qty), numberClipboardValue(r.weight), r.letf, r.groups].join('\t'))
       navigator.clipboard.writeText(lines.join('\n')).then(() => flashCopyButton(copyTableBtn))
       return
     }
@@ -365,7 +408,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       const col = copyColBtn.getAttribute('data-column') as keyof StockRow
       const values = stockRows
         .filter(r => !r.deleted)
-        .map(r => String(r[col] ?? ''))
+        .map(r => col === 'qty' || col === 'weight' ? numberClipboardValue(r[col]) : String(r[col] ?? ''))
       navigator.clipboard.writeText(values.join('\n')).then(() => flashCopyButton(copyColBtn))
     }
   }
@@ -436,30 +479,37 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
               </td>
               <td className="amount">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   className="edit-input edit-qty"
                   data-column="qty"
                   data-symbol={row.symbol}
-                  value={privacyScalingActive && !focusedQtyRows.has(idx) ? '' : row.qty}
+                  value={privacyScalingActive && !focusedQtyRows.has(idx) ? '' : numberInputValue(row.qty)}
                   placeholder={privacyScalingActive && !focusedQtyRows.has(idx) ? 'Set' : undefined}
-                  min={0}
-                  step="any"
                   style={{ display: 'block' }}
-                  onFocus={() => setQtyFocused(idx, true)}
-                  onBlur={() => setQtyFocused(idx, false)}
-                  onChange={e => updateStock(idx, 'qty', parseFloat(e.target.value) || 0)}
+                  onFocus={() => {
+                    handleNumberFocus(idx, 'qty')
+                    setQtyFocused(idx, true)
+                  }}
+                  onBlur={() => {
+                    handleNumberBlur(idx, 'qty')
+                    setQtyFocused(idx, false)
+                  }}
+                  onChange={e => updateStock(idx, 'qty', sanitizeNumberEditValue(e.target.value))}
                   onKeyDown={handleEnterKey}
                 />
               </td>
               <td>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   className="edit-input edit-weight"
                   data-column="weight"
                   data-symbol={row.symbol}
-                  value={row.weight}
-                  min={0} max={100} step={0.1}
-                  onChange={e => updateStock(idx, 'weight', parseFloat(e.target.value) || 0)}
+                  value={numberInputValue(row.weight)}
+                  onFocus={() => handleNumberFocus(idx, 'weight')}
+                  onBlur={() => handleNumberBlur(idx, 'weight')}
+                  onChange={e => updateStock(idx, 'weight', sanitizeNumberEditValue(e.target.value))}
                   onKeyDown={handleEnterKey}
                 />
               </td>
