@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
+import { newId } from '@/types/backtest'
 import {
+  DerivedSubStrategyState,
   DipSurgeScopeState,
   DipSurgeState,
   DrawdownMarginOverrideState,
@@ -121,6 +123,17 @@ function nextWithoutOptionalSection(current: RebalStrategyState, key: OptionalSt
       return { sellOnSurge: { ...sellOnSurge, basePortfolio: null } }
     case 'sellOnSurgeIndividual':
       return { sellOnSurge: { ...sellOnSurge, individualStock: null } }
+  }
+}
+
+function cloneDerivedSubStrategy(derived: DerivedSubStrategyState): DerivedSubStrategyState {
+  return {
+    ...derived,
+    id: newId(),
+    scale: {
+      ...derived.scale,
+      steps: (derived.scale.steps ?? []).map(step => ({ ...step, id: newId() })),
+    },
   }
 }
 
@@ -260,7 +273,8 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   }
 
   function handleDragOver(e: React.DragEvent) {
-    if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
+    const types = e.dataTransfer.types
+    if (types.includes('application/x-strategy-chip') || types.includes('application/x-derived-sub-strategy')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
       setDragOver(true)
@@ -270,7 +284,15 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setDragOver(false)
-    if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
+    if (e.dataTransfer.types.includes('application/x-derived-sub-strategy')) {
+      const raw = e.dataTransfer.getData('application/x-derived-sub-strategy')
+      if (!raw) return
+      const derived = cloneDerivedSubStrategy(JSON.parse(raw) as DerivedSubStrategyState)
+      updateLocal({
+        ...localRef.current,
+        derivedSubStrategies: [...(localRef.current.derivedSubStrategies ?? []), derived],
+      }, true)
+    } else if (e.dataTransfer.types.includes('application/x-strategy-chip')) {
       const { name, config } = JSON.parse(e.dataTransfer.getData('application/x-strategy-chip'))
       updateLocal(savedConfigToStrategyState(config, name))
     }

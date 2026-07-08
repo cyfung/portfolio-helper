@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react'
-import { PlusCircle } from 'lucide-react'
+import { GripVertical, PlusCircle } from 'lucide-react'
 import type { AllocStrategyOption } from '@/lib/allocStrategies'
 import {
   DerivedSubStrategyState,
@@ -140,6 +140,11 @@ export default function DerivedSubStrategiesSection({
     onChange({ derivedSubStrategies: value.filter(item => item.id !== id) })
   }, [onChange, value])
 
+  const handleDragStart = useCallback((e: React.DragEvent, derived: DerivedSubStrategyState) => {
+    e.dataTransfer.setData('application/x-derived-sub-strategy', JSON.stringify(derived))
+    e.dataTransfer.effectAllowed = 'copy'
+  }, [])
+
   const handleScaleFunctionChange = (
     derived: DerivedSubStrategyState,
     fn: DerivedSubStrategyState['scale']['function'],
@@ -194,7 +199,18 @@ export default function DerivedSubStrategiesSection({
           return (
           <div key={derived.id} className="strategy-derived-card">
             <div className="strategy-derived-card-header">
-              <div className="strategy-derived-card-title">Derived Rebalancing</div>
+              <div className="strategy-derived-card-title">
+                <span
+                  className="margin-drag-handle strategy-derived-drag-handle"
+                  draggable
+                  title="Drag to copy this derived strategy component"
+                  aria-label={`Drag derived strategy ${derivedIdx + 1}`}
+                  onDragStart={e => handleDragStart(e, derived)}
+                >
+                  <GripVertical size={14} strokeWidth={2.2} aria-hidden="true" />
+                </span>
+                <span>Derived Rebalancing</span>
+              </div>
               <div className="strategy-derived-card-actions">
                 <label className="strategy-derived-enabled">
                   <span>Enabled</span>

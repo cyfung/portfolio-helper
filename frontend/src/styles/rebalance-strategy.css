@@ -89,11 +89,21 @@
 }
 
 .strategy-derived-card-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
     color: var(--color-accent-primary);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     white-space: nowrap;
+}
+
+.strategy-derived-drag-handle {
+    flex: 0 0 1rem;
+    width: 1rem;
+    height: 1rem;
 }
 
 .strategy-derived-card-actions {
