@@ -2727,6 +2727,42 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_hysteresisStairsCanUseExactZeroTarget() {
+        val dates = days(LocalDate.of(2024, 1, 2), 3)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                targetUpper = 1.00,
+                stepBaseTarget = 0.95,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.0)),
+            ),
+            absoluteDeviationPct = 0.05,
+            buyDeviationPct = 0.05,
+            sellDeviationPct = 0.05,
+            timeoutDays = 20,
+            maxMargin = 1.10,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(rebalance = RebalanceStrategy.DAILY),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(1.20, 0.55, 0.55),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.0, margins[1], label = "zero stair target should sell down to unlevered")
+        assertApprox(0.0, margins[2], label = "paused stair stage should keep exact zero target")
+    }
+
+    @Test
     fun derivedStrategy_hysteresisStairsStageOneUsesNormalDeviationBand() {
         val dates = days(LocalDate.of(2024, 1, 2), 3)
         val prices = dates.mapIndexed { i, date -> date to if (i == 0) 1.0 else 0.9 }.toMap()

@@ -225,7 +225,7 @@ export default function DrawdownMarginTriggerSection({
         {issues.length > 0 && <div className="strategy-hint input-error-text">{issues[0]}</div>}
         <div className="strategy-row">
           <label />
-          <button type="button" className="add-ticker-btn" onClick={addTier}>
+          <button type="button" className="add-ticker-btn" onClick={() => addTier()}>
             + Add Tier
           </button>
         </div>

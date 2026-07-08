@@ -487,7 +487,7 @@ export default function DerivedSubStrategiesSection({
           )
         })}
         <div className="strategy-derived-add-row">
-          <button type="button" className="strategy-derived-add-btn" onClick={addSubStrategy}>
+          <button type="button" className="strategy-derived-add-btn" onClick={() => addSubStrategy()}>
             <PlusCircle size={18} strokeWidth={2.2} aria-hidden="true" />
             <span>Add Derived Strategy Component</span>
           </button>

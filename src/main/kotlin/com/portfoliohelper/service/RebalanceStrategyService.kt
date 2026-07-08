@@ -1532,7 +1532,7 @@ object RebalanceStrategyService {
                   strategy.sellOnHighMargin
                 }
         effectiveSellHigh
-            ?.takeIf { it.deviationPct > 0 }
+            ?.takeIf { it.deviationPct > 0 || derivedSubStrategy != null }
             ?.let { cfg ->
               val forcedDerivedSell = derivedMaxSell != null
               if ((forcedDerivedSell || derivedExactTarget || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.SELL, i))) &&
@@ -1585,7 +1585,7 @@ object RebalanceStrategyService {
                   strategy.buyOnLowMargin
                 }
         effectiveBuyLow
-            ?.takeIf { it.deviationPct > 0 }
+            ?.takeIf { it.deviationPct > 0 || derivedSubStrategy != null }
             ?.let { cfg ->
               if (drawdownBuyLowMomentumAllowed &&
                   (derivedExactTarget || (!derivedTimeoutBlocked && !buyCooldownBlocked)) &&
