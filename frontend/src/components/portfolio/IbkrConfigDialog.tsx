@@ -8,11 +8,12 @@ interface Props {
 export interface IbkrConfig {
   token: string
   queryId: string
+  tradesQueryId: string
   twsAccount: string
 }
 
 export default function IbkrConfigDialog({ portfolioSlug, onClose }: Props) {
-  const [cfg, setCfg]       = useState<IbkrConfig>({ token: '', queryId: '', twsAccount: '' })
+  const [cfg, setCfg]       = useState<IbkrConfig>({ token: '', queryId: '', tradesQueryId: '', twsAccount: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
   const [saved, setSaved]   = useState(false)
@@ -21,7 +22,12 @@ export default function IbkrConfigDialog({ portfolioSlug, onClose }: Props) {
   useEffect(() => {
     fetch(`/api/portfolio/${portfolioSlug}/ibkr-config`)
       .then(r => r.json())
-      .then((d: IbkrConfig) => setCfg(d))
+      .then((d: Partial<IbkrConfig>) => setCfg({
+        token: d.token ?? '',
+        queryId: d.queryId ?? '',
+        tradesQueryId: d.tradesQueryId ?? '',
+        twsAccount: d.twsAccount ?? '',
+      }))
       .catch(() => {})
     tokenRef.current?.focus()
   }, [portfolioSlug])
@@ -31,10 +37,6 @@ export default function IbkrConfigDialog({ portfolioSlug, onClose }: Props) {
   }
 
   async function handleSave() {
-    if (!cfg.token.trim() || !cfg.queryId.trim()) {
-      setError('Token and Query ID are required.')
-      return
-    }
     setSaving(true)
     setError('')
     try {
@@ -79,27 +81,44 @@ export default function IbkrConfigDialog({ portfolioSlug, onClose }: Props) {
             />
           </label>
 
+          <div style={{ color: 'var(--color-text-tertiary)', fontSize: '0.78rem' }}>
+            All fields are optional. Fill only the features you use.
+          </div>
+
           <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.85rem' }}>
-            <span>Flex Query Token</span>
+            <span>Flex Web Service Token</span>
             <input
               type="password"
               className="backtest-config-btn"
               style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
               value={cfg.token}
               onChange={e => setCfg(c => ({ ...c, token: e.target.value }))}
-              placeholder="IBKR Flex Query token"
+              placeholder="Shared IBKR Flex token"
               autoComplete="off"
             />
           </label>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.85rem' }}>
-            <span>Query ID</span>
+            <span>Performance Query ID</span>
             <input
               type="text"
               className="backtest-config-btn"
               style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
               value={cfg.queryId}
               onChange={e => setCfg(c => ({ ...c, queryId: e.target.value }))}
+              placeholder="e.g. 123456"
+              autoComplete="off"
+            />
+          </label>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.85rem' }}>
+            <span>Trades Query ID</span>
+            <input
+              type="text"
+              className="backtest-config-btn"
+              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'monospace' }}
+              value={cfg.tradesQueryId}
+              onChange={e => setCfg(c => ({ ...c, tradesQueryId: e.target.value }))}
               placeholder="e.g. 123456"
               autoComplete="off"
             />

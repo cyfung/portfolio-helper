@@ -450,23 +450,46 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
 
       {/* ── Chart ──────────────────────────────────────────────────────── */}
       {isEmpty && (
-        <div style={{ padding: '2rem 1rem', fontSize: '0.85rem', lineHeight: 1.7 }}>
-          <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>No data yet — set up a Flex Query in IBKR:</div>
-          <ol style={{ paddingLeft: '1.4rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-            <li>In IBKR, go to <strong>Reports → Flex Queries</strong> and create a new query.</li>
-            <li>Enable these sections:
-              <ul style={{ paddingLeft: '1.2rem', marginTop: '0.2rem' }}>
-                <li><code>Net Asset Value (NAV) in Base</code> — fields: <code>cash</code>, <code>total</code></li>
-                <li><code>Open Positions</code> — fields: <code>symbol</code>, <code>positionValue</code></li>
-                <li><code>Cash Transactions</code> — fields: <code>fxRateToBase</code>, <code>amount</code>, <code>type</code></li>
-              </ul>
-            </li>
-            <li>Set the output <strong>Format</strong> to <strong>XML</strong>.</li>
-            <li>Set <strong>Date Range</strong> to <strong>Last 365 Days</strong> (or Last 30 Days); set <strong>Breakout by Day</strong> to <strong>Yes</strong>.</li>
-            <li>For history beyond 365 days, run the query manually with a custom date range and use <strong>Import XML</strong> — overlapping dates are fine and will be deduplicated.</li>
-            <li>Generate a <strong>Flex Query Token</strong> under <strong>Settings → Flex Web Service</strong>.</li>
-            <li>Click <strong>IB Config</strong> above, enter the token + Query ID, then click <strong>Fetch from IBKR</strong>.</li>
-          </ol>
+        <div className="flex-query-guide">
+          <div className="flex-query-guide-header">
+            <span className="flex-query-guide-badge performance">Performance query</span>
+            <h2>No performance data yet</h2>
+          </div>
+          <div className="flex-query-steps">
+            <div><strong>1.</strong> In IBKR, open <strong>Reports - Flex Queries</strong> and create a query.</div>
+            <div><strong>2.</strong> Set <strong>Format</strong> to <strong>XML</strong>.</div>
+            <div><strong>3.</strong> Set <strong>Date Range</strong> to <strong>Last 365 Days</strong> and <strong>Breakout by Day</strong> to <strong>Yes</strong>.</div>
+            <div><strong>4.</strong> In <strong>IB Config</strong>, fill <strong>Flex Web Service Token</strong> and <strong>Performance Query ID</strong>, then click <strong>Fetch from IBKR</strong>.</div>
+          </div>
+          <div className="flex-query-table-wrap">
+            <table className="flex-query-field-table">
+              <thead>
+              <tr>
+                <th>Flex section</th>
+                <th>Required fields</th>
+                <th>Used for</th>
+              </tr>
+              </thead>
+              <tbody>
+              <tr>
+                <td><code>Net Asset Value (NAV) in Base</code></td>
+                <td><code>cash</code>, <code>total</code></td>
+                <td>Daily cash and NAV series</td>
+              </tr>
+              <tr>
+                <td><code>Open Positions</code></td>
+                <td><code>symbol</code>, <code>positionValue</code></td>
+                <td>Daily position values and change detection</td>
+              </tr>
+              <tr>
+                <td><code>Cash Transactions</code></td>
+                <td><code>fxRateToBase</code>, <code>amount</code>, <code>type</code></td>
+                <td>External cash-flow and MWR calculations</td>
+              </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="flex-query-note">For history beyond 365 days, run the query manually with a custom date range and use <strong>Import XML</strong>. Overlapping dates are deduplicated.</div>
         </div>
       )}
       {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>Loading…<span className="btn-spinner" /></div>}

@@ -5,6 +5,8 @@ import java.io.DataInputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.Socket
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.*
 import kotlin.random.Random
 
@@ -81,15 +83,95 @@ data class PortfolioSnapshot(
 
 // ── TWS Message Constants ───────────────────────────────────────────────────────
 
+data class TwsExecution(
+    val execId: String,
+    val time: String,
+    val account: String,
+    val symbol: String,
+    val secType: String,
+    val exchange: String,
+    val currency: String,
+    val side: String,
+    val shares: Double,
+    val price: Double,
+    val orderId: Int,
+    val commission: Double? = null,
+    val commissionCurrency: String? = null,
+    val realizedPnl: Double? = null
+)
+
+data class TwsExecutionReport(
+    val account: String,
+    val executions: List<TwsExecution>
+) {
+    companion object {
+        private val twsTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd HH:mm:ss")
+
+        fun fetch(
+            host: String = "127.0.0.1",
+            port: Int = 7496,
+            account: String? = null,
+            days: Int = 1,
+            timeoutSeconds: Long = 10
+        ): TwsExecutionReport {
+            val client = TwsClient(host = host, port = port)
+            client.connect()
+            val readerThread = client.startReaderThread()
+
+            try {
+                Thread.sleep(1000)
+
+                if (client.startupError)
+                    error("TWS reported errors during startup - aborting transaction fetch")
+
+                val resolvedAccount = account
+                    ?: client.firstIndividualAccount()
+                    ?: error("No individual account (U-prefix) found in: ${client.managedAccounts}")
+
+                val clampedDays = days.coerceIn(1, 7)
+                val since = LocalDate.now()
+                    .minusDays((clampedDays - 1).toLong())
+                    .atStartOfDay()
+                    .format(twsTimeFormatter)
+
+                val accountExecutions = client.getExecutions(
+                    accountFilter = resolvedAccount,
+                    since = since,
+                    timeoutSeconds = timeoutSeconds
+                )
+                val executions = accountExecutions.ifEmpty {
+                    client.getExecutions(
+                        accountFilter = null,
+                        since = since,
+                        timeoutSeconds = timeoutSeconds
+                    )
+                }
+
+                return TwsExecutionReport(
+                    account = resolvedAccount,
+                    executions = executions
+                )
+            } finally {
+                readerThread.interrupt()
+                client.disconnect()
+            }
+        }
+    }
+}
+
 private object OutMsg {
     const val REQ_ACCOUNT_UPDATES = 6
+    const val REQ_EXECUTIONS = 7
     const val REQ_POSITIONS = 61
     const val CANCEL_POSITIONS = 64
 }
 
 private object InMsg {
     const val ACCT_VALUE = 6
+    const val EXECUTION_DATA = 11
     const val ACCT_DOWNLOAD_END = 54
+    const val EXECUTION_DATA_END = 55
+    const val COMMISSION_REPORT = 59
     const val ERR_MSG = 4
     const val MANAGED_ACCTS = 15
     const val POSITION = 61
@@ -117,6 +199,16 @@ internal class TwsClient(
 
     private val positions = ConcurrentHashMap<String, StockPosition>()
     private var positionLatch = CountDownLatch(1)
+
+    private data class TwsCommission(
+        val commission: Double?,
+        val currency: String?,
+        val realizedPnl: Double?
+    )
+
+    private val executions = ConcurrentHashMap<String, TwsExecution>()
+    private val commissions = ConcurrentHashMap<String, TwsCommission>()
+    private var executionLatch = CountDownLatch(1)
 
     // account -> key -> currency -> value
     private val acctValues =
@@ -238,6 +330,29 @@ internal class TwsClient(
 
     // ── Requests ─────────────────────────────────────────────────────────────
 
+    fun getExecutions(
+        accountFilter: String? = null,
+        since: String = "",
+        timeoutSeconds: Long = 10
+    ): List<TwsExecution> {
+        executions.clear()
+        commissions.clear()
+        executionLatch = CountDownLatch(1)
+
+        requestExecutions(
+            reqId = Random.nextInt(100_000, 999_999),
+            account = accountFilter.orEmpty(),
+            since = since
+        )
+        val complete = executionLatch.await(timeoutSeconds, TimeUnit.SECONDS)
+
+        if (!complete) error("Execution stream timed out - aborting, results discarded")
+
+        return executions.values
+            .filter { accountFilter == null || it.account == accountFilter }
+            .sortedByDescending { it.time }
+    }
+
     private fun requestPositions() {
         sendMessage(listOf(OutMsg.REQ_POSITIONS.toString(), "1"))
     }
@@ -263,6 +378,23 @@ internal class TwsClient(
 
     // ── Message Reader ────────────────────────────────────────────────────────
 
+    private fun requestExecutions(reqId: Int, account: String, since: String) {
+        sendMessage(
+            listOf(
+                OutMsg.REQ_EXECUTIONS.toString(),
+                "3",
+                reqId.toString(),
+                "0",
+                account,
+                since,
+                "",
+                "",
+                "",
+                ""
+            )
+        )
+    }
+
     fun readMessage(): Boolean {
         val fields = readFields() ?: return false
         if (fields.isEmpty()) return true
@@ -273,6 +405,13 @@ internal class TwsClient(
                 logger.debug("Position stream complete")
                 positionLatch.countDown()
             }
+
+            InMsg.EXECUTION_DATA -> handleExecutionData(fields)
+            InMsg.EXECUTION_DATA_END -> {
+                logger.debug("Execution stream complete")
+                executionLatch.countDown()
+            }
+            InMsg.COMMISSION_REPORT -> handleCommissionReport(fields)
 
             InMsg.ACCT_VALUE -> handleAcctValue(fields)
             InMsg.ACCT_DOWNLOAD_END -> {
@@ -363,6 +502,75 @@ internal class TwsClient(
     }
 
     // ── Validation ───────────────────────────────────────────────────────────
+
+    private fun handleExecutionData(fields: List<String>) {
+        if (fields.size < 22) return
+
+        var i = 1
+        i++ // request id
+        val orderId = fields.getOrNull(i++)?.toIntOrNull() ?: 0
+        i++ // contract id
+        val symbol = fields.getOrNull(i++) ?: return
+        val secType = fields.getOrNull(i++) ?: ""
+        i++ // expiry
+        i++ // strike
+        i++ // right
+        i++ // multiplier
+        val contractExchange = fields.getOrNull(i++) ?: ""
+        val currency = fields.getOrNull(i++) ?: ""
+        i++ // local symbol
+        i++ // trading class
+
+        val execId = fields.getOrNull(i++)?.takeIf { it.isNotBlank() } ?: return
+        val time = fields.getOrNull(i++) ?: ""
+        val account = fields.getOrNull(i++) ?: ""
+        val executionExchange = fields.getOrNull(i++) ?: contractExchange
+        val side = fields.getOrNull(i++) ?: ""
+        val shares = fields.getOrNull(i++)?.toDoubleOrNull() ?: 0.0
+        val price = fields.getOrNull(i++)?.toDoubleOrNull() ?: 0.0
+
+        val commission = commissions[execId]
+        executions[execId] = TwsExecution(
+            execId = execId,
+            time = time,
+            account = account,
+            symbol = symbol,
+            secType = secType,
+            exchange = executionExchange.ifBlank { contractExchange },
+            currency = currency,
+            side = side,
+            shares = shares,
+            price = price,
+            orderId = orderId,
+            commission = commission?.commission,
+            commissionCurrency = commission?.currency,
+            realizedPnl = commission?.realizedPnl
+        )
+    }
+
+    private fun handleCommissionReport(fields: List<String>) {
+        if (fields.size < 5) return
+        fun twsOptionalDouble(raw: String?): Double? {
+            val value = raw?.toDoubleOrNull() ?: return null
+            return if (value >= Double.MAX_VALUE / 2) null else value
+        }
+        var i = 1
+        if (fields.getOrNull(i)?.toIntOrNull() != null) i++
+        val execId = fields.getOrNull(i++)?.takeIf { it.isNotBlank() } ?: return
+        val commission = twsOptionalDouble(fields.getOrNull(i++))
+        val currency = fields.getOrNull(i++)?.takeIf { it.isNotBlank() }
+        val realizedPnl = twsOptionalDouble(fields.getOrNull(i++))
+        val report = TwsCommission(commission, currency, realizedPnl)
+
+        commissions[execId] = report
+        executions.computeIfPresent(execId) { _, execution ->
+            execution.copy(
+                commission = report.commission,
+                commissionCurrency = report.currency,
+                realizedPnl = report.realizedPnl
+            )
+        }
+    }
 
     private fun validateAccountChecksum(account: String) {
         val rates = acctExchangeRates[account] ?: return

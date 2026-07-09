@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
-import type { StockData, CashData, StockDisplayItem } from '@/types/portfolio'
+import type { StockData, CashData, StockDisplayItem, TwsTransactionItem, TwsTransactionsResponse } from '@/types/portfolio'
 import { computeDisplay } from '@/lib/rebalance'
 import { TWS_CASH_LABEL, isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 
@@ -53,6 +53,32 @@ function getLivePriceUsd(live: StockDisplayItem | undefined, fxRates: Record<str
   const fxRate = currency === 'USD' ? 1 : fxRates[currency]
   if (!Number.isFinite(fxRate) || fxRate <= 0) return null
   return price * fxRate
+}
+
+function formatTwsNumber(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-'
+  return value.toLocaleString(undefined, { maximumFractionDigits: digits })
+}
+
+function formatTwsMoney(value: number | null | undefined, currency: string | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-'
+  const formatted = value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return currency ? `${formatted} ${currency}` : formatted
+}
+
+function formatTwsTime(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return '-'
+  const match = trimmed.match(/^(\d{4})(\d{2})(\d{2})\s+(\d{2}:\d{2}:\d{2})/)
+  if (!match) return trimmed
+  return `${match[1]}-${match[2]}-${match[3]} ${match[4]}`
+}
+
+function twsSideLabel(side: string): string {
+  const normalized = side.trim().toUpperCase()
+  if (normalized === 'BOT') return 'Buy'
+  if (normalized === 'SLD') return 'Sell'
+  return side || '-'
 }
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import PortfolioTabs from './PortfolioTabs'
@@ -110,6 +136,12 @@ export default function PortfolioViewer() {
   const [editResetKey, setEditResetKey] = useState(0)
   const [dividendDate, setDividendDate] = useState(store.config.dividendStartDate ?? '')
   const [twsSyncing, setTwsSyncing] = useState(false)
+  const [twsTransactionsOpen, setTwsTransactionsOpen] = useState(false)
+  const [twsTransactionDays, setTwsTransactionDays] = useState('7')
+  const [twsTransactionsLoading, setTwsTransactionsLoading] = useState(false)
+  const [twsTransactionsError, setTwsTransactionsError] = useState('')
+  const [twsTransactionsAccount, setTwsTransactionsAccount] = useState('')
+  const [twsTransactions, setTwsTransactions] = useState<TwsTransactionItem[]>([])
   const [syncToast, setSyncToast] = useState({ msg: '', type: '' })
   const [stagedEditStocks, setStagedEditStocks] = useState<StockData[] | null>(null)
   const [stagedEditCash, setStagedEditCash] = useState<CashData[] | null>(null)
@@ -287,6 +319,30 @@ export default function PortfolioViewer() {
     }
   }, [portfolioId, store, setEditModeActive])
 
+  const loadTwsTransactions = useCallback(async (days = twsTransactionDays) => {
+    setTwsTransactionsLoading(true)
+    setTwsTransactionsError('')
+    try {
+      const r = await fetch(`/api/tws/transactions?portfolio=${portfolioId}&days=${encodeURIComponent(days)}`)
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json() as TwsTransactionsResponse & { error?: string }
+      if (data.error) throw new Error(data.error)
+      setTwsTransactionsAccount(data.account)
+      setTwsTransactions(data.transactions ?? [])
+    } catch (e) {
+      setTwsTransactionsError(errorMessage(e))
+      setTwsTransactions([])
+      setTwsTransactionsAccount('')
+    } finally {
+      setTwsTransactionsLoading(false)
+    }
+  }, [portfolioId, twsTransactionDays])
+
+  function openTwsTransactions() {
+    setTwsTransactionsOpen(true)
+    loadTwsTransactions()
+  }
+
   async function restoreDbBackupFromPayload(json: BackupImportPayload, preview?: ImportDependencyPreview) {
     const importedStocks = importedStocksFromBackup(json, preview) ?? store.stocks
     const importedCash = importedCashFromBackup(json) ?? store.cash
@@ -449,6 +505,109 @@ export default function PortfolioViewer() {
     '--portfolio-content-scale': String(portfolioContentScale),
   } as CSSProperties
 
+  function renderTwsTransactionsOverlay() {
+    if (!twsTransactionsOpen) return null
+    return (
+      <div className="tws-transactions-overlay" role="presentation" onMouseDown={e => {
+        if (e.target === e.currentTarget) setTwsTransactionsOpen(false)
+      }}>
+        <div className="tws-transactions-dialog" role="dialog" aria-modal="true" aria-labelledby="tws-transactions-title">
+          <div className="tws-transactions-header">
+            <div>
+              <h2 id="tws-transactions-title">TWS Trades</h2>
+              <span>{twsTransactionsAccount ? `Account ${twsTransactionsAccount}` : 'Recent executions from TWS'}</span>
+            </div>
+            <button
+              type="button"
+              className="tws-transactions-close"
+              aria-label="Close TWS trades"
+              onClick={() => setTwsTransactionsOpen(false)}
+            >
+              x
+            </button>
+          </div>
+
+          <div className="tws-transactions-toolbar">
+            <label htmlFor="tws-transaction-days">Days</label>
+            <select
+              id="tws-transaction-days"
+              value={twsTransactionDays}
+              onChange={e => {
+                const next = e.target.value
+                setTwsTransactionDays(next)
+                loadTwsTransactions(next)
+              }}
+              disabled={twsTransactionsLoading}
+            >
+              <option value="1">Today</option>
+              <option value="3">Last 3 days</option>
+              <option value="7">Last 7 days</option>
+            </select>
+            <button
+              type="button"
+              className="h-btn subtle"
+              onClick={() => loadTwsTransactions()}
+              disabled={twsTransactionsLoading}
+            >
+              {twsTransactionsLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+
+          <div className="tws-transactions-note">
+            TWS may only return trades inside its Trade Log window.
+          </div>
+
+          {twsTransactionsError ? (
+            <div className="tws-transactions-error">{twsTransactionsError}</div>
+          ) : (
+            <div className="tws-transactions-table-wrap">
+              <table className="tws-transactions-table">
+                <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Side</th>
+                  <th>Symbol</th>
+                  <th>Qty</th>
+                  <th>Price</th>
+                  <th>Value</th>
+                  <th>Commission</th>
+                  <th>Exchange</th>
+                </tr>
+                </thead>
+                <tbody>
+                {twsTransactionsLoading ? (
+                  <tr><td colSpan={8} className="tws-transactions-empty">Loading TWS trades...</td></tr>
+                ) : twsTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="tws-transactions-empty">
+                      No trades returned. TWS only exposes executions inside its Trade Log window.
+                    </td>
+                  </tr>
+                ) : twsTransactions.map(tx => (
+                  <tr key={tx.execId}>
+                    <td>{formatTwsTime(tx.time)}</td>
+                    <td>
+                      <span className={`tws-transaction-side ${tx.side.trim().toUpperCase() === 'SLD' ? 'sell' : 'buy'}`}>
+                        {twsSideLabel(tx.side)}
+                      </span>
+                    </td>
+                    <td className="tws-transaction-symbol">{tx.symbol}</td>
+                    <td className="num">{formatTwsNumber(tx.shares, 4)}</td>
+                    <td className="num">{formatTwsMoney(tx.price, tx.currency)}</td>
+                    <td className="num">{formatTwsMoney(tx.shares * tx.price, tx.currency)}</td>
+                    <td className="num">{formatTwsMoney(tx.commission, tx.commissionCurrency ?? tx.currency)}</td>
+                    <td>{tx.exchange || '-'}</td>
+                  </tr>
+                ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`container${afterHoursGray ? ' after-hours-gray' : ''}${modeHasMoreInfo ? ' more-info-visible' : ''}${modeHasRebal ? ' rebalancing-visible' : ''}${editModeActive ? ' editing-active' : ''}`}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -516,6 +675,15 @@ export default function PortfolioViewer() {
               onClick={handleTwsSync}
               disabled={twsSyncing}
             >{twsSyncing ? 'Syncing…' : 'Sync TWS'}</button>
+
+            <button
+              className="h-btn subtle"
+              id="tws-transactions-btn"
+              type="button"
+              title="Show recent TWS trades"
+              onClick={openTwsTransactions}
+              disabled={twsTransactionsLoading}
+            >{twsTransactionsLoading && twsTransactionsOpen ? 'Loading...' : 'TWS Trades'}</button>
 
             <button
               className="h-btn subtle"
@@ -668,6 +836,8 @@ export default function PortfolioViewer() {
       </div>
 
       {/* ── Backup panel modal ────────────────────────────────────────── */}
+      {renderTwsTransactionsOverlay()}
+
       {backupOpen && (
         <BackupPanel
           onClose={() => setBackupOpen(false)}

@@ -1014,11 +1014,17 @@ export default function ConfigPage() {
                     </div>
                   </td>
                   <td>
-                    {ibkrConfigs[p.slug] && (ibkrConfigs[p.slug].twsAccount || ibkrConfigs[p.slug].queryId || ibkrConfigs[p.slug].token) && (
+                    {ibkrConfigs[p.slug] && (
+                      ibkrConfigs[p.slug].twsAccount ||
+                      ibkrConfigs[p.slug].queryId ||
+                      ibkrConfigs[p.slug].token ||
+                      ibkrConfigs[p.slug].tradesQueryId
+                    ) && (
                       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted, #888)', fontFamily: 'monospace', display: 'flex', flexDirection: 'column', gap: '0.1rem', marginBottom: '0.35rem' }}>
                         <span>{ibkrConfigs[p.slug].twsAccount || '—'}</span>
-                        <span>QID: {ibkrConfigs[p.slug].queryId || '—'}</span>
-                        <span>Token: {ibkrConfigs[p.slug].token ? '••••' : '—'}</span>
+                        <span>Flex Token: {ibkrConfigs[p.slug].token ? '••••' : '—'}</span>
+                        <span>Perf QID: {ibkrConfigs[p.slug].queryId || '—'}</span>
+                        <span>Trades QID: {ibkrConfigs[p.slug].tradesQueryId || '—'}</span>
                       </div>
                     )}
                     <button

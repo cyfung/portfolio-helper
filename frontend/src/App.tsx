@@ -7,6 +7,7 @@ import type { PortfolioData } from '@/types/portfolio'
 
 const PortfolioPage        = lazy(() => import('@/pages/PortfolioPage'))
 const PortfolioAnalystPage = lazy(() => import('@/pages/PortfolioAnalystPage'))
+const TradesPage           = lazy(() => import('@/pages/TradesPage'))
 const LoanPage             = lazy(() => import('@/pages/LoanPage'))
 const BacktestPage         = lazy(() => import('@/pages/BacktestPage'))
 const PortfolioBuilderPage = lazy(() => import('@/pages/PortfolioBuilderPage'))
@@ -25,7 +26,7 @@ export default function App() {
   const loadPortfolioData = usePortfolioStore(s => s.loadPortfolioData)
   const setSseStatus = usePortfolioStore(s => s.setSseStatus)
   useEffect(() => {
-    const match = window.location.pathname.match(/\/(portfolio|analyst)\/([^/]+)/)
+    const match = window.location.pathname.match(/\/(portfolio|analyst|trades)\/([^/]+)/)
     const slug = match?.[2]
     const url = slug ? `/api/portfolio/data?portfolio=${slug}` : '/api/portfolio/data'
     fetch(url)
@@ -46,6 +47,8 @@ export default function App() {
       <Route path="/portfolio/:slug" element={<PortfolioPage />} />
       <Route path="/analyst/" element={<PortfolioAnalystPage />} />
       <Route path="/analyst/:slug" element={<PortfolioAnalystPage />} />
+      <Route path="/trades/" element={<TradesPage />} />
+      <Route path="/trades/:slug" element={<TradesPage />} />
       <Route path="/loan" element={<LoanPage />} />
       <Route path="/backtest" element={<BacktestPage />} />
       <Route path="/portfolio-builder" element={<PortfolioBuilderPage />} />

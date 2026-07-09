@@ -10,6 +10,7 @@ import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.service.db.SavedRebalanceStrategiesTable
 import com.portfoliohelper.service.db.StockTickersTable
+import com.portfoliohelper.tws.TwsExecutionReport
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -663,6 +664,69 @@ private data class TwsSnapshotResponse(
 )
 
 // ── SPA API DTOs ─────────────────────────────────────────────────────────────
+
+@Serializable
+private data class TwsTransactionItem(
+    val execId: String,
+    val time: String,
+    val account: String,
+    val symbol: String,
+    val secType: String,
+    val exchange: String,
+    val currency: String,
+    val side: String,
+    val shares: Double,
+    val price: Double,
+    val orderId: Int,
+    val commission: Double?,
+    val commissionCurrency: String?,
+    val realizedPnl: Double?
+)
+
+@Serializable
+private data class TwsTransactionsResponse(
+    val account: String,
+    val requestedDays: Int,
+    val transactions: List<TwsTransactionItem>
+)
+
+@Serializable
+private data class IbkrTradeDto(
+    val id: Int,
+    val tradeKey: String,
+    val tradeDate: String,
+    val tradeTime: String,
+    val symbol: String,
+    val side: String,
+    val quantity: Double,
+    val price: Double,
+    val currency: String,
+    val exchange: String,
+    val assetCategory: String,
+    val commission: Double?,
+    val commissionCurrency: String?,
+    val realizedPnl: Double?,
+)
+
+@Serializable
+private data class IbkrTradesResponse(val trades: List<IbkrTradeDto>)
+
+private fun toIbkrTradeDto(index: Int, trade: IbkrTradeEntry) = IbkrTradeDto(
+    id = index,
+    tradeKey = trade.tradeKey,
+    tradeDate = trade.tradeDate,
+    tradeTime = trade.tradeTime,
+    symbol = trade.symbol,
+    side = trade.side,
+    quantity = trade.quantity,
+    price = trade.price,
+    currency = trade.currency,
+    exchange = trade.exchange,
+    assetCategory = trade.assetCategory,
+    commission = trade.commission,
+    commissionCurrency = trade.commissionCurrency,
+    realizedPnl = trade.realizedPnl,
+)
 
 @Serializable
 private data class PortfolioOptionDto(val slug: String, val name: String, val seqOrder: Double)
@@ -1809,6 +1873,49 @@ fun Application.configureRouting() {
             }
         }
 
+        get("/api/tws/transactions") {
+            try {
+                val host = AppConfig.twsHost
+                val port = AppConfig.twsPort
+                val days = call.request.queryParameters["days"]?.toIntOrNull()?.coerceIn(1, 7) ?: 1
+                val account = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])?.getTwsAccount()
+                val report = withContext(Dispatchers.IO) {
+                    TwsExecutionReport.fetch(
+                        host, port, account = account, days = days
+                    )
+                }
+                val response = TwsTransactionsResponse(
+                    account = report.account,
+                    requestedDays = days,
+                    transactions = report.executions.map { execution ->
+                        TwsTransactionItem(
+                            execId = execution.execId,
+                            time = execution.time,
+                            account = execution.account,
+                            symbol = execution.symbol,
+                            secType = execution.secType,
+                            exchange = execution.exchange,
+                            currency = execution.currency,
+                            side = execution.side,
+                            shares = execution.shares,
+                            price = execution.price,
+                            orderId = execution.orderId,
+                            commission = execution.commission,
+                            commissionCurrency = execution.commissionCurrency,
+                            realizedPnl = execution.realizedPnl
+                        )
+                    }
+                )
+                call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondText(
+                    "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
+                    ContentType.Application.Json,
+                    HttpStatusCode.InternalServerError
+                )
+            }
+        }
+
         // Admin
         get("/api/admin/update-info") {
             call.respondText(UpdateService.getInfo().toResponseJson(), ContentType.Application.Json)
@@ -1879,26 +1986,85 @@ fun Application.configureRouting() {
             val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val cfg = portfolio.getConfig("ibkrConfig")
-            call.respondText(cfg ?: """{"token":"","queryId":"","twsAccount":""}""", ContentType.Application.Json)
+            val fallback = """{"token":"","queryId":"","tradesQueryId":"","twsAccount":""}"""
+            if (cfg == null) {
+                call.respondText(fallback, ContentType.Application.Json)
+            } else {
+                val existing = runCatching { Json.parseToJsonElement(cfg).jsonObject }.getOrNull()
+                val merged = buildJsonObject {
+                    put("token", existing?.get("token")?.jsonPrimitive?.contentOrNull ?: "")
+                    put("queryId", existing?.get("queryId")?.jsonPrimitive?.contentOrNull ?: "")
+                    put("tradesQueryId", existing?.get("tradesQueryId")?.jsonPrimitive?.contentOrNull ?: "")
+                    put("twsAccount", existing?.get("twsAccount")?.jsonPrimitive?.contentOrNull ?: "")
+                }
+                call.respondText(merged.toString(), ContentType.Application.Json)
+            }
         }
 
         post("/api/portfolio/{slug}/ibkr-config") {
             val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
                 ?: return@post call.respond(HttpStatusCode.NotFound)
             val body = Json.parseToJsonElement(call.receiveText()).jsonObject
-            val token      = body["token"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
-            val queryId    = body["queryId"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
-            val twsAccount = body["twsAccount"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
-            if (token.isBlank() || queryId.isBlank()) {
-                call.respondText("""{"error":"token and queryId are required"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
-                return@post
-            }
-            val value = buildJsonObject { put("token", token); put("queryId", queryId); put("twsAccount", twsAccount) }.toString()
+            val token         = body["token"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val queryId       = body["queryId"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val tradesQueryId = body["tradesQueryId"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val twsAccount    = body["twsAccount"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val value = buildJsonObject {
+                put("token", token)
+                put("queryId", queryId)
+                put("tradesQueryId", tradesQueryId)
+                put("twsAccount", twsAccount)
+            }.toString()
             portfolio.saveConfig("ibkrConfig", value)
             call.respondOk()
         }
 
         // ── Performance ───────────────────────────────────────────────────────
+        post("/api/trades/fetch/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val cfgStr = portfolio.getConfig("ibkrConfig")
+                ?: return@post call.respondText("""{"error":"IB config not set"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+            val cfg = Json.parseToJsonElement(cfgStr).jsonObject
+            val token = cfg["token"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            val queryId = cfg["tradesQueryId"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+            if (token.isBlank() || queryId.isBlank()) {
+                call.respondText("""{"error":"token or tradesQueryId missing in IB config"}""", ContentType.Application.Json, HttpStatusCode.BadRequest)
+                return@post
+            }
+            try {
+                val xml = withContext(Dispatchers.IO) { FlexQueryService.fetch(token, queryId) }
+                val trades = FlexTradesParser.parse(xml)
+                val response = IbkrTradesResponse(trades.mapIndexed(::toIbkrTradeDto))
+                call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
+            } catch (e: FlexParseException) {
+                call.respondText(
+                    """{"error":"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}"}""",
+                    ContentType.Application.Json, HttpStatusCode.UnprocessableEntity
+                )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        post("/api/trades/ingest-xml/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            try {
+                val xml = call.receiveText()
+                val trades = FlexTradesParser.parse(xml)
+                val response = IbkrTradesResponse(trades.mapIndexed(::toIbkrTradeDto))
+                call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
+            } catch (e: FlexParseException) {
+                call.respondText(
+                    """{"error":"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}"}""",
+                    ContentType.Application.Json, HttpStatusCode.UnprocessableEntity
+                )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
         post("/api/performance/ingest/{slug}") {
             val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
                 ?: return@post call.respond(HttpStatusCode.NotFound)

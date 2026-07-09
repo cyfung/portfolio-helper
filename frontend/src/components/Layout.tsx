@@ -13,6 +13,7 @@ const STRATEGY_NAV_STORAGE_KEY = 'portfolio-helper-active-strategy-page'
 const ALL_SECTIONS = [
   { href: '/portfolio/', label: 'Portfolio Viewer',   icon: 'viewer',    group: null         },
   { href: '/analyst/',  label: 'Portfolio Analyst',   icon: 'analyst',   group: null         },
+  { href: '/trades/',   label: 'IBKR Trades',         icon: 'trades',    group: null         },
   { href: '/loan',      label: 'Loan Calculator',     icon: 'loan',      group: null         },
   { href: '/portfolio-builder',   label: 'Portfolio Builder',   icon: 'builder',   group: 'strategy' },
   { href: '/backtest',            label: 'Portfolio Backtest',  icon: 'backtest',  group: 'strategy' },
@@ -28,6 +29,7 @@ function SectionSvg({ name }: { name?: string }) {
   switch (name) {
     case 'viewer':    return <svg {...p}><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
     case 'analyst':   return <svg {...p}><path d="M3 17l5-5 4 3 8-9"/><circle cx="20" cy="6" r="1.6"/></svg>
+    case 'trades':    return <svg {...p}><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><path d="M7 4v16"/><path d="M15 4v16"/></svg>
     case 'loan':      return <svg {...p}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2"/></svg>
     case 'builder':   return <svg {...p}><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-7h6v7"/></svg>
     case 'backtest':  return <svg {...p}><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/><path d="M12 7v5l3 2"/></svg>
@@ -79,6 +81,7 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
     const p = location.pathname
     if (href === '/portfolio/') return p === '/portfolio/' || p.startsWith('/portfolio/')
     if (href === '/analyst/')   return p.startsWith('/analyst')
+    if (href === '/trades/')    return p.startsWith('/trades')
     return p === href
   }
 
