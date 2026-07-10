@@ -203,8 +203,8 @@ class ManagedPortfolio(
                 ?.let { ManagedPortfolio(it[PortfoliosTable.id], it[PortfoliosTable.slug], it[PortfoliosTable.name], it[PortfoliosTable.seqOrder]) }
         }
 
-        /** Insert a new portfolio row. Returns the new instance. Caller must ensure slug is unique. */
-        fun create(slug: String, name: String): ManagedPortfolio = transaction {
+        /** Insert a new portfolio row in the current transaction. Caller must ensure slug is unique. */
+        fun createRow(slug: String, name: String): ManagedPortfolio {
             val maxSeqOrder = PortfoliosTable.select(PortfoliosTable.seqOrder)
                 .maxOfOrNull { it[PortfoliosTable.seqOrder] } ?: 0.0
             val newSeqOrder = maxSeqOrder + 1.0
@@ -213,7 +213,12 @@ class ManagedPortfolio(
                 it[PortfoliosTable.name] = name
                 it[PortfoliosTable.seqOrder] = newSeqOrder
             } get PortfoliosTable.id
-            ManagedPortfolio(newId, slug, name, newSeqOrder)
+            return ManagedPortfolio(newId, slug, name, newSeqOrder)
+        }
+
+        /** Insert a new portfolio row. Returns the new instance. Caller must ensure slug is unique. */
+        fun create(slug: String, name: String): ManagedPortfolio = transaction {
+            createRow(slug, name)
         }
 
         /** Returns the first (default) portfolio — the one with the lowest seq_order. */

@@ -1,6 +1,8 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.AppConfig
+import com.portfoliohelper.model.CashEntry
+import com.portfoliohelper.service.db.PortfolioCfgTable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -8,6 +10,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.upsert
 
 class PortfolioServices(val portfolio: ManagedPortfolio, parentScope: CoroutineScope) {
     private val scope = CoroutineScope(parentScope.coroutineContext + Job())
@@ -70,6 +74,34 @@ object PortfolioMasterService {
         val svc = PortfolioServices(portfolio, _scope).also { it.initialize() }
         _services.value = LinkedHashMap(_services.value).also { it[slug] = svc }
         PortfolioUpdateBroadcaster.broadcastReload()
+        MarketDataCoordinator.refresh()
+        portfolio
+    }
+
+    /** Throws IllegalArgumentException if slug already exists. */
+    suspend fun createWithContents(
+        slug: String,
+        name: String,
+        stocks: List<BackupStock>,
+        cash: List<CashEntry>,
+        dividendStartDate: String?,
+    ): ManagedPortfolio = mutex.withLock {
+        require(ManagedPortfolio.getBySlug(slug) == null) { "A portfolio named '$name' already exists." }
+        val portfolio = transaction {
+            ManagedPortfolio.createRow(slug, name).also { created ->
+                created.replacePositions(stocks)
+                created.replaceCash(cash)
+                if (!dividendStartDate.isNullOrBlank()) {
+                    PortfolioCfgTable.upsert {
+                        it[PortfolioCfgTable.portfolioId] = created.serialId
+                        it[PortfolioCfgTable.cfgKey] = "dividendStartDate"
+                        it[PortfolioCfgTable.cfgValue] = dividendStartDate
+                    }
+                }
+            }
+        }
+        val svc = PortfolioServices(portfolio, _scope).also { it.initialize() }
+        _services.value = LinkedHashMap(_services.value).also { it[slug] = svc }
         MarketDataCoordinator.refresh()
         portfolio
     }

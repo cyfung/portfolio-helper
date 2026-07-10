@@ -4,6 +4,7 @@ import { PageNavTabs, ConfigButton, HeaderRight, PrivacyToggleButton, ThemeToggl
 import PortfolioTabs from '@/components/portfolio/PortfolioTabs'
 import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import type { PortfolioData } from '@/types/portfolio'
 
 interface TradeRow {
@@ -33,6 +34,14 @@ const ISO_CURRENCIES = new Set([
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function timeStr() {
+  return new Date().toTimeString().slice(0, 8).replace(/:/g, '')
+}
+
+function defaultTradesPortfolioName(portfolioId: string | null | undefined) {
+  return `Trades ${portfolioId ?? 'Portfolio'} ${todayStr()} ${timeStr()}`
 }
 
 function periodFrom(period: Period): string {
@@ -104,6 +113,32 @@ function tradeDateRange(rows: TradeRow[]) {
   return first === last ? first : `${first} - ${last}`
 }
 
+function tradeSelectionKey(trade: TradeRow) {
+  return `${trade.id}:${trade.tradeKey}`
+}
+
+function parseExchangeSuffixes(raw: string | undefined) {
+  const entries = (raw ?? '').split(',')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map(part => {
+      const eq = part.indexOf('=')
+      if (eq < 0) return null
+      return [part.slice(0, eq).trim().toUpperCase(), part.slice(eq + 1).trim()] as const
+    })
+    .filter((entry): entry is readonly [string, string] => !!entry && !!entry[0])
+  return new Map(entries)
+}
+
+function portfolioSymbolForTrade(trade: TradeRow, exchangeSuffixes: Map<string, string>) {
+  const rawSymbol = trade.symbol.trim().toUpperCase()
+  if (!rawSymbol) return ''
+
+  const exchange = trade.exchange.trim().toUpperCase()
+  const suffix = exchangeSuffixes.get(exchange) ?? ''
+  return suffix && !rawSymbol.endsWith(suffix.toUpperCase()) ? `${rawSymbol}${suffix}` : rawSymbol
+}
+
 function SelectionCheckbox({
   checked,
   indeterminate = false,
@@ -148,11 +183,23 @@ export default function TradesPage() {
   const [selectedTradeKeys, setSelectedTradeKeys] = useState<Set<string>>(new Set())
   const [allTrades, setAllTrades] = useState<TradeRow[]>([])
   const [ingesting, setIngesting] = useState(false)
+  const [creatingPortfolio, setCreatingPortfolio] = useState(false)
   const [notice, setNotice] = useState('')
+  const [exchangeSuffixes, setExchangeSuffixes] = useState<Map<string, string>>(new Map())
   const xmlInputRef = useRef<HTMLInputElement>(null)
+  const { toast, showToast } = useTransientToast()
 
   const from = periodFrom(period)
   const to = todayStr()
+
+  useEffect(() => {
+    setAllTrades([])
+    setSelectedTradeKeys(new Set())
+    setExpandedSymbols(new Set())
+    setView('summary')
+    setNotice('')
+    if (xmlInputRef.current) xmlInputRef.current.value = ''
+  }, [slug])
 
   useEffect(() => {
     if (!slug) {
@@ -177,6 +224,13 @@ export default function TradesPage() {
       })
       .finally(() => setLoading(false))
   }, [slug, navigate, loadPortfolioData])
+
+  useEffect(() => {
+    fetch('/api/admin/config-values')
+      .then(r => r.ok ? r.json() : null)
+      .then((cfg: { exchangeSuffixes?: string } | null) => setExchangeSuffixes(parseExchangeSuffixes(cfg?.exchangeSuffixes)))
+      .catch(() => setExchangeSuffixes(new Map()))
+  }, [])
 
   const trades = useMemo(() => {
     return allTrades.filter(trade =>
@@ -216,10 +270,11 @@ export default function TradesPage() {
       .sort((a, b) => a.symbol.localeCompare(b.symbol))
   }, [trades])
 
-  const selectedVisibleCount = useMemo(() => {
-    const visibleKeys = new Set(trades.map(trade => trade.tradeKey))
-    return [...selectedTradeKeys].filter(key => visibleKeys.has(key)).length
+  const selectedVisibleTrades = useMemo(() => {
+    return trades.filter(trade => selectedTradeKeys.has(tradeSelectionKey(trade)))
   }, [selectedTradeKeys, trades])
+
+  const selectedVisibleCount = selectedVisibleTrades.length
 
   function toggleGroup(symbol: string) {
     setExpandedSymbols(current => {
@@ -243,19 +298,84 @@ export default function TradesPage() {
     setSelectedTradeKeys(current => {
       const next = new Set(current)
       rows.forEach(trade => {
-        if (checked) next.add(trade.tradeKey)
-        else next.delete(trade.tradeKey)
+        const key = tradeSelectionKey(trade)
+        if (checked) next.add(key)
+        else next.delete(key)
       })
       return next
     })
   }
 
   function isGroupSelected(rows: TradeRow[]) {
-    return rows.length > 0 && rows.every(trade => selectedTradeKeys.has(trade.tradeKey))
+    return rows.length > 0 && rows.every(trade => selectedTradeKeys.has(tradeSelectionKey(trade)))
   }
 
   function isGroupPartiallySelected(rows: TradeRow[]) {
-    return rows.some(trade => selectedTradeKeys.has(trade.tradeKey)) && !isGroupSelected(rows)
+    return rows.some(trade => selectedTradeKeys.has(tradeSelectionKey(trade))) && !isGroupSelected(rows)
+  }
+
+  function buildPortfolioRowsFromTrades(rows: TradeRow[]) {
+    const stockBySymbol = new Map<string, number>()
+    const cashByCurrency = new Map<string, number>()
+
+    rows.forEach(trade => {
+      const symbol = portfolioSymbolForTrade(trade, exchangeSuffixes)
+      const quantity = signedQuantity(trade)
+      const currency = trade.currency.trim().toUpperCase() || 'USD'
+      if (symbol && Number.isFinite(quantity)) {
+        stockBySymbol.set(symbol, (stockBySymbol.get(symbol) ?? 0) + quantity)
+      }
+
+      const cashAmount = netCashAmount(trade)
+      if (Number.isFinite(cashAmount)) {
+        cashByCurrency.set(currency, (cashByCurrency.get(currency) ?? 0) + cashAmount)
+      }
+    })
+
+    const stocks = [...stockBySymbol.entries()]
+      .filter(([, amount]) => Number.isFinite(amount) && Math.abs(amount) > 1e-9)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([symbol, amount]) => ({ symbol, amount, targetWeight: 0, letf: '', groups: '' }))
+
+    const cash = [...cashByCurrency.entries()]
+      .filter(([, amount]) => Number.isFinite(amount) && Math.abs(amount) > 0.005)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([currency, amount]) => ({ label: `Trades Net Cash ${currency}`, currency, marginFlag: false, amount }))
+
+    return { stocks, cash }
+  }
+
+  async function createPortfolioFromSelectedTrades() {
+    const selectedRows = selectedVisibleTrades
+    if (selectedRows.length === 0) return
+    const defaultName = defaultTradesPortfolioName(portfolioId)
+    const name = window.prompt('New portfolio name', defaultName)?.trim()
+    if (!name) return
+
+    const { stocks, cash } = buildPortfolioRowsFromTrades(selectedRows)
+    if (stocks.length === 0 && cash.length === 0) {
+      showToast('Selected trades do not produce any non-zero stock or cash rows.', 'error', 10000)
+      return
+    }
+
+    setCreatingPortfolio(true)
+    setNotice('')
+    try {
+      const createResponse = await fetch('/api/portfolio/create-with-contents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, stocks, cash, dividendStartDate: null }),
+      })
+      const createData = await createResponse.json().catch(() => ({})) as { slug?: string; message?: string }
+      if (!createResponse.ok || !createData.slug) throw new Error(createData.message ?? `Create failed: HTTP ${createResponse.status}`)
+
+      setNotice(`Created portfolio ${name} from ${selectedRows.length} selected trade(s).`)
+      navigate(`/portfolio/${createData.slug}`)
+    } catch (e: any) {
+      showToast(e.message ?? 'Failed to create portfolio', 'error', 10000)
+    } finally {
+      setCreatingPortfolio(false)
+    }
   }
 
   async function ingestFromIbkr() {
@@ -268,10 +388,10 @@ export default function TradesPage() {
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
       const fetchedTrades = d.trades ?? []
       setAllTrades(fetchedTrades)
-      setSelectedTradeKeys(new Set(fetchedTrades.map(trade => trade.tradeKey)))
+      setSelectedTradeKeys(new Set(fetchedTrades.map(tradeSelectionKey)))
       setNotice(`Fetched ${d.trades?.length ?? 0} trade(s).`)
     } catch (e: any) {
-      setNotice(`Error: ${e.message}`)
+      showToast(e.message ?? 'Failed to fetch trades', 'error', 10000)
     } finally {
       setIngesting(false)
     }
@@ -297,10 +417,10 @@ export default function TradesPage() {
         total += d.trades?.length ?? 0
       }
       setAllTrades(imported)
-      setSelectedTradeKeys(new Set(imported.map(trade => trade.tradeKey)))
+      setSelectedTradeKeys(new Set(imported.map(tradeSelectionKey)))
       setNotice(`Imported ${total} trade(s) from file(s).`)
     } catch (e: any) {
-      setNotice(`Error: ${e.message}`)
+      showToast(e.message ?? 'Failed to import trades', 'error', 10000)
     } finally {
       setIngesting(false)
       if (xmlInputRef.current) xmlInputRef.current.value = ''
@@ -334,6 +454,10 @@ export default function TradesPage() {
           <ConfigButton />
           <ThemeToggle />
         </HeaderRight>
+      </div>
+
+      <div className={`config-status config-status-${toast.type}${toast.msg ? ' visible' : ''}`}>
+        {toast.msg}
       </div>
 
       <div className="trades-page">
@@ -439,9 +563,19 @@ export default function TradesPage() {
               {!showCurrencyTrades && totals.hiddenCurrencyTrades > 0 && <span>{totals.hiddenCurrencyTrades} currency hidden</span>}
               <span>Commission: {money(totals.commissions, trades.find(t => t.commissionCurrency)?.commissionCurrency)}</span>
             </div>
-            <div className="trades-view-tabs">
-              <button type="button" className={`trades-view-tab${view === 'summary' ? ' active' : ''}`} onClick={() => setView('summary')}>Summary</button>
-              <button type="button" className={`trades-view-tab${view === 'trades' ? ' active' : ''}`} onClick={() => setView('trades')}>Trades</button>
+            <div className="trades-result-controls">
+              <div className="trades-view-tabs">
+                <button type="button" className={`trades-view-tab${view === 'summary' ? ' active' : ''}`} onClick={() => setView('summary')}>Summary</button>
+                <button type="button" className={`trades-view-tab${view === 'trades' ? ' active' : ''}`} onClick={() => setView('trades')}>Trades</button>
+              </div>
+              <button
+                type="button"
+                className="backtest-config-btn"
+                onClick={createPortfolioFromSelectedTrades}
+                disabled={creatingPortfolio || selectedVisibleCount === 0}
+              >
+                {creatingPortfolio ? <>Creating<span className="btn-spinner" /></> : 'Create Portfolio'}
+              </button>
             </div>
             <div className="trades-table-wrap">
               <table className="trades-table">
@@ -497,15 +631,15 @@ export default function TradesPage() {
                     </tr>
                     {expandedSymbols.has(group.symbol) && group.rows.map(trade => (
                       <tr
-                        key={trade.tradeKey}
-                        className={selectedTradeKeys.has(trade.tradeKey) ? 'selected' : ''}
-                        onClick={() => toggleTradeSelection(trade.tradeKey, !selectedTradeKeys.has(trade.tradeKey))}
+                        key={tradeSelectionKey(trade)}
+                        className={selectedTradeKeys.has(tradeSelectionKey(trade)) ? 'selected' : ''}
+                        onClick={() => toggleTradeSelection(tradeSelectionKey(trade), !selectedTradeKeys.has(tradeSelectionKey(trade)))}
                       >
                         <td className="trade-select-col">
                           <SelectionCheckbox
-                            checked={selectedTradeKeys.has(trade.tradeKey)}
+                            checked={selectedTradeKeys.has(tradeSelectionKey(trade))}
                             label={`Select ${trade.symbol} trade ${tradeDateTime(trade)}`}
-                            onChange={checked => toggleTradeSelection(trade.tradeKey, checked)}
+                            onChange={checked => toggleTradeSelection(tradeSelectionKey(trade), checked)}
                           />
                         </td>
                         <td>{tradeDateTime(trade)}</td>
@@ -521,15 +655,15 @@ export default function TradesPage() {
                   </Fragment>
                 )) : trades.map(trade => (
                   <tr
-                    key={trade.tradeKey}
-                    className={selectedTradeKeys.has(trade.tradeKey) ? 'selected' : ''}
-                    onClick={() => toggleTradeSelection(trade.tradeKey, !selectedTradeKeys.has(trade.tradeKey))}
+                    key={tradeSelectionKey(trade)}
+                    className={selectedTradeKeys.has(tradeSelectionKey(trade)) ? 'selected' : ''}
+                    onClick={() => toggleTradeSelection(tradeSelectionKey(trade), !selectedTradeKeys.has(tradeSelectionKey(trade)))}
                   >
                     <td className="trade-select-col">
                       <SelectionCheckbox
-                        checked={selectedTradeKeys.has(trade.tradeKey)}
+                        checked={selectedTradeKeys.has(tradeSelectionKey(trade))}
                         label={`Select ${trade.symbol} trade ${tradeDateTime(trade)}`}
-                        onChange={checked => toggleTradeSelection(trade.tradeKey, checked)}
+                        onChange={checked => toggleTradeSelection(tradeSelectionKey(trade), checked)}
                       />
                     </td>
                     <td>{tradeDateTime(trade)}</td>

@@ -1622,6 +1622,34 @@ fun Application.configureRouting() {
             }
         }
 
+        // Create a new portfolio and its initial contents in one DB transaction.
+        post("/api/portfolio/create-with-contents") {
+            try {
+                val root = Json.parseToJsonElement(call.receiveText()).jsonObject
+                val displayName = root.parseDisplayName()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val slug = displayName.toSlug().takeIf { it.isNotBlank() }
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val stockRows = (root["stocks"] as? JsonArray)?.let { parsePositionRows(it) } ?: emptyList()
+                val cashEntries = (root["cash"] as? JsonArray)?.parseCashEntries() ?: emptyList()
+                val dividendStartDate = root["dividendStartDate"]?.jsonPrimitive?.contentOrNull
+                val portfolio = try {
+                    PortfolioMasterService.createWithContents(slug, displayName, stockRows, cashEntries, dividendStartDate)
+                } catch (e: IllegalArgumentException) {
+                    return@post call.respondText(
+                        "{\"status\":\"error\",\"message\":\"${e.message}\"}",
+                        ContentType.Application.Json, HttpStatusCode.Conflict
+                    )
+                }
+                call.respondText(
+                    "{\"status\":\"ok\",\"slug\":\"${portfolio.slug}\"}",
+                    ContentType.Application.Json
+                )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
         // Rename a portfolio
         post("/api/portfolio/rename") {
             try {
