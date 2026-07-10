@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.service.yahoo.YahooAdjustedCloseResult
 import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.test.Test
@@ -152,6 +153,55 @@ class BacktestChainExtendTest {
         assertEquals(100.0, extended[jun12])
         assertClose(100.0 * (86.98 / 85.91), extended[jun15])
         assertClose(100.0 * (86.86 / 85.91), extended[jun16])
+    }
+
+    @Test
+    fun convertYahooAdjustedCloseToUsdAppliesSameDayAndPreviousAvailableFxRates() {
+        val jan2 = LocalDate.of(2026, 1, 2)
+        val jan5 = LocalDate.of(2026, 1, 5)
+        val result = YahooAdjustedCloseResult(
+            prices = mapOf(
+                jan2 to 100.0,
+                jan5 to 110.0,
+            ),
+            currency = "EUR",
+        )
+
+        val converted = BacktestService.convertYahooAdjustedCloseToUsd("CL2.PA", result) { fxTicker, start, end ->
+            assertEquals("EURUSD=X", fxTicker)
+            assertEquals(jan2, start)
+            assertEquals(jan5, end)
+            mapOf(
+                jan2.minusDays(1) to 1.10,
+                jan2 to 1.20,
+                jan5.minusDays(1) to 1.25,
+            )
+        }
+
+        assertEquals(mapOf(jan2 to 120.0, jan5 to 137.5), converted)
+    }
+
+    @Test
+    fun convertYahooAdjustedCloseToUsdLeavesUsdPricesUntouched() {
+        val jan2 = LocalDate.of(2026, 1, 2)
+        val prices = mapOf(jan2 to 100.0)
+        val result = YahooAdjustedCloseResult(prices = prices, currency = "USD")
+        var fxCalled = false
+
+        val converted = BacktestService.convertYahooAdjustedCloseToUsd("SPY", result) { _, _, _ ->
+            fxCalled = true
+            emptyMap()
+        }
+
+        assertEquals(prices, converted)
+        assertTrue(!fxCalled, "USD history should not fetch FX")
+    }
+
+    @Test
+    fun currencyUsdConversionHandlesYahooSubUnitCurrencies() {
+        val conversion = BacktestService.currencyUsdConversion("GBp")
+
+        assertEquals(BacktestService.CurrencyUsdConversion("GBPUSD=X", 0.01), conversion)
     }
 
     @Test

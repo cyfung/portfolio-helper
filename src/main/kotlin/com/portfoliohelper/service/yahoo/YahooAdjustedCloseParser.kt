@@ -55,7 +55,7 @@ internal object YahooAdjustedCloseParser {
         )
 
         warnings += repairSplitLikeAdjustedCloseBreaks(ticker, prices, rows)
-        return YahooAdjustedCloseResult(prices, warnings)
+        return YahooAdjustedCloseResult(prices, warnings, parsed.result.meta?.currency)
     }
 
     private fun decodeResponse(ticker: String, body: String): ParsedYahooResponse {

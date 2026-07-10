@@ -88,6 +88,37 @@ class YahooHistoricalFetcherTest {
     }
 
     @Test
+    fun parseAdjustedCloseResponseWithWarnings_includesYahooCurrency() {
+        val may3 = LocalDate.of(2026, 5, 3).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "meta": {
+                    "currency": "EUR"
+                  },
+                  "timestamp": [$may3],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [100.0]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "CL2.PA",
+            startDate = LocalDate.of(2026, 5, 1),
+            endDate = LocalDate.of(2026, 5, 4),
+            body = body
+        )
+
+        assertEquals("EUR", result.currency)
+    }
+
+    @Test
     fun parseAdjustedCloseResponse_fillsKnownTailNullFromQuotePreviousClose() {
         val jun12 = LocalDate.of(2026, 6, 12).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val jun15 = LocalDate.of(2026, 6, 15).atStartOfDay().toEpochSecond(ZoneOffset.UTC)

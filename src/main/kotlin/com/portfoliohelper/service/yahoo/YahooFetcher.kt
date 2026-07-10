@@ -15,7 +15,8 @@ class YahooHistoricalDataException(message: String) : IllegalStateException(mess
 
 data class YahooAdjustedCloseResult(
     val prices: Map<LocalDate, Double>,
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    val currency: String? = null
 )
 
 data class YahooCloseDividendHistory(

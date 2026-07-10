@@ -1,6 +1,7 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.AppDirs
+import com.portfoliohelper.service.yahoo.YahooAdjustedCloseResult
 import com.portfoliohelper.service.yahoo.YahooHistoricalDataException
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import okhttp3.OkHttpClient
@@ -710,12 +711,71 @@ object BacktestService {
         warningCollector: ((String, List<String>) -> Unit)? = null
     ): Map<LocalDate, Double> {
         val result = YahooHistoricalFetcher.fetchAdjustedCloseWithWarnings(ticker, startDate, endDate)
-        if (result.warnings.isNotEmpty()) {
-            persistTickerWarnings(upperTicker, result.warnings)
-            warningCollector?.invoke(upperTicker, result.warnings)
+        val warnings = result.warnings.toMutableList()
+        val prices = convertYahooAdjustedCloseToUsd(ticker, result) { fxTicker, fxStart, fxEnd ->
+            val fxResult = YahooHistoricalFetcher.fetchAdjustedCloseWithWarnings(fxTicker, fxStart, fxEnd)
+            warnings += fxResult.warnings
+            fxResult.prices
         }
-        return result.prices
+        if (warnings.isNotEmpty()) {
+            persistTickerWarnings(upperTicker, warnings)
+            warningCollector?.invoke(upperTicker, warnings)
+        }
+        return prices
     }
+
+    internal fun convertYahooAdjustedCloseToUsd(
+        ticker: String,
+        result: YahooAdjustedCloseResult,
+        fxFetcher: (String, LocalDate, LocalDate) -> Map<LocalDate, Double>
+    ): Map<LocalDate, Double> {
+        val conversion = currencyUsdConversion(result.currency) ?: return result.prices
+        if (result.prices.isEmpty()) return result.prices
+
+        val dates = result.prices.keys.sorted()
+        val fxRates = fxFetcher(conversion.fxTicker, dates.first(), dates.last())
+        val converted = convertPricesToUsd(result.prices, conversion, fxRates)
+        logger.info(
+            "Converted Yahoo historical prices for $ticker from ${result.currency} to USD using ${conversion.fxTicker}"
+        )
+        return converted
+    }
+
+    internal fun convertPricesToUsd(
+        prices: Map<LocalDate, Double>,
+        conversion: CurrencyUsdConversion,
+        fxRates: Map<LocalDate, Double>
+    ): Map<LocalDate, Double> {
+        if (prices.isEmpty()) return prices
+        require(fxRates.isNotEmpty()) { "No FX rates returned for ${conversion.fxTicker}" }
+
+        val sortedFxDates = fxRates.keys.sorted()
+        var fxIndex = 0
+        var currentFx: Double? = null
+        return prices.keys.sorted().associateWith { date ->
+            while (fxIndex < sortedFxDates.size && !sortedFxDates[fxIndex].isAfter(date)) {
+                currentFx = fxRates[sortedFxDates[fxIndex]]
+                fxIndex++
+            }
+            val fx = currentFx
+                ?: throw IllegalStateException("No ${conversion.fxTicker} FX rate available on or before $date")
+            prices.getValue(date) * fx * conversion.priceMultiplier
+        }
+    }
+
+    internal fun currencyUsdConversion(currency: String?): CurrencyUsdConversion? {
+        val ccy = currency?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (ccy == "USD") return null
+        if (ccy.length == 3 && ccy[0].isUpperCase() && ccy[1].isUpperCase() && ccy[2].isLowerCase()) {
+            return CurrencyUsdConversion("${ccy.uppercase()}USD=X", 0.01)
+        }
+        return CurrencyUsdConversion("${ccy.uppercase()}USD=X", 1.0)
+    }
+
+    internal data class CurrencyUsdConversion(
+        val fxTicker: String,
+        val priceMultiplier: Double
+    )
 
     private fun collectTickerWarnings(
         upperTicker: String,
