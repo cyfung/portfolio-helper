@@ -68,6 +68,18 @@
     gap: 1.25rem;
 }
 
+.tax-drag-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.tax-drag-mapping-status {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
 .tax-drag-summary,
 .tax-drag-annual {
     font-variant-numeric: tabular-nums;

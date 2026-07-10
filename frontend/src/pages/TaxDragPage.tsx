@@ -1,5 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ConfigButton, HeaderRight, PageNavTabs, PrivacyToggleButton, ThemeToggle } from '@/components/Layout'
+import {
+  loadTickerMappingSettings,
+  notifyTickerMappingsChanged,
+  saveTickerMappingSettings,
+  type TickerMappingSet,
+} from '@/lib/tickerMappings'
 
 interface TaxDragAnnualResult {
   year: number
@@ -40,6 +46,10 @@ interface TaxDragResponse {
   results: TaxDragTickerResult[]
 }
 
+const TAX_DRAG_INPUTS_STORAGE_KEY = 'tax-drag-inputs'
+const DEFAULT_TAX_PCT = '30'
+const DEFAULT_TICKERS = 'SPY VTI VXUS'
+
 function fmtPct(v: number | null | undefined, digits = 2) {
   return typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(digits)}%` : '-'
 }
@@ -61,16 +71,48 @@ function parseTickers(value: string): string[] {
     .filter(Boolean)
 }
 
+function newMappingId() {
+  return `mapping-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function newMappingSetId() {
+  return `set-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function formatExpenseModifier(value: number) {
+  const pct = Math.round(value * 100 * 1000000) / 1000000
+  return Object.is(pct, -0) ? '0' : String(pct)
+}
+
+function loadTaxDragInputs() {
+  try {
+    const raw = localStorage.getItem(TAX_DRAG_INPUTS_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) as Partial<{ taxPct: string; tickers: string }> : null
+    return {
+      taxPct: typeof parsed?.taxPct === 'string' ? parsed.taxPct : DEFAULT_TAX_PCT,
+      tickers: typeof parsed?.tickers === 'string' ? parsed.tickers : DEFAULT_TICKERS,
+    }
+  } catch {
+    return { taxPct: DEFAULT_TAX_PCT, tickers: DEFAULT_TICKERS }
+  }
+}
+
 export default function TaxDragPage() {
-  const [taxPct, setTaxPct] = useState('30')
-  const [tickers, setTickers] = useState('SPY VTI VXUS')
+  const [taxPct, setTaxPct] = useState(() => loadTaxDragInputs().taxPct)
+  const [tickers, setTickers] = useState(() => loadTaxDragInputs().tickers)
   const [results, setResults] = useState<TaxDragTickerResult[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mappingStatus, setMappingStatus] = useState('')
+
+  useEffect(() => {
+    localStorage.setItem(TAX_DRAG_INPUTS_STORAGE_KEY, JSON.stringify({ taxPct, tickers }))
+  }, [taxPct, tickers])
 
   async function calculate() {
     setError('')
+    setMappingStatus('')
     setResults([])
 
     const withholdingTaxPct = parseFloat(taxPct)
@@ -104,6 +146,49 @@ export default function TaxDragPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function createTickerMapping() {
+    setMappingStatus('')
+    const mappingRows = results
+      .filter(result => !result.error && typeof result.backtestExpenseRatio === 'number' && Number.isFinite(result.backtestExpenseRatio))
+      .map(result => {
+        const ticker = result.ticker.trim().toUpperCase()
+        const expense = formatExpenseModifier(result.backtestExpenseRatio ?? 0)
+        return {
+          id: newMappingId(),
+          from: ticker,
+          to: `${ticker} E=${expense}`,
+          mode: 'replaceAll' as const,
+          applyTo: 'ticker' as const,
+        }
+      })
+
+    if (mappingRows.length === 0) {
+      setMappingStatus('No valid Backtest E= values to map.')
+      return
+    }
+
+    const settings = loadTickerMappingSettings()
+    const name = `Tax Drag E=${taxPct.trim() || 'custom'}%`
+    const existing = settings.savedSets.find(set => set.name.trim().toLowerCase() === name.toLowerCase())
+    const savedSet: TickerMappingSet = {
+      id: existing?.id ?? newMappingSetId(),
+      name,
+      mappings: mappingRows,
+      updatedAt: new Date().toISOString(),
+    }
+    const nextSettings = {
+      ...settings,
+      selectedSetId: savedSet.id,
+      savedSets: [
+        ...settings.savedSets.filter(set => set.name.trim().toLowerCase() !== name.toLowerCase()),
+        savedSet,
+      ],
+    }
+    saveTickerMappingSettings(nextSettings)
+    notifyTickerMappingsChanged()
+    setMappingStatus(`Created ${name} with ${mappingRows.length} row${mappingRows.length === 1 ? '' : 's'}.`)
   }
 
   return (
@@ -158,6 +243,12 @@ export default function TaxDragPage() {
 
       {results.length > 0 && (
         <div className="tax-drag-results">
+          <div className="tax-drag-result-actions">
+            <button className="backtest-config-btn" type="button" onClick={createTickerMapping}>
+              Create E= Mapping
+            </button>
+            {mappingStatus && <span className="tax-drag-mapping-status">{mappingStatus}</span>}
+          </div>
           <table className="backtest-stats-table tax-drag-summary">
             <thead>
               <tr>
