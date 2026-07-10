@@ -126,8 +126,8 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
                   <span>{s.label}</span>
                 </Link>
               ))}
-              <div className="v4-pop-head">TOOLS</div>
-              {ALL_SECTIONS.filter(s => s.group === 'tools').map(s => (
+              <div className="v4-pop-head">STRATEGY TOOLS</div>
+              {ALL_SECTIONS.filter(s => s.group === 'strategy').map(s => (
                 <Link key={s.href} to={s.href}
                       className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
                       onClick={() => setSecOpen(false)}>
@@ -135,8 +135,8 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
                   <span>{s.label}</span>
                 </Link>
               ))}
-              <div className="v4-pop-head">STRATEGY TOOLS</div>
-              {ALL_SECTIONS.filter(s => s.group === 'strategy').map(s => (
+              <div className="v4-pop-head">TOOLS</div>
+              {ALL_SECTIONS.filter(s => s.group === 'tools').map(s => (
                 <Link key={s.href} to={s.href}
                       className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
                       onClick={() => setSecOpen(false)}>
