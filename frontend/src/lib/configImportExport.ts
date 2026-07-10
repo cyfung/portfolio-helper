@@ -7,6 +7,8 @@ import {
   notifyTickerMappingsChanged,
   normalizeTickerMappingSets,
   saveTickerMappingSettings,
+  isTickerMappingRef,
+  tickerMappingRefName,
   type TickerMappingSet,
 } from '@/lib/tickerMappings'
 import { parseLetfComponents } from '@/lib/tickerExpressions'
@@ -32,6 +34,8 @@ export interface SavedTickerMappingExport {
     to: string
     mode: 'prepend' | 'replaceAll'
     applyTo: 'expression' | 'ticker'
+    isMappingRef?: boolean
+    mappingRef?: string
   }[]
 }
 
@@ -67,6 +71,8 @@ export interface ImportDependencyPreview {
     updatedAt?: string
     mappings: TickerMappingSet['mappings']
     action: ImportDependencyAction
+    childNames: string[]
+    parentNames: string[]
     enabled?: boolean
   }[]
   currentNames: {
@@ -111,7 +117,11 @@ function sameJsonContent(a: unknown, b: unknown) {
 
 function mappingContent(set: Pick<TickerMappingSet, 'mappings'>) {
   return {
-    mappings: set.mappings.map(mapping => ({ from: mapping.from, to: mapping.to, mode: mapping.mode, applyTo: mapping.applyTo })),
+    mappings: set.mappings.map(mapping => (
+      isTickerMappingRef(mapping)
+        ? { isMappingRef: true, mappingRef: tickerMappingRefName(mapping) }
+        : { from: mapping.from, to: mapping.to, mode: mapping.mode, applyTo: mapping.applyTo }
+    )),
   }
 }
 
@@ -205,6 +215,16 @@ function collectPortfolioChildNames(config: any, importedNames: Set<string>) {
     const name = refName(row)
     if (name && importedNames.has(name)) names.add(name)
   }
+  return [...names].sort((a, b) => a.localeCompare(b))
+}
+
+function collectTickerMappingChildNames(set: TickerMappingSet, importedNames: Set<string>) {
+  const names = new Set<string>()
+  set.mappings.forEach(mapping => {
+    if (!isTickerMappingRef(mapping)) return
+    const name = tickerMappingRefName(mapping)
+    if (name && importedNames.has(name)) names.add(name)
+  })
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
@@ -362,6 +382,19 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
       portfolioParentsByName.set(childName, [...(portfolioParentsByName.get(childName) ?? []), parentName])
     })
   })
+  const importedMappingNames = new Set(importedSavedTickerMappings.map(set => set.name))
+  const mappingChildrenByName = new Map(
+    importedSavedTickerMappings.map(set => [
+      set.name,
+      collectTickerMappingChildNames(set, importedMappingNames),
+    ]),
+  )
+  const mappingParentsByName = new Map<string, string[]>()
+  mappingChildrenByName.forEach((children, parentName) => {
+    children.forEach(childName => {
+      mappingParentsByName.set(childName, [...(mappingParentsByName.get(childName) ?? []), parentName])
+    })
+  })
   const currentMappingByName = new Map(
     normalizeTickerMappingSets(loadTickerMappingSettings().savedSets)
       .map(set => [set.name.trim().toLowerCase(), set]),
@@ -401,6 +434,8 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
         updatedAt: set.updatedAt,
         mappings: set.mappings,
         action: currentMappingByName.has(set.name.trim().toLowerCase()) ? 'replace' as const : 'add' as const,
+        childNames: mappingChildrenByName.get(set.name) ?? [],
+        parentNames: (mappingParentsByName.get(set.name) ?? []).sort((a, b) => a.localeCompare(b)),
       }))
       .filter(set => {
         if (set.action === 'add') return true
@@ -461,6 +496,23 @@ export function renamePortfolioRefsInConfig<T>(config: T, renameMap: Map<string,
   return visit(config)
 }
 
+export function renameTickerMappingRefs<T extends { mappings: TickerMappingSet['mappings'] }>(
+  set: T,
+  renameMap: Map<string, string>,
+): T {
+  if (renameMap.size === 0) return set
+  const renameByLowerName = new Map([...renameMap.entries()].map(([from, to]) => [from.trim().toLowerCase(), to]))
+  return {
+    ...set,
+    mappings: set.mappings.map(mapping => {
+      if (!isTickerMappingRef(mapping)) return mapping
+      const currentName = tickerMappingRefName(mapping)
+      const nextName = renameByLowerName.get(currentName.toLowerCase())
+      return nextName ? { ...mapping, mappingRef: nextName } : mapping
+    }),
+  }
+}
+
 export function rewriteImportConfigPortfolioRefs<T extends ConfigPayload>(
   config: T,
   preview: ImportDependencyPreview,
@@ -508,6 +560,11 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
 
   const enabledSavedTickerMappings = preview.savedTickerMappings
     .filter(set => set.enabled !== false && set.name.trim())
+  const mappingRenameMap = new Map(
+    enabledSavedTickerMappings
+      .map(set => [set.originalName, set.name.trim()] as const)
+      .filter(([from, to]) => from !== to),
+  )
 
   if (enabledSavedTickerMappings.length > 0) {
     const currentSettings = loadTickerMappingSettings()
@@ -515,7 +572,7 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
       id: '',
       name: set.name.trim(),
       updatedAt: set.updatedAt ?? new Date().toISOString(),
-      mappings: set.mappings,
+      mappings: renameTickerMappingRefs(set, mappingRenameMap).mappings,
     }))))
     notifyTickerMappingsChanged()
   }

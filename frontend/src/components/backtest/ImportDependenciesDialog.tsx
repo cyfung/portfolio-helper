@@ -73,6 +73,11 @@ export default function ImportDependenciesDialog({
     [draft.savedPortfolios],
   )
 
+  const savedTickerMappingByName = useMemo(
+    () => new Map(draft.savedTickerMappings.map(mappingSet => [mappingSet.originalName, mappingSet])),
+    [draft.savedTickerMappings],
+  )
+
   const duplicateNames = useMemo(() => {
     const duplicates: Record<NamedSection, Set<string>> = {
       savedPortfolios: new Set(),
@@ -103,6 +108,14 @@ export default function ImportDependenciesDialog({
     if (portfolio.enabled === false) return false
     if (stack.includes(originalName)) return true
     return portfolio.parentNames.every(parentName => portfolioEffectiveEnabled(parentName, [...stack, originalName]))
+  }
+
+  function tickerMappingEffectiveEnabled(originalName: string, stack: string[] = []): boolean {
+    const mappingSet = savedTickerMappingByName.get(originalName)
+    if (!mappingSet) return true
+    if (mappingSet.enabled === false) return false
+    if (stack.includes(originalName)) return true
+    return mappingSet.parentNames.every(parentName => tickerMappingEffectiveEnabled(parentName, [...stack, originalName]))
   }
 
   function namedStatus(section: NamedSection, item: { name: string; action: ImportDependencyAction; enabled?: boolean }) {
@@ -146,6 +159,28 @@ export default function ImportDependenciesDialog({
     return ordered
   }, [draft.savedPortfolios])
 
+  const tickerMappingOrder = useMemo(() => {
+    const byName = new Map(draft.savedTickerMappings.map(mappingSet => [mappingSet.originalName, mappingSet]))
+    const seen = new Set<string>()
+    const ordered: { name: string; depth: number }[] = []
+    const roots = draft.savedTickerMappings
+      .filter(mappingSet => mappingSet.parentNames.length === 0)
+      .sort((a, b) => a.originalName.localeCompare(b.originalName))
+
+    function visit(name: string, depth: number, stack: string[] = []) {
+      if (seen.has(name) || stack.includes(name)) return
+      const mappingSet = byName.get(name)
+      if (!mappingSet) return
+      seen.add(name)
+      ordered.push({ name, depth })
+      mappingSet.childNames.forEach(childName => visit(childName, depth + 1, [...stack, name]))
+    }
+
+    roots.forEach(mappingSet => visit(mappingSet.originalName, 0))
+    draft.savedTickerMappings.forEach(mappingSet => visit(mappingSet.originalName, 0))
+    return ordered
+  }, [draft.savedTickerMappings])
+
   function setTickerConfigEnabled(symbol: string, enabled: boolean) {
     setDraft(current => ({
       ...current,
@@ -188,6 +223,27 @@ export default function ImportDependenciesDialog({
     })
   }
 
+  function setTickerMappingEnabled(originalName: string, enabled: boolean) {
+    setDraft(current => {
+      const byName = new Map(current.savedTickerMappings.map(mappingSet => [mappingSet.originalName, mappingSet]))
+      const changed = new Set<string>()
+
+      function visit(name: string) {
+        if (changed.has(name)) return
+        changed.add(name)
+        if (!enabled) byName.get(name)?.childNames.forEach(visit)
+      }
+
+      visit(originalName)
+      return {
+        ...current,
+        savedTickerMappings: current.savedTickerMappings.map(mappingSet =>
+          changed.has(mappingSet.originalName) ? { ...mappingSet, enabled } : mappingSet,
+        ),
+      }
+    })
+  }
+
   function setNamedName(section: NamedSection, originalName: string, nextName: string) {
     setDraft(current => changedPreviewAction(current, section, originalName, nextName))
   }
@@ -218,6 +274,8 @@ export default function ImportDependenciesDialog({
             disabled={applying || options.disabled}
             onChange={e => section === 'savedPortfolios'
               ? setPortfolioEnabled(item.originalName, e.target.checked)
+              : section === 'savedTickerMappings'
+                ? setTickerMappingEnabled(item.originalName, e.target.checked)
               : setNamedEnabled(section, item.originalName, e.target.checked)}
           />
         </label>
@@ -330,7 +388,15 @@ export default function ImportDependenciesDialog({
             <section>
               <h3>Ticker Mappings</h3>
               <ul className="import-dependencies-list">
-                {draft.savedTickerMappings.map(mappingSet => renderNamedRow('savedTickerMappings', mappingSet))}
+                {tickerMappingOrder.map(({ name, depth }) => {
+                  const mappingSet = savedTickerMappingByName.get(name)!
+                  const parentsDisabled = mappingSet.parentNames.some(parentName => !tickerMappingEffectiveEnabled(parentName))
+                  const relation = [
+                    mappingSet.parentNames.length > 0 ? `Parent: ${mappingSet.parentNames.join(', ')}` : '',
+                    mappingSet.childNames.length > 0 ? `Children: ${mappingSet.childNames.join(', ')}` : '',
+                  ].filter(Boolean).join(' | ')
+                  return renderNamedRow('savedTickerMappings', mappingSet, { disabled: parentsDisabled, depth, relation })
+                })}
               </ul>
             </section>
           )}

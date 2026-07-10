@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type DragEvent } from 'react'
 import { Download, GripVertical, Save, Settings, Trash2, X } from 'lucide-react'
 import { compressToCode } from '@/lib/compress'
 import { buildSavedTickerMappingsExportPayload } from '@/lib/configImportExport'
@@ -7,7 +7,9 @@ import {
   mappingSetSummary,
   saveTickerMappingSettings,
   selectedTickerMappingSet,
+  isTickerMappingRef,
   tickerMappingSetHash,
+  tickerMappingRefName,
   usableTickerMappings,
   type TickerMapping,
   type TickerMappingSettings,
@@ -76,6 +78,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
   const [error, setError] = useState('')
   const [exportStatus, setExportStatus] = useState('')
   const [dragOverSetId, setDragOverSetId] = useState('')
+  const [dragOverRowsSetId, setDragOverRowsSetId] = useState('')
   const [draggedMapping, setDraggedMapping] = useState<{ setId: string; mappingId: string } | null>(null)
   const [dragOverMapping, setDragOverMapping] = useState<{
     setId: string
@@ -140,6 +143,18 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     return { id: newMappingId(), from: '', to: '', mode: 'prepend', applyTo: 'expression' }
   }
 
+  function newMappingRef(savedSet: TickerMappingSet): TickerMapping {
+    return {
+      id: newMappingId(),
+      from: '',
+      to: '',
+      mode: 'prepend',
+      applyTo: 'expression',
+      isMappingRef: true,
+      mappingRef: savedSet.name,
+    }
+  }
+
   function addMapping(setId: string, position: 'start' | 'end') {
     updateDraft({
       ...draft,
@@ -201,6 +216,56 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     setError('')
   }
 
+  function referencedMappingNames(mappings: TickerMapping[]) {
+    return mappings
+      .filter(isTickerMappingRef)
+      .map(tickerMappingRefName)
+      .filter(Boolean)
+  }
+
+  function wouldCreateMappingReferenceCycle(parentSet: TickerMappingSet, childSet: TickerMappingSet) {
+    const parentName = parentSet.name.trim().toLowerCase()
+    if (!parentName) return false
+    const savedByName = new Map(draft.savedSets.map(set => [set.name.trim().toLowerCase(), set]))
+
+    function visit(set: TickerMappingSet, stack: string[]): boolean {
+      return referencedMappingNames(set.mappings).some(name => {
+        const key = name.toLowerCase()
+        if (key === parentName) return true
+        if (stack.includes(key)) return false
+        const child = savedByName.get(key)
+        return child ? visit(child, [...stack, key]) : false
+      })
+    }
+
+    const childName = childSet.name.trim().toLowerCase()
+    return childName === parentName || visit(childSet, childName ? [childName] : [])
+  }
+
+  function insertMappingRef(
+    setId: string,
+    savedSetId: string,
+    targetMappingId?: string,
+    position: MappingDropPosition = 'after',
+  ) {
+    const set = draft.sets.find(item => item.id === setId)
+    const savedSet = draft.savedSets.find(item => item.id === savedSetId)
+    if (!set || !savedSet) return
+    if (wouldCreateMappingReferenceCycle(set, savedSet)) {
+      setError('That child mapping would create a circular mapping reference.')
+      return
+    }
+
+    const nextMappings = [...set.mappings]
+    const targetIndex = targetMappingId ? nextMappings.findIndex(mapping => mapping.id === targetMappingId) : -1
+    const insertIndex = targetIndex < 0
+      ? nextMappings.length
+      : targetIndex + (position === 'after' ? 1 : 0)
+    nextMappings.splice(insertIndex, 0, newMappingRef(savedSet))
+    updateSet(setId, { mappings: nextMappings })
+    setError('')
+  }
+
   function saveSetAsSaved(setId: string) {
     const set = draft.sets.find(item => item.id === setId)
     const name = set?.name.trim() ?? ''
@@ -256,6 +321,11 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
       ),
     })
     setError('')
+  }
+
+  function isSavedMappingRowsDrop(e: DragEvent) {
+    return e.dataTransfer.types.includes('application/x-ticker-mapping-set') &&
+      !!(e.target as HTMLElement | null)?.closest('.ticker-mapping-rows')
   }
 
   const selectedSet = selectedTickerMappingSet(value)
@@ -343,7 +413,11 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                         e.dataTransfer.setData('application/x-ticker-mapping-set', savedSet.id)
                         e.dataTransfer.effectAllowed = 'copy'
                       }}
-                      onDragEnd={() => setDragOverSetId('')}
+                      onDragEnd={() => {
+                        setDragOverSetId('')
+                        setDragOverRowsSetId('')
+                        setDragOverMapping(null)
+                      }}
                     >
                       <span>{savedSet.name}</span>
                       <span className="ticker-mapping-chip-count">{savedSet.mappings.length}</span>
@@ -370,7 +444,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                     className={`ticker-mapping-editor-set${dragOverSetId === set.id ? ' drag-over' : ''}`}
                     key={set.id}
                     onDragOver={e => {
-                      if (e.dataTransfer.types.includes('application/x-ticker-mapping-set')) {
+                      if (e.dataTransfer.types.includes('application/x-ticker-mapping-set') && !isSavedMappingRowsDrop(e)) {
                         e.preventDefault()
                         e.dataTransfer.dropEffect = 'copy'
                         setDragOverSetId(set.id)
@@ -383,6 +457,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                       }
                     }}
                     onDrop={e => {
+                      if (isSavedMappingRowsDrop(e)) return
                       const savedSetId = e.dataTransfer.getData('application/x-ticker-mapping-set')
                       if (savedSetId) {
                         e.preventDefault()
@@ -418,22 +493,51 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                     </div>
                     <div className="ticker-mapping-order-note">Applied top to bottom. Drag rows to reorder chained mappings.</div>
 
-                    <div className="ticker-mapping-rows">
+                    <div
+                      className={`ticker-mapping-rows${dragOverRowsSetId === set.id ? ' drag-over-child' : ''}`}
+                      onDragOver={e => {
+                        if (!e.dataTransfer.types.includes('application/x-ticker-mapping-set')) return
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'copy'
+                        setDragOverSetId('')
+                        setDragOverRowsSetId(set.id)
+                      }}
+                      onDragLeave={e => {
+                        const nextTarget = e.relatedTarget
+                        if (!(nextTarget instanceof Node) || !e.currentTarget.contains(nextTarget)) {
+                          setDragOverRowsSetId('')
+                        }
+                      }}
+                      onDrop={e => {
+                        const savedSetId = e.dataTransfer.getData('application/x-ticker-mapping-set')
+                        if (!savedSetId) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setDragOverRowsSetId('')
+                        setDragOverMapping(null)
+                        insertMappingRef(set.id, savedSetId)
+                      }}
+                    >
                       {set.mappings.length ? set.mappings.map((mapping, mappingIndex) => {
                         const isDragged = draggedMapping?.setId === set.id && draggedMapping.mappingId === mapping.id
                         const dropPosition = dragOverMapping?.setId === set.id && dragOverMapping.mappingId === mapping.id
                           ? dragOverMapping.position
                           : null
+                        const mappingRef = isTickerMappingRef(mapping)
+                        const mappingRefName = mappingRef ? tickerMappingRefName(mapping) : ''
+                        const mappingRefExists = !!mappingRefName && draft.savedSets.some(savedSet => savedSet.name.trim().toLowerCase() === mappingRefName.toLowerCase())
                         return (
                         <div
-                          className={`ticker-mapping-row${isDragged ? ' dragging' : ''}${dropPosition ? ` drop-${dropPosition}` : ''}`}
+                          className={`ticker-mapping-row${mappingRef ? ' mapping-ref-row' : ''}${mappingRef && mappingRefExists ? ' mapping-ref-row-exists' : ''}${mappingRef && !mappingRefExists ? ' mapping-ref-row-missing' : ''}${isDragged ? ' dragging' : ''}${dropPosition ? ` drop-${dropPosition}` : ''}`}
                           key={mapping.id}
                           onDragOver={e => {
-                            if (!e.dataTransfer.types.includes('application/x-ticker-mapping-row')) return
+                            if (!e.dataTransfer.types.includes('application/x-ticker-mapping-row') && !e.dataTransfer.types.includes('application/x-ticker-mapping-set')) return
                             e.preventDefault()
-                            e.dataTransfer.dropEffect = 'move'
+                            const isSavedSetDrop = e.dataTransfer.types.includes('application/x-ticker-mapping-set')
+                            e.dataTransfer.dropEffect = isSavedSetDrop ? 'copy' : 'move'
                             const rect = e.currentTarget.getBoundingClientRect()
                             const position = e.clientY - rect.top > rect.height / 2 ? 'after' : 'before'
+                            setDragOverRowsSetId(isSavedSetDrop ? set.id : '')
                             setDragOverMapping({ setId: set.id, mappingId: mapping.id, position })
                           }}
                           onDragLeave={e => {
@@ -445,9 +549,20 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                             }
                           }}
                           onDrop={e => {
+                            const savedSetId = e.dataTransfer.getData('application/x-ticker-mapping-set')
+                            if (savedSetId) {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              const position = dropPosition ?? 'before'
+                              insertMappingRef(set.id, savedSetId, mapping.id, position)
+                              setDragOverRowsSetId('')
+                              setDragOverMapping(null)
+                              return
+                            }
                             const source = draggedMapping
                             if (!source || source.setId !== set.id) return
                             e.preventDefault()
+                            e.stopPropagation()
                             const position = dropPosition ?? 'before'
                             moveMapping(set.id, source.mappingId, mapping.id, position)
                             setDraggedMapping(null)
@@ -468,11 +583,25 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                             onDragEnd={() => {
                               setDraggedMapping(null)
                               setDragOverMapping(null)
+                              setDragOverRowsSetId('')
                             }}
                           >
                             <GripVertical size={14} />
                           </button>
                           <span className="ticker-mapping-row-order">{mappingIndex + 1}</span>
+                          {mappingRef ? (
+                            <label className="ticker-mapping-ref-name" title={mappingRefExists ? 'Saved ticker mapping reference exists' : 'Saved ticker mapping reference not found'}>
+                              <span className="ticker-mapping-ref-badge">Mapping</span>
+                              <input
+                                value={mappingRefName}
+                                placeholder="Saved mapping name"
+                                aria-label="Child mapping name"
+                                onChange={e => updateMapping(set.id, mapping.id, { mappingRef: e.target.value })}
+                                onBlur={e => updateMapping(set.id, mapping.id, { mappingRef: normalizeTarget(e.currentTarget.value) })}
+                              />
+                            </label>
+                          ) : (
+                            <>
                           <select
                             className="ticker-mapping-row-mode"
                             value={mapping.mode}
@@ -506,11 +635,13 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                             onChange={e => updateMapping(set.id, mapping.id, { to: e.target.value })}
                             onBlur={e => updateMapping(set.id, mapping.id, { to: normalizeTarget(e.currentTarget.value) })}
                           />
+                            </>
+                          )}
                           <button
                             type="button"
                             className="ticker-mapping-row-remove"
                             title="Remove mapping"
-                            aria-label={`Remove ${mapping.from || 'mapping'}`}
+                            aria-label={`Remove ${mappingRefName || mapping.from || 'mapping'}`}
                             onClick={() => removeMapping(set.id, mapping.id)}
                           >
                             <X size={13} />

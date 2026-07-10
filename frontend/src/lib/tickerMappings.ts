@@ -15,6 +15,8 @@ export interface TickerMapping {
   to: string
   mode: 'prepend' | 'replaceAll'
   applyTo: 'expression' | 'ticker'
+  isMappingRef?: boolean
+  mappingRef?: string
 }
 
 export interface TickerMappingSet {
@@ -26,6 +28,7 @@ export interface TickerMappingSet {
   sourceSavedSetName?: string
   sourceSavedSetHash?: string
   sourceSavedSetUpdatedAt?: string
+  resolveWarnings?: string[]
 }
 
 export interface TickerMappingSettings {
@@ -72,12 +75,32 @@ function normalizeTarget(value: string) {
   return value.trim().replace(/\s+/g, ' ')
 }
 
+export function isTickerMappingRef(mapping: Partial<TickerMapping> | null | undefined) {
+  return mapping?.isMappingRef === true || typeof mapping?.mappingRef === 'string'
+}
+
+export function tickerMappingRefName(mapping: Partial<TickerMapping>) {
+  return normalizeTarget(String(mapping.mappingRef ?? mapping.from ?? ''))
+}
+
 function normalizeMapping(mapping: Partial<TickerMapping>): TickerMapping | null {
+  const id = String(mapping.id || newMappingId())
+  if (isTickerMappingRef(mapping)) {
+    return {
+      id,
+      from: '',
+      to: '',
+      mode: 'prepend',
+      applyTo: 'expression',
+      isMappingRef: true,
+      mappingRef: tickerMappingRefName(mapping),
+    }
+  }
   const from = normalizeSource(String(mapping.from ?? ''))
   const to = normalizeTarget(String(mapping.to ?? ''))
   const mode = mapping.mode === 'replaceAll' ? 'replaceAll' : 'prepend'
   const applyTo = mapping.applyTo === 'ticker' ? 'ticker' : 'expression'
-  return { id: String(mapping.id || newMappingId()), from, to, mode, applyTo }
+  return { id, from, to, mode, applyTo }
 }
 
 function normalizeSet(
@@ -144,22 +167,31 @@ export function mappingSetSummary(set: TickerMappingSet | null | undefined) {
 }
 
 export function selectedTickerMappingSet(settings: TickerMappingSettings) {
-  return settings.savedSets.find(set => set.id === settings.selectedSetId) ?? null
+  const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+  return selected ? resolveTickerMappingSet(selected, settings.savedSets) : null
 }
 
 export function usableTickerMappings(mappings: TickerMapping[]) {
-  return mappings.filter(mapping => mapping.from && mapping.to && !/\s/.test(mapping.from))
+  return mappings.filter(mapping => (
+    isTickerMappingRef(mapping)
+      ? !!tickerMappingRefName(mapping)
+      : mapping.from && mapping.to && !/\s/.test(mapping.from)
+  ))
 }
 
 export function tickerMappingSetContent(set: Pick<TickerMappingSet, 'name' | 'mappings'>) {
   return {
     name: set.name.trim(),
-    mappings: usableTickerMappings(set.mappings).map(mapping => ({
-      from: mapping.from,
-      to: mapping.to,
-      mode: mapping.mode,
-      applyTo: mapping.applyTo,
-    })),
+    mappings: usableTickerMappings(set.mappings).map(mapping => (
+      isTickerMappingRef(mapping)
+        ? { isMappingRef: true, mappingRef: tickerMappingRefName(mapping) }
+        : {
+            from: mapping.from,
+            to: mapping.to,
+            mode: mapping.mode,
+            applyTo: mapping.applyTo,
+          }
+    )),
   }
 }
 
@@ -201,6 +233,46 @@ export function normalizeTickerMappingSets(value: unknown): TickerMappingSet[] {
 
 export function exportableSavedTickerMappings(settings: TickerMappingSettings) {
   return normalizeTickerMappingSets(settings.savedSets)
+}
+
+export function resolveTickerMappingSet(
+  set: TickerMappingSet,
+  savedSets: TickerMappingSet[],
+): TickerMappingSet {
+  const savedByName = new Map(
+    savedSets
+      .map(saved => [saved.name.trim().toLowerCase(), saved] as const)
+      .filter(([name]) => !!name),
+  )
+  const warnings = new Set<string>()
+
+  function expandMappings(mappings: TickerMapping[], stack: string[]): TickerMapping[] {
+    return usableTickerMappings(mappings).flatMap(mapping => {
+      if (!isTickerMappingRef(mapping)) return [mapping]
+
+      const name = tickerMappingRefName(mapping)
+      const key = name.toLowerCase()
+      if (!key) return []
+      if (stack.includes(key)) {
+        warnings.add(`Circular ticker mapping reference skipped: ${[...stack, key].join(' -> ')}`)
+        return []
+      }
+
+      const child = savedByName.get(key)
+      if (!child) {
+        warnings.add(`Missing ticker mapping reference: ${name}`)
+        return []
+      }
+      return expandMappings(child.mappings, [...stack, key])
+    })
+  }
+
+  const rootKey = set.name.trim().toLowerCase()
+  return {
+    ...set,
+    mappings: expandMappings(set.mappings, rootKey ? [rootKey] : []),
+    resolveWarnings: [...warnings],
+  }
 }
 
 export function mergeSavedTickerMappings(
@@ -445,10 +517,10 @@ export function mapTickerExpressionWithWarnings(
   ticker: string,
   mappingSet: TickerMappingSet | null | undefined,
 ): TickerMappingResult<string> {
-  const mappings = usableTickerMappings(mappingSet?.mappings ?? [])
-  if (mappings.length === 0) return { value: normalizeMappedTickerExpression(ticker), warnings: [] }
+  const mappings = usableTickerMappings(mappingSet?.mappings ?? []).filter(mapping => !isTickerMappingRef(mapping))
+  const warnings = new Set(mappingSet?.resolveWarnings ?? [])
+  if (mappings.length === 0) return { value: normalizeMappedTickerExpression(ticker), warnings: [...warnings] }
 
-  const warnings = new Set<string>()
   const value = mappings.reduce(
     (current, mapping) => {
       const mapped = mapTickerExpressionForSingleMapping(current, mapping)
@@ -470,10 +542,13 @@ export function applyTickerMappingsToRowsWithWarnings(
 ): TickerMappingResult<WeightedTicker[]> {
   const expandedRows = expandSwapTickerRows(rows)
     .filter(row => row.ticker.trim().toUpperCase() !== 'DUMMY')
-  if (usableTickerMappings(mappingSet?.mappings ?? []).length === 0) return { value: expandedRows, warnings: [] }
+  const initialWarnings = new Set(mappingSet?.resolveWarnings ?? [])
+  if (usableTickerMappings(mappingSet?.mappings ?? []).filter(mapping => !isTickerMappingRef(mapping)).length === 0) {
+    return { value: expandedRows, warnings: [...initialWarnings] }
+  }
 
   const weights = new Map<string, number>()
-  const warnings = new Set<string>()
+  const warnings = new Set(initialWarnings)
   for (const row of expandedRows) {
     const mapped = mapTickerExpressionWithWarnings(row.ticker, mappingSet)
     const mappedTicker = mapped.value
@@ -502,7 +577,7 @@ export function applyTickerMappingsToPortfolioWithWarnings<T extends { tickers: 
   portfolio: T,
   mappingSet: TickerMappingSet | null | undefined,
 ): TickerMappingResult<T> {
-  if (!mappingSet?.mappings.length) return { value: portfolio, warnings: [] }
+  if (!mappingSet?.mappings.length) return { value: portfolio, warnings: mappingSet?.resolveWarnings ?? [] }
   const mapped = applyTickerMappingsToRowsWithWarnings(portfolio.tickers, mappingSet)
   return { value: { ...portfolio, tickers: mapped.value }, warnings: mapped.warnings }
 }
