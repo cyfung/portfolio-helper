@@ -9,6 +9,7 @@ const PortfolioPage        = lazy(() => import('@/pages/PortfolioPage'))
 const PortfolioAnalystPage = lazy(() => import('@/pages/PortfolioAnalystPage'))
 const TradesPage           = lazy(() => import('@/pages/TradesPage'))
 const LoanPage             = lazy(() => import('@/pages/LoanPage'))
+const TaxDragPage          = lazy(() => import('@/pages/TaxDragPage'))
 const BacktestPage         = lazy(() => import('@/pages/BacktestPage'))
 const PortfolioBuilderPage = lazy(() => import('@/pages/PortfolioBuilderPage'))
 const MonteCarloPage            = lazy(() => import('@/pages/MonteCarloPage'))
@@ -50,6 +51,7 @@ export default function App() {
       <Route path="/trades/" element={<TradesPage />} />
       <Route path="/trades/:slug" element={<TradesPage />} />
       <Route path="/loan" element={<LoanPage />} />
+      <Route path="/tax-drag" element={<TaxDragPage />} />
       <Route path="/backtest" element={<BacktestPage />} />
       <Route path="/portfolio-builder" element={<PortfolioBuilderPage />} />
       <Route path="/montecarlo" element={<MonteCarloPage />} />

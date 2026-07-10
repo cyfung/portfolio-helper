@@ -1,0 +1,161 @@
+.tax-drag-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-elevated);
+}
+
+.tax-drag-controls {
+    display: grid;
+    grid-template-columns: 9rem minmax(18rem, 1fr) auto;
+    gap: 0.75rem;
+    align-items: end;
+}
+
+.tax-drag-controls label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.tax-drag-controls input {
+    height: 2.125rem;
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+}
+
+.tax-drag-controls input:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+.tax-drag-percent-input {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.tax-drag-percent-input span {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-sm);
+}
+
+.tax-drag-run {
+    align-self: end;
+    min-width: 8rem;
+    margin: 0;
+}
+
+.tax-drag-results {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.tax-drag-summary,
+.tax-drag-annual {
+    font-variant-numeric: tabular-nums;
+}
+
+.tax-drag-summary td:first-child,
+.tax-drag-summary th:first-child {
+    text-align: left;
+}
+
+.tax-drag-summary td:nth-child(2),
+.tax-drag-summary th:nth-child(2),
+.tax-drag-annual td:nth-child(2),
+.tax-drag-annual th:nth-child(2) {
+    text-align: left;
+}
+
+.tax-drag-symbol {
+    font-family: var(--font-family-mono), monospace;
+    font-weight: 700;
+}
+
+.tax-drag-expand {
+    width: 1.4rem;
+    height: 1.4rem;
+    margin-right: 0.4rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.tax-drag-expand:hover:not(:disabled) {
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+}
+
+.tax-drag-expand:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.tax-drag-error-row td {
+    color: var(--color-negative);
+}
+
+.tax-drag-annual-section {
+    min-width: 0;
+}
+
+.tax-drag-range {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-xs);
+}
+
+.tax-drag-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-elevated);
+}
+
+.tax-drag-table-wrap .backtest-stats-table {
+    margin-bottom: 0;
+}
+
+.tax-drag-annual td,
+.tax-drag-annual th {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+
+@media (max-width: 800px) {
+    .tax-drag-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .tax-drag-run {
+        width: 100%;
+    }
+
+    .tax-drag-summary {
+        display: block;
+        overflow-x: auto;
+    }
+}

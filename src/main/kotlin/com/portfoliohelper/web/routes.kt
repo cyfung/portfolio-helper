@@ -1563,6 +1563,18 @@ fun Application.configureRouting() {
             }
         }
 
+        post("/api/tax-drag/calculate") {
+            try {
+                val request = appJson.decodeFromString<TaxDragRequest>(call.receiveText())
+                val response = withContext(Dispatchers.IO) {
+                    TaxDragService.calculate(request)
+                }
+                call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
         // Generic per-portfolio config store: POST /api/portfolio-config/save?portfolio=X&key=<key>
         // Persists to PortfolioCfgTable in SQLite (previously portfolio.conf file).
         // rebalTarget (USD) and marginTarget (%) are mutually exclusive — setting one clears the other.
