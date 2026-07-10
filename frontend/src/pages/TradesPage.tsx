@@ -5,7 +5,7 @@ import PortfolioTabs from '@/components/portfolio/PortfolioTabs'
 import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useTransientToast } from '@/hooks/useTransientToast'
-import type { PortfolioData } from '@/types/portfolio'
+import type { CashData, PortfolioData, StockData } from '@/types/portfolio'
 
 interface TradeRow {
   id: number
@@ -24,8 +24,19 @@ interface TradeRow {
   realizedPnl: number | null
 }
 
+type PortfolioStockCreateRow = {
+  symbol: string
+  amount: number
+  targetWeight: number
+  letf: string
+  groups: string
+}
+
+type PortfolioCashCreateRow = CashData
+
 type Period = '7D' | '30D' | '90D' | 'YTD' | '1Y' | 'All'
 type TradesView = 'summary' | 'trades'
+type IngestSource = 'flex' | 'tws' | 'xml'
 
 const PERIODS: Period[] = ['7D', '30D', '90D', 'YTD', '1Y', 'All']
 const ISO_CURRENCIES = new Set([
@@ -139,6 +150,10 @@ function portfolioSymbolForTrade(trade: TradeRow, exchangeSuffixes: Map<string, 
   return suffix && !rawSymbol.endsWith(suffix.toUpperCase()) ? `${rawSymbol}${suffix}` : rawSymbol
 }
 
+function tradesNetCashLabel(currency: string) {
+  return `Trades Net Cash ${currency}`
+}
+
 function SelectionCheckbox({
   checked,
   indeterminate = false,
@@ -182,7 +197,10 @@ export default function TradesPage() {
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(new Set())
   const [selectedTradeKeys, setSelectedTradeKeys] = useState<Set<string>>(new Set())
   const [allTrades, setAllTrades] = useState<TradeRow[]>([])
-  const [ingesting, setIngesting] = useState(false)
+  const [ingestSource, setIngestSource] = useState<IngestSource | null>(null)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [createPortfolioName, setCreatePortfolioName] = useState('')
+  const [createBasePortfolioSlug, setCreateBasePortfolioSlug] = useState('')
   const [creatingPortfolio, setCreatingPortfolio] = useState(false)
   const [notice, setNotice] = useState('')
   const [exchangeSuffixes, setExchangeSuffixes] = useState<Map<string, string>>(new Map())
@@ -191,6 +209,7 @@ export default function TradesPage() {
 
   const from = periodFrom(period)
   const to = todayStr()
+  const ingesting = ingestSource !== null
 
   useEffect(() => {
     setAllTrades([])
@@ -198,6 +217,9 @@ export default function TradesPage() {
     setExpandedSymbols(new Set())
     setView('summary')
     setNotice('')
+    setCreateDialogOpen(false)
+    setCreatePortfolioName('')
+    setCreateBasePortfolioSlug('')
     if (xmlInputRef.current) xmlInputRef.current.value = ''
   }, [slug])
 
@@ -314,7 +336,7 @@ export default function TradesPage() {
     return rows.some(trade => selectedTradeKeys.has(tradeSelectionKey(trade))) && !isGroupSelected(rows)
   }
 
-  function buildPortfolioRowsFromTrades(rows: TradeRow[]) {
+  function buildPortfolioRowsFromTrades(rows: TradeRow[]): { stocks: PortfolioStockCreateRow[]; cash: PortfolioCashCreateRow[] } {
     const stockBySymbol = new Map<string, number>()
     const cashByCurrency = new Map<string, number>()
 
@@ -340,20 +362,84 @@ export default function TradesPage() {
     const cash = [...cashByCurrency.entries()]
       .filter(([, amount]) => Number.isFinite(amount) && Math.abs(amount) > 0.005)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([currency, amount]) => ({ label: `Trades Net Cash ${currency}`, currency, marginFlag: false, amount }))
+      .map(([currency, amount]) => ({ label: tradesNetCashLabel(currency), currency, marginFlag: false, amount }))
 
     return { stocks, cash }
+  }
+
+  async function loadBasePortfolioData(baseSlug: string) {
+    const r = await fetch(`/api/portfolio/data?portfolio=${encodeURIComponent(baseSlug)}`)
+    const data = await r.json().catch(() => null) as PortfolioData | { message?: string } | null
+    if (!r.ok || !data || !('stocks' in data)) {
+      const message = data && 'message' in data ? data.message : null
+      throw new Error(message ?? `Failed to load base portfolio: HTTP ${r.status}`)
+    }
+    return data
+  }
+
+  function mergeTradesWithBasePortfolio(base: PortfolioData, tradeRows: ReturnType<typeof buildPortfolioRowsFromTrades>) {
+    const stockBySymbol = new Map<string, PortfolioStockCreateRow>()
+    base.stocks.forEach((stock: StockData) => {
+      const symbol = stock.label.trim().toUpperCase()
+      if (!symbol) return
+      stockBySymbol.set(symbol, {
+        symbol,
+        amount: stock.originalAmount ?? stock.amount ?? 0,
+        targetWeight: stock.targetWeight ?? 0,
+        letf: stock.letf ?? '',
+        groups: stock.groups ?? '',
+      })
+    })
+    tradeRows.stocks.forEach(delta => {
+      const current = stockBySymbol.get(delta.symbol)
+      if (current) {
+        stockBySymbol.set(delta.symbol, { ...current, amount: current.amount + delta.amount })
+      } else {
+        stockBySymbol.set(delta.symbol, delta)
+      }
+    })
+
+    const cash = base.cash.map(entry => ({ ...entry }))
+    tradeRows.cash.forEach(delta => {
+      const currency = delta.currency.trim().toUpperCase()
+      const label = tradesNetCashLabel(currency)
+      const existingIndex = cash.findIndex(entry =>
+        entry.label.trim().toLowerCase() === label.toLowerCase() &&
+        entry.currency.trim().toUpperCase() === currency
+      )
+      if (existingIndex >= 0) {
+        cash[existingIndex] = {
+          ...cash[existingIndex],
+          amount: cash[existingIndex].amount + delta.amount,
+        }
+      } else {
+        cash.push({ label, currency, marginFlag: false, amount: delta.amount })
+      }
+    })
+
+    return {
+      stocks: [...stockBySymbol.values()]
+        .filter(stock => Number.isFinite(stock.amount) && Math.abs(stock.amount) > 1e-9)
+        .sort((a, b) => a.symbol.localeCompare(b.symbol)),
+      cash,
+    }
+  }
+
+  function openCreatePortfolioDialog() {
+    if (selectedVisibleTrades.length === 0) return
+    setCreatePortfolioName(defaultTradesPortfolioName(portfolioId))
+    setCreateBasePortfolioSlug('')
+    setCreateDialogOpen(true)
   }
 
   async function createPortfolioFromSelectedTrades() {
     const selectedRows = selectedVisibleTrades
     if (selectedRows.length === 0) return
-    const defaultName = defaultTradesPortfolioName(portfolioId)
-    const name = window.prompt('New portfolio name', defaultName)?.trim()
+    const name = createPortfolioName.trim()
     if (!name) return
 
-    const { stocks, cash } = buildPortfolioRowsFromTrades(selectedRows)
-    if (stocks.length === 0 && cash.length === 0) {
+    const tradeRows = buildPortfolioRowsFromTrades(selectedRows)
+    if (tradeRows.stocks.length === 0 && tradeRows.cash.length === 0) {
       showToast('Selected trades do not produce any non-zero stock or cash rows.', 'error', 10000)
       return
     }
@@ -361,15 +447,18 @@ export default function TradesPage() {
     setCreatingPortfolio(true)
     setNotice('')
     try {
+      const base = createBasePortfolioSlug ? await loadBasePortfolioData(createBasePortfolioSlug) : null
+      const { stocks, cash } = base ? mergeTradesWithBasePortfolio(base, tradeRows) : tradeRows
       const createResponse = await fetch('/api/portfolio/create-with-contents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, stocks, cash, dividendStartDate: null }),
+        body: JSON.stringify({ name, stocks, cash, dividendStartDate: base?.config.dividendStartDate || null }),
       })
       const createData = await createResponse.json().catch(() => ({})) as { slug?: string; message?: string }
       if (!createResponse.ok || !createData.slug) throw new Error(createData.message ?? `Create failed: HTTP ${createResponse.status}`)
 
-      setNotice(`Created portfolio ${name} from ${selectedRows.length} selected trade(s).`)
+      setNotice(`Created portfolio ${name} from ${selectedRows.length} selected trade(s)${base ? ` merged with ${base.portfolioName}` : ''}.`)
+      setCreateDialogOpen(false)
       navigate(`/portfolio/${createData.slug}`)
     } catch (e: any) {
       showToast(e.message ?? 'Failed to create portfolio', 'error', 10000)
@@ -380,7 +469,7 @@ export default function TradesPage() {
 
   async function ingestFromIbkr() {
     if (!portfolioId) return
-    setIngesting(true)
+    setIngestSource('flex')
     setNotice('')
     try {
       const r = await fetch(`/api/trades/fetch/${portfolioId}`, { method: 'POST' })
@@ -393,13 +482,32 @@ export default function TradesPage() {
     } catch (e: any) {
       showToast(e.message ?? 'Failed to fetch trades', 'error', 10000)
     } finally {
-      setIngesting(false)
+      setIngestSource(null)
+    }
+  }
+
+  async function ingestFromTws() {
+    if (!portfolioId) return
+    setIngestSource('tws')
+    setNotice('')
+    try {
+      const r = await fetch(`/api/trades/fetch-tws/${portfolioId}`, { method: 'POST' })
+      const d = await r.json() as { trades?: TradeRow[]; error?: string }
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+      const fetchedTrades = d.trades ?? []
+      setAllTrades(fetchedTrades)
+      setSelectedTradeKeys(new Set(fetchedTrades.map(tradeSelectionKey)))
+      setNotice(`Fetched ${fetchedTrades.length} trade(s) from TWS.`)
+    } catch (e: any) {
+      showToast(e.message ?? 'Failed to fetch TWS trades', 'error', 10000)
+    } finally {
+      setIngestSource(null)
     }
   }
 
   async function importXml(files: FileList) {
     if (!portfolioId) return
-    setIngesting(true)
+    setIngestSource('xml')
     setNotice('')
     try {
       let total = 0
@@ -422,7 +530,7 @@ export default function TradesPage() {
     } catch (e: any) {
       showToast(e.message ?? 'Failed to import trades', 'error', 10000)
     } finally {
-      setIngesting(false)
+      setIngestSource(null)
       if (xmlInputRef.current) xmlInputRef.current.value = ''
     }
   }
@@ -480,7 +588,10 @@ export default function TradesPage() {
           <div className="trades-actions">
             <button type="button" className="backtest-config-btn" onClick={() => setShowConfig(true)} disabled={ingesting}>IB Config</button>
             <button type="button" className="backtest-config-btn" onClick={ingestFromIbkr} disabled={ingesting}>
-              {ingesting ? <>Fetching<span className="btn-spinner" /></> : 'Fetch Trades'}
+              {ingestSource === 'flex' ? <>Fetching<span className="btn-spinner" /></> : 'Fetch Flex'}
+            </button>
+            <button type="button" className="backtest-config-btn" onClick={ingestFromTws} disabled={ingesting}>
+              {ingestSource === 'tws' ? <>Fetching<span className="btn-spinner" /></> : 'Fetch TWS'}
             </button>
             <input
               ref={xmlInputRef}
@@ -508,7 +619,7 @@ export default function TradesPage() {
               <div><strong>2.</strong> Enable the <strong>Trades</strong> section and set <strong>Format</strong> to <strong>XML</strong>.</div>
               <div><strong>3.</strong> Use the trade history date range you want, then save the query.</div>
               <div><strong>4.</strong> Generate or reuse a <strong>Flex Web Service token</strong>.</div>
-              <div><strong>5.</strong> In <strong>IB Config</strong>, fill <strong>Flex Web Service Token</strong> and <strong>Trades Query ID</strong>, then click <strong>Fetch Trades</strong>.</div>
+              <div><strong>5.</strong> In <strong>IB Config</strong>, fill <strong>Flex Web Service Token</strong> and <strong>Trades Query ID</strong>, then click <strong>Fetch Flex</strong>.</div>
             </div>
             <div className="flex-query-table-wrap">
               <table className="flex-query-field-table">
@@ -553,7 +664,7 @@ export default function TradesPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex-query-note">Trades are not saved to the database. Fetch from IBKR or import XML again when you need to reload the table.</div>
+            <div className="flex-query-note">Trades are not saved to the database. Fetch with Flex, fetch recent executions from TWS, or import XML again when you need to reload the table. TWS may only return trades inside its Trade Log window.</div>
           </div>
         ) : (
           <>
@@ -571,10 +682,10 @@ export default function TradesPage() {
               <button
                 type="button"
                 className="backtest-config-btn"
-                onClick={createPortfolioFromSelectedTrades}
+                onClick={openCreatePortfolioDialog}
                 disabled={creatingPortfolio || selectedVisibleCount === 0}
               >
-                {creatingPortfolio ? <>Creating<span className="btn-spinner" /></> : 'Create Portfolio'}
+                Create Portfolio
               </button>
             </div>
             <div className="trades-table-wrap">
@@ -684,6 +795,67 @@ export default function TradesPage() {
       </div>
 
       {showConfig && <IbkrConfigDialog portfolioSlug={portfolioId} onClose={() => setShowConfig(false)} />}
+      {createDialogOpen && (
+        <div className="trades-create-overlay" role="presentation" onMouseDown={e => {
+          if (e.target === e.currentTarget && !creatingPortfolio) setCreateDialogOpen(false)
+        }}>
+          <form
+            className="trades-create-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="trades-create-title"
+            onSubmit={e => {
+              e.preventDefault()
+              if (!creatingPortfolio) createPortfolioFromSelectedTrades()
+            }}
+          >
+            <div className="trades-create-dialog-header">
+              <h2 id="trades-create-title">Create Portfolio</h2>
+              <button
+                type="button"
+                className="trades-create-close"
+                aria-label="Close"
+                onClick={() => setCreateDialogOpen(false)}
+                disabled={creatingPortfolio}
+              >
+                x
+              </button>
+            </div>
+            <label className="trades-create-field" htmlFor="trades-create-name">
+              <span>Name</span>
+              <input
+                id="trades-create-name"
+                value={createPortfolioName}
+                onChange={e => setCreatePortfolioName(e.target.value)}
+                autoFocus
+                disabled={creatingPortfolio}
+              />
+            </label>
+            <label className="trades-create-field" htmlFor="trades-create-base">
+              <span>Base</span>
+              <select
+                id="trades-create-base"
+                value={createBasePortfolioSlug}
+                onChange={e => setCreateBasePortfolioSlug(e.target.value)}
+                disabled={creatingPortfolio}
+              >
+                <option value="">Selected trades only</option>
+                {allPortfolios.map(portfolio => (
+                  <option key={portfolio.slug} value={portfolio.slug}>{portfolio.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="trades-create-actions">
+              <button type="button" className="backtest-config-btn" onClick={() => setCreateDialogOpen(false)} disabled={creatingPortfolio}>
+                Cancel
+              </button>
+              <button type="submit" className="backtest-config-btn active" disabled={creatingPortfolio || !createPortfolioName.trim()}>
+                {creatingPortfolio ? <>Creating<span className="btn-spinner" /></> : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

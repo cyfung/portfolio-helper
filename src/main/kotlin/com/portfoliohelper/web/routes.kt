@@ -10,6 +10,7 @@ import com.portfoliohelper.service.db.PortfolioCfgTable
 import com.portfoliohelper.service.db.SavedBacktestPortfoliosTable
 import com.portfoliohelper.service.db.SavedRebalanceStrategiesTable
 import com.portfoliohelper.service.db.StockTickersTable
+import com.portfoliohelper.tws.TwsExecution
 import com.portfoliohelper.tws.TwsExecutionReport
 import com.portfoliohelper.tws.PortfolioSnapshot
 import io.ktor.http.*
@@ -727,6 +728,45 @@ private fun toIbkrTradeDto(index: Int, trade: IbkrTradeEntry) = IbkrTradeDto(
     commissionCurrency = trade.commissionCurrency,
     realizedPnl = trade.realizedPnl,
 )
+
+private fun toIbkrTradeDto(index: Int, execution: TwsExecution) = IbkrTradeDto(
+    id = index,
+    tradeKey = execution.execId.ifBlank {
+        listOf(execution.time, execution.symbol, execution.side, execution.shares, execution.price, execution.orderId)
+            .joinToString(":")
+    },
+    tradeDate = normalizeTwsTradeDate(execution.time),
+    tradeTime = normalizeTwsTradeTime(execution.time),
+    symbol = execution.symbol.trim().uppercase(),
+    side = normalizeTwsSide(execution.side),
+    quantity = execution.shares,
+    price = execution.price,
+    currency = execution.currency.trim().uppercase(),
+    exchange = execution.exchange.trim(),
+    assetCategory = execution.secType.trim().uppercase(),
+    commission = execution.commission,
+    commissionCurrency = execution.commissionCurrency?.trim()?.uppercase()?.ifBlank { null },
+    realizedPnl = execution.realizedPnl,
+)
+
+private fun normalizeTwsTradeDate(raw: String): String {
+    val digits = raw.filter(Char::isDigit)
+    return if (digits.length >= 8) {
+        "${digits.substring(0, 4)}-${digits.substring(4, 6)}-${digits.substring(6, 8)}"
+    } else {
+        ""
+    }
+}
+
+private fun normalizeTwsTradeTime(raw: String): String =
+    Regex("""\b(\d{2}:\d{2}:\d{2})\b""").find(raw.trim())?.groupValues?.get(1) ?: ""
+
+private fun normalizeTwsSide(raw: String): String =
+    when (raw.trim().uppercase()) {
+        "BUY", "BOT", "B" -> "BUY"
+        "SELL", "SLD", "S" -> "SELL"
+        else -> raw.trim().uppercase()
+    }
 
 @Serializable
 private data class PortfolioOptionDto(val slug: String, val name: String, val seqOrder: Double)
@@ -2082,6 +2122,26 @@ fun Application.configureRouting() {
                     """{"error":"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}"}""",
                     ContentType.Application.Json, HttpStatusCode.UnprocessableEntity
                 )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        post("/api/trades/fetch-tws/{slug}") {
+            val portfolio = ManagedPortfolio.resolve(call.parameters["slug"])
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            try {
+                val host = AppConfig.twsHost
+                val port = AppConfig.twsPort
+                val days = call.request.queryParameters["days"]?.toIntOrNull()?.coerceIn(1, 7) ?: 7
+                val account = portfolio.getTwsAccount()
+                val report = withContext(Dispatchers.IO) {
+                    TwsExecutionReport.fetch(
+                        host, port, account = account, days = days
+                    )
+                }
+                val response = IbkrTradesResponse(report.executions.mapIndexed(::toIbkrTradeDto))
+                call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondApiError(e)
             }

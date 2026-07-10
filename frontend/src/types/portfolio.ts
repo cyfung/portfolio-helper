@@ -218,26 +218,3 @@ export interface TwsSnapshotResponse {
   accruedCash: Record<string, number>
   pendingDividends: Record<string, number>
 }
-
-export interface TwsTransactionItem {
-  execId: string
-  time: string
-  account: string
-  symbol: string
-  secType: string
-  exchange: string
-  currency: string
-  side: string
-  shares: number
-  price: number
-  orderId: number
-  commission: number | null
-  commissionCurrency: string | null
-  realizedPnl: number | null
-}
-
-export interface TwsTransactionsResponse {
-  account: string
-  requestedDays: number
-  transactions: TwsTransactionItem[]
-}
