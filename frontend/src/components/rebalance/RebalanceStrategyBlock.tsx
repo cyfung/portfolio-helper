@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Lock, Unlock } from 'lucide-react'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 import { newId } from '@/types/backtest'
 import {
@@ -39,6 +40,7 @@ import {
   marginValueFromLegacyPoint,
   samePoints,
 } from './RebalanceStrategyControlUtils'
+import { MarginWheelAdjustContext } from './MarginWheelAdjustContext'
 
 interface Props {
   idx: number
@@ -216,6 +218,11 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const sellOnSurge = safeDipSurgeScopes(s.sellOnSurge)
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [marginScrollLocked, setMarginScrollLocked] = useState(true)
+  const marginScrollLockLabel = marginScrollLocked
+    ? 'Unlock margin wheel adjustment'
+    : 'Lock margin wheel adjustment'
+  const MarginScrollLockIcon = marginScrollLocked ? Lock : Unlock
 
   const availableOptionalSections = useMemo(
     () => OPTIONAL_STRATEGY_SECTIONS.filter(section => {
@@ -300,190 +307,205 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
 
   return (
     <div
-      className={`portfolio-block${dragOver ? ' drag-over' : ''}`}
+      className={`portfolio-block rebalance-strategy-block${dragOver ? ' drag-over' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      <StrategyHeader
-        idx={idx}
-        label={s.label}
-        saveMsg={saveMsg}
-        onLabelChange={label => set({ label })}
-        onCommit={() => commit()}
-        onSave={handleSave}
-      />
+      <MarginWheelAdjustContext.Provider value={!marginScrollLocked}>
+        <StrategyHeader
+          idx={idx}
+          label={s.label}
+          saveMsg={saveMsg}
+          onLabelChange={label => set({ label })}
+          onCommit={() => commit()}
+          onSave={handleSave}
+        />
 
-      <MarginSection
-        strategy={s}
-        marginPoints={marginPoints}
-        sliderMax={sliderMax}
-        spreadTouched={spreadTouched}
-        onSet={set}
-        onSpreadTouched={() => setSpreadTouched(true)}
-        onCommit={() => commit()}
-        onMarginChange={handleMarginChange}
-        onMarginCommit={commitMarginPoints}
-      />
-
-      <OptionalStrategySectionPicker sections={availableOptionalSections} onAdd={addOptionalStrategySection} />
-
-      {(s.marginRebalanceEnabled ?? true) && (
-        <MarginRebalanceSection
+        <MarginSection
           strategy={s}
-          allocOptions={allocOptions}
-          marginRebalanceRestoreMargin={marginRebalanceRestoreMargin}
+          marginPoints={marginPoints}
+          sliderMax={sliderMax}
+          spreadTouched={spreadTouched}
+          onSet={set}
+          onSpreadTouched={() => setSpreadTouched(true)}
+          onCommit={() => commit()}
+          onMarginChange={handleMarginChange}
+          onMarginCommit={commitMarginPoints}
+        />
+
+        <OptionalStrategySectionPicker sections={availableOptionalSections} onAdd={addOptionalStrategySection} />
+
+        {(s.marginRebalanceEnabled ?? true) && (
+          <MarginRebalanceSection
+            strategy={s}
+            allocOptions={allocOptions}
+            marginRebalanceRestoreMargin={marginRebalanceRestoreMargin}
+            midMarginPoint={midMarginPoint}
+            sliderMax={sliderMax}
+            onSet={set}
+            onRemove={removeOptionalStrategySection}
+            onCommit={() => commit()}
+          />
+        )}
+
+        {drawdownMarginOverride.enabled && (s.marginRebalanceEnabled ?? true) && (
+          <DrawdownMarginOverrideSection
+            value={drawdownMarginOverride}
+            allocOptions={allocOptions}
+            sliderMax={sliderMax}
+            onChange={updateDrawdownMarginOverride}
+            onRemove={removeOptionalStrategySection}
+            onCommit={() => commit()}
+          />
+        )}
+
+        {vmTimingMr.enabled && (
+          <VmTimingMrSection
+            value={vmTimingMr}
+            allocOptions={allocOptions}
+            sliderMax={sliderMax}
+            onChange={updateVmTimingMr}
+            onRemove={removeOptionalStrategySection}
+            onCommit={() => commit()}
+          />
+        )}
+
+        <CashflowSection
+          strategy={s}
+          cashflowScalingMargin={cashflowScalingMargin}
           midMarginPoint={midMarginPoint}
           sliderMax={sliderMax}
           onSet={set}
-          onRemove={removeOptionalStrategySection}
           onCommit={() => commit()}
         />
-      )}
 
-      {drawdownMarginOverride.enabled && (s.marginRebalanceEnabled ?? true) && (
-        <DrawdownMarginOverrideSection
-          value={drawdownMarginOverride}
-          allocOptions={allocOptions}
-          sliderMax={sliderMax}
-          onChange={updateDrawdownMarginOverride}
-          onRemove={removeOptionalStrategySection}
-          onCommit={() => commit()}
-        />
-      )}
+        {s.buyLowEnabled && (
+          <BuyLowSection
+            strategy={s}
+            allocOptions={allocOptions}
+            triggerMargin={buyLowTriggerMargin}
+            restoreMargin={buyLowRestoreMargin}
+            marginPoints={marginPoints}
+            midMarginPoint={midMarginPoint}
+            sliderMax={sliderMax}
+            onSet={set}
+            onRemove={removeOptionalStrategySection}
+            onCommit={() => commit()}
+          />
+        )}
 
-      {vmTimingMr.enabled && (
-        <VmTimingMrSection
-          value={vmTimingMr}
-          allocOptions={allocOptions}
-          sliderMax={sliderMax}
-          onChange={updateVmTimingMr}
-          onRemove={removeOptionalStrategySection}
-          onCommit={() => commit()}
-        />
-      )}
+        {s.sellHighEnabled && (
+          <SellHighSection
+            strategy={s}
+            allocOptions={allocOptions}
+            triggerMargin={sellHighTriggerMargin}
+            restoreMargin={sellHighRestoreMargin}
+            marginPoints={marginPoints}
+            midMarginPoint={midMarginPoint}
+            sliderMax={sliderMax}
+            onSet={set}
+            onRemove={removeOptionalStrategySection}
+            onCommit={() => commit()}
+          />
+        )}
 
-      <CashflowSection
-        strategy={s}
-        cashflowScalingMargin={cashflowScalingMargin}
-        midMarginPoint={midMarginPoint}
-        sliderMax={sliderMax}
-        onSet={set}
-        onCommit={() => commit()}
-      />
+        {drawdownBuyOnLowMargin.enabled && (
+          <DrawdownMarginTriggerSection
+            direction="buy"
+            title="BL on Drawdown"
+            value={drawdownBuyOnLowMargin}
+            triggerPlaceholder={marginPoints[0] ?? DEFAULT_POINTS[0]}
+            midMarginPoint={midMarginPoint}
+            sliderMax={sliderMax}
+            allocOptions={allocOptions}
+            onChange={value => set({ drawdownBuyOnLowMargin: value })}
+            onRemove={() => removeOptionalStrategySection('drawdownBuyOnLowMargin')}
+            onCommit={() => commit()}
+          />
+        )}
 
-      {s.buyLowEnabled && (
-        <BuyLowSection
-          strategy={s}
-          allocOptions={allocOptions}
-          triggerMargin={buyLowTriggerMargin}
-          restoreMargin={buyLowRestoreMargin}
+        {(buyTheDip.basePortfolio || buyTheDip.individualStock) && (
+          <div className="strategy-subsection">
+            {buyTheDip.basePortfolio && (
+              <DipSurgeSection
+                direction="buy"
+                title="Buy the Dip - Portfolio Trigger"
+                scope="BASE_PORTFOLIO"
+                value={buyTheDip.basePortfolio}
+                onChange={(value: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'basePortfolio', value)}
+                marginPoints={marginPoints}
+                sliderMax={sliderMax}
+                removable
+              />
+            )}
+            {buyTheDip.individualStock && (
+              <DipSurgeSection
+                direction="buy"
+                title="Buy the Dip - Individual Stocks"
+                scope="INDIVIDUAL_STOCK"
+                value={buyTheDip.individualStock}
+                onChange={(value: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'individualStock', value)}
+                marginPoints={marginPoints}
+                sliderMax={sliderMax}
+                removable
+              />
+            )}
+          </div>
+        )}
+
+        {(sellOnSurge.basePortfolio || sellOnSurge.individualStock) && (
+          <div className="strategy-subsection">
+            {sellOnSurge.basePortfolio && (
+              <DipSurgeSection
+                direction="sell"
+                title="Sell on Surge - Portfolio Trigger"
+                scope="BASE_PORTFOLIO"
+                value={sellOnSurge.basePortfolio}
+                onChange={(value: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'basePortfolio', value)}
+                marginPoints={marginPoints}
+                sliderMax={sliderMax}
+                removable
+              />
+            )}
+            {sellOnSurge.individualStock && (
+              <DipSurgeSection
+                direction="sell"
+                title="Sell on Surge - Individual Stocks"
+                scope="INDIVIDUAL_STOCK"
+                value={sellOnSurge.individualStock}
+                onChange={(value: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'individualStock', value)}
+                marginPoints={marginPoints}
+                sliderMax={sliderMax}
+                removable
+              />
+            )}
+          </div>
+        )}
+
+        <DerivedSubStrategiesSection
+          value={s.derivedSubStrategies ?? []}
           marginPoints={marginPoints}
           midMarginPoint={midMarginPoint}
           sliderMax={sliderMax}
-          onSet={set}
-          onRemove={removeOptionalStrategySection}
-          onCommit={() => commit()}
-        />
-      )}
-
-      {s.sellHighEnabled && (
-        <SellHighSection
-          strategy={s}
           allocOptions={allocOptions}
-          triggerMargin={sellHighTriggerMargin}
-          restoreMargin={sellHighRestoreMargin}
-          marginPoints={marginPoints}
-          midMarginPoint={midMarginPoint}
-          sliderMax={sliderMax}
-          onSet={set}
-          onRemove={removeOptionalStrategySection}
+          onChange={set}
           onCommit={() => commit()}
         />
-      )}
+      </MarginWheelAdjustContext.Provider>
 
-      {drawdownBuyOnLowMargin.enabled && (
-        <DrawdownMarginTriggerSection
-          direction="buy"
-          title="BL on Drawdown"
-          value={drawdownBuyOnLowMargin}
-          triggerPlaceholder={marginPoints[0] ?? DEFAULT_POINTS[0]}
-          midMarginPoint={midMarginPoint}
-          sliderMax={sliderMax}
-          allocOptions={allocOptions}
-          onChange={value => set({ drawdownBuyOnLowMargin: value })}
-          onRemove={() => removeOptionalStrategySection('drawdownBuyOnLowMargin')}
-          onCommit={() => commit()}
-        />
-      )}
-
-      {(buyTheDip.basePortfolio || buyTheDip.individualStock) && (
-        <div className="strategy-subsection">
-          {buyTheDip.basePortfolio && (
-            <DipSurgeSection
-              direction="buy"
-              title="Buy the Dip - Portfolio Trigger"
-              scope="BASE_PORTFOLIO"
-              value={buyTheDip.basePortfolio}
-              onChange={(value: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'basePortfolio', value)}
-              marginPoints={marginPoints}
-              sliderMax={sliderMax}
-              removable
-            />
-          )}
-          {buyTheDip.individualStock && (
-            <DipSurgeSection
-              direction="buy"
-              title="Buy the Dip - Individual Stocks"
-              scope="INDIVIDUAL_STOCK"
-              value={buyTheDip.individualStock}
-              onChange={(value: DipSurgeState | null) => updateDipSurgeScope('buyTheDip', 'individualStock', value)}
-              marginPoints={marginPoints}
-              sliderMax={sliderMax}
-              removable
-            />
-          )}
-        </div>
-      )}
-
-      {(sellOnSurge.basePortfolio || sellOnSurge.individualStock) && (
-        <div className="strategy-subsection">
-          {sellOnSurge.basePortfolio && (
-            <DipSurgeSection
-              direction="sell"
-              title="Sell on Surge - Portfolio Trigger"
-              scope="BASE_PORTFOLIO"
-              value={sellOnSurge.basePortfolio}
-              onChange={(value: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'basePortfolio', value)}
-              marginPoints={marginPoints}
-              sliderMax={sliderMax}
-              removable
-            />
-          )}
-          {sellOnSurge.individualStock && (
-            <DipSurgeSection
-              direction="sell"
-              title="Sell on Surge - Individual Stocks"
-              scope="INDIVIDUAL_STOCK"
-              value={sellOnSurge.individualStock}
-              onChange={(value: DipSurgeState | null) => updateDipSurgeScope('sellOnSurge', 'individualStock', value)}
-              marginPoints={marginPoints}
-              sliderMax={sliderMax}
-              removable
-            />
-          )}
-        </div>
-      )}
-
-      <DerivedSubStrategiesSection
-        value={s.derivedSubStrategies ?? []}
-        marginPoints={marginPoints}
-        midMarginPoint={midMarginPoint}
-        sliderMax={sliderMax}
-        allocOptions={allocOptions}
-        onChange={set}
-        onCommit={() => commit()}
-      />
+      <div className="strategy-margin-scroll-lock-bar">
+        <button
+          type="button"
+          className={`strategy-margin-scroll-lock-btn${marginScrollLocked ? ' locked' : ' unlocked'}`}
+          aria-label={marginScrollLockLabel}
+          aria-pressed={marginScrollLocked}
+          title={marginScrollLockLabel}
+          onClick={() => setMarginScrollLocked(locked => !locked)}
+        >
+          <MarginScrollLockIcon size={16} strokeWidth={2.2} aria-hidden="true" />
+        </button>
+      </div>
     </div>
   )
 }))

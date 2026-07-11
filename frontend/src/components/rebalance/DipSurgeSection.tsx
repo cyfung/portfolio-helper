@@ -8,6 +8,7 @@ import {
   emptyTrigger, emptyDipSurge,
 } from '@/types/rebalanceStrategy'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
+import { useMarginWheelAdjustEnabled } from './MarginWheelAdjustContext'
 
 interface Props {
   direction: 'buy' | 'sell'
@@ -52,6 +53,7 @@ function MarginPercentInput({
   onChange: (value: string) => void
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  const wheelAdjustEnabled = useMarginWheelAdjustEnabled()
   const parseBase = useCallback(() => {
     const current = parseFloat(value)
     if (Number.isFinite(current)) return current
@@ -63,16 +65,20 @@ function MarginPercentInput({
     onChange(String(clamp(Math.round(parseBase() + delta), 0, Math.max(0, Math.floor(max)))))
   }, [max, onChange, parseBase])
 
+  const handleLockedInputWheel = useCallback((e: React.WheelEvent<HTMLInputElement>) => {
+    if (!wheelAdjustEnabled) e.currentTarget.blur()
+  }, [wheelAdjustEnabled])
+
   useEffect(() => {
     const el = wrapRef.current
-    if (!el) return
+    if (!el || !wheelAdjustEnabled) return
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
       stepBy(e.deltaY < 0 ? 5 : -5)
     }
     el.addEventListener('wheel', handleWheel, { passive: false })
     return () => el.removeEventListener('wheel', handleWheel)
-  }, [stepBy])
+  }, [stepBy, wheelAdjustEnabled])
 
   return (
     <div className="margin-point-endpoint margin-percent-input" ref={wrapRef}>
@@ -86,6 +92,7 @@ function MarginPercentInput({
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        onWheel={handleLockedInputWheel}
         onChange={e => onChange(e.target.value)}
       />
       <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => stepBy(1)}>+</button>

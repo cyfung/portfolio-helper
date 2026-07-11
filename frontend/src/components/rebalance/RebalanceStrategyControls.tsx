@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { adjustMarginPoint, clamp, normalizeMarginPoints, parsePoint } from './RebalanceStrategyControlUtils'
+import { useMarginWheelAdjustEnabled } from './MarginWheelAdjustContext'
 
 export const MarginPercentInput = React.memo(function MarginPercentInput({
   value, placeholder, max, ariaLabel, compact = false, onChange, onCommit,
@@ -14,6 +15,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const idleCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wheelAdjustEnabled = useMarginWheelAdjustEnabled()
 
   const parseBase = useCallback(() => {
     const current = parseFloat(value)
@@ -31,6 +33,10 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
     idleCommitTimerRef.current = setTimeout(() => onCommit?.(), 180)
   }, [onCommit])
 
+  const handleLockedInputWheel = useCallback((e: React.WheelEvent<HTMLInputElement>) => {
+    if (!wheelAdjustEnabled) e.currentTarget.blur()
+  }, [wheelAdjustEnabled])
+
   const stepBy = useCallback((delta: number) => {
     emit(parseBase() + delta)
     scheduleCommit()
@@ -38,7 +44,11 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
 
   useEffect(() => {
     const el = wrapRef.current
-    if (!el) return
+    if (!el || !wheelAdjustEnabled) {
+      return () => {
+        if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
+      }
+    }
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
       stepBy(e.deltaY < 0 ? 5 : -5)
@@ -48,7 +58,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
       el.removeEventListener('wheel', handleWheel)
       if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
     }
-  }, [stepBy])
+  }, [stepBy, wheelAdjustEnabled])
 
   return (
     <div className={`margin-point-endpoint margin-percent-input${compact ? ' margin-percent-input-compact' : ''}`} ref={wrapRef}>
@@ -64,6 +74,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        onWheel={handleLockedInputWheel}
         onChange={e => onChange(e.target.value)}
         onBlur={onCommit}
       />
@@ -83,6 +94,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
   const inputRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null])
   const endpointDivRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null, null])
   const [activeThumb, setActiveThumb] = useState<number | null>(null)
+  const wheelAdjustEnabled = useMarginWheelAdjustEnabled()
   const safePoints = useMemo(() => normalizeMarginPoints(points, max), [points, max])
   const [minPoint, maxPoint] = [safePoints[0], safePoints[4]]
   const span = Math.max(maxPoint - minPoint, 1)
@@ -99,6 +111,10 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
     if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
     idleCommitTimerRef.current = setTimeout(() => onCommit?.(), 180)
   }, [onCommit])
+
+  const handleLockedInputWheel = useCallback((e: React.WheelEvent<HTMLInputElement>) => {
+    if (!wheelAdjustEnabled) e.currentTarget.blur()
+  }, [wheelAdjustEnabled])
 
   const valueFromClientX = useCallback((clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect()
@@ -131,6 +147,11 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
   }, [handlePointerMove, onCommit])
 
   useEffect(() => {
+    if (!wheelAdjustEnabled) {
+      return () => {
+        if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
+      }
+    }
     const handlers: { el: HTMLDivElement; fn: (e: WheelEvent) => void }[] = []
     for (let i = 0; i < 5; i++) {
       const el = endpointDivRefs.current[i]
@@ -147,7 +168,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
       handlers.forEach(({ el, fn }) => el.removeEventListener('wheel', fn))
       if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
     }
-  }, [safePoints, scheduleIdleCommit, updatePoint])
+  }, [safePoints, scheduleIdleCommit, updatePoint, wheelAdjustEnabled])
 
   function startDrag(i: number, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -174,6 +195,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
           step="1"
           value={p}
           aria-label={`Margin point ${i + 1} value`}
+          onWheel={handleLockedInputWheel}
           onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
           onBlur={onCommit}
         />
