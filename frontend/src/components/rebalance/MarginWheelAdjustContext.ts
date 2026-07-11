@@ -1,7 +1,19 @@
 import { createContext, useContext } from 'react'
 
-export const MarginWheelAdjustContext = createContext(true)
+export interface MarginWheelAdjustContextValue {
+  enabled: boolean
+  unlock: () => void
+}
+
+export const MarginWheelAdjustContext = createContext<MarginWheelAdjustContextValue>({
+  enabled: true,
+  unlock: () => {},
+})
 
 export function useMarginWheelAdjustEnabled() {
-  return useContext(MarginWheelAdjustContext)
+  return useContext(MarginWheelAdjustContext).enabled
+}
+
+export function useUnlockMarginWheelAdjust() {
+  return useContext(MarginWheelAdjustContext).unlock
 }

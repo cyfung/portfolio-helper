@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { adjustMarginPoint, clamp, normalizeMarginPoints, parsePoint } from './RebalanceStrategyControlUtils'
-import { useMarginWheelAdjustEnabled } from './MarginWheelAdjustContext'
+import { useMarginWheelAdjustEnabled, useUnlockMarginWheelAdjust } from './MarginWheelAdjustContext'
 
 export const MarginPercentInput = React.memo(function MarginPercentInput({
   value, placeholder, max, ariaLabel, compact = false, onChange, onCommit,
@@ -16,6 +16,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
   const wrapRef = useRef<HTMLDivElement>(null)
   const idleCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wheelAdjustEnabled = useMarginWheelAdjustEnabled()
+  const unlockMarginWheelAdjust = useUnlockMarginWheelAdjust()
 
   const parseBase = useCallback(() => {
     const current = parseFloat(value)
@@ -63,7 +64,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
   return (
     <div className={`margin-point-endpoint margin-percent-input${compact ? ' margin-percent-input-compact' : ''}`} ref={wrapRef}>
       {!compact && (
-        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => stepBy(-1)}>-</button>
+        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); stepBy(-1) }}>-</button>
       )}
       <input
         className="margin-point-number-input"
@@ -74,12 +75,14 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        onFocus={unlockMarginWheelAdjust}
+        onClick={unlockMarginWheelAdjust}
         onWheel={handleLockedInputWheel}
         onChange={e => onChange(e.target.value)}
         onBlur={onCommit}
       />
       {!compact && (
-        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => stepBy(1)}>+</button>
+        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); stepBy(1) }}>+</button>
       )}
     </div>
   )
@@ -95,6 +98,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
   const endpointDivRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null, null])
   const [activeThumb, setActiveThumb] = useState<number | null>(null)
   const wheelAdjustEnabled = useMarginWheelAdjustEnabled()
+  const unlockMarginWheelAdjust = useUnlockMarginWheelAdjust()
   const safePoints = useMemo(() => normalizeMarginPoints(points, max), [points, max])
   const [minPoint, maxPoint] = [safePoints[0], safePoints[4]]
   const span = Math.max(maxPoint - minPoint, 1)
@@ -172,6 +176,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
 
   function startDrag(i: number, event: ReactPointerEvent<HTMLButtonElement>) {
     event.preventDefault()
+    unlockMarginWheelAdjust()
     draggingRef.current = i
     setActiveThumb(i)
     updatePoint(i, valueFromClientX(event.clientX))
@@ -185,7 +190,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
     const p = safePoints[i]
     return (
       <div key={i} className="margin-point-endpoint" ref={el => { endpointDivRefs.current[i] = el }}>
-        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { updatePoint(i, p - 1); scheduleIdleCommit() }}>-</button>
+        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); updatePoint(i, p - 1); scheduleIdleCommit() }}>-</button>
         <input
           className="margin-point-number-input"
           ref={el => { inputRefs.current[i] = el }}
@@ -195,11 +200,13 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
           step="1"
           value={p}
           aria-label={`Margin point ${i + 1} value`}
+          onFocus={unlockMarginWheelAdjust}
+          onClick={unlockMarginWheelAdjust}
           onWheel={handleLockedInputWheel}
           onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
           onBlur={onCommit}
         />
-        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { updatePoint(i, p + 1); scheduleIdleCommit() }}>+</button>
+        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); updatePoint(i, p + 1); scheduleIdleCommit() }}>+</button>
       </div>
     )
   }

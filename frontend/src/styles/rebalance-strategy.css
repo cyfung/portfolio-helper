@@ -52,7 +52,7 @@
     color: var(--color-text-primary);
 }
 
-.strategy-margin-scroll-lock-btn.unlocked {
+.strategy-margin-scroll-lock-btn.locked {
     border-color: color-mix(in srgb, var(--color-accent-primary) 65%, var(--color-border-medium));
     background: color-mix(in srgb, var(--color-accent-primary) 12%, var(--color-bg-primary));
     color: var(--color-accent-primary);

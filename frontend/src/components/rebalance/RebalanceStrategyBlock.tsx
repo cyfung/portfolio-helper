@@ -174,11 +174,6 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     }
   }, [value])
 
-  useImperativeHandle(ref, () => ({
-    getValue: () => localRef.current,
-    commit: () => commit(localRef.current),
-  }), [commit])
-
   const valueMarginPoints = useMemo(
     () => DEFAULT_POINTS.map((def, i) => s.marginPoints?.[i] ?? def),
     [s.marginPoints],
@@ -219,10 +214,22 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   const [saveMsg, setSaveMsg] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [marginScrollLocked, setMarginScrollLocked] = useState(true)
+  const marginWheelAdjustContext = useMemo(() => ({
+    enabled: !marginScrollLocked,
+    unlock: () => setMarginScrollLocked(false),
+  }), [marginScrollLocked])
   const marginScrollLockLabel = marginScrollLocked
     ? 'Unlock margin wheel adjustment'
     : 'Lock margin wheel adjustment'
   const MarginScrollLockIcon = marginScrollLocked ? Lock : Unlock
+
+  useImperativeHandle(ref, () => ({
+    getValue: () => localRef.current,
+    commit: () => {
+      setMarginScrollLocked(true)
+      commit(localRef.current)
+    },
+  }), [commit])
 
   const availableOptionalSections = useMemo(
     () => OPTIONAL_STRATEGY_SECTIONS.filter(section => {
@@ -312,7 +319,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      <MarginWheelAdjustContext.Provider value={!marginScrollLocked}>
+      <MarginWheelAdjustContext.Provider value={marginWheelAdjustContext}>
         <StrategyHeader
           idx={idx}
           label={s.label}
