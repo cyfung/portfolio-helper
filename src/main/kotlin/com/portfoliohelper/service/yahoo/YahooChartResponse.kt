@@ -7,7 +7,16 @@ import kotlinx.serialization.Serializable
 data class YahooChartResponse(val chart: YahooChart)
 
 @Serializable
-data class YahooChart(val result: List<YahooChartResult>? = null)
+data class YahooChart(
+    val result: List<YahooChartResult>? = null,
+    val error: YahooChartError? = null
+)
+
+@Serializable
+data class YahooChartError(
+    val code: String? = null,
+    val description: String? = null
+)
 
 @Serializable
 data class YahooChartResult(

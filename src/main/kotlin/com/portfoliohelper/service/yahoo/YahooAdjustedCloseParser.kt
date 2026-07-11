@@ -60,12 +60,15 @@ internal object YahooAdjustedCloseParser {
 
     private fun decodeResponse(ticker: String, body: String): ParsedYahooResponse {
         val response = appJson.decodeFromString<YahooChartResponse>(body)
+        response.chart.error?.let { error ->
+            throw yahooChartException(ticker, error)
+        }
         val result = response.chart.result?.firstOrNull()
-            ?: error("No result in Yahoo response for $ticker")
-        val timestamps = result.timestamp ?: error("No timestamps for $ticker")
-        val indicators = result.indicators ?: error("No indicators for $ticker")
+            ?: throw YahooHistoricalDataException("No Yahoo chart result for $ticker")
+        val timestamps = result.timestamp ?: throw YahooHistoricalDataException("No Yahoo timestamps for $ticker")
+        val indicators = result.indicators ?: throw YahooHistoricalDataException("No Yahoo indicators for $ticker")
         val adjCloseList = indicators.adjClose?.firstOrNull()?.adjClose
-            ?: error("No adjclose data for $ticker")
+            ?: throw YahooHistoricalDataException("No Yahoo adjclose data for $ticker")
         val closeList = indicators.quote?.firstOrNull()?.close
         return ParsedYahooResponse(result, timestamps, adjCloseList, closeList)
     }

@@ -4,6 +4,7 @@ import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooAdjustedCloseResult
 import com.portfoliohelper.service.yahoo.YahooHistoricalDataException
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
+import com.portfoliohelper.service.yahoo.YahooTickerNotFoundException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.slf4j.LoggerFactory
@@ -532,16 +533,18 @@ object BacktestService {
                 neededFromDate,
                 warningCollector
             )
-            val extendedFirstDate = extended?.keys?.minOrNull()
+            val extendedFirstDate = extended?.series?.keys?.minOrNull()
             val resourceFirstDate = extendedFirstDate?.let { bundledResourceFirstDate(simPattern) }
             if (
                 extended != null &&
-                extendedFirstDate != null &&
-                extendedFirstDate <= neededFromDate &&
-                (resourceFirstDate == null || resourceFirstDate >= extendedFirstDate)
+                (extended.useAsIs || (
+                        extendedFirstDate != null &&
+                                extendedFirstDate <= neededFromDate &&
+                                (resourceFirstDate == null || resourceFirstDate >= extendedFirstDate)
+                        ))
             ) {
                 collectTickerWarnings(upperTicker, warningCollector)
-                return extended
+                return extended.series
             }
             if (extended != null) {
                 localFiles.forEach { it.delete() }
@@ -571,7 +574,7 @@ object BacktestService {
             if (extended != null) {
                 localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
                 collectTickerWarnings(upperTicker, warningCollector)
-                return extended
+                return extended.series
             }
             resourceFiles.forEach { it.delete() }
             logger.warn("$upperTicker Tier 2 (resource file) failed — deleted, falling through to Yahoo")
@@ -602,6 +605,11 @@ object BacktestService {
      *   an intraday mark or an incomplete Yahoo historical response.
      * Both operations throw on overlap mismatch (caught here → returns null).
      */
+    private data class TickerCsvLoadResult(
+        val series: Map<LocalDate, Double>,
+        val useAsIs: Boolean = false
+    )
+
     private fun tryExtendAndValidate(
         ticker: String,
         upperTicker: String,
@@ -610,7 +618,7 @@ object BacktestService {
         neededFromDate: LocalDate,
         warningCollector: ((String, List<String>) -> Unit)? = null,
         allowAnchoredForwardExtension: Boolean = false
-    ): Map<LocalDate, Double>? {
+    ): TickerCsvLoadResult? {
         val file = files.first()
         logger.info("Loading SIM file for $upperTicker: ${file.name}")
         val existing = readSimCsv(file)
@@ -619,7 +627,7 @@ object BacktestService {
         val lastKnownDate = existing.lastKey()
         val fileAge = (System.currentTimeMillis() - file.lastModified()).milliseconds
         if (fileAge <= tickerCacheMaxAge && lastKnownDate >= neededToDate && firstDate <= neededFromDate) {
-            return existing
+            return TickerCsvLoadResult(existing)
         }
         if (existing.size < 20) return null
 
@@ -636,6 +644,10 @@ object BacktestService {
                     warningCollector
                 )
             } catch (e: YahooHistoricalDataException) {
+                if (e is YahooTickerNotFoundException) {
+                    logger.warn("$upperTicker early probe reported missing Yahoo ticker; using cached CSV ${file.name} as is")
+                    return TickerCsvLoadResult(existing, useAsIs = true)
+                }
                 throw e
             } catch (e: Exception) {
                 if (!allowAnchoredForwardExtension) {
@@ -675,6 +687,10 @@ object BacktestService {
                     warningCollector
                 )
             } catch (e: YahooHistoricalDataException) {
+                if (e is YahooTickerNotFoundException) {
+                    logger.warn("$upperTicker extend reported missing Yahoo ticker; using cached CSV ${file.name} as is")
+                    return TickerCsvLoadResult(existing, useAsIs = true)
+                }
                 throw e
             } catch (e: Exception) {
                 logger.warn("$upperTicker extend fetch failed: ${e.message}")
@@ -700,7 +716,7 @@ object BacktestService {
         val newFile = File(tickerDir, "${upperTicker}-${neededToDate}.csv")
         writeSimCsv(newFile, current)
         files.forEach { it.delete() }
-        return current
+        return TickerCsvLoadResult(current)
     }
 
     private fun fetchAdjustedCloseRecordingWarnings(

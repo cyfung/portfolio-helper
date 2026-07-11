@@ -4,6 +4,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class YahooHistoricalFetcherTest {
@@ -116,6 +117,32 @@ class YahooHistoricalFetcherTest {
         )
 
         assertEquals("EUR", result.currency)
+    }
+
+    @Test
+    fun parseAdjustedCloseResponse_throwsTickerNotFoundForYahooNoDataError() {
+        val body = """
+            {
+              "chart": {
+                "result": null,
+                "error": {
+                  "code": "Not Found",
+                  "description": "No data found, symbol may be delisted"
+                }
+              }
+            }
+        """.trimIndent()
+
+        val error = assertFailsWith<YahooTickerNotFoundException> {
+            YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+                ticker = "NOPE",
+                startDate = LocalDate.of(2026, 5, 1),
+                endDate = LocalDate.of(2026, 5, 4),
+                body = body
+            )
+        }
+
+        assertEquals("NOPE", error.ticker)
     }
 
     @Test

@@ -11,7 +11,28 @@ import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
 
-class YahooHistoricalDataException(message: String) : IllegalStateException(message)
+open class YahooHistoricalDataException(message: String) : IllegalStateException(message)
+
+class YahooTickerNotFoundException(
+    val ticker: String,
+    yahooMessage: String
+) : YahooHistoricalDataException("Yahoo has no ticker '$ticker': $yahooMessage")
+
+internal fun yahooChartException(ticker: String, error: YahooChartError): YahooHistoricalDataException {
+    val code = error.code.orEmpty()
+    val description = error.description.orEmpty()
+    val message = listOf(code, description).filter { it.isNotBlank() }.joinToString(": ")
+        .ifBlank { "unknown Yahoo chart error" }
+    val notFound = code.equals("Not Found", ignoreCase = true) ||
+            description.contains("No data found", ignoreCase = true) ||
+            description.contains("may be delisted", ignoreCase = true) ||
+            description.contains("No such ticker", ignoreCase = true)
+    return if (notFound) {
+        YahooTickerNotFoundException(ticker, message)
+    } else {
+        YahooHistoricalDataException("Yahoo chart error for $ticker: $message")
+    }
+}
 
 data class YahooAdjustedCloseResult(
     val prices: Map<LocalDate, Double>,
@@ -61,7 +82,7 @@ object YahooHistoricalFetcher {
                 "&events=history%7Cadjclose&includeAdjustedClose=true"
 
         logger.info("Fetching historical $ticker from $startDate to $endDate")
-        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker" }
+        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker" }
         val result = parseAdjustedCloseResponseWithWarnings(
             ticker,
             startDate,
@@ -102,7 +123,7 @@ object YahooHistoricalFetcher {
                 "?period1=$p1&period2=$p2&interval=1d&events=div"
 
         logger.info("Fetching dividends for $ticker from $startDate to $endDate")
-        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker dividends" }
+        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker dividends" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull() ?: return emptyMap()
         val dividends = result.events?.dividends ?: return emptyMap()
@@ -128,7 +149,7 @@ object YahooHistoricalFetcher {
                 "?period1=$p1&period2=$p2&interval=1d&events=history%7Cdiv"
 
         logger.info("Fetching close/dividend history for $ticker from $startDate to $endDate")
-        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker close/dividend history" }
+        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker close/dividend history" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
             ?: throw YahooHistoricalDataException("No Yahoo chart result for $ticker")
@@ -162,7 +183,7 @@ object YahooHistoricalFetcher {
 
     private fun fetchCurrentQuote(ticker: String): YahooQuote {
         val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker?interval=1d&range=1d"
-        val body = executeTextRequest(url) { "HTTP ${it.code} for $ticker quote" }
+        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker quote" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
             ?: error("No quote result in Yahoo response for $ticker")
@@ -189,11 +210,25 @@ object YahooHistoricalFetcher {
             .toLocalDate()
     }
 
-    private fun executeTextRequest(url: String, errorMessage: (okhttp3.Response) -> String): String {
+    private fun executeTextRequest(
+        url: String,
+        ticker: String,
+        errorMessage: (okhttp3.Response) -> String
+    ): String {
         val request = Request.Builder().url(url).build()
         return http.newCall(request).execute().use { resp ->
-            check(resp.isSuccessful) { errorMessage(resp) }
-            resp.body!!.string()
+            val body = resp.body!!.string()
+            if (!resp.isSuccessful) {
+                throw yahooHttpException(ticker, body) ?: IllegalStateException(errorMessage(resp))
+            }
+            body
         }
     }
+
+    private fun yahooHttpException(ticker: String, body: String): YahooHistoricalDataException? =
+        runCatching {
+            appJson.decodeFromString<YahooChartResponse>(body).chart.error?.let { error ->
+                yahooChartException(ticker, error) as? YahooTickerNotFoundException
+            }
+        }.getOrNull()
 }
