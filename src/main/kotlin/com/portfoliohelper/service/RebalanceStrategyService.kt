@@ -246,7 +246,8 @@ object RebalanceStrategyService {
         referenceUpper = ref(referenceUpper),
         stepBaseTarget =
             if (function == DerivedTargetScaleFunction.HYSTERESIS_STEP ||
-                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS
+                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS ||
+                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM
             ) {
               ref(stepBaseTarget)
             } else {
@@ -717,6 +718,21 @@ object RebalanceStrategyService {
         strategy.drawdownMarginOverride?.takeIf { strategy.marginRebalanceEnabled && it.enabled }
     val derivedTargetRuntime =
         derivedSubStrategy?.let { DerivedTargetRuntime.from(it.scale.withReferenceMetric(it.marginReferenceMetric)) }
+    fun dateIndexOnOrBefore(targetDate: LocalDate, maxIndex: Int): Int {
+      var lo = 0
+      var hi = maxIndex.coerceAtMost(dates.lastIndex)
+      var result = -1
+      while (lo <= hi) {
+        val mid = (lo + hi) ushr 1
+        if (dates[mid] <= targetDate) {
+          result = mid
+          lo = mid + 1
+        } else {
+          hi = mid - 1
+        }
+      }
+      return result
+    }
     fun baseMarginAt(recordedIndex: Int): Double? {
       if (derivedSubStrategy == null) return null
       val baseMargins = baseMarginSeries ?: return null
@@ -731,7 +747,20 @@ object RebalanceStrategyService {
       val baseMargin = baseMarginAt(recordedIndex) ?: return null
       val referenceBuyLowEvent =
           baseBuyLowEventSeries?.getOrNull(recordedIndex.coerceAtLeast(0)) == true
-      return derivedTargetRuntime?.target(baseMargin, referenceBuyLowEvent)
+      val lookbackMargin =
+          derivedTargetRuntime
+              ?.momentumLookbackMonths
+              ?.let { months ->
+                val safeIndex = recordedIndex.coerceIn(0, dates.lastIndex)
+                val lookbackDate = dates[safeIndex].minusMonths(months.toLong())
+                val lookbackIndex =
+                    dateIndexOnOrBefore(
+                        lookbackDate,
+                        minOf(safeIndex - 1, (baseMarginSeries?.lastIndex ?: -1)),
+                    )
+                if (lookbackIndex >= 0) baseMarginAt(lookbackIndex) else null
+              }
+      return derivedTargetRuntime?.target(baseMargin, referenceBuyLowEvent, lookbackMargin)
     }
 
     val marginTarget = initialDerivedTargetAt(0) ?: strategy.marginRatio
@@ -940,22 +969,6 @@ object RebalanceStrategyService {
     }
     dipResources.forEach { advanceInitialCheckers(it) }
     surgeResources.forEach { advanceInitialCheckers(it) }
-
-    fun dateIndexOnOrBefore(targetDate: LocalDate, maxIndex: Int): Int {
-      var lo = 0
-      var hi = maxIndex.coerceAtMost(dates.lastIndex)
-      var result = -1
-      while (lo <= hi) {
-        val mid = (lo + hi) ushr 1
-        if (dates[mid] <= targetDate) {
-          result = mid
-          lo = mid + 1
-        } else {
-          hi = mid - 1
-        }
-      }
-      return result
-    }
 
     fun valueOnOrBefore(points: List<Pair<LocalDate, Double>>, targetDate: LocalDate): Double? {
       var result: Double? = null
@@ -1884,9 +1897,16 @@ private sealed interface DerivedTargetRuntime {
   val usesPostPriceMarginForTriggers: Boolean
     get() = false
 
+  val momentumLookbackMonths: Int?
+    get() = null
+
   fun initialTarget(baseMargin: Double): Double
 
-  fun target(baseMargin: Double, referenceBuyLowEvent: Boolean = false): DerivedTargetSignal
+  fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean = false,
+      momentumLookbackMargin: Double? = null,
+  ): DerivedTargetSignal
 
   fun targetReferenceIndex(currentIndex: Int): Int = currentIndex - 1
 
@@ -1899,6 +1919,7 @@ private sealed interface DerivedTargetRuntime {
           DerivedTargetScaleFunction.STEP -> StepDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STEP -> HysteresisStepDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS -> HysteresisStairsDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM -> HysteresisStairsMomentumDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET -> HysteresisStairsRefBuyLowResetDerivedTargetRuntime(scale)
         }
   }
@@ -1925,7 +1946,11 @@ private abstract class InterpolatedDerivedTargetRuntime(
 
   protected abstract fun shape(normalized: Double): Double
 
-  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
+  override fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
     val lowRef = refLow(baseMargin)
     val lowTarget = targetLow(baseMargin)
     val refSpan = refHigh - lowRef
@@ -1967,7 +1992,11 @@ private class LinearDerivedTargetRuntime(
 private class StepDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
 ) : DerivedTargetRuntimeBase(scale) {
-  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
+  override fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
     var target = scale.stepBaseTarget
     for (step in scale.steps.sortedBy { it.referenceMargin }) {
       if (baseMargin >= step.referenceMargin) target = step.targetMargin
@@ -1989,7 +2018,11 @@ private class HysteresisStepDerivedTargetRuntime(
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
-  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
+  override fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
     if (stage != Stage.TARGET_HIGH && baseMargin > resetThreshold) {
       stage = Stage.TARGET_HIGH
       return DerivedTargetSignal(highTarget)
@@ -2064,7 +2097,11 @@ private class HysteresisStairsDerivedTargetRuntime(
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
-  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
+  override fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
     if (nextStairIndex > 0 && baseMargin > resetThreshold) {
       nextStairIndex = 0
       return DerivedTargetSignal(highTarget, forceExactTarget = true)
@@ -2090,6 +2127,87 @@ private class HysteresisStairsDerivedTargetRuntime(
   }
 }
 
+private class HysteresisStairsMomentumDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  private data class Stair(val referenceMargin: Double, val targetMargin: Double)
+
+  override val usesPostPriceMarginForTriggers: Boolean = true
+  override val momentumLookbackMonths: Int = scale.momentumLookbackMonths.coerceAtLeast(1)
+
+  private val stairs =
+      scale.steps
+          .filter { it.referenceMargin.isFinite() && it.targetMargin.isFinite() }
+          .sortedByDescending { it.referenceMargin }
+          .map { Stair(it.referenceMargin, it.targetMargin.coerceAtLeast(0.0)) }
+  private val highestReference = stairs.firstOrNull()?.referenceMargin ?: Double.NEGATIVE_INFINITY
+  private val resetThreshold =
+      if (scale.stepBaseTarget.isFinite() && scale.stepBaseTarget > highestReference) {
+        scale.stepBaseTarget
+      } else {
+        Double.POSITIVE_INFINITY
+      }
+  private val highTarget = scale.targetUpper.coerceAtLeast(0.0)
+  private var nextStairIndex = 0
+  private var armedStairIndex: Int? = null
+  private var armedAfterExistingMomentum = false
+  private var previousMomentumConfirmed = false
+
+  override fun initialTarget(baseMargin: Double): Double = highTarget
+
+  override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
+
+  override fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
+    val momentumConfirmed =
+        momentumLookbackMargin != null &&
+            momentumLookbackMargin.isFinite() &&
+            baseMargin < momentumLookbackMargin
+
+    if ((nextStairIndex > 0 || armedStairIndex != null) && baseMargin > resetThreshold) {
+      nextStairIndex = 0
+      armedStairIndex = null
+      armedAfterExistingMomentum = false
+      previousMomentumConfirmed = momentumConfirmed
+      return DerivedTargetSignal(highTarget, forceExactTarget = true)
+    }
+
+    val crossedIndex =
+        stairs
+            .withIndex()
+            .drop(nextStairIndex)
+            .lastOrNull { (_, stair) -> baseMargin < stair.referenceMargin }
+            ?.index
+    if (crossedIndex != null) {
+      val currentArmedIndex = armedStairIndex
+      if (currentArmedIndex == null || crossedIndex > currentArmedIndex) {
+        armedStairIndex = crossedIndex
+        armedAfterExistingMomentum = previousMomentumConfirmed
+      }
+    }
+
+    val armedIndex = armedStairIndex
+    if (armedIndex != null && momentumConfirmed && !armedAfterExistingMomentum) {
+      armedStairIndex = null
+      armedAfterExistingMomentum = false
+      nextStairIndex = armedIndex + 1
+      previousMomentumConfirmed = momentumConfirmed
+      return DerivedTargetSignal(stairs[armedIndex].targetMargin, forceExactTarget = true)
+    }
+    if (!momentumConfirmed) armedAfterExistingMomentum = false
+    previousMomentumConfirmed = momentumConfirmed
+
+    return when {
+      armedIndex != null -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      nextStairIndex == 0 -> DerivedTargetSignal(highTarget)
+      else -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+    }
+  }
+}
+
 private class HysteresisStairsRefBuyLowResetDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
 ) : DerivedTargetRuntimeBase(scale) {
@@ -2108,7 +2226,11 @@ private class HysteresisStairsRefBuyLowResetDerivedTargetRuntime(
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
-  override fun target(baseMargin: Double, referenceBuyLowEvent: Boolean): DerivedTargetSignal {
+  override fun target(
+      baseMargin: Double,
+      referenceBuyLowEvent: Boolean,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
     if (nextStairIndex > 0 && referenceBuyLowEvent) {
       nextStairIndex = 0
       return DerivedTargetSignal(baseMargin.coerceAtLeast(0.0), forceExactTarget = true)

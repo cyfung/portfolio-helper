@@ -94,7 +94,7 @@ export interface VmTimingMrState {
   allocStrategy: string
 }
 
-export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
+export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_MOMENTUM' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
 
 export interface DerivedTargetStepState {
   id: string
@@ -110,6 +110,7 @@ export interface DerivedTargetScaleState {
   targetUpper: string
   sigmoidSteepness: string
   stepBaseTarget: string
+  momentumLookbackMonths: string
   steps: DerivedTargetStepState[]
 }
 
@@ -321,6 +322,7 @@ export function emptyDerivedTargetScale(): DerivedTargetScaleState {
     targetUpper: '100',
     sigmoidSteepness: '8',
     stepBaseTarget: '50',
+    momentumLookbackMonths: '12',
     steps: [emptyDerivedTargetStep(0)],
   }
 }
@@ -599,6 +601,8 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
             ? 'HYSTERESIS_STEP'
             : item.scale?.function === 'HYSTERESIS_STAIRS'
             ? 'HYSTERESIS_STAIRS'
+            : item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
+            ? 'HYSTERESIS_STAIRS_MOMENTUM'
             : item.scale?.function === 'HYSTERESIS_STAIRS_REF_BL_RESET'
             ? 'HYSTERESIS_STAIRS_REF_BL_RESET'
             : item.scale?.function === 'LINEAR'
@@ -757,6 +761,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
   const serializeDerivedSubStrategy = (d: DerivedSubStrategyState) => {
     const scale = d.scale ?? emptyDerivedTargetScale()
     const steepness = parseFloat(scale.sigmoidSteepness)
+    const momentumLookbackMonths = parseInt(scale.momentumLookbackMonths ?? '', 10)
     const timeoutDays = parseInt(d.timeoutDays ?? '', 10)
     const serializeStep = (step: DerivedTargetStepState) => ({
       referenceMargin: pctAllowZero(step.referenceMargin, 60),
@@ -780,6 +785,9 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
         targetUpper: pctAllowZero(scale.targetUpper, 100),
         sigmoidSteepness: Number.isFinite(steepness) ? steepness : 8,
         stepBaseTarget: pctAllowZero(scale.stepBaseTarget, 50),
+        momentumLookbackMonths: Number.isFinite(momentumLookbackMonths) && momentumLookbackMonths > 0
+          ? momentumLookbackMonths
+          : 12,
         steps: (scale.steps?.length ? scale.steps : [emptyDerivedTargetStep(0)]).map(serializeStep),
       },
       absoluteDeviationPct: pctAllowZero(d.absoluteDeviationPct, 5),

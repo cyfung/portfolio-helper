@@ -257,6 +257,19 @@ class RebalanceStrategyRoutesTest {
     }
 
     @Test
+    fun parseDerivedTargetScaleConfigKeepsHysteresisStairsMomentumFunction() {
+        val config = parseDerivedTargetScaleConfig(
+            buildJsonObject {
+                put("function", JsonPrimitive("HYSTERESIS_STAIRS_MOMENTUM"))
+                put("momentumLookbackMonths", JsonPrimitive(3))
+            }
+        )
+
+        assertEquals(DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM, config.function)
+        assertEquals(3, config.momentumLookbackMonths)
+    }
+
+    @Test
     fun parseDerivedTargetScaleConfigKeepsHysteresisStairsRefBuyLowResetFunction() {
         val config = parseDerivedTargetScaleConfig(
             buildJsonObject {

@@ -498,6 +498,7 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
     DerivedTargetScaleConfig(
         function = when (obj["function"]?.jsonPrimitive?.content) {
             "HYSTERESIS_STAIRS_REF_BL_RESET" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET
+            "HYSTERESIS_STAIRS_MOMENTUM" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM
             "HYSTERESIS_STAIRS" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
             "HYSTERESIS_STEP" -> DerivedTargetScaleFunction.HYSTERESIS_STEP
             "STEP" -> DerivedTargetScaleFunction.STEP
@@ -512,6 +513,7 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
         targetUpper = obj["targetUpper"]?.jsonPrimitive?.doubleOrNull ?: 1.00,
         sigmoidSteepness = obj["sigmoidSteepness"]?.jsonPrimitive?.doubleOrNull ?: 8.0,
         stepBaseTarget = obj["stepBaseTarget"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
+        momentumLookbackMonths = (obj["momentumLookbackMonths"]?.jsonPrimitive?.intOrNull ?: 12).coerceAtLeast(1),
         steps = (obj["steps"] as? JsonArray)
             ?.mapNotNull { it as? JsonObject }
             ?.map { stepObj ->

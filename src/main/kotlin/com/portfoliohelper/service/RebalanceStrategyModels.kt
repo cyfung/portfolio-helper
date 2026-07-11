@@ -37,6 +37,7 @@ enum class DerivedTargetScaleFunction {
     STEP,
     HYSTERESIS_STEP,
     HYSTERESIS_STAIRS,
+    HYSTERESIS_STAIRS_MOMENTUM,
     HYSTERESIS_STAIRS_REF_BL_RESET,
 }
 
@@ -207,6 +208,7 @@ data class DerivedTargetScaleConfig(
     val targetUpper: Double = 1.00,
     val sigmoidSteepness: Double = 8.0,
     val stepBaseTarget: Double = 0.50,
+    val momentumLookbackMonths: Int = 12,
     val steps: List<DerivedTargetStepConfig> = listOf(DerivedTargetStepConfig()),
 )
 

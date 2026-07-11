@@ -2691,6 +2691,98 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_hysteresisStairsMomentumArmsStairsAndCanJumpOnMomentumConfirmation() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM,
+                targetUpper = 0.80,
+                stepBaseTarget = 0.95,
+                momentumLookbackMonths = 2,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.50, 0.65, 0.55, 0.54),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.80, margins[1], label = "first stair arms but does not fire without lookback momentum")
+        assertApprox(0.80, margins[2], label = "second stair arms while first is still waiting")
+        assertApprox(0.20, margins[3], label = "momentum confirmation jumps directly to deepest armed stair")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsMomentumRequiresFreshMomentumForLaterStairs() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+            LocalDate.of(2024, 5, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM,
+                targetUpper = 0.80,
+                stepBaseTarget = 0.95,
+                momentumLookbackMonths = 1,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.90, 0.65, 0.55, 0.66, 0.54),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.50, margins[1], label = "first stair can fire on its own momentum confirmation")
+        assertApprox(0.50, margins[2], label = "second stair crossing does not reuse prior momentum confirmation")
+        assertApprox(0.50, margins[3], label = "second stair remains armed while momentum resets")
+        assertApprox(0.20, margins[4], label = "second stair fires only on a fresh momentum confirmation")
+    }
+
+    @Test
     fun derivedStrategy_hysteresisStairsUsesExactTargetWhenPortfolioRebalanceRunsOnCrossingDay() {
         val dates = days(LocalDate.of(2024, 1, 2), 3)
         val prices = flatCurve(dates)

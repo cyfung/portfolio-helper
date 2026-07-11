@@ -20,9 +20,10 @@ interface Props {
   onCommit: () => void
 }
 
-const STEP_SCALE_FUNCTIONS = ['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET']
-const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET']
-const RESET_ABOVE_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS']
+const STEP_SCALE_FUNCTIONS = ['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET']
+const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET']
+const RESET_ABOVE_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM']
+const STAIRS_RESET_TARGET_FUNCTIONS = ['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM']
 const SIGMOID_SCALE_FUNCTIONS = ['SIGMOID', 'ADAPTIVE_LOW_SIGMOID']
 const MARGIN_COVERAGE_REFERENCE_MAX = 1000
 
@@ -149,10 +150,13 @@ export default function DerivedSubStrategiesSection({
     derived: DerivedSubStrategyState,
     fn: DerivedSubStrategyState['scale']['function'],
   ) => {
+    const previousFn = derived.scale.function ?? 'SIGMOID'
     const refHigh = parseFloat(derived.scale.referenceUpper)
     const currentReset = parseFloat(derived.scale.stepBaseTarget ?? '')
     const shouldResetHysteresisTarget =
-      HYSTERESIS_SCALE_FUNCTIONS.includes(fn) && (!Number.isFinite(currentReset) || currentReset <= refHigh)
+      HYSTERESIS_SCALE_FUNCTIONS.includes(fn) &&
+      !STAIRS_RESET_TARGET_FUNCTIONS.includes(previousFn) &&
+      (!Number.isFinite(currentReset) || currentReset <= refHigh)
     updateScale(derived.id, {
       function: fn,
       ...(shouldResetHysteresisTarget
@@ -278,6 +282,7 @@ export default function DerivedSubStrategiesSection({
                   <option value="STEP">Step</option>
                   <option value="HYSTERESIS_STEP">Hysteresis Step</option>
                   <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
+                  <option value="HYSTERESIS_STAIRS_MOMENTUM">Hysteresis Stairs Momentum</option>
                   <option value="HYSTERESIS_STAIRS_REF_BL_RESET">Hysteresis Stairs Ref BL Reset</option>
                 </select>
               </DerivedField>
@@ -360,7 +365,7 @@ export default function DerivedSubStrategiesSection({
                   onCommit={onCommit}
                 />
               )}
-              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
+              {STAIRS_RESET_TARGET_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
                 <DerivedMarginInput
                   label="Reset Target"
                   value={derived.scale.targetUpper}
@@ -391,6 +396,16 @@ export default function DerivedSubStrategiesSection({
                 onChange={margin => updateSubStrategy(derived.id, { maxMargin: margin })}
                 onCommit={onCommit}
               />
+              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS_MOMENTUM' && (
+                <NumberInputRow
+                  label="Momentum Months"
+                  value={derived.scale.momentumLookbackMonths ?? '12'}
+                  min="1"
+                  step="1"
+                  onChange={next => updateScale(derived.id, { momentumLookbackMonths: next })}
+                  onCommit={onCommit}
+                />
+              )}
             </div>
 
             {STEP_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
@@ -398,7 +413,7 @@ export default function DerivedSubStrategiesSection({
                 {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
                   <div key={step.id} className="strategy-derived-step-row">
                     <DerivedMarginInput
-                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Ref` : `Step ${stepIdx + 1} Ref`}
+                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Ref` : `Step ${stepIdx + 1} Ref`}
                       value={step.referenceMargin}
                       placeholder={String(60 + stepIdx * 10)}
                       sliderMax={referenceInputMax}
@@ -407,7 +422,7 @@ export default function DerivedSubStrategiesSection({
                       onCommit={onCommit}
                     />
                     <DerivedMarginInput
-                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}
+                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}
                       value={step.targetMargin}
                       placeholder={String(50 + stepIdx * 10)}
                       sliderMax={sliderMax}
