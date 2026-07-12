@@ -28,6 +28,7 @@ object MonteCarloService {
         val requestedTickers = portfolios
             .flatMap { it.tickers }
             .map { it.ticker }
+            .plus(portfolios.flatMap { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) })
             .distinct()
         val hasPrependedChain = requestedTickers.any { BacktestService.parseTickerChain(it) != null }
         val seriesCache = BacktestService.resolveTickerSeries(
@@ -45,9 +46,13 @@ object MonteCarloService {
         // ── Step 5: Load real (non-LETF) ticker series ────────────────────────
         // ── Step 6: Build pool date list ──────────────────────────────────────
         val allSeriesMaps = portfolios.map { pConfig ->
-            pConfig.tickers.associate { tw ->
-                tw.ticker to (seriesCache[tw.ticker]
-                    ?: error("Series for '${tw.ticker}' not found in cache"))
+            val tickersForPool =
+                (pConfig.tickers.map { it.ticker } +
+                    RebalanceStrategyService.requiredReferenceTickers(pConfig.rebalanceStrategies))
+                    .distinct()
+            tickersForPool.associate { ticker ->
+                ticker to (seriesCache[ticker]
+                    ?: error("Series for '$ticker' not found in cache"))
             }
         }
         val poolDates = BacktestService.intersectDates(
@@ -73,7 +78,10 @@ object MonteCarloService {
         }
 
         // ── Pre-compute return multipliers ────────────────────────────────────
-        val allTickers = portfolios.flatMap { it.tickers.map { tw -> tw.ticker } }.toSet()
+        val allTickers =
+            (portfolios.flatMap { it.tickers.map { tw -> tw.ticker } } +
+                portfolios.flatMap { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) })
+                .toSet()
 
         // tickerReturnsByDay[i] = returns for day i (transition poolDates[i] → poolDates[i+1])
         // indexed 0..poolSize-2
@@ -102,10 +110,26 @@ object MonteCarloService {
 
         // ── Build curve configs for each portfolio ────────────────────────────
         data class CurveConfig(val label: String, val mc: MarginConfig?)
+        data class PortfolioCurveConfig(
+            val portfolio: PortfolioConfig,
+            val simpleCurves: List<CurveConfig>,
+            val strategyLabels: List<String>,
+        ) {
+            val allLabels: List<String> = simpleCurves.map { it.label } + strategyLabels
+        }
 
         fun modeAbbr(m: String) = HybridAllocStrategyRegistry.modeLabel(m)
+        fun strategyLabels(pConfig: PortfolioConfig): List<String> =
+            pConfig.rebalanceStrategies
+                .filter { it.enabled }
+                .flatMap { strategy ->
+                    listOf(strategy.label) +
+                        strategy.derivedSubStrategies
+                            .filter { it.enabled }
+                            .map { derived -> "${strategy.label} / ${derived.label}" }
+                }
 
-        val portfolioCurveConfigs: List<Pair<PortfolioConfig, List<CurveConfig>>> =
+        val portfolioCurveConfigs: List<PortfolioCurveConfig> =
             portfolios.map { pConfig ->
                 val curves = mutableListOf<CurveConfig>()
                 if (pConfig.includeNoMargin) curves.add(CurveConfig("No Margin", null))
@@ -116,19 +140,62 @@ object MonteCarloService {
                     else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
                     curves.add(CurveConfig(label, mc))
                 }
-                pConfig to curves
+                PortfolioCurveConfig(pConfig, curves, strategyLabels(pConfig))
+            }
+
+        val syntheticDates = syntheticTradingDates(targetDays + 1)
+
+        fun simulateAttachedStrategies(
+            pConfig: PortfolioConfig,
+            path: List<AssembledDay>,
+            startingBalance: Double,
+            cashflow: CashflowConfig?
+        ): List<CurveResult> {
+            val seriesMap = syntheticSeriesMap(allTickers, path, syntheticDates)
+            val syntheticEffrx = syntheticEffrxSeries(path, syntheticDates)
+            val curves =
+                RebalanceStrategyService.runAttachedStrategiesOnSeries(
+                    pConfig,
+                    cashflow,
+                    pConfig.rebalanceStrategies,
+                    seriesMap,
+                    syntheticDates,
+                    syntheticEffrx,
+                    startingBalance,
+                )
+            val expected = strategyLabels(pConfig).size
+            require(curves.size == expected) {
+                "Expected $expected rebalance strategy curves for ${pConfig.label}, got ${curves.size}"
+            }
+            return curves
+        }
+
+        fun valuesForCurve(
+            config: PortfolioCurveConfig,
+            curveIndex: Int,
+            path: List<AssembledDay>,
+            startingBalance: Double,
+            cashflow: CashflowConfig?
+        ): List<Double> =
+            if (curveIndex < config.simpleCurves.size) {
+                simulate(config.portfolio, config.simpleCurves[curveIndex].mc, path, startingBalance, cashflow)
+            } else {
+                val strategyIndex = curveIndex - config.simpleCurves.size
+                simulateAttachedStrategies(config.portfolio, path, startingBalance, cashflow)[strategyIndex]
+                    .points
+                    .map { it.value }
             }
 
         val percentiles = listOf(5, 10, 25, 50, 75, 90, 95)
         val numSims = request.numSimulations
 
         // ── Pass 1: run all simulations, record metrics ───────────────────────
-        logger.info("MC Pass 1: $numSims simulations × ${portfolioCurveConfigs.sumOf { it.second.size }} curves")
+        logger.info("MC Pass 1: $numSims simulations × ${portfolioCurveConfigs.sumOf { it.allLabels.size }} curves")
 
         // allMetrics[pi][ci][simIdx]
         val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
         val allMetrics = Array(portfolioCurveConfigs.size) { pi ->
-            Array(portfolioCurveConfigs[pi].second.size) { Array(numSims) { zero } }
+            Array(portfolioCurveConfigs[pi].allLabels.size) { Array(numSims) { zero } }
         }
 
         for (simIdx in 0 until numSims) {
@@ -136,11 +203,22 @@ object MonteCarloService {
             val path = assemblePath(rng, targetDays, minChunkDays, maxChunkDays, poolSize,
                 tickerReturnsByDay, effrxDailyRates)
 
-            portfolioCurveConfigs.forEachIndexed { pi, (pConfig, curves) ->
-                curves.forEachIndexed { ci, curveConfig ->
-                    val values = simulate(pConfig, curveConfig.mc, path, request.startingBalance, request.cashflow)
+            portfolioCurveConfigs.forEachIndexed { pi, config ->
+                var ci = 0
+                config.simpleCurves.forEach { curveConfig ->
+                    val values = simulate(config.portfolio, curveConfig.mc, path, request.startingBalance, request.cashflow)
                     val stats = computeStats(values, years, rfAnnualized)
                     allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
+                    ci++
+                }
+                if (config.strategyLabels.isNotEmpty()) {
+                    val strategyCurves = simulateAttachedStrategies(config.portfolio, path, request.startingBalance, request.cashflow)
+                    strategyCurves.forEach { curve ->
+                        val values = curve.points.map { it.value }
+                        val stats = computeStats(values, years, rfAnnualized)
+                        allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
+                        ci++
+                    }
                 }
             }
             progressCompleted.incrementAndGet()
@@ -177,18 +255,18 @@ object MonteCarloService {
         }
 
         // ── Build final result ────────────────────────────────────────────────
-        val portfolioResults = portfolioCurveConfigs.mapIndexed { pi, (pConfig, curves) ->
-            val curveResults = curves.mapIndexed { ci, curveConfig ->
+        val portfolioResults = portfolioCurveConfigs.mapIndexed { pi, config ->
+            val curveResults = config.allLabels.mapIndexed { ci, label ->
                 val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
                     val simIdx = pctSimIndices[pi][ci][pctIdx]
                     val path = fullPaths[simIdx]!!
-                    val values = simulate(pConfig, curveConfig.mc, path, request.startingBalance, request.cashflow)
+                    val values = valuesForCurve(config, ci, path, request.startingBalance, request.cashflow)
                     val endValue = values.last()
                     val stats = computeStats(values, years, rfAnnualized)
                     MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                 }
                 MonteCarloCurveResult(
-                    curveConfig.label,
+                    label,
                     percentilePaths,
                     maxDdPctValues[pi][ci],
                     sharpePctValues[pi][ci],
@@ -198,7 +276,7 @@ object MonteCarloService {
                     longestDdPctValues[pi][ci]
                 )
             }
-            MonteCarloPortfolioResult(pConfig.label, curveResults)
+            MonteCarloPortfolioResult(config.portfolio.label, curveResults)
         }
 
         return MonteCarloResult(request.simulatedYears, numSims, portfolioResults, masterSeed)
@@ -220,6 +298,47 @@ object MonteCarloService {
     }
 
     // ── Path assembly ─────────────────────────────────────────────────────────
+
+    private fun syntheticTradingDates(count: Int): List<LocalDate> {
+        val dates = ArrayList<LocalDate>(count)
+        var date = LocalDate.of(2000, 1, 3)
+        while (dates.size < count) {
+            if (date.dayOfWeek.value <= 5) dates.add(date)
+            date = date.plusDays(1)
+        }
+        return dates
+    }
+
+    private fun syntheticSeriesMap(
+        tickers: Set<String>,
+        path: List<AssembledDay>,
+        dates: List<LocalDate>
+    ): Map<String, Map<LocalDate, Double>> {
+        require(dates.size == path.size + 1) { "Synthetic date count must equal path size + 1" }
+        val values = tickers.associateWith { 100.0 }.toMutableMap()
+        val series = tickers.associateWith { linkedMapOf(dates.first() to 100.0) }
+        path.forEachIndexed { index, day ->
+            val date = dates[index + 1]
+            for (ticker in tickers) {
+                val ret = if (day.isChunkBoundary) 1.0 else (day.tickerReturns[ticker] ?: 1.0)
+                val next = (values[ticker] ?: 100.0) * ret
+                values[ticker] = next
+                series[ticker]?.put(date, next)
+            }
+        }
+        return series
+    }
+
+    private fun syntheticEffrxSeries(path: List<AssembledDay>, dates: List<LocalDate>): Map<LocalDate, Double> {
+        require(dates.size == path.size + 1) { "Synthetic date count must equal path size + 1" }
+        val series = linkedMapOf(dates.first() to 100.0)
+        var value = 100.0
+        path.forEachIndexed { index, day ->
+            value *= 1.0 + if (day.isChunkBoundary) 0.0 else day.effrxRate
+            series[dates[index + 1]] = value
+        }
+        return series
+    }
 
     private fun assemblePath(
         rng: Random,

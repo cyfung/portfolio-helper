@@ -317,6 +317,12 @@ input.input-error,
     white-space: nowrap;
 }
 
+.strategy-margin-info .strategy-margin-source {
+    border-color: color-mix(in srgb, var(--color-accent-primary) 55%, var(--color-border-medium));
+    color: var(--color-accent-primary);
+    font-weight: 600;
+}
+
 /* Margin drop-zone highlight */
 .portfolio-block.drag-over-margin .margin-config-rows {
     outline: 2px dashed var(--color-accent-primary);

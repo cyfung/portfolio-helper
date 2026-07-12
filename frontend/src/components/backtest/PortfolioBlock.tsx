@@ -414,7 +414,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   const hasLabel = local.label.trim().length > 0
-  const strategySummaries = (local.rebalanceStrategies ?? []).map(row => {
+  const summarizeStrategyRow = (row: RebalanceStrategyRow, kind: string, label: string, sourceDetail = '') => {
     const strategy = savedConfigToStrategyState(row.config, row.name)
     const points = strategy.marginPoints ?? []
     const btd = strategy.buyTheDip
@@ -423,6 +423,10 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const ddBl = strategy.drawdownBuyOnLowMargin
     return {
       row,
+      key: `${row.id}:${kind}:${label}`,
+      kind,
+      label,
+      sourceDetail,
       low: points[0] ?? '40',
       mid: points[2] ?? strategy.marginRatio ?? '50',
       high: points[4] ?? '60',
@@ -446,6 +450,21 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       ssR:   sos?.basePortfolio != null && sos.basePortfolio.portfolioSource !== 'STRATEGY_GROSS' && sos.basePortfolio.portfolioSource !== 'STRATEGY_VALUE',
       ssI:   sos?.individualStock != null,
     }
+  }
+
+  const strategySummaries = (local.rebalanceStrategies ?? []).flatMap(row => {
+    const strategy = savedConfigToStrategyState(row.config, row.name)
+    const derived = (strategy.derivedSubStrategies ?? [])
+      .filter(d => d.enabled)
+      .map(d => summarizeStrategyRow(
+        row,
+        'Derived',
+        d.label?.trim() || 'Derived',
+        d.marginReferenceSource === 'STANDALONE_TICKER'
+          ? `Ref ${d.marginReferenceTicker || 'ticker'}`
+          : 'Ref base',
+      ))
+    return [summarizeStrategyRow(row, 'Base', row.name), ...derived]
   })
 
   return (
@@ -690,11 +709,13 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
             </div>
           ))}
-          {strategySummaries.map(({ row, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, ddBl, ddBlSgp, ddBlPv, ddBlR, ddMr, ddMrSgp, ddMrPv, ddMrR, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
-            <div key={row.id} className="margin-config-row rebalance-strategy-margin-row">
+          {strategySummaries.map(({ row, key, kind, label, sourceDetail, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, ddBl, ddBlSgp, ddBlPv, ddBlR, ddMr, ddMrSgp, ddMrPv, ddMrR, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
+            <div key={key} className="margin-config-row rebalance-strategy-margin-row">
               <span className="margin-drag-handle" aria-hidden="true">S</span>
               <div className="strategy-margin-info">
-                <span className="strategy-margin-name" title={row.name}>{row.name}</span>
+                <span className="strategy-margin-name" title={kind === 'Base' ? row.name : `${row.name} / ${label}`}>{kind === 'Base' ? row.name : label}</span>
+                <span className="strategy-margin-source">{kind}</span>
+                {sourceDetail && <span>{sourceDetail}</span>}
                 <span>L {low}%</span>
                 <span>M {mid}%</span>
                 <span>H {high}%</span>

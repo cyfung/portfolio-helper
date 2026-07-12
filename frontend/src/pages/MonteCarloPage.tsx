@@ -238,8 +238,8 @@ export default function MonteCarloPage() {
       setError('Add at least one portfolio block with a positive net weight.')
       return
     }
-    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0)) {
-      setError('Each portfolio must have Unlevered enabled or at least one margin row.')
+    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && (p.rebalanceStrategies?.length ?? 0) === 0)) {
+      setError('Each portfolio must have Unlevered enabled, at least one margin row, or at least one rebalance strategy.')
       return
     }
 
@@ -477,6 +477,7 @@ export default function MonteCarloPage() {
           blocks={blocks}
           onBlockChange={updateBlock}
           onSavedRefresh={refreshSaved}
+          showSavedStrategies
         />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

@@ -1,6 +1,8 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.AppDirs
 import com.portfoliohelper.service.yahoo.YahooAdjustedCloseResult
+import java.nio.file.Files
 import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.test.Test
@@ -10,6 +12,38 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
 class BacktestChainExtendTest {
+    @Test
+    fun loadNormalizedSeriesReadsNewFullTickerCacheBeforeLegacyTickerCache() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-full-ticker-cache-test-")
+        try {
+            AppDirs.dataDir = tempDataDir
+            val today = LocalDate.now()
+            val jan1 = LocalDate.of(2026, 1, 1)
+            val jan2 = LocalDate.of(2026, 1, 2)
+            val jan3 = LocalDate.of(2026, 1, 3)
+            val fullSeries = mapOf(
+                jan1 to 10_000.0,
+                jan2 to 10_100.0,
+                jan3 to 10_200.0,
+                today to 10_300.0,
+            )
+            val legacySeries = fullSeries.mapValues { 1.0 }
+
+            val legacyDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
+            val fullDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            BacktestService.writeSimCsv(legacyDir.resolve("FULLPATH-$today.csv"), legacySeries)
+            BacktestService.writeSimCsv(fullDir.resolve("FULLPATH-$today.csv"), fullSeries)
+
+            val loaded = BacktestService.loadNormalizedSeries("FULLPATH", LocalDate.of(1990, 1, 1))
+
+            assertEquals(fullSeries, loaded)
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun parseTickerChainKeepsLetfSegmentAsBaseTicker() {
         val chain = BacktestService.parseTickerChain("CTAP | 1 CTA 1 SPY E=1.5")
@@ -205,6 +239,14 @@ class BacktestChainExtendTest {
     }
 
     @Test
+    fun tickerSimPatternTreatsTickerAsLiteralText() {
+        val pattern = BacktestService.tickerSimPattern("^GSPC")
+
+        assertTrue(pattern.matches("^GSPC-2026-06-16.csv"))
+        assertTrue(!pattern.matches("GSPC-2026-06-16.csv"))
+    }
+
+    @Test
     fun staleSameDayTickerCacheNeedsRefreshAfterFifteenMinutes() {
         val today = LocalDate.of(2026, 6, 16)
         val yesterday = today.minusDays(1)
@@ -224,6 +266,92 @@ class BacktestChainExtendTest {
         assertTrue(
             !BacktestService.shouldRefreshCurrentTickerFile(16.minutes, today, today, today.plusDays(1)),
             "Historical toDate should not be refreshed just because the file is old",
+        )
+    }
+
+    @Test
+    fun freshCurrentTickerCacheCanBeReusedWhenYahooHasNoTodayRowYet() {
+        val today = LocalDate.of(2026, 6, 16)
+        val lastYahooDate = today.minusDays(3)
+        val firstDate = LocalDate.of(2020, 1, 2)
+
+        assertTrue(
+            BacktestService.canReuseFreshTickerFile(
+                1.minutes,
+                firstDate,
+                lastYahooDate,
+                LocalDate.of(2021, 1, 1),
+                today,
+                today,
+            ),
+            "Fresh current-date probe files should not refetch immediately when Yahoo returned no today row",
+        )
+        assertTrue(
+            !BacktestService.canReuseFreshTickerFile(
+                16.minutes,
+                firstDate,
+                lastYahooDate,
+                LocalDate.of(2021, 1, 1),
+                today,
+                today,
+            ),
+            "Stale current-date probe files should refresh after the TTL",
+        )
+        assertTrue(
+            !BacktestService.canReuseFreshTickerFile(
+                1.minutes,
+                firstDate,
+                lastYahooDate,
+                LocalDate.of(2021, 1, 1),
+                today.minusDays(1),
+                today,
+            ),
+            "Historical requests still require the cache to cover the requested end date",
+        )
+        assertTrue(
+            !BacktestService.canReuseFreshTickerFile(
+                1.minutes,
+                firstDate,
+                lastYahooDate,
+                LocalDate.of(2019, 1, 1),
+                today,
+                today,
+            ),
+            "Fresh files cannot satisfy starts before their first cached date",
+        )
+    }
+
+    @Test
+    fun freshFullTickerCacheCanBeReusedForRequestsBeforeTickerInception() {
+        val today = LocalDate.of(2026, 6, 16)
+        val lastYahooDate = today.minusDays(3)
+
+        assertTrue(
+            BacktestService.canReuseFreshFullTickerFile(
+                1.minutes,
+                lastYahooDate,
+                today,
+                today,
+            ),
+            "Full-history ticker caches can satisfy pre-inception requests without a prepend probe",
+        )
+        assertTrue(
+            !BacktestService.canReuseFreshFullTickerFile(
+                16.minutes,
+                lastYahooDate,
+                today,
+                today,
+            ),
+            "Stale current-date probe files should refresh after the TTL",
+        )
+        assertTrue(
+            BacktestService.canReuseFreshFullTickerFile(
+                16.minutes,
+                LocalDate.of(2026, 6, 12),
+                LocalDate.of(2026, 6, 12),
+                today,
+            ),
+            "Historical full-history caches should be reused even when their file mtime is stale",
         )
     }
 

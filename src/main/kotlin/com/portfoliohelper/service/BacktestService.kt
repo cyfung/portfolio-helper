@@ -29,7 +29,9 @@ object BacktestService {
     private val logger = LoggerFactory.getLogger(BacktestService::class.java)
     const val DATE_RANGE_ERROR_MESSAGE = "From date must be on or before to date."
     private val tickerDir get() = AppDirs.dataDir.resolve(".ticker").toFile()
+    private val fullTickerDir get() = AppDirs.dataDir.resolve(".ticker-full").toFile()
     private val tickerCacheMaxAge = 15.minutes
+    private val fullHistoryFetchStartDate: LocalDate = LocalDate.of(1900, 1, 1)
     private val yahooNullRowsWarningRangePattern =
         Regex("""^(Yahoo adjusted-close data for .+ contains unsupported null rows) for range [^;]+; (.+);$""")
 
@@ -50,16 +52,22 @@ object BacktestService {
             Unit
         }
         val effrxSeries = loadEffrxSeries()
-        val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
+        val historyFrom = LocalDate.of(1990, 1, 1)
+        val neededFrom = fromDate ?: historyFrom
 
-        // Step 1: Collect all unique LETF definitions from all portfolio tickers
-        val requestedTickers = portfolios
+        // Step 1: Collect all unique ticker dependencies. Attached rebalance strategies can
+        // reference their own tickers, so load them here once and reuse the same series below.
+        val strategyReferenceTickers = portfolios
+            .flatMap { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) }
+            .distinct()
+        val referenceTickerSet = strategyReferenceTickers.toSet()
+        val requestedTickers = (portfolios
             .flatMap { it.tickers }
-            .map { it.ticker }
+            .map { it.ticker } + strategyReferenceTickers)
             .distinct()
         val seriesCache = resolveTickerSeries(
             requestedTickers,
-            neededFromForTicker = { neededFrom },
+            neededFromForTicker = { ticker -> if (ticker in referenceTickerSet) historyFrom else neededFrom },
             toDate = toDate,
             effrx = effrxSeries,
             warningCollector = warningCollector,
@@ -76,6 +84,9 @@ object BacktestService {
                 tw.ticker to (seriesCache[tw.ticker]
                     ?: error("Series for '${tw.ticker}' not found in cache"))
             }
+        }
+        val strategySeriesMap = requestedTickers.associateWith { ticker ->
+            seriesCache[ticker] ?: error("Series for '$ticker' not found in cache")
         }
         val globalDates = intersectDates(allSeriesMaps.flatMap { it.values }, fromDate, toDate)
         if (globalDates.size < 2) {
@@ -153,16 +164,15 @@ object BacktestService {
 
             curves.addAll(marginCurves)
             curves.addAll(
-                RebalanceStrategyService.runAttachedStrategies(
-                    request.fromDate,
-                    request.toDate,
-                    pConfig,
-                    request.cashflow,
-                    pConfig.rebalanceStrategies,
-                    request.startingBalance,
-                    globalDates = globalDates,
+                RebalanceStrategyService.runAttachedStrategiesOnSeries(
+                    portfolio = pConfig,
+                    cashflow = request.cashflow,
+                    strategies = pConfig.rebalanceStrategies,
+                    seriesMap = strategySeriesMap,
+                    dates = globalDates,
+                    effrx = effrxSeries,
+                    startingBalance = request.startingBalance,
                     zeroMarginInterest = request.zeroMarginInterest,
-                    warningCollector = warningCollector,
                 )
             )
             PortfolioResult(pConfig.label, curves)
@@ -504,9 +514,13 @@ object BacktestService {
      * Normalised means the series values are chain-linked returns starting at 10 000.
      *
      * Three-tier fallback:
-     *   Tier 1 — local .ticker file: load, sanity-check, extend; delete + fall through on failure.
-     *   Tier 2 — resource .ticker file: copy, sanity-check, extend; delete + fall through on failure.
-     *   Tier 3 — rebuild from Yahoo from scratch.
+     *   Tier 1 — local .ticker-full file: load, sanity-check, extend; delete + fall through on failure.
+     *   Tier 2 — bundled resource .ticker file: copy into .ticker-full, sanity-check, extend; delete + fall through on failure.
+     *   Tier 3 — rebuild from Yahoo from its earliest available history.
+     *
+     * Files in .ticker-full and bundled resources are treated as full-history caches. We only refresh/extend
+     * the end of the series; the cached last date is still included in the Yahoo fetch because it may have
+     * been built from an intraday value.
      */
     internal fun loadNormalizedSeries(
         ticker: String,
@@ -516,58 +530,38 @@ object BacktestService {
         require(!ticker.contains(' ')) {
             "loadNormalizedSeries called with LETF string '$ticker' — LETF series must be pre-computed via computeLetfSeries"
         }
-        tickerDir.mkdirs()
+        fullTickerDir.mkdirs()
         val upperTicker = ticker.uppercase()
-        val simPattern = Regex("${upperTicker}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
+        val simPattern = tickerSimPattern(upperTicker)
         val today = LocalDate.now()
 
-        val localFiles = findFiles(simPattern)
+        val localFiles = findFiles(simPattern, fullTickerDir)
 
         // Tier 1 — local file
         if (localFiles.isNotEmpty()) {
-            val extended = tryExtendAndValidate(
+            val extended = tryExtendFullAndValidate(
                 ticker,
                 upperTicker,
                 localFiles,
                 today,
-                neededFromDate,
                 warningCollector
             )
-            val extendedFirstDate = extended?.series?.keys?.minOrNull()
-            val resourceFirstDate = extendedFirstDate?.let { bundledResourceFirstDate(simPattern) }
-            if (
-                extended != null &&
-                (extended.useAsIs || (
-                        extendedFirstDate != null &&
-                                extendedFirstDate <= neededFromDate &&
-                                (resourceFirstDate == null || resourceFirstDate >= extendedFirstDate)
-                        ))
-            ) {
+            if (extended != null) {
                 collectTickerWarnings(upperTicker, warningCollector)
                 return extended.series
             }
-            if (extended != null) {
-                localFiles.forEach { it.delete() }
-                if (resourceFirstDate != null && resourceFirstDate < extendedFirstDate) {
-                    logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after bundled resource $resourceFirstDate — checking bundled resource")
-                } else {
-                    logger.warn("$upperTicker Tier 1 starts at $extendedFirstDate, after requested $neededFromDate — checking bundled resource")
-                }
-            } else {
-                localFiles.forEach { it.delete() }
-                logger.warn("$upperTicker Tier 1 (local file) failed — deleted, falling through to resource")
-            }
+            localFiles.forEach { it.delete() }
+            logger.warn("$upperTicker Tier 1 (.ticker-full local file) failed — deleted, falling through to resource")
         }
 
         // Tier 2 — resource file
-        val resourceFiles = copyFromResources(simPattern, forceRefresh = localFiles.isNotEmpty())
+        val resourceFiles = copyFromResources(simPattern, fullTickerDir, forceRefresh = localFiles.isNotEmpty())
         if (resourceFiles.isNotEmpty()) {
-            val extended = tryExtendAndValidate(
+            val extended = tryExtendFullAndValidate(
                 ticker,
                 upperTicker,
                 resourceFiles,
                 today,
-                neededFromDate,
                 warningCollector,
                 allowAnchoredForwardExtension = true
             )
@@ -583,22 +577,20 @@ object BacktestService {
         }
 
         // Tier 3 — rebuild from scratch
-        logger.info("No valid SIM file for $upperTicker, fetching from Yahoo since $neededFromDate")
-        val raw = fetchAdjustedCloseRecordingWarnings(ticker, upperTicker, neededFromDate, today, warningCollector)
-        if (raw.isEmpty()) throw IllegalStateException("No Yahoo data for $ticker from $neededFromDate")
+        logger.info("No valid full-history SIM file for $upperTicker, fetching from Yahoo since $fullHistoryFetchStartDate")
+        val raw = fetchAdjustedCloseRecordingWarnings(ticker, upperTicker, fullHistoryFetchStartDate, today, warningCollector)
+        if (raw.isEmpty()) throw IllegalStateException("No Yahoo data for $ticker from $fullHistoryFetchStartDate")
         val normalized = normalizeFromFirst(raw, 10_000.0)
-        val newFile = File(tickerDir, "${upperTicker}-${today}.csv")
+        val newFile = File(fullTickerDir, "${upperTicker}-${today}.csv")
         writeSimCsv(newFile, normalized)
         return normalized
     }
 
     /**
-     * Attempts to prepend and/or extend [files] with Yahoo data, validating chain-link consistency
+     * Attempts to extend [files] with Yahoo data, validating chain-link consistency
      * in the overlap region. Returns the updated series on success, or null on any failure
      * (caller is responsible for deleting the files in that case).
      *
-     * Prepend (if neededFromDate < firstDate): fetches Yahoo from neededFromDate to firstDate+10 days.
-     *   If Yahoo has dates before firstDate, calls chainPrepend to backfill; otherwise skips silently.
      * Extend (if lastKnownDate < neededToDate, or today's cache is stale): fetches Yahoo from
      *   lastKnownDate−10 days to neededToDate, then calls chainExtend to replace the cached tail
      *   and append new entries. The last cached date is treated as provisional because it may be
@@ -606,16 +598,14 @@ object BacktestService {
      * Both operations throw on overlap mismatch (caught here → returns null).
      */
     private data class TickerCsvLoadResult(
-        val series: Map<LocalDate, Double>,
-        val useAsIs: Boolean = false
+        val series: Map<LocalDate, Double>
     )
 
-    private fun tryExtendAndValidate(
+    private fun tryExtendFullAndValidate(
         ticker: String,
         upperTicker: String,
         files: List<File>,
         neededToDate: LocalDate,
-        neededFromDate: LocalDate,
         warningCollector: ((String, List<String>) -> Unit)? = null,
         allowAnchoredForwardExtension: Boolean = false
     ): TickerCsvLoadResult? {
@@ -623,51 +613,14 @@ object BacktestService {
         logger.info("Loading SIM file for $upperTicker: ${file.name}")
         val existing = readSimCsv(file)
         if (existing.isEmpty()) return null
-        val firstDate = existing.firstKey()
         val lastKnownDate = existing.lastKey()
         val fileAge = (System.currentTimeMillis() - file.lastModified()).milliseconds
-        if (fileAge <= tickerCacheMaxAge && lastKnownDate >= neededToDate && firstDate <= neededFromDate) {
+        if (canReuseFreshFullTickerFile(fileAge, lastKnownDate, neededToDate)) {
             return TickerCsvLoadResult(existing)
         }
         if (existing.size < 20) return null
 
         var current: Map<LocalDate, Double> = existing
-
-        // Prepend if needed
-        if (neededFromDate < firstDate) {
-            val earlyYahoo = try {
-                fetchAdjustedCloseRecordingWarnings(
-                    ticker,
-                    upperTicker,
-                    neededFromDate,
-                    firstDate.plusDays(10),
-                    warningCollector
-                )
-            } catch (e: YahooHistoricalDataException) {
-                if (e is YahooTickerNotFoundException) {
-                    logger.warn("$upperTicker early probe reported missing Yahoo ticker; using cached CSV ${file.name} as is")
-                    return TickerCsvLoadResult(existing, useAsIs = true)
-                }
-                throw e
-            } catch (e: Exception) {
-                if (!allowAnchoredForwardExtension) {
-                    logger.warn("$upperTicker early probe fetch failed: ${e.message}")
-                    return null
-                }
-                logger.warn("$upperTicker early probe fetch failed: ${e.message}; keeping cached start $firstDate")
-                emptyMap()
-            }
-            if (earlyYahoo.keys.any { it < firstDate }) {
-                current = try {
-                    chainPrepend(current, earlyYahoo, firstDate)
-                } catch (e: Exception) {
-                    logger.warn("Failed to prepend $upperTicker via Yahoo: ${e.message}")
-                    return null
-                }
-            } else {
-                logger.info("$upperTicker: Yahoo has no data before $firstDate, skipping prepend")
-            }
-        }
 
         // Extend forward if needed. If the cache already has today's row but is older
         // than the TTL, refresh that row because it may be an intraday mark.
@@ -689,7 +642,7 @@ object BacktestService {
             } catch (e: YahooHistoricalDataException) {
                 if (e is YahooTickerNotFoundException) {
                     logger.warn("$upperTicker extend reported missing Yahoo ticker; using cached CSV ${file.name} as is")
-                    return TickerCsvLoadResult(existing, useAsIs = true)
+                    return TickerCsvLoadResult(existing)
                 }
                 throw e
             } catch (e: Exception) {
@@ -713,9 +666,9 @@ object BacktestService {
             }
         }
 
-        val newFile = File(tickerDir, "${upperTicker}-${neededToDate}.csv")
+        val newFile = File(fullTickerDir, "${upperTicker}-${neededToDate}.csv")
         writeSimCsv(newFile, current)
-        files.forEach { it.delete() }
+        deleteSupersededTickerFiles(files, newFile)
         return TickerCsvLoadResult(current)
     }
 
@@ -849,13 +802,41 @@ object BacktestService {
     ): Boolean =
         fileAge > tickerCacheMaxAge && lastKnownDate == neededToDate && neededToDate == today
 
-    private fun copyFromResources(simPattern: Regex, forceRefresh: Boolean = false): List<File> {
+    internal fun canReuseFreshTickerFile(
+        fileAge: kotlin.time.Duration,
+        firstDate: LocalDate,
+        lastKnownDate: LocalDate,
+        neededFromDate: LocalDate,
+        neededToDate: LocalDate,
+        today: LocalDate = LocalDate.now()
+    ): Boolean =
+        fileAge <= tickerCacheMaxAge &&
+            firstDate <= neededFromDate &&
+            (lastKnownDate >= neededToDate || neededToDate >= today)
+
+    internal fun canReuseFreshFullTickerFile(
+        fileAge: kotlin.time.Duration,
+        lastKnownDate: LocalDate,
+        neededToDate: LocalDate,
+        today: LocalDate = LocalDate.now()
+    ): Boolean =
+        lastKnownDate > neededToDate ||
+            (lastKnownDate == neededToDate &&
+                !shouldRefreshCurrentTickerFile(fileAge, lastKnownDate, neededToDate, today)) ||
+            (fileAge <= tickerCacheMaxAge && neededToDate >= today)
+
+    private fun copyFromResources(
+        simPattern: Regex,
+        targetDir: File = tickerDir,
+        forceRefresh: Boolean = false
+    ): List<File> {
         val allResourceFiles = getResourceFiles("data/.ticker")
         val resourcesFile = allResourceFiles.firstOrNull {
             simPattern.matches(it)
         } ?: return emptyList()
         val cl = object {}::class.java.classLoader
-        val target = tickerDir.toPath().resolve(resourcesFile)
+        targetDir.mkdirs()
+        val target = targetDir.toPath().resolve(resourcesFile)
         if (forceRefresh || !Files.exists(target)) {
             cl.getResourceAsStream("data/.ticker/$resourcesFile")
                 ?.use { Files.copy(it, target, StandardCopyOption.REPLACE_EXISTING) }
@@ -863,28 +844,16 @@ object BacktestService {
         return listOf(target.toFile()).filter { it.exists() }
     }
 
-    private fun bundledResourceFirstDate(simPattern: Regex): LocalDate? {
-        val resourcesFile = getResourceFiles("data/.ticker").firstOrNull {
-            simPattern.matches(it)
-        } ?: return null
-        val cl = object {}::class.java.classLoader
-        return cl.getResourceAsStream("data/.ticker/$resourcesFile")?.bufferedReader()?.use { reader ->
-            reader.readLine()
-            reader.lineSequence()
-                .mapNotNull { line ->
-                    runCatching { LocalDate.parse(line.substringBefore(",").trim()) }.getOrNull()
-                }
-                .firstOrNull()
-        }
-    }
-
     internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
         findFiles(simPattern).ifEmpty { copyFromResources(simPattern) }
 
-    internal fun findFiles(simPattern: Regex): List<File> = (tickerDir.listFiles()
+    internal fun findFiles(simPattern: Regex, dir: File = tickerDir): List<File> = (dir.listFiles()
         ?.filter { simPattern.matches(it.name) }
         ?.sortedByDescending { it.name }
         ?: emptyList())
+
+    internal fun tickerSimPattern(upperTicker: String): Regex =
+        Regex("${Regex.escape(upperTicker)}-(\\d{4}-\\d{2}-\\d{2})\\.csv")
 
     /** Loads EFFRX, extending via FRED EFFR if the file is outdated. Returns empty map if not found. */
     internal fun loadEffrxSeries(): Map<LocalDate, Double> {
@@ -998,6 +967,14 @@ object BacktestService {
         fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
         val requiredNeededFrom = mutableMapOf<String, LocalDate>()
         val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
+        val warningCollectorLock = Any()
+        val threadSafeWarningCollector = warningCollector?.let { collector ->
+            { ticker: String, tickerWarnings: List<String> ->
+                synchronized(warningCollectorLock) {
+                    collector(ticker, tickerWarnings)
+                }
+            }
+        }
 
         fun collectDependencies(ticker: String, neededFrom: LocalDate) {
             val key = normalizeTickerExpression(ticker)
@@ -1035,7 +1012,7 @@ object BacktestService {
             } ?: loadNormalizedSeries(
                 key,
                 requiredNeededFrom[key] ?: neededFromForTicker(key),
-                warningCollector,
+                threadSafeWarningCollector,
             )
 
             seriesCache[key] = series
@@ -1044,6 +1021,22 @@ object BacktestService {
 
         tickers.forEach { ticker ->
             collectDependencies(ticker, neededFromForTicker(ticker))
+        }
+
+        val baseTickers = requiredNeededFrom.keys
+            .filter { parseTickerChain(it) == null && parseLETFDefinition(it) == null }
+            .sorted()
+        val loadedBaseSeries = baseTickers.parallelStream()
+            .map { key ->
+                key to loadNormalizedSeries(
+                    key,
+                    requiredNeededFrom[key] ?: neededFromForTicker(key),
+                    threadSafeWarningCollector,
+                )
+            }
+            .toList()
+        loadedBaseSeries.forEach { (key, series) ->
+            seriesCache[key] = series
         }
 
         return tickers.associateWith { ticker -> resolve(ticker) }
@@ -1312,6 +1305,13 @@ object BacktestService {
             }
         }
         logger.info("Saved SIM file: ${file.name} (${series.size} rows)")
+    }
+
+    private fun deleteSupersededTickerFiles(files: List<File>, replacement: File) {
+        val replacementPath = replacement.canonicalFile.toPath()
+        files
+            .filter { it.canonicalFile.toPath() != replacementPath }
+            .forEach { it.delete() }
     }
 
     // ── Chain-link extension / prepend ───────────────────────────────────────

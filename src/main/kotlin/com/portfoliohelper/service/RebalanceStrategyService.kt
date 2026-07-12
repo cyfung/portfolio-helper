@@ -222,6 +222,68 @@ object RebalanceStrategyService {
     }
   }
 
+  internal fun requiredReferenceTickers(strategies: List<RebalStrategyConfig>): Set<String> {
+    val enabledStrategies = strategies.filter { it.enabled }
+    return (enabledStrategies.flatMap { it.referenceTickers() } +
+        enabledStrategies.flatMap { it.standaloneMarginReferenceTickers() })
+        .toSet()
+  }
+
+  internal fun runAttachedStrategiesOnSeries(
+      portfolio: PortfolioConfig,
+      cashflow: CashflowConfig?,
+      strategies: List<RebalStrategyConfig>,
+      seriesMap: Map<String, Map<LocalDate, Double>>,
+      dates: List<LocalDate>,
+      effrx: Map<LocalDate, Double>,
+      startingBalance: Double = 10_000.0,
+      includeActionDiagnostics: Boolean = false,
+      zeroMarginInterest: Boolean = false,
+  ): List<CurveResult> {
+    val context = RunContext(seriesMap, dates, effrx)
+    return strategies
+        .filter { it.enabled }
+        .flatMap { strategy ->
+          val strategyPortfolio = strategy.portfolioWithRebalanceOverride(portfolio)
+          val baseRun =
+              runStrategyWithIntentions(
+                  strategyPortfolio,
+                  strategy,
+                  cashflow,
+                  context.seriesMap,
+                  context.dates,
+                  context.effrx,
+                  startingBalance,
+                  includeActionDiagnostics,
+                  zeroMarginInterest = zeroMarginInterest,
+              )
+          val request =
+              RebalanceStrategyRequest(
+                  fromDate = null,
+                  toDate = null,
+                  portfolio = portfolio,
+                  cashflow = cashflow,
+                  strategies = listOf(strategy),
+                  startingBalance = startingBalance,
+                  includeActionDiagnostics = includeActionDiagnostics,
+                  zeroMarginInterest = zeroMarginInterest,
+              )
+          val derivedCurves =
+              runDerivedSubStrategies(
+                  request,
+                  portfolio,
+                  strategy,
+                  context,
+                  DerivedReferenceSeries(
+                      baseRun.curve.marginPoints?.map { it.value }
+                          ?: List(context.dates.size) { strategy.marginRatio },
+                      baseRun.marginIntentions,
+                  ),
+              )
+          listOf(baseRun.curve) + derivedCurves
+        }
+  }
+
   private data class RunContext(
       val seriesMap: Map<String, Map<LocalDate, Double>>,
       val dates: List<LocalDate>,
