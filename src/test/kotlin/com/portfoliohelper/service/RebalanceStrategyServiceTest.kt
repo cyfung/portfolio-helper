@@ -201,6 +201,19 @@ class RebalanceStrategyServiceTest {
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     @Test
+    fun disabledAttachedRebalanceStrategiesAreSkipped() {
+        val result = RebalanceStrategyService.runAttachedStrategies(
+            fromDate = null,
+            toDate = null,
+            portfolio = singleStockPortfolio(),
+            cashflow = null,
+            strategies = listOf(strategy().copy(enabled = false)),
+        )
+
+        assertTrue(result.isEmpty())
+    }
+
+    @Test
     fun dipSurgeConfig_defaultsCoolingOffToTenDays() {
         val cfg = DipSurgeConfig(
             scope = DipSurgeScope.INDIVIDUAL_STOCK,

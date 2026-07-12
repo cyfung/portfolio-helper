@@ -113,9 +113,10 @@ object RebalanceStrategyService {
   }
 
   fun run(request: RebalanceStrategyRequest): MultiBacktestResult {
-    val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
+    val enabledStrategies = request.strategies.filter { it.enabled }
+    val referenceTickers = enabledStrategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =
-        request.strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+        enabledStrategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
     val warnings = linkedSetOf<String>()
     val warningCollector = { _: String, tickerWarnings: List<String> ->
       warnings.addAll(tickerWarnings)
@@ -131,7 +132,7 @@ object RebalanceStrategyService {
             warningCollector = warningCollector,
         )
     val baseResult = runBasePortfolio(request)
-    val strategyResults = request.strategies.map { runConfiguredStrategy(request, it, context) }
+    val strategyResults = enabledStrategies.map { runConfiguredStrategy(request, it, context) }
     warnings.addAll(baseResult.warnings)
     return MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
   }
@@ -139,9 +140,10 @@ object RebalanceStrategyService {
   fun scoreBatch(request: RebalanceStrategyScoreBatchRequest): List<Double> {
     val portfolios = request.portfolios.takeIf { it.isNotEmpty() }
         ?: throw IllegalArgumentException("Missing portfolios")
-    val referenceTickers = request.strategies.flatMap { it.referenceTickers() }.distinct()
+    val enabledStrategies = request.strategies.withIndex().filter { it.value.enabled }
+    val referenceTickers = enabledStrategies.flatMap { it.value.referenceTickers() }.distinct()
     val standaloneMarginTickers =
-        request.strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+        enabledStrategies.flatMap { it.value.standaloneMarginReferenceTickers() }.distinct()
     val contexts = portfolios.map { portfolio ->
       portfolio to prepareRunContext(
           request.fromDate,
@@ -152,11 +154,12 @@ object RebalanceStrategyService {
       )
     }
 
-    return request.strategies.indices
+    return enabledStrategies
         .toList()
         .parallelStream()
-        .map { strategyIndex ->
-          val strategy = request.strategies[strategyIndex]
+        .map { indexedStrategy ->
+          val strategyIndex = indexedStrategy.index
+          val strategy = indexedStrategy.value
           val candidateRebalance = request.portfolioRebalanceStrategies.getOrNull(strategyIndex)
           val scores = contexts.map { (portfolio, context) ->
             val candidatePortfolio =
@@ -189,10 +192,11 @@ object RebalanceStrategyService {
       zeroMarginInterest: Boolean = false,
       warningCollector: ((String, List<String>) -> Unit)? = null,
   ): List<CurveResult> {
-    if (strategies.isEmpty()) return emptyList()
-    val referenceTickers = strategies.flatMap { it.referenceTickers() }.distinct()
+    val enabledStrategies = strategies.filter { it.enabled }
+    if (enabledStrategies.isEmpty()) return emptyList()
+    val referenceTickers = enabledStrategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =
-        strategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+        enabledStrategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
     val context =
         prepareRunContext(
             fromDate,
@@ -203,7 +207,7 @@ object RebalanceStrategyService {
             overrideDates = globalDates,
             warningCollector = warningCollector,
         )
-    return strategies.map { strategy ->
+    return enabledStrategies.map { strategy ->
       runStrategy(
           strategy.portfolioWithRebalanceOverride(portfolio),
           strategy,

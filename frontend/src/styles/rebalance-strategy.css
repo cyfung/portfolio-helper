@@ -13,6 +13,21 @@
     gap: 0.5rem;
 }
 
+.strategy-enabled-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.strategy-enabled-toggle input[type="checkbox"] {
+    accent-color: var(--color-accent-primary);
+}
+
 .rebalance-strategy-block {
     position: relative;
     --strategy-margin-scroll-lock-inset: 0.875rem;

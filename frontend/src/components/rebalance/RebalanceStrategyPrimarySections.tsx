@@ -14,20 +14,32 @@ type StrategyPatch = Partial<RebalStrategyState>
 export function StrategyHeader({
   idx,
   label,
+  enabled,
   saveMsg,
   onLabelChange,
+  onEnabledChange,
   onCommit,
   onSave,
 }: {
   idx: number
   label: string
+  enabled: boolean
   saveMsg: string
   onLabelChange: (value: string) => void
+  onEnabledChange: (value: boolean) => void
   onCommit: () => void
   onSave: (overwrite: boolean) => void
 }) {
   return (
     <div className="block-header">
+      <label className="strategy-enabled-toggle">
+        <span>Enabled</span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={e => onEnabledChange(e.target.checked)}
+        />
+      </label>
       <input
         className="block-label-input"
         type="text"

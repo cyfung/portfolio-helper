@@ -323,8 +323,10 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
         <StrategyHeader
           idx={idx}
           label={s.label}
+          enabled={s.enabled ?? true}
           saveMsg={saveMsg}
           onLabelChange={label => set({ label })}
+          onEnabledChange={enabled => set({ enabled })}
           onCommit={() => commit()}
           onSave={handleSave}
         />
