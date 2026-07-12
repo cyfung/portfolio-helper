@@ -33,6 +33,16 @@ const DERIVED_REFERENCE_METRIC_OPTIONS: { value: DerivedSubStrategyState['margin
   { value: 'MARGIN_COVERAGE', label: 'Margin Coverage' },
 ]
 
+const HYSTERESIS_STAIRS_REFERENCE_MODE_OPTIONS: { value: DerivedSubStrategyState['scale']['hysteresisStairsReferenceMode']; label: string }[] = [
+  { value: 'RESET_REF', label: 'Reset Ref' },
+  { value: 'BUY_LOW_INTENTION', label: 'BL Intention' },
+]
+
+const HYSTERESIS_STAIRS_FALL_MODE_OPTIONS: { value: DerivedSubStrategyState['scale']['hysteresisStairsFallMode']; label: string }[] = [
+  { value: 'DIRECT', label: 'Direct' },
+  { value: 'MOMENTUM', label: 'Momentum' },
+]
+
 function referenceMetricToMargin(value: number, metric: DerivedSubStrategyState['marginReferenceMetric']) {
   switch (metric) {
     case 'MARGIN':
@@ -282,7 +292,6 @@ export default function DerivedSubStrategiesSection({
                   <option value="STEP">Step</option>
                   <option value="HYSTERESIS_STEP">Hysteresis Step</option>
                   <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
-                  <option value="HYSTERESIS_STAIRS_MOMENTUM">Hysteresis Stairs Momentum</option>
                   <option value="HYSTERESIS_STAIRS_REF_BL_RESET">Hysteresis Stairs Ref BL Reset</option>
                 </select>
               </DerivedField>
@@ -297,6 +306,20 @@ export default function DerivedSubStrategiesSection({
                     onChange={e => updateSubStrategy(derived.id, { marginReferenceTicker: e.target.value.toUpperCase() })}
                     onBlur={onCommit}
                   />
+                </DerivedField>
+              )}
+              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
+                <DerivedField label="Ref Mode">
+                  <select
+                    value={derived.scale.hysteresisStairsReferenceMode ?? 'RESET_REF'}
+                    onChange={e => updateScale(derived.id, {
+                      hysteresisStairsReferenceMode: e.target.value as DerivedSubStrategyState['scale']['hysteresisStairsReferenceMode'],
+                    })}
+                  >
+                    {HYSTERESIS_STAIRS_REFERENCE_MODE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </DerivedField>
               )}
             </div>
@@ -354,7 +377,9 @@ export default function DerivedSubStrategiesSection({
                   />
                 </>
               )}
-              {RESET_ABOVE_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
+              {RESET_ABOVE_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') &&
+                  ((derived.scale.function ?? 'SIGMOID') !== 'HYSTERESIS_STAIRS' ||
+                    (derived.scale.hysteresisStairsReferenceMode ?? 'RESET_REF') === 'RESET_REF') && (
                 <DerivedMarginInput
                   label="Reset Ref"
                   value={derived.scale.stepBaseTarget ?? ''}
@@ -365,7 +390,9 @@ export default function DerivedSubStrategiesSection({
                   onCommit={onCommit}
                 />
               )}
-              {STAIRS_RESET_TARGET_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
+              {STAIRS_RESET_TARGET_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') &&
+                  ((derived.scale.function ?? 'SIGMOID') !== 'HYSTERESIS_STAIRS' ||
+                    (derived.scale.hysteresisStairsReferenceMode ?? 'RESET_REF') === 'RESET_REF') && (
                 <DerivedMarginInput
                   label="Reset Target"
                   value={derived.scale.targetUpper}
@@ -396,7 +423,22 @@ export default function DerivedSubStrategiesSection({
                 onChange={margin => updateSubStrategy(derived.id, { maxMargin: margin })}
                 onCommit={onCommit}
               />
-              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS_MOMENTUM' && (
+              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
+                <DerivedField label="Fall Mode">
+                  <select
+                    value={derived.scale.hysteresisStairsFallMode ?? 'DIRECT'}
+                    onChange={e => updateScale(derived.id, {
+                      hysteresisStairsFallMode: e.target.value as DerivedSubStrategyState['scale']['hysteresisStairsFallMode'],
+                    })}
+                  >
+                    {HYSTERESIS_STAIRS_FALL_MODE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </DerivedField>
+              )}
+              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' &&
+                  (derived.scale.hysteresisStairsFallMode ?? 'DIRECT') === 'MOMENTUM' && (
                 <NumberInputRow
                   label="Momentum Months"
                   value={derived.scale.momentumLookbackMonths ?? '12'}

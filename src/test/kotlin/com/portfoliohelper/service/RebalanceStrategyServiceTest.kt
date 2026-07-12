@@ -2594,6 +2594,85 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_usesBasePortfolioRebalanceScheduleWithoutChangingMargin() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-derived-base-rebalance-test")
+        AppDirs.dataDir = tempDataDir
+        try {
+            val dates = listOf(
+                LocalDate.of(2024, 1, 31),
+                LocalDate.of(2024, 2, 1),
+                LocalDate.of(2024, 2, 2),
+            )
+            val tickerDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
+            val today = LocalDate.now()
+            BacktestService.writeSimCsv(
+                tickerDir.resolve("DRVRA-$today.csv"),
+                dates.zip(listOf(100.0, 200.0, 100.0)).toMap() + (today to 100.0),
+            )
+            BacktestService.writeSimCsv(
+                tickerDir.resolve("DRVRB-$today.csv"),
+                dates.zip(listOf(100.0, 100.0, 100.0)).toMap() + (today to 100.0),
+            )
+
+            val derived = DerivedSubStrategyConfig(
+                label = "derived",
+                scale = DerivedTargetScaleConfig(
+                    function = DerivedTargetScaleFunction.HYSTERESIS_STEP,
+                    referenceLower = 0.10,
+                    referenceUpper = 0.90,
+                    targetLower = 0.30,
+                    targetUpper = 0.50,
+                ),
+            )
+            val portfolio = PortfolioConfig(
+                label = "test",
+                tickers = listOf(TickerWeight("DRVRA", 0.5), TickerWeight("DRVRB", 0.5)),
+                rebalanceStrategy = RebalanceStrategy.MONTHLY,
+                marginStrategies = emptyList(),
+            )
+            val strategy = strategy(marginRatio = 0.5, marginSpread = 0.0)
+                .copy(
+                    portfolioRebalancePeriod = RebalancePeriodOverride.NONE,
+                    portfolioRebalanceUseComfortZone = false,
+                    comfortZoneLow = 0.50,
+                    comfortZoneHigh = 0.50,
+                    derivedSubStrategies = listOf(derived),
+                )
+
+            val result = RebalanceStrategyService.run(
+                RebalanceStrategyRequest(
+                    fromDate = dates.first().toString(),
+                    toDate = dates.last().toString(),
+                    portfolio = portfolio,
+                    cashflow = null,
+                    strategies = listOf(strategy),
+                    startingBalance = 10_000.0,
+                    zeroMarginInterest = true,
+                )
+            )
+
+            val curves = result.portfolios.last().curves
+            val parentCurve = curves[0]
+            val derivedCurve = curves[1]
+
+            assertFalse(
+                parentCurve.actionPoints.orEmpty().any { it.type == "PORTFOLIO_REBALANCE" },
+                "parent strategy should still honor its portfolio rebalance override",
+            )
+            assertTrue(
+                derivedCurve.actionPoints.orEmpty().any { it.type == "PORTFOLIO_REBALANCE" },
+                "derived strategy should follow the base portfolio rebalance schedule",
+            )
+            assertApprox(11_875.0, derivedCurve.points.last().value, eps = 1e-6)
+            assertApprox(5_000.0 / 11_875.0, requireNotNull(derivedCurve.marginPoints).last().value, eps = 1e-9)
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun derivedStrategy_hysteresisStepSkipsAdjustmentBetweenRefHighAndRefLowAndResetsAboveThreshold() {
         val dates = days(LocalDate.of(2024, 1, 2), 9)
         val prices = dates.mapIndexed { i, date ->
@@ -2702,7 +2781,8 @@ class RebalanceStrategyServiceTest {
         val derived = DerivedSubStrategyConfig(
             label = "derived",
             scale = DerivedTargetScaleConfig(
-                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM,
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM,
                 targetUpper = 0.80,
                 stepBaseTarget = 0.95,
                 momentumLookbackMonths = 2,
@@ -2748,7 +2828,8 @@ class RebalanceStrategyServiceTest {
         val derived = DerivedSubStrategyConfig(
             label = "derived",
             scale = DerivedTargetScaleConfig(
-                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM,
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM,
                 targetUpper = 0.80,
                 stepBaseTarget = 0.95,
                 momentumLookbackMonths = 1,
@@ -2886,8 +2967,369 @@ class RebalanceStrategyServiceTest {
         )
 
         val margins = requireNotNull(result.marginPoints).map { it.value }
-        assertApprox(1.05, margins[1], label = "stage 1 should use target plus deviation, not exact reset target")
-        assertApprox(1.05, margins[2], label = "stage 1 should not force an exact reset every day")
+        assertApprox(1.0, margins[1], label = "derived portfolio rebalance should not adjust margin")
+        assertApprox(1.0, margins[2], label = "derived portfolio rebalance should keep margin unchanged")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeCachesStageZeroTargetOnlyUp() {
+        val dates = days(LocalDate.of(2024, 1, 2), 4)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.05, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.10, 0.30, 0.25, 0.40),
+            baseBuyLowTargetMarginSeries = listOf(null, 0.30, 0.25, 0.40),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.30, margins[1], label = "stage 0 BL target is cached")
+        assertApprox(0.30, margins[2], label = "stage 0 cache does not decrease")
+        assertApprox(0.40, margins[3], label = "stage 0 cache can increase on a higher BL target")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeUsesStairTargetsToPickStage() {
+        val dates = days(LocalDate.of(2024, 1, 2), 5)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.90, targetMargin = 0.60),
+                    DerivedTargetStepConfig(referenceMargin = 0.80, targetMargin = 0.40),
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20),
+                ),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(1.00, 0.85, 0.65, 0.65, 0.85),
+            baseBuyLowTargetMarginSeries = listOf(null, null, null, 0.45, null),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.60, margins[1], label = "falling below first stair fires first target")
+        assertApprox(0.20, margins[2], label = "falling below final stair fires final target")
+        assertApprox(0.45, margins[3], label = "BL target between stair targets picks stage 1 and raises held target")
+        assertApprox(0.45, margins[4], label = "after BL stage decrease, adjustment remains paused")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeRaisesOnlyWithinSameStair() {
+        val dates = days(LocalDate.of(2024, 1, 2), 6)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.90, targetMargin = 0.30),
+                    DerivedTargetStepConfig(referenceMargin = 0.80, targetMargin = 0.00),
+                ),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(1.00, 0.85, 0.85, 0.75, 0.75, 0.75),
+            baseBuyLowTargetMarginSeries = listOf(null, null, 0.10, null, 0.05, 0.10),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.30, margins[1], label = "falling into stair 1 sets the stair target")
+        assertApprox(0.30, margins[2], label = "same-stair BL target below the held target does not lower it")
+        assertApprox(0.00, margins[3], label = "falling into stair 2 sets the lower stair target")
+        assertApprox(0.05, margins[4], label = "BL target can move back to stair 1 and raise the held target")
+        assertApprox(0.10, margins[5], label = "same-stair BL target above the held target raises it")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeStillFiresReferenceFalls() {
+        val dates = days(LocalDate.of(2024, 1, 2), 6)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(1.00, 0.75, 0.65, 0.62, 0.55, 0.58),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.75, margins[1], label = "before first stair follows reference margin")
+        assertApprox(0.50, margins[2], label = "falling below first stair fires first target")
+        assertApprox(0.50, margins[3], label = "after first stair pauses above second stair")
+        assertApprox(0.20, margins[4], label = "falling below second stair fires second target")
+        assertApprox(0.20, margins[5], label = "after final stair remains paused")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeCanGateFallsWithMomentum() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+            LocalDate.of(2024, 5, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM,
+                momentumLookbackMonths = 2,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.50, 0.65, 0.55, 0.54, 0.54),
+            baseBuyLowTargetMarginSeries = listOf(null, null, null, null, 0.60),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.50, margins[1], label = "first stair arms but waits without lookback momentum")
+        assertApprox(0.50, margins[2], label = "deeper stair remains armed until fresh momentum confirms")
+        assertApprox(0.20, margins[3], label = "momentum confirmation fires the deepest armed stair")
+        assertApprox(0.60, margins[4], label = "BL intention target still applies in momentum fall mode")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeUsesBuyDeviationForStairBuy() {
+        val dates = days(LocalDate.of(2024, 1, 2), 3)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 1.00)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.50, 0.96, 0.65),
+            baseBuyLowTargetMarginSeries = listOf(null, 0.96, 0.65),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.96, margins[1], label = "stage 0 BL target raises margin")
+        assertApprox(0.96, margins[2], label = "stair target buy waits until current margin is below target minus BL dev")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionModeDoesNotIncreaseStage() {
+        val dates = days(LocalDate.of(2024, 1, 2), 4)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 1.00)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+        val buyLowTargets = MutableList<Double?>(dates.size) { null }
+        buyLowTargets[1] = 0.85
+        buyLowTargets[2] = 0.65
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.80, 0.80, 0.65, 0.65),
+            baseBuyLowTargetMarginSeries = buyLowTargets,
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.85, margins[1], label = "stage 0 BL target buys first")
+        assertApprox(0.85, margins[2], label = "deeper BL target should not move stage 0 to stage 1")
+        assertApprox(1.00, margins[3], label = "non-BL fall trigger can still move to stage 1")
+    }
+
+    @Test
+    fun derivedStrategy_receivesDrawdownBuyLowIntentionBeforeMarginTrigger() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-dd-bl-intention-test")
+        AppDirs.dataDir = tempDataDir
+        try {
+            val dates = days(LocalDate.of(2024, 1, 2), 3)
+            val tickerDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
+            val today = LocalDate.now()
+            val prehistory = days(LocalDate.of(1990, 1, 1), 20).associateWith { 1.0 }
+            BacktestService.writeSimCsv(
+                tickerDir.resolve("SPY-$today.csv"),
+                prehistory + dates.associateWith { 1.0 } + (today to 1.0),
+            )
+            BacktestService.writeSimCsv(
+                tickerDir.resolve("REF-$today.csv"),
+                prehistory + dates.zip(listOf(1.0, 0.8, 0.8)).toMap() + (today to 0.8),
+            )
+
+            val derived = DerivedSubStrategyConfig(
+                label = "derived",
+                scale = DerivedTargetScaleConfig(
+                    function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                    hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                    steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20)),
+                ),
+                absoluteDeviationPct = 0.0,
+                buyDeviationPct = 0.0,
+                sellDeviationPct = 0.0,
+                timeoutDays = 0,
+                maxMargin = 1.50,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+            )
+            val baseStrategy = strategy(
+                marginRatio = 0.5,
+                marginSpread = 0.0,
+                drawdownBuyOnLowMargin = DrawdownMarginTriggerAction(
+                    portfolioSource = PortfolioTriggerSource.REFERENCE_PORTFOLIO,
+                    referenceTicker = "REF",
+                    enterDrawdownPct = 0.1,
+                    triggerMargin = 0.1,
+                    allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                    targetMargin = 0.85,
+                ),
+            ).copy(derivedSubStrategies = listOf(derived))
+
+            val result = RebalanceStrategyService.run(
+                RebalanceStrategyRequest(
+                    fromDate = dates.first().toString(),
+                    toDate = dates.last().toString(),
+                    portfolio = singleStockPortfolio(),
+                    cashflow = null,
+                    strategies = listOf(baseStrategy),
+                    startingBalance = 10_000.0,
+                    zeroMarginInterest = true,
+                )
+            )
+
+            val curves = result.portfolios.last().curves
+            val baseCurve = curves[0]
+            val derivedCurve = curves[1]
+            assertFalse(baseCurve.actionPoints.orEmpty().any { it.type == "BUY_LOW" })
+            assertApprox(
+                0.85,
+                requireNotNull(derivedCurve.marginPoints)[1].value,
+                eps = 1e-6,
+                label = "derived should receive active drawdown BL target before the margin trigger fires",
+            )
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
     }
 
     @Test
@@ -2931,5 +3373,104 @@ class RebalanceStrategyServiceTest {
         assertApprox(0.80, margins[5], label = "reference BL resets to current reference margin")
         assertApprox(0.82, margins[6], label = "after reset follows reference margin")
         assertApprox(0.20, margins[7], label = "after reset can drop through stairs again")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsRefBuyLowResetUsesReferenceIntentionTargetMargin() {
+        val dates = days(LocalDate.of(2024, 1, 2), 5)
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(1.00, 0.65, 0.55, 0.58, 0.80),
+            baseBuyLowTargetMarginSeries = listOf(null, null, null, 0.85, null),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.50, margins[1], label = "first stair fires before reference BL")
+        assertApprox(0.20, margins[2], label = "second stair fires before reference BL")
+        assertApprox(0.85, margins[3], label = "reference BL resets to its target margin")
+    }
+
+    @Test
+    fun derivedStrategy_usesBaseBuyLowIntentionBlockedByGlobalCooldown() {
+        val dates = days(LocalDate.of(2024, 1, 2), 4)
+        val prices = dates.zip(listOf(1.0, 0.5, 1.0, 1.0)).toMap()
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+        val baseStrategy = strategy(
+            marginRatio = 0.85,
+            marginSpread = 0.0,
+            rebalancePeriod = RebalancePeriodOverride.NONE,
+            sellOnHighMargin = MarginTriggerAction(
+                deviationPct = 0.8,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                targetMargin = 0.5,
+            ),
+            buyOnLowMargin = MarginTriggerAction(
+                deviationPct = 0.8,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                targetMargin = 0.85,
+            ),
+            buyCooldownAfterSellHighDays = 10,
+        ).copy(derivedSubStrategies = listOf(derived))
+
+        val result = RebalanceStrategyService.run(
+            RebalanceStrategyRequest(
+                fromDate = dates.first().toString(),
+                toDate = dates.last().toString(),
+                portfolio = singleStockPortfolio(),
+                cashflow = null,
+                strategies = listOf(baseStrategy),
+                startingBalance = 10_000.0,
+                zeroMarginInterest = true,
+            )
+        )
+
+        val curves = result.portfolios.last().curves
+        val baseCurve = curves[0]
+        val derivedCurve = curves[1]
+        val baseActions = baseCurve.actionPoints.orEmpty()
+        assertTrue(baseActions.any { it.date == dates[1].toString() && it.type == "SELL_HIGH" })
+        assertFalse(baseActions.any { it.type == "BUY_LOW" }, "base BL should be blocked by SH cooldown")
+        assertApprox(
+            0.85,
+            requireNotNull(derivedCurve.marginPoints)[2].value,
+            eps = 1e-6,
+            label = "derived curve should receive the blocked base BL target intention",
+        )
     }
 }

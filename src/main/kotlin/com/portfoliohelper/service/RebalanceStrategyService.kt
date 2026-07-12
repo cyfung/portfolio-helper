@@ -226,7 +226,12 @@ object RebalanceStrategyService {
 
   private data class DerivedReferenceSeries(
       val margins: List<Double>,
-      val buyLowEvents: List<Boolean>,
+      val marginIntentions: List<List<MarginIntention>>,
+  )
+
+  private data class StrategyRunResult(
+      val curve: CurveResult,
+      val marginIntentions: List<List<MarginIntention>>,
   )
 
   private fun metricReferenceToMargin(value: Double, metric: DerivedMarginReferenceMetric): Double =
@@ -246,8 +251,9 @@ object RebalanceStrategyService {
         referenceUpper = ref(referenceUpper),
         stepBaseTarget =
             if (function == DerivedTargetScaleFunction.HYSTERESIS_STEP ||
-                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS ||
-                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM
+                function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM ||
+                (function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS &&
+                    hysteresisStairsReferenceMode == HysteresisStairsReferenceMode.RESET_REF)
             ) {
               ref(stepBaseTarget)
             } else {
@@ -275,8 +281,8 @@ object RebalanceStrategyService {
       context: RunContext,
   ): PortfolioResult {
     val strategyPortfolio = strategy.portfolioWithRebalanceOverride(request.portfolio)
-    val curve =
-        runStrategy(
+    val baseRun =
+        runStrategyWithIntentions(
             strategyPortfolio,
             strategy,
             request.cashflow,
@@ -287,15 +293,16 @@ object RebalanceStrategyService {
             request.includeActionDiagnostics,
             zeroMarginInterest = request.zeroMarginInterest,
         )
+    val curve = baseRun.curve
     val derivedCurves =
         runDerivedSubStrategies(
             request,
-            strategyPortfolio,
+            request.portfolio,
             strategy,
             context,
             DerivedReferenceSeries(
                 curve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
-                buyLowEventsFor(curve, context.dates),
+                baseRun.marginIntentions,
             ),
         )
     return PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
@@ -333,7 +340,7 @@ object RebalanceStrategyService {
               request.includeActionDiagnostics,
               derived,
               referenceSeries.margins,
-              referenceSeries.buyLowEvents,
+              baseMarginIntentionSeries = referenceSeries.marginIntentions,
               zeroMarginInterest = request.zeroMarginInterest,
           )
         }
@@ -365,8 +372,8 @@ object RebalanceStrategyService {
               rebalanceStrategies = emptyList(),
               includeNoMargin = true,
           )
-      val standaloneCurve =
-          runStrategy(
+      val standaloneRun =
+          runStrategyWithIntentions(
               standalonePortfolio,
               strategy,
               request.cashflow,
@@ -377,21 +384,12 @@ object RebalanceStrategyService {
               includeActionDiagnostics = false,
               zeroMarginInterest = request.zeroMarginInterest,
           )
+      val standaloneCurve = standaloneRun.curve
       DerivedReferenceSeries(
           standaloneCurve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
-          buyLowEventsFor(standaloneCurve, context.dates),
+          standaloneRun.marginIntentions,
       )
     }
-  }
-
-  private fun buyLowEventsFor(curveResult: CurveResult, dates: List<LocalDate>): List<Boolean> {
-    val buyLowDates =
-        curveResult.actionPoints
-            ?.filter { it.type == "BUY_LOW" }
-            ?.map { LocalDate.parse(it.date) }
-            ?.toSet()
-            ?: emptySet()
-    return dates.map { it in buyLowDates }
   }
 
   private fun RebalStrategyConfig.derivedOnlyConfig(derived: DerivedSubStrategyConfig): RebalStrategyConfig =
@@ -668,6 +666,7 @@ object RebalanceStrategyService {
       derivedSubStrategy: DerivedSubStrategyConfig,
       baseMarginSeries: List<Double>,
       baseBuyLowEventSeries: List<Boolean> = emptyList(),
+      baseBuyLowTargetMarginSeries: List<Double?> = emptyList(),
       cashflow: CashflowConfig?,
       seriesMap: Map<String, Map<LocalDate, Double>>,
       dates: List<LocalDate>,
@@ -687,6 +686,10 @@ object RebalanceStrategyService {
           derivedSubStrategy,
           baseMarginSeries,
           baseBuyLowEventSeries,
+          baseMarginIntentionSeries = baseBuyLowTargetMarginSeries.map { targetMargin ->
+            if (targetMargin == null) emptyList()
+            else listOf(MarginIntention(MarginIntentionType.BUY_LOW, targetMargin, triggerMargin = null))
+          },
       )
 
   // Core simulation
@@ -703,8 +706,40 @@ object RebalanceStrategyService {
       derivedSubStrategy: DerivedSubStrategyConfig? = null,
       baseMarginSeries: List<Double>? = null,
       baseBuyLowEventSeries: List<Boolean>? = null,
+      baseMarginIntentionSeries: List<List<MarginIntention>>? = null,
       zeroMarginInterest: Boolean = false,
-  ): CurveResult {
+  ): CurveResult =
+      runStrategyWithIntentions(
+          portfolio,
+          strategy,
+          cashflow,
+          seriesMap,
+          dates,
+          effrx,
+          startingBalance,
+          includeActionDiagnostics,
+          derivedSubStrategy,
+          baseMarginSeries,
+          baseBuyLowEventSeries,
+          baseMarginIntentionSeries,
+          zeroMarginInterest,
+      ).curve
+
+  private fun runStrategyWithIntentions(
+      portfolio: PortfolioConfig,
+      strategy: RebalStrategyConfig,
+      cashflow: CashflowConfig?,
+      seriesMap: Map<String, Map<LocalDate, Double>>,
+      dates: List<LocalDate>,
+      effrx: Map<LocalDate, Double>,
+      startingBalance: Double = 10_000.0,
+      includeActionDiagnostics: Boolean = false,
+      derivedSubStrategy: DerivedSubStrategyConfig? = null,
+      baseMarginSeries: List<Double>? = null,
+      baseBuyLowEventSeries: List<Boolean>? = null,
+      baseMarginIntentionSeries: List<List<MarginIntention>>? = null,
+      zeroMarginInterest: Boolean = false,
+  ): StrategyRunResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
     val marginRebalance =
@@ -745,8 +780,14 @@ object RebalanceStrategyService {
     }
     fun dynamicDerivedTargetAt(recordedIndex: Int): DerivedTargetSignal? {
       val baseMargin = baseMarginAt(recordedIndex) ?: return null
-      val referenceBuyLowEvent =
-          baseBuyLowEventSeries?.getOrNull(recordedIndex.coerceAtLeast(0)) == true
+      val safeIndex = recordedIndex.coerceAtLeast(0)
+      val referenceMarginIntentions =
+          baseMarginIntentionSeries?.getOrNull(safeIndex)
+              ?: if (baseBuyLowEventSeries?.getOrNull(safeIndex) == true) {
+                listOf(MarginIntention(MarginIntentionType.BUY_LOW, targetMargin = null, triggerMargin = null))
+              } else {
+                emptyList()
+              }
       val lookbackMargin =
           derivedTargetRuntime
               ?.momentumLookbackMonths
@@ -760,7 +801,7 @@ object RebalanceStrategyService {
                     )
                 if (lookbackIndex >= 0) baseMarginAt(lookbackIndex) else null
               }
-      return derivedTargetRuntime?.target(baseMargin, referenceBuyLowEvent, lookbackMargin)
+      return derivedTargetRuntime?.target(baseMargin, referenceMarginIntentions, lookbackMargin)
     }
 
     val marginTarget = initialDerivedTargetAt(0) ?: strategy.marginRatio
@@ -915,6 +956,7 @@ object RebalanceStrategyService {
     val values = mutableListOf(startingBalance)
     val marginUtils = mutableListOf(marginTarget)
     val actionPoints = mutableListOf<ActionPoint>()
+    val marginIntentions = dates.map { mutableListOf<MarginIntention>() }
     val baseReferenceValues = mutableListOf(dailyBaseReferenceValue)
     val strategyGrossValues = mutableListOf(account.grossStockValue())
     val strategyEquityValues = mutableListOf(account.equity())
@@ -928,6 +970,16 @@ object RebalanceStrategyService {
     }
 
     if (vmTimingMr != null) recordVmTimingPoint(firstDate)
+
+    fun recordMarginIntention(
+        curIndex: Int,
+        type: MarginIntentionType,
+        cfg: MarginTriggerAction,
+    ) {
+      marginIntentions
+          .getOrNull(curIndex)
+          ?.add(MarginIntention(type, cfg.targetMargin, cfg.deviationPct))
+    }
 
     // Pre-loop: build trigger checkers and executors
     fun DipSurgeConfig.buildResources(): DipSurgeResources {
@@ -1341,7 +1393,9 @@ object RebalanceStrategyService {
       if (normalRebalanceDay) {
         val eq = account.equity()
         if (eq > 0) {
-          val targetTotal = eq * (1.0 + comfortZoneMargin(strategy.portfolioRebalanceUseComfortZone))
+          val targetTotal =
+              if (derivedSubStrategy != null) account.grossStockValue()
+              else eq * (1.0 + comfortZoneMargin(strategy.portfolioRebalanceUseComfortZone))
           performProportionalRebalance(targetTotal, tickers, targetWeights, account)
           actionPoints.add(ActionPoint(curDate.toString(), "PORTFOLIO_REBALANCE"))
         }
@@ -1548,8 +1602,10 @@ object RebalanceStrategyService {
             ?.takeIf { it.deviationPct > 0 || derivedSubStrategy != null }
             ?.let { cfg ->
               val forcedDerivedSell = derivedMaxSell != null
-              if ((forcedDerivedSell || derivedExactTarget || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.SELL, i))) &&
-                  triggerCurrentRatio > cfg.deviationPct
+              val sellIntended = triggerCurrentRatio > cfg.deviationPct
+              if (sellIntended) recordMarginIntention(i, MarginIntentionType.SELL_HIGH, cfg)
+              if (sellIntended &&
+                  (forcedDerivedSell || derivedExactTarget || (!derivedTimeoutBlocked && !globalCooldown.isBlocked(Direction.SELL, i)))
               ) {
                 val targetCashBalance = -account.equity() * cfg.targetMargin
                 if (account.cashBalance() < targetCashBalance) {
@@ -1600,9 +1656,14 @@ object RebalanceStrategyService {
         effectiveBuyLow
             ?.takeIf { it.deviationPct > 0 || derivedSubStrategy != null }
             ?.let { cfg ->
+              val drawdownBuyLowIntended =
+                  activeDrawdownBuyLowTier != null && drawdownBuyLowMomentumAllowed
+              val buyTriggered = triggerCurrentRatio < cfg.deviationPct
+              val buyIntended = drawdownBuyLowIntended || (drawdownBuyLowMomentumAllowed && buyTriggered)
+              if (buyIntended) recordMarginIntention(i, MarginIntentionType.BUY_LOW, cfg)
               if (drawdownBuyLowMomentumAllowed &&
-                  (derivedExactTarget || (!derivedTimeoutBlocked && !buyCooldownBlocked)) &&
-                  triggerCurrentRatio < cfg.deviationPct
+                  buyTriggered &&
+                  (derivedExactTarget || (!derivedTimeoutBlocked && !buyCooldownBlocked))
               ) {
                 val targetCashBalance = -account.equity() * cfg.targetMargin
                 if (account.cashBalance() > targetCashBalance) {
@@ -1673,13 +1734,16 @@ object RebalanceStrategyService {
         if (marginTarget > 0.0) dates.mapIndexed { i, d -> DataPoint(d.toString(), marginUtils[i]) }
         else null
     val stats = BacktestService.computeBacktestStats(values, dates, effrx)
-    return CurveResult(
-        strategy.label,
-        points,
-        stats,
-        marginPoints,
-        actionPoints.takeIf { it.isNotEmpty() },
-        vmTimingPoints.takeIf { it.isNotEmpty() },
+    return StrategyRunResult(
+        CurveResult(
+            strategy.label,
+            points,
+            stats,
+            marginPoints,
+            actionPoints.takeIf { it.isNotEmpty() },
+            vmTimingPoints.takeIf { it.isNotEmpty() },
+        ),
+        marginIntentions.map { it.toList() },
     )
   }
 
@@ -1887,6 +1951,14 @@ private fun monthBucket(date: LocalDate, monthsPerBucket: Int): Int =
 
 // Pre-loop resources
 
+private enum class MarginIntentionType { BUY_LOW, SELL_HIGH }
+
+private data class MarginIntention(
+    val type: MarginIntentionType,
+    val targetMargin: Double?,
+    val triggerMargin: Double?,
+)
+
 private data class DerivedTargetSignal(
     val targetMargin: Double?,
     val adjustmentPaused: Boolean = false,
@@ -1904,7 +1976,7 @@ private sealed interface DerivedTargetRuntime {
 
   fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean = false,
+      referenceMarginIntentions: List<MarginIntention> = emptyList(),
       momentumLookbackMargin: Double? = null,
   ): DerivedTargetSignal
 
@@ -1918,7 +1990,14 @@ private sealed interface DerivedTargetRuntime {
           DerivedTargetScaleFunction.LINEAR -> LinearDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.STEP -> StepDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STEP -> HysteresisStepDerivedTargetRuntime(scale)
-          DerivedTargetScaleFunction.HYSTERESIS_STAIRS -> HysteresisStairsDerivedTargetRuntime(scale)
+          DerivedTargetScaleFunction.HYSTERESIS_STAIRS ->
+              if (scale.hysteresisStairsReferenceMode == HysteresisStairsReferenceMode.BUY_LOW_INTENTION) {
+                HysteresisStairsBuyLowIntentionDerivedTargetRuntime(scale)
+              } else if (scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM) {
+                HysteresisStairsMomentumDerivedTargetRuntime(scale)
+              } else {
+                HysteresisStairsDerivedTargetRuntime(scale)
+              }
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM -> HysteresisStairsMomentumDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET -> HysteresisStairsRefBuyLowResetDerivedTargetRuntime(scale)
         }
@@ -1948,7 +2027,7 @@ private abstract class InterpolatedDerivedTargetRuntime(
 
   override fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean,
+      referenceMarginIntentions: List<MarginIntention>,
       momentumLookbackMargin: Double?,
   ): DerivedTargetSignal {
     val lowRef = refLow(baseMargin)
@@ -1994,7 +2073,7 @@ private class StepDerivedTargetRuntime(
 ) : DerivedTargetRuntimeBase(scale) {
   override fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean,
+      referenceMarginIntentions: List<MarginIntention>,
       momentumLookbackMargin: Double?,
   ): DerivedTargetSignal {
     var target = scale.stepBaseTarget
@@ -2020,7 +2099,7 @@ private class HysteresisStepDerivedTargetRuntime(
 
   override fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean,
+      referenceMarginIntentions: List<MarginIntention>,
       momentumLookbackMargin: Double?,
   ): DerivedTargetSignal {
     if (stage != Stage.TARGET_HIGH && baseMargin > resetThreshold) {
@@ -2099,7 +2178,7 @@ private class HysteresisStairsDerivedTargetRuntime(
 
   override fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean,
+      referenceMarginIntentions: List<MarginIntention>,
       momentumLookbackMargin: Double?,
   ): DerivedTargetSignal {
     if (nextStairIndex > 0 && baseMargin > resetThreshold) {
@@ -2127,6 +2206,144 @@ private class HysteresisStairsDerivedTargetRuntime(
   }
 }
 
+private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
+    scale: DerivedTargetScaleConfig,
+) : DerivedTargetRuntimeBase(scale) {
+  private data class Stair(val referenceMargin: Double, val targetMargin: Double)
+
+  override val usesPostPriceMarginForTriggers: Boolean = true
+  override val momentumLookbackMonths: Int? =
+      if (scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM) {
+        scale.momentumLookbackMonths.coerceAtLeast(1)
+      } else {
+        null
+      }
+
+  private val stairs =
+      scale.steps
+          .filter { it.referenceMargin.isFinite() && it.targetMargin.isFinite() }
+          .sortedByDescending { it.referenceMargin }
+          .fold(emptyList<Stair>()) { acc, step ->
+            val stair = Stair(step.referenceMargin, step.targetMargin.coerceAtLeast(0.0))
+            if (acc.lastOrNull()?.referenceMargin?.let { stair.referenceMargin < it } != false) acc + stair else acc
+          }
+  private var stageIndex = 0
+  private var resetTarget: Double? = null
+  private var currentTarget: Double? = null
+  private var armedStairIndex: Int? = null
+  private var armedAfterExistingMomentum = false
+  private var previousMomentumConfirmed = false
+
+  override fun initialTarget(baseMargin: Double): Double = baseMargin.coerceAtLeast(0.0)
+
+  override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
+
+  override fun target(
+      baseMargin: Double,
+      referenceMarginIntentions: List<MarginIntention>,
+      momentumLookbackMargin: Double?,
+  ): DerivedTargetSignal {
+    val momentumConfirmed =
+        momentumLookbackMargin != null &&
+            momentumLookbackMargin.isFinite() &&
+            baseMargin < momentumLookbackMargin
+    fun recordMomentum(signal: DerivedTargetSignal): DerivedTargetSignal {
+      previousMomentumConfirmed = momentumConfirmed
+      return signal
+    }
+
+    val referenceBuyLowIntention =
+        referenceMarginIntentions.lastOrNull { it.type == MarginIntentionType.BUY_LOW }
+    if (referenceBuyLowIntention != null) {
+      armedStairIndex = null
+      armedAfterExistingMomentum = false
+      val intentionTarget = (referenceBuyLowIntention.targetMargin ?: baseMargin).coerceAtLeast(0.0)
+      val intentionStage = stageForTarget(intentionTarget)
+      if (intentionStage < stageIndex) {
+        val heldTarget = currentTarget ?: currentStageTarget() ?: intentionTarget
+        stageIndex = intentionStage
+        if (stageIndex == 0) {
+          currentTarget = null
+          resetTarget = maxOf(resetTarget ?: intentionTarget, intentionTarget)
+          return recordMomentum(DerivedTargetSignal(resetTarget))
+        }
+
+        resetTarget = null
+        currentTarget = maxOf(heldTarget, intentionTarget)
+        return recordMomentum(DerivedTargetSignal(currentTarget))
+      }
+
+      if (stageIndex == 0) {
+        currentTarget = null
+        resetTarget = maxOf(resetTarget ?: baseMargin.coerceAtLeast(0.0), intentionTarget)
+        return recordMomentum(DerivedTargetSignal(resetTarget))
+      }
+
+      if (intentionStage == stageIndex) {
+        val heldTarget = currentTarget ?: currentStageTarget() ?: intentionTarget
+        val raisedTarget = maxOf(heldTarget, intentionTarget)
+        currentTarget = raisedTarget
+        return recordMomentum(if (raisedTarget > heldTarget) {
+          DerivedTargetSignal(raisedTarget)
+        } else {
+          DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+        })
+      }
+
+      return recordMomentum(DerivedTargetSignal(targetMargin = null, adjustmentPaused = true))
+    }
+
+    val crossedIndex =
+        stairs
+            .withIndex()
+            .drop(stageIndex)
+            .lastOrNull { (_, stair) -> baseMargin < stair.referenceMargin }
+            ?.index
+    if (crossedIndex != null) {
+      if (scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM) {
+        val currentArmedIndex = armedStairIndex
+        if (currentArmedIndex == null || crossedIndex > currentArmedIndex) {
+          armedStairIndex = crossedIndex
+          armedAfterExistingMomentum = previousMomentumConfirmed
+        }
+      } else {
+        stageIndex = crossedIndex + 1
+        resetTarget = null
+        currentTarget = stairs[crossedIndex].targetMargin
+        return recordMomentum(DerivedTargetSignal(currentTarget, forceExactTarget = true))
+      }
+    }
+
+    val armedIndex = armedStairIndex
+    if (armedIndex != null && momentumConfirmed && !armedAfterExistingMomentum) {
+      armedStairIndex = null
+      armedAfterExistingMomentum = false
+      stageIndex = armedIndex + 1
+      resetTarget = null
+      currentTarget = stairs[armedIndex].targetMargin
+      return recordMomentum(DerivedTargetSignal(currentTarget, forceExactTarget = true))
+    }
+    if (!momentumConfirmed) armedAfterExistingMomentum = false
+
+    return recordMomentum(if (armedIndex != null) {
+      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+    } else if (stageIndex == 0) {
+      currentTarget = null
+      DerivedTargetSignal(resetTarget ?: baseMargin.coerceAtLeast(0.0))
+    } else {
+      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+    })
+  }
+
+  private fun currentStageTarget(): Double? =
+      if (stageIndex > 0) stairs.getOrNull(stageIndex - 1)?.targetMargin else resetTarget
+
+  private fun stageForTarget(target: Double): Int {
+    val crossedIndex = stairs.indexOfLast { target < it.targetMargin }
+    return if (crossedIndex < 0) 0 else crossedIndex + 1
+  }
+}
+
 private class HysteresisStairsMomentumDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
 ) : DerivedTargetRuntimeBase(scale) {
@@ -2139,7 +2356,10 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
       scale.steps
           .filter { it.referenceMargin.isFinite() && it.targetMargin.isFinite() }
           .sortedByDescending { it.referenceMargin }
-          .map { Stair(it.referenceMargin, it.targetMargin.coerceAtLeast(0.0)) }
+          .fold(emptyList<Stair>()) { acc, step ->
+            val stair = Stair(step.referenceMargin, step.targetMargin.coerceAtLeast(0.0))
+            if (acc.lastOrNull()?.referenceMargin?.let { stair.referenceMargin < it } != false) acc + stair else acc
+          }
   private val highestReference = stairs.firstOrNull()?.referenceMargin ?: Double.NEGATIVE_INFINITY
   private val resetThreshold =
       if (scale.stepBaseTarget.isFinite() && scale.stepBaseTarget > highestReference) {
@@ -2159,7 +2379,7 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
 
   override fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean,
+      referenceMarginIntentions: List<MarginIntention>,
       momentumLookbackMargin: Double?,
   ): DerivedTargetSignal {
     val momentumConfirmed =
@@ -2228,12 +2448,17 @@ private class HysteresisStairsRefBuyLowResetDerivedTargetRuntime(
 
   override fun target(
       baseMargin: Double,
-      referenceBuyLowEvent: Boolean,
+      referenceMarginIntentions: List<MarginIntention>,
       momentumLookbackMargin: Double?,
   ): DerivedTargetSignal {
-    if (nextStairIndex > 0 && referenceBuyLowEvent) {
+    val referenceBuyLowIntention =
+        referenceMarginIntentions.lastOrNull { it.type == MarginIntentionType.BUY_LOW }
+    if (nextStairIndex > 0 && referenceBuyLowIntention != null) {
       nextStairIndex = 0
-      return DerivedTargetSignal(baseMargin.coerceAtLeast(0.0), forceExactTarget = true)
+      return DerivedTargetSignal(
+          (referenceBuyLowIntention.targetMargin ?: baseMargin).coerceAtLeast(0.0),
+          forceExactTarget = true,
+      )
     }
 
     val crossedIndex =

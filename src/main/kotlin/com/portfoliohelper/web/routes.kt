@@ -494,11 +494,11 @@ private fun parseVmTimingMrConfig(obj: JsonObject): VmTimingMrConfig? {
     )
 }
 
-internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleConfig =
-    DerivedTargetScaleConfig(
-        function = when (obj["function"]?.jsonPrimitive?.content) {
+internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleConfig {
+    val rawFunction = obj["function"]?.jsonPrimitive?.content
+    val function = when (rawFunction) {
             "HYSTERESIS_STAIRS_REF_BL_RESET" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET
-            "HYSTERESIS_STAIRS_MOMENTUM" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM
+            "HYSTERESIS_STAIRS_MOMENTUM" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
             "HYSTERESIS_STAIRS" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
             "HYSTERESIS_STEP" -> DerivedTargetScaleFunction.HYSTERESIS_STEP
             "STEP" -> DerivedTargetScaleFunction.STEP
@@ -506,7 +506,9 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
             "ADAPTIVE_LOW_SIGMOID" -> DerivedTargetScaleFunction.ADAPTIVE_LOW_SIGMOID
             "SIGMOID" -> DerivedTargetScaleFunction.SIGMOID
             else -> DerivedTargetScaleFunction.SIGMOID
-        },
+        }
+    return DerivedTargetScaleConfig(
+        function = function,
         referenceLower = obj["referenceLower"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
         referenceUpper = obj["referenceUpper"]?.jsonPrimitive?.doubleOrNull ?: 1.00,
         targetLower = obj["targetLower"]?.jsonPrimitive?.doubleOrNull ?: 0.30,
@@ -514,6 +516,18 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
         sigmoidSteepness = obj["sigmoidSteepness"]?.jsonPrimitive?.doubleOrNull ?: 8.0,
         stepBaseTarget = obj["stepBaseTarget"]?.jsonPrimitive?.doubleOrNull ?: 0.50,
         momentumLookbackMonths = (obj["momentumLookbackMonths"]?.jsonPrimitive?.intOrNull ?: 12).coerceAtLeast(1),
+        hysteresisStairsReferenceMode = when (obj["hysteresisStairsReferenceMode"]?.jsonPrimitive?.contentOrNull) {
+            "BUY_LOW_INTENTION" -> HysteresisStairsReferenceMode.BUY_LOW_INTENTION
+            else -> HysteresisStairsReferenceMode.RESET_REF
+        },
+        hysteresisStairsFallMode = when (obj["hysteresisStairsFallMode"]?.jsonPrimitive?.contentOrNull) {
+            "MOMENTUM" -> HysteresisStairsFallMode.MOMENTUM
+            else -> if (rawFunction == "HYSTERESIS_STAIRS_MOMENTUM") {
+                HysteresisStairsFallMode.MOMENTUM
+            } else {
+                HysteresisStairsFallMode.DIRECT
+            }
+        },
         steps = (obj["steps"] as? JsonArray)
             ?.mapNotNull { it as? JsonObject }
             ?.map { stepObj ->
@@ -525,6 +539,7 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
             ?.takeIf { it.isNotEmpty() }
             ?: listOf(DerivedTargetStepConfig()),
     )
+}
 
 private fun parseDerivedSubStrategies(el: JsonElement?): List<DerivedSubStrategyConfig> =
     (el as? JsonArray)

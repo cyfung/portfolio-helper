@@ -1,6 +1,8 @@
 package com.portfoliohelper.web
 
 import com.portfoliohelper.service.DerivedTargetScaleFunction
+import com.portfoliohelper.service.HysteresisStairsFallMode
+import com.portfoliohelper.service.HysteresisStairsReferenceMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -248,16 +250,18 @@ class RebalanceStrategyRoutesTest {
                 put("function", JsonPrimitive("HYSTERESIS_STAIRS"))
                 put("targetUpper", JsonPrimitive(1.00))
                 put("stepBaseTarget", JsonPrimitive(0.95))
+                put("hysteresisStairsReferenceMode", JsonPrimitive("BUY_LOW_INTENTION"))
             }
         )
 
         assertEquals(DerivedTargetScaleFunction.HYSTERESIS_STAIRS, config.function)
         assertEquals(1.00, config.targetUpper)
         assertEquals(0.95, config.stepBaseTarget)
+        assertEquals(HysteresisStairsReferenceMode.BUY_LOW_INTENTION, config.hysteresisStairsReferenceMode)
     }
 
     @Test
-    fun parseDerivedTargetScaleConfigKeepsHysteresisStairsMomentumFunction() {
+    fun parseDerivedTargetScaleConfigMigratesHysteresisStairsMomentumFunction() {
         val config = parseDerivedTargetScaleConfig(
             buildJsonObject {
                 put("function", JsonPrimitive("HYSTERESIS_STAIRS_MOMENTUM"))
@@ -265,7 +269,8 @@ class RebalanceStrategyRoutesTest {
             }
         )
 
-        assertEquals(DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM, config.function)
+        assertEquals(DerivedTargetScaleFunction.HYSTERESIS_STAIRS, config.function)
+        assertEquals(HysteresisStairsFallMode.MOMENTUM, config.hysteresisStairsFallMode)
         assertEquals(3, config.momentumLookbackMonths)
     }
 

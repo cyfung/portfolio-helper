@@ -41,6 +41,10 @@ enum class DerivedTargetScaleFunction {
     HYSTERESIS_STAIRS_REF_BL_RESET,
 }
 
+enum class HysteresisStairsReferenceMode { RESET_REF, BUY_LOW_INTENTION }
+
+enum class HysteresisStairsFallMode { DIRECT, MOMENTUM }
+
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 
 sealed class DipSurgeKey {
@@ -209,6 +213,8 @@ data class DerivedTargetScaleConfig(
     val sigmoidSteepness: Double = 8.0,
     val stepBaseTarget: Double = 0.50,
     val momentumLookbackMonths: Int = 12,
+    val hysteresisStairsReferenceMode: HysteresisStairsReferenceMode = HysteresisStairsReferenceMode.RESET_REF,
+    val hysteresisStairsFallMode: HysteresisStairsFallMode = HysteresisStairsFallMode.DIRECT,
     val steps: List<DerivedTargetStepConfig> = listOf(DerivedTargetStepConfig()),
 )
 

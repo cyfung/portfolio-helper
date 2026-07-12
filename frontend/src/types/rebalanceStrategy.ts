@@ -95,6 +95,8 @@ export interface VmTimingMrState {
 }
 
 export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_MOMENTUM' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
+export type HysteresisStairsReferenceMode = 'RESET_REF' | 'BUY_LOW_INTENTION'
+export type HysteresisStairsFallMode = 'DIRECT' | 'MOMENTUM'
 
 export interface DerivedTargetStepState {
   id: string
@@ -111,6 +113,8 @@ export interface DerivedTargetScaleState {
   sigmoidSteepness: string
   stepBaseTarget: string
   momentumLookbackMonths: string
+  hysteresisStairsReferenceMode: HysteresisStairsReferenceMode
+  hysteresisStairsFallMode: HysteresisStairsFallMode
   steps: DerivedTargetStepState[]
 }
 
@@ -323,6 +327,8 @@ export function emptyDerivedTargetScale(): DerivedTargetScaleState {
     sigmoidSteepness: '8',
     stepBaseTarget: '50',
     momentumLookbackMonths: '12',
+    hysteresisStairsReferenceMode: 'RESET_REF',
+    hysteresisStairsFallMode: 'DIRECT',
     steps: [emptyDerivedTargetStep(0)],
   }
 }
@@ -599,10 +605,8 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
         : (
           item.scale?.function === 'HYSTERESIS_STEP'
             ? 'HYSTERESIS_STEP'
-            : item.scale?.function === 'HYSTERESIS_STAIRS'
+            : item.scale?.function === 'HYSTERESIS_STAIRS' || item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
             ? 'HYSTERESIS_STAIRS'
-            : item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
-            ? 'HYSTERESIS_STAIRS_MOMENTUM'
             : item.scale?.function === 'HYSTERESIS_STAIRS_REF_BL_RESET'
             ? 'HYSTERESIS_STAIRS_REF_BL_RESET'
             : item.scale?.function === 'LINEAR'
@@ -616,6 +620,12 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
           id: step.id ?? newId(),
         }))
         : [emptyDerivedTargetStep(0)],
+      hysteresisStairsReferenceMode: item.scale?.hysteresisStairsReferenceMode === 'BUY_LOW_INTENTION'
+        ? 'BUY_LOW_INTENTION'
+        : 'RESET_REF',
+      hysteresisStairsFallMode: item.scale?.hysteresisStairsFallMode === 'MOMENTUM' || item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
+        ? 'MOMENTUM'
+        : 'DIRECT',
     },
     absoluteDeviationPct: item.absoluteDeviationPct ?? '5',
     buyDeviationPct: item.buyDeviationPct ?? item.absoluteDeviationPct ?? '5',
@@ -788,6 +798,12 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
         momentumLookbackMonths: Number.isFinite(momentumLookbackMonths) && momentumLookbackMonths > 0
           ? momentumLookbackMonths
           : 12,
+        hysteresisStairsReferenceMode: scale.hysteresisStairsReferenceMode === 'BUY_LOW_INTENTION'
+          ? 'BUY_LOW_INTENTION'
+          : 'RESET_REF',
+        hysteresisStairsFallMode: scale.hysteresisStairsFallMode === 'MOMENTUM'
+          ? 'MOMENTUM'
+          : 'DIRECT',
         steps: (scale.steps?.length ? scale.steps : [emptyDerivedTargetStep(0)]).map(serializeStep),
       },
       absoluteDeviationPct: pctAllowZero(d.absoluteDeviationPct, 5),
