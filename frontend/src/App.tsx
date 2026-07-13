@@ -16,6 +16,7 @@ const MonteCarloPage            = lazy(() => import('@/pages/MonteCarloPage'))
 const RebalanceStrategyPage     = lazy(() => import('@/pages/RebalanceStrategyPage'))
 const MarketTimingPage          = lazy(() => import('@/pages/MarketTimingPage'))
 const ConfigPage                = lazy(() => import('@/pages/ConfigPage'))
+const TickerEditPage            = lazy(() => import('@/pages/TickerEditPage'))
 
 export default function App() {
   // Single global SSE connection for the whole app lifetime
@@ -57,6 +58,7 @@ export default function App() {
       <Route path="/montecarlo" element={<MonteCarloPage />} />
       <Route path="/rebalance-strategy" element={<RebalanceStrategyPage />} />
       <Route path="/market-timing" element={<MarketTimingPage />} />
+      <Route path="/ticker-edit" element={<TickerEditPage />} />
       <Route path="/config" element={<ConfigPage />} />
     </Routes>
     </Suspense>

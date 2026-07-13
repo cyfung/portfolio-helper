@@ -1079,7 +1079,20 @@ fun Application.configureRouting() {
                 ?.trim()
                 ?.uppercase()
                 ?.takeIf { it.isNotBlank() }
-                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            if (symbol == null) {
+                val configs = transaction {
+                    StockTickersTable.selectAll()
+                        .orderBy(StockTickersTable.symbol to SortOrder.ASC)
+                        .map {
+                            TickerConfigDto(
+                                it[StockTickersTable.symbol],
+                                it[StockTickersTable.letf],
+                                it[StockTickersTable.groups]
+                            )
+                        }
+                }
+                return@get call.respondText(appJson.encodeToString(configs), ContentType.Application.Json)
+            }
             val config = transaction {
                 StockTickersTable.selectAll()
                     .where { StockTickersTable.symbol eq symbol }
@@ -1100,15 +1113,37 @@ fun Application.configureRouting() {
                 val letf = body["letf"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                 val groups = body["groups"]?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                 transaction {
-                    StockTickersTable.upsert {
-                        it[StockTickersTable.symbol] = symbol
-                        it[StockTickersTable.letf] = letf
-                        it[StockTickersTable.groups] = groups
+                    if (letf.isBlank() && groups.isBlank()) {
+                        StockTickersTable.deleteWhere { StockTickersTable.symbol eq symbol }
+                    } else {
+                        StockTickersTable.upsert {
+                            it[StockTickersTable.symbol] = symbol
+                            it[StockTickersTable.letf] = letf
+                            it[StockTickersTable.groups] = groups
+                        }
                     }
                 }
                 PortfolioMasterService.refreshAllStocks()
                 MarketDataCoordinator.refresh()
                 call.respondText(appJson.encodeToString(TickerConfigDto(symbol, letf, groups)), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        delete("/api/ticker-config") {
+            try {
+                val symbol = call.request.queryParameters["symbol"]
+                    ?.trim()
+                    ?.uppercase()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                transaction {
+                    StockTickersTable.deleteWhere { StockTickersTable.symbol eq symbol }
+                }
+                PortfolioMasterService.refreshAllStocks()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
             } catch (e: Exception) {
                 call.respondApiError(e)
             }

@@ -17,8 +17,9 @@ const ALL_SECTIONS = [
   { href: '/portfolio/', label: 'Portfolio Viewer',   icon: 'viewer',    group: null         },
   { href: '/analyst/',  label: 'Portfolio Analyst',   icon: 'analyst',   group: null         },
   { href: '/trades/',   label: 'IBKR Trades',         icon: 'trades',    group: null         },
-  { href: '/loan',      label: 'Loan Calculator',     icon: 'loan',      group: 'tools'      },
+  { href: '/ticker-edit', label: 'Ticker Editor',     icon: 'tickerEdit', group: 'tools'     },
   { href: '/tax-drag',  label: 'Tax Drag Calculator', icon: 'taxDrag',   group: 'tools'      },
+  { href: '/loan',      label: 'Loan Calculator',     icon: 'loan',      group: 'tools'      },
   { href: '/portfolio-builder',   label: 'Portfolio Builder',   icon: 'builder',   group: 'strategy' },
   { href: '/backtest',            label: 'Portfolio Backtest',  icon: 'backtest',  group: 'strategy' },
   { href: '/montecarlo',          label: 'Monte Carlo',         icon: 'monte',     group: 'strategy' },
@@ -38,7 +39,7 @@ const NAV_GROUPS: Array<{ id: NavGroupId; label: string; storageKey: string }> =
 const DEFAULT_SECTION_BY_GROUP: Record<NavGroupId, NavSection['href']> = {
   portfolio: '/portfolio/',
   strategy: '/portfolio-builder',
-  tools: '/loan',
+  tools: '/ticker-edit',
 }
 
 function sectionGroupId(section: NavSection): NavGroupId {
@@ -57,6 +58,7 @@ function SectionSvg({ name }: { name?: string }) {
     case 'trades':    return <svg {...p}><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/><path d="M7 4v16"/><path d="M15 4v16"/></svg>
     case 'loan':      return <svg {...p}><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2"/></svg>
     case 'taxDrag':   return <svg {...p}><path d="M4 19h16"/><path d="M7 16l4-4 3 2 4-7"/><path d="M17 7h2v2"/><path d="M7 5v4"/><path d="M5 7h4"/></svg>
+    case 'tickerEdit': return <svg {...p}><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><path d="M7 4v16"/><path d="M15 4v8"/><path d="M17 19l4-4"/><path d="M19 13l2 2-4 4-2 .5.5-2 4-4z"/></svg>
     case 'builder':   return <svg {...p}><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-7h6v7"/></svg>
     case 'backtest':  return <svg {...p}><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/><path d="M12 7v5l3 2"/></svg>
     case 'monte':     return <svg {...p}><circle cx="6.5" cy="6.5" r="1.2" fill="currentColor"/><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="6.5" cy="17.5" r="1.2" fill="currentColor"/><circle cx="17.5" cy="17.5" r="1.2" fill="currentColor"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
