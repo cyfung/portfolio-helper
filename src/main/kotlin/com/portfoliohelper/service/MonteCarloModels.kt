@@ -18,6 +18,33 @@ data class MonteCarloRequest(
 )
 
 @Serializable
+data class MonteCarloProgressDetail(
+    val label: String,
+    val value: String
+)
+
+@Serializable
+data class MonteCarloProgress(
+    val phase: String,
+    val phaseLabel: String,
+    val action: String,
+    val completed: Int = 0,
+    val total: Int = 0,
+    val currentStep: Int = 0,
+    val totalSteps: Int = 0,
+    val details: List<MonteCarloProgressDetail> = emptyList(),
+    val done: Boolean = false
+) {
+    companion object {
+        fun idle() = MonteCarloProgress(
+            phase = "idle",
+            phaseLabel = "Idle",
+            action = "Waiting to run",
+        )
+    }
+}
+
+@Serializable
 data class MonteCarloPercentilePath(
     val percentile: Int,       // 5, 10, 25, 50, 75, 90, 95
     val points: List<Double>,  // full-resolution values, starts at 10 000

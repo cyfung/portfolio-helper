@@ -64,6 +64,43 @@ const MC_COLS = [
   { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
 ]
 
+interface McRunProgressDetail {
+  label: string
+  value: string | number
+}
+
+interface McRunProgress {
+  phase: string
+  phaseLabel: string
+  action: string
+  completed: number
+  total: number
+  currentStep: number
+  totalSteps: number
+  details: McRunProgressDetail[]
+  done?: boolean
+}
+
+function normalizeRunProgress(raw: any): McRunProgress {
+  const completed = Number(raw?.completed ?? 0)
+  const total = Number(raw?.total ?? 0)
+  return {
+    phase: String(raw?.phase ?? 'simulate'),
+    phaseLabel: String(raw?.phaseLabel ?? 'Running simulations'),
+    action: String(raw?.action ?? 'Computing simulation iterations'),
+    completed: Number.isFinite(completed) ? completed : 0,
+    total: Number.isFinite(total) ? total : 0,
+    currentStep: Number(raw?.currentStep ?? (total > 0 ? 4 : 0)) || 0,
+    totalSteps: Number(raw?.totalSteps ?? 7) || 7,
+    details: Array.isArray(raw?.details) ? raw.details : [],
+    done: !!raw?.done,
+  }
+}
+
+function progressValue(value: string | number) {
+  return typeof value === 'number' ? value.toLocaleString() : value
+}
+
 function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
   if (warnings.length === 0) return results
   return {
@@ -93,7 +130,7 @@ export default function MonteCarloPage() {
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
   const [running, setRunning]         = useState(false)
-  const [progress, setProgress]       = useState('')
+  const [runProgress, setRunProgress] = useState<McRunProgress | null>(null)
   const [error, setError]             = useState('')
   const [results, setResults]         = useState<MonteCarloResults | null>(null)
   const [lastSeed, setLastSeed]       = useState<number | null>(null)
@@ -104,6 +141,7 @@ export default function MonteCarloPage() {
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
+  const progressClearRef  = useRef<number | null>(null)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
   const dateRangeError = validateDateRange(fromDate, toDate)
   const selectedTickerMappingSet = useMemo(
@@ -128,6 +166,11 @@ export default function MonteCarloPage() {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
     window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
     return () => window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+  }, [])
+
+  useEffect(() => () => {
+    if (pollRef.current != null) window.clearInterval(pollRef.current)
+    if (progressClearRef.current != null) window.clearTimeout(progressClearRef.current)
   }, [])
 
   // Restore settings on mount
@@ -209,8 +252,33 @@ export default function MonteCarloPage() {
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
+  function setLocalProgress(phaseLabel: string, action: string, details: McRunProgressDetail[] = [], currentStep = 1) {
+    setRunProgress({
+      phase: 'client',
+      phaseLabel,
+      action,
+      completed: 0,
+      total: 0,
+      currentStep,
+      totalSteps: 7,
+      details,
+    })
+  }
+
+  function clearRunProgressSoon() {
+    if (progressClearRef.current != null) window.clearTimeout(progressClearRef.current)
+    progressClearRef.current = window.setTimeout(() => {
+      setRunProgress(null)
+      progressClearRef.current = null
+    }, 2500)
+  }
+
   async function doRun(seed: number | null = null) {
     setError('')
+    if (progressClearRef.current != null) {
+      window.clearTimeout(progressClearRef.current)
+      progressClearRef.current = null
+    }
     if (dateRangeError) {
       setError(dateRangeError)
       return
@@ -218,10 +286,21 @@ export default function MonteCarloPage() {
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     const settingsPortfolios = runBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i))
+    const ns = parseInt(numSims, 10) || 500
+    setRunning(true)
+    setLocalProgress('Preparing request', 'Resolving saved portfolios and ticker mappings', [
+      { label: 'Portfolio blocks', value: runBlocks.length },
+      { label: 'Requested simulations', value: ns },
+      { label: 'Simulated years', value: parseInt(simYears, 10) || 20 },
+    ])
     let portfolios
     let mappingWarnings: string[]
     try {
       const savedPortfolios = await fetchSavedPortfolios()
+      setLocalProgress('Preparing request', 'Applying ticker mappings and filtering empty blocks', [
+        { label: 'Saved portfolios loaded', value: savedPortfolios.length },
+        { label: 'Portfolio blocks', value: runBlocks.length },
+      ])
       const mappedPortfolios = runBlocks
         .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios))
         .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
@@ -231,27 +310,34 @@ export default function MonteCarloPage() {
         .filter(p => p.tickers.length > 0)
     } catch (e: any) {
       setError(e.message || 'Unable to resolve saved portfolio references.')
+      setRunning(false)
+      setRunProgress(null)
       return
     }
 
     if (portfolios.length === 0) {
       setError('Add at least one portfolio block with a positive net weight.')
+      setRunning(false)
+      setRunProgress(null)
       return
     }
     if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && (p.rebalanceStrategies?.length ?? 0) === 0)) {
       setError('Each portfolio must have Unlevered enabled, at least one margin row, or at least one rebalance strategy.')
+      setRunning(false)
+      setRunProgress(null)
       return
     }
 
-    const ns = parseInt(numSims, 10) || 500
-    setRunning(true)
-    setProgress(`0/${ns}`)
+    setLocalProgress('Submitting request', 'Sending simulation request to the server', [
+      { label: 'Runnable portfolios', value: portfolios.length },
+      { label: 'Ticker rows', value: portfolios.reduce((sum, p) => sum + p.tickers.length, 0) },
+      { label: 'Requested simulations', value: ns },
+    ], 2)
 
     pollRef.current = window.setInterval(async () => {
       try {
         const r = await fetch('/api/montecarlo/progress')
-        const p = await r.json()
-        setProgress(`${p.completed}/${p.total}`)
+        setRunProgress(normalizeRunProgress(await r.json()))
       } catch (_) {}
     }, 300)
 
@@ -276,17 +362,38 @@ export default function MonteCarloPage() {
         body: JSON.stringify(reqBody),
       })
       const data: MonteCarloResults = addResultWarnings(await res.json(), mappingWarnings)
-      if (!res.ok || data.error) { setError(data.error || `Server error ${res.status}`); return }
+      if (!res.ok || data.error) {
+        setError(data.error || `Server error ${res.status}`)
+        setRunProgress(null)
+        return
+      }
       if (data.seed != null) setLastSeed(data.seed)
       setSelected(new Set())
       setResults(data)
+      setRunProgress({
+        phase: 'complete',
+        phaseLabel: 'Complete',
+        action: 'Simulation results are ready',
+        completed: data.numSimulations,
+        total: data.numSimulations,
+        currentStep: 7,
+        totalSteps: 7,
+        done: true,
+        details: [
+          { label: 'Portfolios', value: data.portfolios.length },
+          { label: 'Curves', value: data.portfolios.reduce((sum, p) => sum + p.curves.length, 0) },
+          { label: 'Simulations', value: data.numSimulations },
+          { label: 'Seed', value: data.seed },
+        ],
+      })
+      clearRunProgressSoon()
     } catch (e: any) {
       setError('Request failed: ' + e.message)
+      setRunProgress(null)
     } finally {
-      clearInterval(pollRef.current!)
+      if (pollRef.current != null) clearInterval(pollRef.current)
       pollRef.current = null
       setRunning(false)
-      setProgress('')
     }
   }
 
@@ -416,6 +523,9 @@ export default function MonteCarloPage() {
   const { isDark, gridColor, textColor } = theme
   const makeTooltip = (valueFmt: (v: number) => string, labelFmt?: (l: any) => string) =>
     makeRechartsTooltip(theme, valueFmt, labelFmt)
+  const runProgressPercent = runProgress && runProgress.total > 0
+    ? Math.min(100, Math.max(0, (runProgress.completed / runProgress.total) * 100))
+    : null
 
   return (
     <div className="container">
@@ -491,10 +601,42 @@ export default function MonteCarloPage() {
               Rerun (same seed)
             </button>
           )}
-          {progress && (
-            <span style={{ marginLeft: '0.25rem', fontSize: '0.85em', opacity: 0.7 }}>{progress}</span>
-          )}
         </div>
+
+        {runProgress && (
+          <div className={`mc-run-progress${runProgress.done ? ' done' : ''}`} role="status" aria-live="polite">
+            <div className="mc-run-progress-header">
+              <div className="mc-run-progress-title">
+                <strong>{runProgress.phaseLabel}</strong>
+                <span>{runProgress.action}</span>
+              </div>
+              {runProgress.currentStep > 0 && runProgress.totalSteps > 0 && (
+                <span className="mc-run-progress-step">
+                  Step {runProgress.currentStep}/{runProgress.totalSteps}
+                </span>
+              )}
+            </div>
+            {runProgressPercent != null && (
+              <div className="mc-run-progress-bar" aria-label={`${runProgress.phaseLabel} progress`}>
+                <div style={{ width: `${runProgressPercent}%` }} />
+              </div>
+            )}
+            <div className="mc-run-progress-details">
+              {runProgress.total > 0 && (
+                <span>
+                  <span>Progress</span>
+                  <strong>{runProgress.completed.toLocaleString()} / {runProgress.total.toLocaleString()}</strong>
+                </span>
+              )}
+              {runProgress.details.map((detail, i) => (
+                <span key={`${detail.label}-${i}`}>
+                  <span>{detail.label}</span>
+                  <strong>{progressValue(detail.value)}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <div className="backtest-error">{error}</div>}

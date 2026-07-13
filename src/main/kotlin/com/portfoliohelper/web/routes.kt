@@ -1429,10 +1429,7 @@ fun Application.configureRouting() {
         }
 
         get("/api/montecarlo/progress") {
-            val (completed, total) = MonteCarloService.getProgress()
-            call.respondText(
-                """{"completed":$completed,"total":$total}""", ContentType.Application.Json
-            )
+            call.respondText(appJson.encodeToString(MonteCarloService.getProgress()), ContentType.Application.Json)
         }
 
         post("/api/montecarlo/run") {

@@ -5,6 +5,8 @@ import java.time.temporal.ChronoUnit
 import java.time.temporal.IsoFields
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
 import kotlin.math.exp
 import kotlin.math.max
 
@@ -151,11 +153,15 @@ object RebalanceStrategyService {
             warningCollector = warningCollector,
         )
     val baseResult = runBasePortfolio(request)
+    val standaloneBaseCache = ConcurrentHashMap<StandaloneDerivedReferenceCacheKey, DerivedReferenceSeries>()
     val strategyResults =
         if (enabledStrategies.size > 1) {
-          enabledStrategies.parallelStream().map { runConfiguredStrategy(request, it, context) }.toList()
+          enabledStrategies
+              .parallelStream()
+              .map { runConfiguredStrategy(request, it, context, standaloneBaseCache) }
+              .toList()
         } else {
-          enabledStrategies.map { runConfiguredStrategy(request, it, context) }
+          enabledStrategies.map { runConfiguredStrategy(request, it, context, standaloneBaseCache) }
         }
     warnings.addAll(baseResult.warnings)
     return MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
@@ -265,6 +271,7 @@ object RebalanceStrategyService {
       zeroMarginInterest: Boolean = false,
   ): List<CurveResult> {
     val context = RunContext(seriesMap, dates, effrx)
+    val standaloneBaseCache = ConcurrentHashMap<StandaloneDerivedReferenceCacheKey, DerivedReferenceSeries>()
     return strategies
         .filter { it.enabled }
         .flatMap { strategy ->
@@ -303,6 +310,7 @@ object RebalanceStrategyService {
                           ?: List(context.dates.size) { strategy.marginRatio },
                       baseRun.marginIntentions,
                   ),
+                  standaloneBaseCache,
               )
           listOf(baseRun.curve) + derivedCurves
         }
@@ -322,6 +330,11 @@ object RebalanceStrategyService {
   private data class StrategyRunResult(
       val curve: CurveResult,
       val marginIntentions: List<List<MarginIntention>>,
+  )
+
+  private data class StandaloneDerivedReferenceCacheKey(
+      val ticker: String,
+      val strategy: RebalStrategyConfig,
   )
 
   private fun metricReferenceToMargin(value: Double, metric: DerivedMarginReferenceMetric): Double =
@@ -369,6 +382,7 @@ object RebalanceStrategyService {
       request: RebalanceStrategyRequest,
       strategy: RebalStrategyConfig,
       context: RunContext,
+      standaloneBaseCache: ConcurrentMap<StandaloneDerivedReferenceCacheKey, DerivedReferenceSeries>,
   ): PortfolioResult {
     val strategyPortfolio = strategy.portfolioWithRebalanceOverride(request.portfolio)
     val baseRun =
@@ -394,6 +408,7 @@ object RebalanceStrategyService {
                 curve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
                 baseRun.marginIntentions,
             ),
+            standaloneBaseCache,
         )
     return PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
   }
@@ -404,8 +419,8 @@ object RebalanceStrategyService {
       strategy: RebalStrategyConfig,
       context: RunContext,
       defaultReferenceSeries: DerivedReferenceSeries,
+      standaloneBaseCache: ConcurrentMap<StandaloneDerivedReferenceCacheKey, DerivedReferenceSeries>,
   ): List<CurveResult> {
-    val standaloneBaseCache = mutableMapOf<String, DerivedReferenceSeries>()
     return strategy.derivedSubStrategies
         .filter { it.enabled }
         .map { derived ->
@@ -439,7 +454,7 @@ object RebalanceStrategyService {
   private fun referenceSeriesForDerived(
       derived: DerivedSubStrategyConfig,
       defaultReferenceSeries: DerivedReferenceSeries,
-      standaloneBaseCache: MutableMap<String, DerivedReferenceSeries>,
+      standaloneBaseCache: ConcurrentMap<StandaloneDerivedReferenceCacheKey, DerivedReferenceSeries>,
       strategyPortfolio: PortfolioConfig,
       strategy: RebalStrategyConfig,
       request: RebalanceStrategyRequest,
@@ -453,7 +468,8 @@ object RebalanceStrategyService {
         }
     if (ticker == null) return defaultReferenceSeries
 
-    return standaloneBaseCache.getOrPut(ticker) {
+    val cacheKey = StandaloneDerivedReferenceCacheKey(ticker, strategy.standaloneReferenceStrategyKey())
+    return standaloneBaseCache.computeIfAbsent(cacheKey) {
       val standalonePortfolio =
           strategyPortfolio.copy(
               label = "${strategyPortfolio.label} / $ticker",
@@ -481,6 +497,12 @@ object RebalanceStrategyService {
       )
     }
   }
+
+  private fun RebalStrategyConfig.standaloneReferenceStrategyKey(): RebalStrategyConfig =
+      copy(
+          label = "",
+          derivedSubStrategies = emptyList(),
+      )
 
   private fun RebalStrategyConfig.derivedOnlyConfig(derived: DerivedSubStrategyConfig): RebalStrategyConfig =
       copy(

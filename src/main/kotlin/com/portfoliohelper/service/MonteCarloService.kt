@@ -3,25 +3,74 @@ package com.portfoliohelper.service
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.stream.IntStream
 import kotlin.math.pow
 import kotlin.random.Random
 
 object MonteCarloService {
     private val logger = LoggerFactory.getLogger(MonteCarloService::class.java)
-    private val progressCompleted = AtomicInteger(0)
-    private val progressTotal = AtomicInteger(0)
+    private const val progressStepCount = 7
+    private val progressState = AtomicReference(MonteCarloProgress.idle())
 
-    fun getProgress(): Pair<Int, Int> = progressCompleted.get() to progressTotal.get()
+    fun getProgress(): MonteCarloProgress = progressState.get()
+
+    private fun detail(label: String, value: Any?) =
+        MonteCarloProgressDetail(label, value?.toString() ?: "")
+
+    private fun updateProgress(
+        phase: String,
+        phaseLabel: String,
+        action: String,
+        currentStep: Int,
+        completed: Int = 0,
+        total: Int = 0,
+        details: List<MonteCarloProgressDetail> = emptyList(),
+        done: Boolean = false
+    ) {
+        progressState.set(
+            MonteCarloProgress(
+                phase = phase,
+                phaseLabel = phaseLabel,
+                action = action,
+                completed = completed,
+                total = total,
+                currentStep = currentStep,
+                totalSteps = progressStepCount,
+                details = details,
+                done = done
+            )
+        )
+    }
 
     fun runMonteCarlo(request: MonteCarloRequest): MonteCarloResult {
-        progressCompleted.set(0)
-        progressTotal.set(request.numSimulations)
+        updateProgress(
+            phase = "validate",
+            phaseLabel = "Validating request",
+            action = "Checking date range and simulation settings",
+            currentStep = 1,
+            details = listOf(
+                detail("Portfolio blocks", request.portfolios.size),
+                detail("Simulations", request.numSimulations),
+                detail("Simulated years", request.simulatedYears),
+            )
+        )
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         BacktestService.validateDateRange(fromDate, toDate)
         val neededFrom = fromDate ?: LocalDate.of(1990, 1, 1)
         val fullHistoryFrom = LocalDate.of(1990, 1, 1)
+        updateProgress(
+            phase = "prepare",
+            phaseLabel = "Preparing data",
+            action = "Loading rates and resolving requested tickers",
+            currentStep = 2,
+            details = listOf(
+                detail("Portfolio blocks", request.portfolios.size),
+                detail("From", fromDate ?: "1990-01-01"),
+                detail("To", toDate),
+            )
+        )
         val effrxSeries = BacktestService.loadEffrxSeries()
         val portfolios = request.portfolios.map { it.withoutPlaceholderTickers() }
 
@@ -32,6 +81,17 @@ object MonteCarloService {
             .plus(portfolios.flatMap { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) })
             .distinct()
         val hasPrependedChain = requestedTickers.any { BacktestService.parseTickerChain(it) != null }
+        updateProgress(
+            phase = "prepare",
+            phaseLabel = "Preparing data",
+            action = "Loading component ticker history",
+            currentStep = 2,
+            details = listOf(
+                detail("Requested tickers", requestedTickers.size),
+                detail("EFFRX rows", effrxSeries.size),
+                detail("Prepended chains", if (hasPrependedChain) "yes" else "no"),
+            )
+        )
         val seriesCache = BacktestService.resolveTickerSeries(
             requestedTickers,
             neededFromForTicker = { ticker ->
@@ -79,6 +139,20 @@ object MonteCarloService {
         }
 
         // ── Pre-compute return multipliers ────────────────────────────────────
+        updateProgress(
+            phase = "pool",
+            phaseLabel = "Building simulation pool",
+            action = "Aligning history and precomputing daily returns",
+            currentStep = 3,
+            details = listOf(
+                detail("Pool trading days", poolSize),
+                detail("Target trading days", targetDays),
+                detail("Min chunk days", minChunkDays),
+                detail("Max chunk days", maxChunkDays),
+                detail("Tickers", requestedTickers.size),
+            )
+        )
+
         val allTickers =
             (portfolios.flatMap { it.tickers.map { tw -> tw.ticker } } +
                 portfolios.flatMap { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) })
@@ -189,9 +263,24 @@ object MonteCarloService {
 
         val percentiles = listOf(5, 10, 25, 50, 75, 90, 95)
         val numSims = request.numSimulations
+        val curveCount = portfolioCurveConfigs.sumOf { it.allLabels.size }
 
         // ── Pass 1: run all simulations, record metrics ───────────────────────
-        logger.info("MC Pass 1: $numSims simulations × ${portfolioCurveConfigs.sumOf { it.allLabels.size }} curves")
+        logger.info("MC Pass 1: $numSims simulations × $curveCount curves")
+        updateProgress(
+            phase = "simulate",
+            phaseLabel = "Running simulations",
+            action = "Pass 1: computing metrics for every simulation",
+            currentStep = 4,
+            completed = 0,
+            total = numSims,
+            details = listOf(
+                detail("Simulations", numSims),
+                detail("Curves per simulation", curveCount),
+                detail("Target trading days", targetDays),
+            )
+        )
+        val simulationCompleted = AtomicInteger(0)
 
         // allMetrics[pi][ci][simIdx]
         val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
@@ -222,11 +311,38 @@ object MonteCarloService {
                     }
                 }
             }
-            progressCompleted.incrementAndGet()
+            val done = simulationCompleted.incrementAndGet()
+            updateProgress(
+                phase = "simulate",
+                phaseLabel = "Running simulations",
+                action = "Pass 1: computing metrics for every simulation",
+                currentStep = 4,
+                completed = done,
+                total = numSims,
+                details = listOf(
+                    detail("Simulations", "$done / $numSims"),
+                    detail("Curves per simulation", curveCount),
+                    detail("Target trading days", targetDays),
+                )
+            )
         }
 
         // ── Identify percentile sim indices (CAGR-sorted, for pass 2) ─────────
         // pctSimIndices[pi][ci][pctIdx] = simIdx
+        updateProgress(
+            phase = "rank",
+            phaseLabel = "Ranking outcomes",
+            action = "Selecting percentile simulations and independent metric percentiles",
+            currentStep = 5,
+            completed = numSims,
+            total = numSims,
+            details = listOf(
+                detail("Simulations ranked", numSims),
+                detail("Curves", curveCount),
+                detail("Percentiles", percentiles.size),
+            )
+        )
+
         val pctIdxList = percentiles.map { pct ->
             (pct.toDouble() / 100.0 * (numSims - 1)).toInt().coerceIn(0, numSims - 1)
         }
@@ -248,14 +364,59 @@ object MonteCarloService {
         // ── Pass 2: re-run needed sims with full paths ────────────────────────
         val neededSimIndices = pctSimIndices.flatten().flatten().toSet()
         logger.info("MC Pass 2: ${neededSimIndices.size} unique sims for full paths")
+        updateProgress(
+            phase = "paths",
+            phaseLabel = "Rebuilding percentile paths",
+            action = "Pass 2: assembling full paths for selected percentile simulations",
+            currentStep = 6,
+            completed = 0,
+            total = neededSimIndices.size,
+            details = listOf(
+                detail("Unique paths", neededSimIndices.size),
+                detail("Percentile path slots", curveCount * percentiles.size),
+                detail("Target trading days", targetDays),
+            )
+        )
+        val pathsCompleted = AtomicInteger(0)
 
         val fullPaths: Map<Int, List<AssembledDay>> = neededSimIndices.associateWith { simIdx ->
             val rng = Random(masterSeed + simIdx)
-            assemblePath(rng, targetDays, minChunkDays, maxChunkDays, poolSize,
+            val path = assemblePath(rng, targetDays, minChunkDays, maxChunkDays, poolSize,
                 tickerReturnsByDay, effrxDailyRates)
+            val done = pathsCompleted.incrementAndGet()
+            updateProgress(
+                phase = "paths",
+                phaseLabel = "Rebuilding percentile paths",
+                action = "Pass 2: assembling full paths for selected percentile simulations",
+                currentStep = 6,
+                completed = done,
+                total = neededSimIndices.size,
+                details = listOf(
+                    detail("Unique paths", "$done / ${neededSimIndices.size}"),
+                    detail("Percentile path slots", curveCount * percentiles.size),
+                    detail("Target trading days", targetDays),
+                )
+            )
+            path
         }
 
         // ── Build final result ────────────────────────────────────────────────
+        val finalPathSlots = curveCount * percentiles.size
+        updateProgress(
+            phase = "finalize",
+            phaseLabel = "Finalizing results",
+            action = "Building percentile curves and summary statistics",
+            currentStep = 7,
+            completed = 0,
+            total = finalPathSlots,
+            details = listOf(
+                detail("Portfolios", portfolioCurveConfigs.size),
+                detail("Curves", curveCount),
+                detail("Percentile paths", finalPathSlots),
+            )
+        )
+        val resultPathsCompleted = AtomicInteger(0)
+
         val portfolioResults = portfolioCurveConfigs.mapIndexed { pi, config ->
             val curveResults = config.allLabels.mapIndexed { ci, label ->
                 val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
@@ -264,6 +425,20 @@ object MonteCarloService {
                     val values = valuesForCurve(config, ci, path, request.startingBalance, request.cashflow)
                     val endValue = values.last()
                     val stats = computeStats(values, years, rfAnnualized)
+                    val done = resultPathsCompleted.incrementAndGet()
+                    updateProgress(
+                        phase = "finalize",
+                        phaseLabel = "Finalizing results",
+                        action = "Building percentile curves and summary statistics",
+                        currentStep = 7,
+                        completed = done,
+                        total = finalPathSlots,
+                        details = listOf(
+                            detail("Portfolios", portfolioCurveConfigs.size),
+                            detail("Curves", curveCount),
+                            detail("Percentile paths", "$done / $finalPathSlots"),
+                        )
+                    )
                     MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                 }
                 MonteCarloCurveResult(
@@ -280,6 +455,21 @@ object MonteCarloService {
             MonteCarloPortfolioResult(config.portfolio.label, curveResults)
         }
 
+        updateProgress(
+            phase = "complete",
+            phaseLabel = "Complete",
+            action = "Simulation results are ready",
+            currentStep = progressStepCount,
+            completed = finalPathSlots,
+            total = finalPathSlots,
+            details = listOf(
+                detail("Portfolios", portfolioCurveConfigs.size),
+                detail("Curves", curveCount),
+                detail("Simulations", numSims),
+                detail("Seed", masterSeed),
+            ),
+            done = true
+        )
         return MonteCarloResult(request.simulatedYears, numSims, portfolioResults, masterSeed)
     }
 

@@ -44,7 +44,10 @@ class MonteCarloServiceTest {
 
             assertEquals(first.seed, second.seed)
             assertEquals(first.portfolios, second.portfolios)
-            assertEquals(8 to 8, MonteCarloService.getProgress())
+            val progress = MonteCarloService.getProgress()
+            assertEquals("complete", progress.phase)
+            assertEquals(8, progress.details.first { it.label == "Simulations" }.value.toInt())
+            assertTrue(progress.done)
             assertTrue(first.portfolios.single().curves.all { it.percentilePaths.all { path -> path.points.size == 253 } })
         } finally {
             AppDirs.dataDir = originalDataDir

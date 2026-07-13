@@ -43,6 +43,98 @@
     margin-top: 0.25rem;
 }
 
+.mc-run-progress {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-bg-secondary);
+}
+
+.mc-run-progress.done {
+    border-color: color-mix(in srgb, var(--color-accent-primary) 35%, var(--color-border-subtle));
+}
+
+.mc-run-progress-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.mc-run-progress-title {
+    display: grid;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.mc-run-progress-title strong {
+    color: var(--color-text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.mc-run-progress-title span {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+}
+
+.mc-run-progress-step {
+    flex: 0 0 auto;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-family-mono), monospace;
+    font-size: var(--font-size-xs);
+}
+
+.mc-run-progress-bar {
+    height: 6px;
+    margin-top: 0.65rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--color-bg-tertiary);
+}
+
+.mc-run-progress-bar > div {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-accent-primary);
+    transition: width 0.2s ease;
+}
+
+.mc-run-progress-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-top: 0.65rem;
+}
+
+.mc-run-progress-details > span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    min-width: 0;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.mc-run-progress-details strong {
+    color: var(--color-text-primary);
+    font-family: var(--font-family-mono), monospace;
+    font-weight: var(--font-weight-semibold);
+}
+
+@media (max-width: 640px) {
+    .mc-run-progress-header {
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .mc-run-progress-details {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .mc-percentile-tabs {
     display: flex;
     gap: 4px;
