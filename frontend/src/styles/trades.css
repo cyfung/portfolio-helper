@@ -12,18 +12,33 @@
     flex-wrap: wrap;
 }
 
-.trades-periods,
+.trades-filters,
 .trades-actions {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
+    align-items: flex-start;
+    gap: 0.55rem;
     flex-wrap: wrap;
 }
 
-.trades-periods .backtest-config-btn.active {
-    background: var(--color-accent-primary);
-    border-color: var(--color-accent-primary);
-    color: var(--color-text-inverse);
+.trades-date-filter {
+    width: fit-content;
+    max-width: 100%;
+}
+
+.trades-date-filter .backtest-date-range-controls {
+    grid-template-columns: repeat(2, minmax(13rem, auto));
+}
+
+.trades-date-filter .backtest-date-field {
+    min-width: 0;
+}
+
+.trades-date-filter .date-input-row {
+    width: 100%;
+}
+
+.trades-date-filter .date-field-box input[type="date"] {
+    min-width: 8.5rem;
 }
 
 .trades-filter-toggle {
@@ -38,6 +53,7 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     cursor: pointer;
+    margin-top: 1.45rem;
 }
 
 .trades-filter-toggle input {
@@ -48,6 +64,22 @@
     border-color: var(--color-accent-primary);
     color: var(--color-accent-primary);
     background: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+}
+
+@media (max-width: 600px) {
+    .trades-filters,
+    .trades-date-filter,
+    .trades-date-filter .backtest-date-range-controls {
+        width: 100%;
+    }
+
+    .trades-date-filter .backtest-date-range-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .trades-filter-toggle {
+        margin-top: 0;
+    }
 }
 
 .trades-notice {
@@ -233,7 +265,7 @@
 
 .trades-table {
     width: 100%;
-    min-width: 920px;
+    min-width: 1020px;
     border-collapse: collapse;
     font-size: var(--font-size-sm);
 }
@@ -345,6 +377,18 @@
 
 .trades-table .cash-flow.negative {
     color: var(--color-negative);
+}
+
+.trades-table .trade-pnl.positive {
+    color: var(--color-positive);
+}
+
+.trades-table .trade-pnl.negative {
+    color: var(--color-negative);
+}
+
+.trades-table .trade-pnl.neutral {
+    color: var(--color-text-tertiary);
 }
 
 .trade-symbol {

@@ -95,6 +95,15 @@ export interface StockDisplayEvent {
   prevDayUsd: number
 }
 
+export interface PriceQuoteEvent {
+  type: 'price-quote'
+  symbol: string
+  price: number | null
+  previousClose: number | null
+  currency: string | null
+  markPriceDate: string | null
+}
+
 export interface CashDisplayEntry {
   label: string
   currency: string
@@ -162,6 +171,7 @@ export interface GroupAllocEvent {
 
 export type SseEvent =
   | FxRatesEvent
+  | PriceQuoteEvent
   | StockDisplayEvent
   | CashDisplayEvent
   | PortfolioTotalsEvent

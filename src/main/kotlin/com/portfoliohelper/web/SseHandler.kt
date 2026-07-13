@@ -74,6 +74,16 @@ private data class IbkrDisplayEvent(
 ) : SseEvent()
 
 @Serializable
+@SerialName("price-quote")
+private data class PriceQuoteEvent(
+    val symbol: String,
+    val price: Double?,
+    val previousClose: Double?,
+    val currency: String?,
+    val markPriceDate: String?
+) : SseEvent()
+
+@Serializable
 @SerialName("rebal-alloc")
 private data class RebalAllocSseEvent(
     val portfolioId: String,
@@ -93,6 +103,18 @@ internal suspend fun ServerSSESession.handleSseStream() {
     launch {
         YahooMarketDataService.fxRates.collect { rates ->
             if (rates.isNotEmpty()) channel.trySend(appJson.encodeToString<SseEvent>(FxRatesEvent(rates)))
+        }
+    }
+
+    launch {
+        YahooMarketDataService.updates.collect { (symbol, quote) ->
+            channel.trySend(appJson.encodeToString<SseEvent>(PriceQuoteEvent(
+                symbol = symbol,
+                price = quote.regularMarketPrice ?: quote.previousClose,
+                previousClose = quote.previousClose,
+                currency = quote.currency,
+                markPriceDate = quote.markPriceDate?.toString()
+            )))
         }
     }
 

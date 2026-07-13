@@ -3,6 +3,7 @@ package com.portfoliohelper.service
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -12,6 +13,7 @@ import kotlin.random.Random
 object MonteCarloService {
     private val logger = LoggerFactory.getLogger(MonteCarloService::class.java)
     private const val progressStepCount = 7
+    private const val progressPublishIntervalNanos = 250_000_000L
     private val progressState = AtomicReference(MonteCarloProgress.idle())
     private val lastResultState = AtomicReference<MonteCarloResult?>(null)
     private val lastErrorState = AtomicReference<String?>(null)
@@ -302,6 +304,7 @@ object MonteCarloService {
             )
         )
         val simulationCompleted = AtomicInteger(0)
+        val simulationProgressPublishedAt = AtomicLong(System.nanoTime())
 
         // allMetrics[pi][ci][simIdx]
         val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
@@ -352,7 +355,7 @@ object MonteCarloService {
                 }
             }
             val done = simulationCompleted.incrementAndGet()
-            if (shouldPublishProgress(done, numSims)) {
+            if (shouldPublishProgress(done, numSims, simulationProgressPublishedAt)) {
                 updateProgress(
                     phase = "simulate",
                     phaseLabel = "Running simulations",
@@ -420,6 +423,7 @@ object MonteCarloService {
             )
         )
         val pathsCompleted = AtomicInteger(0)
+        val pathsProgressPublishedAt = AtomicLong(System.nanoTime())
 
         val fullPaths: Map<Int, MonteCarloIndexedPath> = MonteCarloParallel.parallelMap(neededSimIndices.toList()) { simIdx ->
             val rng = Random(masterSeed + simIdx)
@@ -431,7 +435,7 @@ object MonteCarloService {
                 poolSize,
             )
             val done = pathsCompleted.incrementAndGet()
-            if (shouldPublishProgress(done, neededSimIndices.size)) {
+            if (shouldPublishProgress(done, neededSimIndices.size, pathsProgressPublishedAt)) {
                 updateProgress(
                     phase = "paths",
                     phaseLabel = "Rebuilding percentile paths",
@@ -467,6 +471,7 @@ object MonteCarloService {
             )
         )
         val resultPathsCompleted = AtomicInteger(0)
+        val resultPathsProgressPublishedAt = AtomicLong(System.nanoTime())
 
         val portfolioResults = MonteCarloParallel.parallelMapIndexed(portfolioCurveConfigs) { pi, config ->
             val curveResults = MonteCarloParallel.parallelMapIndexed(config.allLabels) { ci, label ->
@@ -504,7 +509,7 @@ object MonteCarloService {
                     }
                     val endValue = values.last()
                     val done = resultPathsCompleted.incrementAndGet()
-                    if (shouldPublishProgress(done, finalPathSlots)) {
+                    if (shouldPublishProgress(done, finalPathSlots, resultPathsProgressPublishedAt)) {
                         updateProgress(
                             phase = "finalize",
                             phaseLabel = "Finalizing results",
@@ -556,11 +561,17 @@ object MonteCarloService {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun shouldPublishProgress(completed: Int, total: Int): Boolean {
+    private fun shouldPublishProgress(
+        completed: Int,
+        total: Int,
+        lastPublishedAtNanos: AtomicLong,
+    ): Boolean {
         if (total <= 0) return false
         if (completed == 1 || completed == total) return true
-        val step = (total / 100).coerceAtLeast(1)
-        return completed % step == 0
+        val now = System.nanoTime()
+        val lastPublishedAt = lastPublishedAtNanos.get()
+        return now - lastPublishedAt >= progressPublishIntervalNanos &&
+            lastPublishedAtNanos.compareAndSet(lastPublishedAt, now)
     }
 
     private suspend fun metricPercentiles(

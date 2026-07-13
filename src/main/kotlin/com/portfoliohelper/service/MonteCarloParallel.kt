@@ -16,15 +16,10 @@ internal object MonteCarloParallel {
 
     suspend fun parallelForRange(size: Int, action: (Int) -> Unit) {
         if (size <= 0) return
-        val workers = minOf(size, parallelism)
         coroutineScope {
-            (0 until workers).map { worker ->
-                val start = worker * size / workers
-                val end = (worker + 1) * size / workers
+            (0 until size).map { index ->
                 async(dispatcher) {
-                    for (index in start until end) {
-                        action(index)
-                    }
+                    action(index)
                 }
             }.awaitAll()
         }
@@ -32,16 +27,11 @@ internal object MonteCarloParallel {
 
     suspend fun <T> parallelMapRange(size: Int, transform: suspend (Int) -> T): List<T> {
         if (size <= 0) return emptyList()
-        val workers = minOf(size, parallelism)
         val results = arrayOfNulls<Any>(size)
         coroutineScope {
-            (0 until workers).map { worker ->
-                val start = worker * size / workers
-                val end = (worker + 1) * size / workers
+            (0 until size).map { index ->
                 async(dispatcher) {
-                    for (index in start until end) {
-                        results[index] = transform(index)
-                    }
+                    results[index] = transform(index)
                 }
             }.awaitAll()
         }

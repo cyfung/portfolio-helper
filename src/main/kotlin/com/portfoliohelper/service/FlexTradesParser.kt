@@ -58,6 +58,12 @@ private data class XTrade(
     val execId: String = "",
     val orderID: String = "",
     val orderId: String = "",
+    val origTradeID: String = "",
+    val origTradeId: String = "",
+    val origTransactionID: String = "",
+    val origTransactionId: String = "",
+    val transactionType: String = "",
+    val notes: String = "",
     val reportDate: String = "",
     val tradeDate: String = "",
     val tradeTime: String = "",
@@ -100,13 +106,34 @@ object FlexTradesParser {
         val statements = response.FlexStatements?.statements
             ?: throw FlexParseException("FlexStatements element missing from trades response")
 
-        val trades = statements.flatMap { it.Trades?.trades ?: emptyList() }
+        val rawTrades = statements.flatMap { it.Trades?.trades ?: emptyList() }
+        val trades = dropCancelledTradeCorrections(rawTrades)
             .mapNotNull(::toTradeEntry)
         if (trades.isEmpty()) {
             throw FlexParseException("No Trade rows found. Enable the Trades section in the Flex Query.")
         }
         return trades.sortedWith(compareBy<IbkrTradeEntry> { it.tradeDate }.thenBy { it.tradeTime }.thenBy { it.tradeKey })
     }
+
+    private fun dropCancelledTradeCorrections(trades: List<XTrade>): List<XTrade> {
+        val cancelledTransactionIds = trades.asSequence()
+            .filter(::isTradeCancel)
+            .mapNotNull { it.origTransactionID.ifBlank { it.origTransactionId }.trim().takeUnless { id -> id.isBlank() || id == "0" } }
+            .toSet()
+        return trades.filterNot { trade ->
+            isTradeCancel(trade) || tradeTransactionId(trade) in cancelledTransactionIds
+        }
+    }
+
+    private fun isTradeCancel(trade: XTrade): Boolean {
+        val transactionType = trade.transactionType.trim().uppercase()
+        val notes = trade.notes.trim().uppercase()
+        val side = trade.buySell.ifBlank { trade.side }.trim().uppercase()
+        return transactionType == "TRADECANCEL" || notes == "CA" || side.contains("(CA")
+    }
+
+    private fun tradeTransactionId(trade: XTrade): String =
+        trade.transactionID.ifBlank { trade.transactionId }.trim()
 
     private fun toTradeEntry(t: XTrade): IbkrTradeEntry? {
         val symbol = t.symbol.ifBlank { t.underlyingSymbol }.trim().uppercase()
@@ -156,10 +183,11 @@ object FlexTradesParser {
     }
 
     private fun normalizeSide(raw: String): String {
-        return when (raw.trim().uppercase()) {
-            "BUY", "BOT", "B" -> "BUY"
-            "SELL", "SLD", "S" -> "SELL"
-            else -> raw.trim().uppercase()
+        val normalized = raw.trim().uppercase()
+        return when {
+            normalized in setOf("BUY", "BOT", "B") || normalized.startsWith("BUY ") -> "BUY"
+            normalized in setOf("SELL", "SLD", "S") || normalized.startsWith("SELL ") -> "SELL"
+            else -> normalized
         }
     }
 

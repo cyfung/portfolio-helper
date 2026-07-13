@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Centralises symbol-list computation and market-data re-initialisation so that
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory
 object MarketDataCoordinator {
     private val logger = LoggerFactory.getLogger(MarketDataCoordinator::class.java)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val extraRequestedSymbols = ConcurrentHashMap.newKeySet<String>()
 
     /** Populated once at startup from the environment / config. */
     var updateIntervalSeconds: Long = 60L
@@ -44,7 +46,18 @@ object MarketDataCoordinator {
                 if (baseCcy == "USD") null else "${baseCcy}USD=X"
             }
         symbols += cachedStockFxPairs
+        symbols += extraRequestedSymbols
         return symbols.distinct()
+    }
+
+    fun requestExtraSymbols(symbols: Collection<String>) {
+        val cleaned = symbols
+            .map { it.trim().uppercase() }
+            .filter { it.isNotBlank() }
+        if (cleaned.isEmpty()) return
+        val added = cleaned.count { extraRequestedSymbols.add(it) }
+        if (added > 0) logger.info("Added $added extra market data symbol(s): $cleaned")
+        refresh()
     }
 
     /**

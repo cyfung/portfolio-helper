@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type {
   PortfolioData, PortfolioOption, StockData, CashData, PortfolioConfig, AppConfig,
   StockDisplayEvent, CashDisplayEvent, PortfolioTotalsEvent,
-  IbkrDisplayEvent, GroupAllocEvent, AllocMode, SseStatus,
+  IbkrDisplayEvent, GroupAllocEvent, PriceQuoteEvent, AllocMode, SseStatus,
 } from '@/types/portfolio'
 import { legacyVisibilityToDefaultModeId, normalizePortfolioColumnModes } from '@/lib/portfolioColumns'
 
@@ -19,6 +19,7 @@ interface PortfolioState {
 
   // ── Live SSE data ──────────────────────────────────────────────────────────
   fxRates: Record<string, number>
+  priceQuotes: Record<string, PriceQuoteEvent>
   lastStockDisplay: StockDisplayEvent | null
   lastCashDisplay: CashDisplayEvent | null
   lastPortfolioTotals: PortfolioTotalsEvent | null
@@ -48,6 +49,7 @@ interface PortfolioState {
   // ── Actions ───────────────────────────────────────────────────────────────
   loadPortfolioData: (data: PortfolioData) => void
   setFxRates: (rates: Record<string, number>) => void
+  setPriceQuote: (event: PriceQuoteEvent) => void
   setStockDisplay: (event: StockDisplayEvent) => void
   setCashDisplay: (event: CashDisplayEvent) => void
   setPortfolioTotals: (event: PortfolioTotalsEvent) => void
@@ -127,6 +129,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   appConfig: null,
 
   fxRates: { USD: 1.0 },
+  priceQuotes: {},
   lastStockDisplay: null,
   lastCashDisplay: null,
   lastPortfolioTotals: null,
@@ -193,6 +196,16 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   },
 
   setFxRates: (rates) => set(s => ({ fxRates: { ...s.fxRates, ...rates } })),
+
+  setPriceQuote: (event) => set(s => ({
+    priceQuotes: {
+      ...s.priceQuotes,
+      [event.symbol.trim().toUpperCase()]: {
+        ...event,
+        symbol: event.symbol.trim().toUpperCase(),
+      },
+    },
+  })),
 
   setStockDisplay: (event) => {
     if (event.portfolioId !== get().portfolioId) return

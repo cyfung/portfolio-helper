@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PageNavTabs, ConfigButton, HeaderRight, PrivacyToggleButton, ThemeToggle } from '@/components/Layout'
 import PortfolioTabs from '@/components/portfolio/PortfolioTabs'
 import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
+import DateFieldWithQuickSelect, { type DateQuickSelectPeriod } from '@/components/backtest/DateFieldWithQuickSelect'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useTransientToast } from '@/hooks/useTransientToast'
-import type { CashData, PortfolioData, StockData } from '@/types/portfolio'
+import { validateDateRange } from '@/lib/dateRange'
+import type { CashData, PortfolioData, PriceQuoteEvent, StockData } from '@/types/portfolio'
 
 interface TradeRow {
   id: number
@@ -34,17 +36,39 @@ type PortfolioStockCreateRow = {
 
 type PortfolioCashCreateRow = CashData
 
-type Period = '7D' | '30D' | '90D' | 'YTD' | '1Y' | 'All'
 type TradesView = 'summary' | 'trades'
 type IngestSource = 'flex' | 'tws' | 'xml'
+type ApiErrorBody = { error?: string; message?: string }
 
-const PERIODS: Period[] = ['7D', '30D', '90D', 'YTD', '1Y', 'All']
+const TRADE_QUICK_SELECT_PERIODS: readonly DateQuickSelectPeriod[] = [
+  { label: '1D', unit: 'day', amount: 1 },
+  { label: '2D', unit: 'day', amount: 2 },
+  { label: '3D', unit: 'day', amount: 3 },
+  { label: '4D', unit: 'day', amount: 4 },
+  { label: '5D', unit: 'day', amount: 5 },
+  { label: '1W', unit: 'week', amount: 1 },
+  { label: '2W', unit: 'week', amount: 2 },
+  { label: '1M', unit: 'month', amount: 1 },
+]
 const ISO_CURRENCIES = new Set([
   'AUD', 'CAD', 'CHF', 'CNH', 'CNY', 'EUR', 'GBP', 'HKD', 'JPY', 'MXN', 'NOK', 'NZD', 'SEK', 'SGD', 'USD',
 ])
 
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function todayStr() {
-  return new Date().toISOString().slice(0, 10)
+  return formatLocalDate(new Date())
+}
+
+function dateDaysAgo(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  return formatLocalDate(date)
 }
 
 function timeStr() {
@@ -53,18 +77,6 @@ function timeStr() {
 
 function defaultTradesPortfolioName(portfolioId: string | null | undefined) {
   return `Trades ${portfolioId ?? 'Portfolio'} ${todayStr()} ${timeStr()}`
-}
-
-function periodFrom(period: Period): string {
-  const now = new Date()
-  switch (period) {
-    case '7D':  now.setDate(now.getDate() - 7); return now.toISOString().slice(0, 10)
-    case '30D': now.setDate(now.getDate() - 30); return now.toISOString().slice(0, 10)
-    case '90D': now.setDate(now.getDate() - 90); return now.toISOString().slice(0, 10)
-    case 'YTD': return `${now.getFullYear()}-01-01`
-    case '1Y':  now.setFullYear(now.getFullYear() - 1); return now.toISOString().slice(0, 10)
-    case 'All': return ''
-  }
 }
 
 function money(value: number | null | undefined, currency?: string | null) {
@@ -110,6 +122,32 @@ function commissionCashAdjustment(trade: TradeRow) {
 
 function netCashAmount(trade: TradeRow) {
   return -signedQuantity(trade) * trade.price + commissionCashAdjustment(trade)
+}
+
+function tradeQuoteSymbol(trade: TradeRow, exchangeSuffixes: Map<string, string>) {
+  return isCurrencyTrade(trade) ? '' : portfolioSymbolForTrade(trade, exchangeSuffixes).toUpperCase()
+}
+
+function tradePnl(trade: TradeRow, quotes: Record<string, PriceQuoteEvent>, exchangeSuffixes: Map<string, string>) {
+  const symbol = tradeQuoteSymbol(trade, exchangeSuffixes)
+  if (!symbol) return null
+  const quote = quotes[symbol]
+  const quotePrice = quote?.price ?? quote?.previousClose ?? null
+  if (quotePrice === null || !Number.isFinite(quotePrice)) return null
+  const tradeCurrency = trade.currency.trim().toUpperCase()
+  const quoteCurrency = quote.currency?.trim().toUpperCase()
+  if (quoteCurrency && tradeCurrency && quoteCurrency !== tradeCurrency) return null
+  return signedQuantity(trade) * quotePrice + netCashAmount(trade)
+}
+
+function groupPnl(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>, exchangeSuffixes: Map<string, string>) {
+  let total = 0
+  for (const trade of rows) {
+    const pnl = tradePnl(trade, quotes, exchangeSuffixes)
+    if (pnl === null) return null
+    total += pnl
+  }
+  return total
 }
 
 function tradeDateTime(trade: TradeRow) {
@@ -188,10 +226,12 @@ export default function TradesPage() {
   const loadPortfolioData = usePortfolioStore(s => s.loadPortfolioData)
   const portfolioId = usePortfolioStore(s => s.portfolioId)
   const allPortfolios = usePortfolioStore(s => s.allPortfolios)
+  const priceQuotes = usePortfolioStore(s => s.priceQuotes)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showConfig, setShowConfig] = useState(false)
-  const [period, setPeriod] = useState<Period>('30D')
+  const [fromDate, setFromDate] = useState(() => dateDaysAgo(7))
+  const [toDate, setToDate] = useState('')
   const [view, setView] = useState<TradesView>('summary')
   const [showCurrencyTrades, setShowCurrencyTrades] = useState(false)
   const [expandedSymbols, setExpandedSymbols] = useState<Set<string>>(new Set())
@@ -207,8 +247,9 @@ export default function TradesPage() {
   const xmlInputRef = useRef<HTMLInputElement>(null)
   const { toast, showToast } = useTransientToast()
 
-  const from = periodFrom(period)
-  const to = todayStr()
+  const dateRangeError = validateDateRange(fromDate, toDate)
+  const from = fromDate
+  const to = toDate || todayStr()
   const ingesting = ingestSource !== null
 
   useEffect(() => {
@@ -262,6 +303,37 @@ export default function TradesPage() {
     )
   }, [allTrades, from, to, showCurrencyTrades])
 
+  const quoteSymbols = useMemo(() => {
+    return [...new Set(trades.map(trade => tradeQuoteSymbol(trade, exchangeSuffixes)).filter(Boolean))].sort()
+  }, [exchangeSuffixes, trades])
+  const quoteSymbolsKey = quoteSymbols.join('|')
+
+  useEffect(() => {
+    if (!quoteSymbolsKey) {
+      return
+    }
+
+    const symbols = quoteSymbolsKey.split('|')
+    const controller = new AbortController()
+    fetch('/api/prices/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbols }),
+      signal: controller.signal,
+    })
+      .then(async r => {
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({})) as { message?: string }
+          throw new Error(data.message ?? `HTTP ${r.status}`)
+        }
+      })
+      .catch((e: Error) => {
+        if (e.name !== 'AbortError') showToast(e.message || 'Failed to request trade prices', 'error', 10000)
+      })
+
+    return () => controller.abort()
+  }, [quoteSymbolsKey, showToast])
+
   const tradeGroups = useMemo(() => {
     const grouped = new Map<string, TradeRow[]>()
     trades.forEach(trade => {
@@ -283,6 +355,7 @@ export default function TradesPage() {
           netGross: sortedRows.reduce((sum, trade) => sum + signedGrossTradeValue(trade), 0),
           netCash: sortedRows.reduce((sum, trade) => sum + netCashAmount(trade), 0),
           netCashCurrency: sortedRows[0]?.currency,
+          pnl: groupPnl(sortedRows, priceQuotes, exchangeSuffixes),
           commissions: sortedRows.reduce((sum, trade) => sum + (trade.commission ?? 0), 0),
           commissionCurrency: sortedRows.find(trade => trade.commissionCurrency)?.commissionCurrency ?? sortedRows[0]?.currency,
           dateRange: tradeDateRange(sortedRows),
@@ -290,13 +363,29 @@ export default function TradesPage() {
         }
       })
       .sort((a, b) => a.symbol.localeCompare(b.symbol))
-  }, [trades])
+  }, [exchangeSuffixes, priceQuotes, trades])
 
   const selectedVisibleTrades = useMemo(() => {
     return trades.filter(trade => selectedTradeKeys.has(tradeSelectionKey(trade)))
   }, [selectedTradeKeys, trades])
 
   const selectedVisibleCount = selectedVisibleTrades.length
+
+  function pnlCellText(trade: TradeRow) {
+    const pnl = tradePnl(trade, priceQuotes, exchangeSuffixes)
+    if (pnl !== null) return money2(pnl, trade.currency)
+    return '-'
+  }
+
+  function groupPnlCellText(rows: TradeRow[], pnl: number | null, currency?: string) {
+    if (pnl !== null) return money2(pnl, currency)
+    return '-'
+  }
+
+  function pnlClass(value: number | null) {
+    if (value === null || Math.abs(value) < 1e-9) return 'neutral'
+    return value < 0 ? 'negative' : 'positive'
+  }
 
   function toggleGroup(symbol: string) {
     setExpandedSymbols(current => {
@@ -473,8 +562,8 @@ export default function TradesPage() {
     setNotice('')
     try {
       const r = await fetch(`/api/trades/fetch/${portfolioId}`, { method: 'POST' })
-      const d = await r.json() as { trades?: TradeRow[]; error?: string }
-      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+      const d = await r.json() as { trades?: TradeRow[] } & ApiErrorBody
+      if (!r.ok) throw new Error(d.error ?? d.message ?? `HTTP ${r.status}`)
       const fetchedTrades = d.trades ?? []
       setAllTrades(fetchedTrades)
       setSelectedTradeKeys(new Set(fetchedTrades.map(tradeSelectionKey)))
@@ -492,8 +581,8 @@ export default function TradesPage() {
     setNotice('')
     try {
       const r = await fetch(`/api/trades/fetch-tws/${portfolioId}`, { method: 'POST' })
-      const d = await r.json() as { trades?: TradeRow[]; error?: string }
-      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+      const d = await r.json() as { trades?: TradeRow[] } & ApiErrorBody
+      if (!r.ok) throw new Error(d.error ?? d.message ?? `HTTP ${r.status}`)
       const fetchedTrades = d.trades ?? []
       setAllTrades(fetchedTrades)
       setSelectedTradeKeys(new Set(fetchedTrades.map(tradeSelectionKey)))
@@ -519,8 +608,8 @@ export default function TradesPage() {
           headers: { 'Content-Type': 'text/plain' },
           body: xml,
         })
-        const d = await r.json() as { trades?: TradeRow[]; error?: string }
-        if (!r.ok) throw new Error(`${files[i].name}: ${d.error ?? `HTTP ${r.status}`}`)
+        const d = await r.json() as { trades?: TradeRow[] } & ApiErrorBody
+        if (!r.ok) throw new Error(`${files[i].name}: ${d.error ?? d.message ?? `HTTP ${r.status}`}`)
         imported.push(...(d.trades ?? []))
         total += d.trades?.length ?? 0
       }
@@ -570,12 +659,30 @@ export default function TradesPage() {
 
       <div className="trades-page">
         <div className="trades-toolbar">
-          <div className="trades-periods">
-            {PERIODS.map(p => (
-              <button key={p} type="button" className={`backtest-config-btn${period === p ? ' active' : ''}`} onClick={() => setPeriod(p)}>
-                {p}
-              </button>
-            ))}
+          <div className="trades-filters">
+            <div className="trades-date-filter backtest-section">
+              <div className="backtest-date-range-controls">
+                <DateFieldWithQuickSelect
+                  label="From Date"
+                  inputId="trades-from-date"
+                  value={fromDate}
+                  onChange={setFromDate}
+                  quickSelectPeriods={TRADE_QUICK_SELECT_PERIODS}
+                />
+                <DateFieldWithQuickSelect
+                  label="To Date"
+                  inputId="trades-to-date"
+                  value={toDate}
+                  onChange={setToDate}
+                  quickSelectPeriods={TRADE_QUICK_SELECT_PERIODS}
+                />
+                {dateRangeError && (
+                  <div className="backtest-date-range-error" role="alert">
+                    {dateRangeError}
+                  </div>
+                )}
+              </div>
+            </div>
             <label className="trades-filter-toggle">
               <input
                 type="checkbox"
@@ -699,13 +806,14 @@ export default function TradesPage() {
                   <th>Qty</th>
                   <th>Price</th>
                   <th>Net Cash</th>
+                  <th>P&amp;L</th>
                   <th>Commission</th>
                   <th>Exchange</th>
                 </tr>
                 </thead>
                 <tbody>
                 {trades.length === 0 ? (
-                  <tr><td colSpan={9} className="trades-page-status">No trades in this period.</td></tr>
+                  <tr><td colSpan={10} className="trades-page-status">No trades in this date range.</td></tr>
                 ) : view === 'summary' ? tradeGroups.map(group => (
                   <Fragment key={group.symbol}>
                     <tr
@@ -737,10 +845,14 @@ export default function TradesPage() {
                       <td className="num">{numberFmt(group.netQuantity)}</td>
                       <td className="num">{Math.abs(group.netQuantity) > 1e-9 ? money2(Math.abs(group.netGross / group.netQuantity), group.netCashCurrency) : '-'}</td>
                       <td className={`num cash-flow ${group.netCash < 0 ? 'negative' : 'positive'}`}>{money2(group.netCash, group.netCashCurrency)}</td>
+                      <td className={`num trade-pnl ${pnlClass(group.pnl)}`}>{groupPnlCellText(group.rows, group.pnl, group.netCashCurrency)}</td>
                       <td className="num">{money(group.commissions, group.commissionCurrency)}</td>
                       <td>{group.exchange || '-'}</td>
                     </tr>
                     {expandedSymbols.has(group.symbol) && group.rows.map(trade => (
+                      (() => {
+                        const pnl = tradePnl(trade, priceQuotes, exchangeSuffixes)
+                        return (
                       <tr
                         key={tradeSelectionKey(trade)}
                         className={selectedTradeKeys.has(tradeSelectionKey(trade)) ? 'selected' : ''}
@@ -759,12 +871,18 @@ export default function TradesPage() {
                         <td className="num">{numberFmt(signedQuantity(trade))}</td>
                         <td className="num">{money2(trade.price, trade.currency)}</td>
                         <td className={`num cash-flow ${netCashAmount(trade) < 0 ? 'negative' : 'positive'}`}>{money2(netCashAmount(trade), trade.currency)}</td>
+                        <td className={`num trade-pnl ${pnlClass(pnl)}`}>{pnlCellText(trade)}</td>
                         <td className="num">{money(trade.commission, trade.commissionCurrency ?? trade.currency)}</td>
                         <td>{trade.exchange || '-'}</td>
                       </tr>
+                        )
+                      })()
                     ))}
                   </Fragment>
                 )) : trades.map(trade => (
+                  (() => {
+                    const pnl = tradePnl(trade, priceQuotes, exchangeSuffixes)
+                    return (
                   <tr
                     key={tradeSelectionKey(trade)}
                     className={selectedTradeKeys.has(tradeSelectionKey(trade)) ? 'selected' : ''}
@@ -783,9 +901,12 @@ export default function TradesPage() {
                     <td className="num">{numberFmt(signedQuantity(trade))}</td>
                     <td className="num">{money2(trade.price, trade.currency)}</td>
                     <td className={`num cash-flow ${netCashAmount(trade) < 0 ? 'negative' : 'positive'}`}>{money2(netCashAmount(trade), trade.currency)}</td>
+                    <td className={`num trade-pnl ${pnlClass(pnl)}`}>{pnlCellText(trade)}</td>
                     <td className="num">{money(trade.commission, trade.commissionCurrency ?? trade.currency)}</td>
                     <td>{trade.exchange || '-'}</td>
                   </tr>
+                    )
+                  })()
                 ))}
                 </tbody>
               </table>

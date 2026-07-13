@@ -1,15 +1,23 @@
 // ── DateFieldWithQuickSelect.tsx ──────────────────────────────────────────────
 
-const QUICK_SELECT_PERIODS = [
+import type { ChangeEvent } from 'react'
+
+export interface DateQuickSelectPeriod {
+  label: string
+  unit: 'day' | 'week' | 'month' | 'year'
+  amount: number
+}
+
+const QUICK_SELECT_PERIODS: readonly DateQuickSelectPeriod[] = [
   { label: '1M', unit: 'month', amount: 1 },
   { label: '3M', unit: 'month', amount: 3 },
   { label: '6M', unit: 'month', amount: 6 },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30].map(amount => ({
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30].map((amount): DateQuickSelectPeriod => ({
     label: `${amount}Y`,
     unit: 'year',
     amount,
   })),
-] as const
+]
 
 function formatLocalDate(date: Date) {
   const year = date.getFullYear()
@@ -23,19 +31,35 @@ interface Props {
   inputId: string
   value: string
   onChange: (date: string) => void
+  quickSelectPeriods?: readonly DateQuickSelectPeriod[]
 }
 
-export default function DateFieldWithQuickSelect({ label, inputId, value, onChange }: Props) {
+export default function DateFieldWithQuickSelect({
+  label,
+  inputId,
+  value,
+  onChange,
+  quickSelectPeriods = QUICK_SELECT_PERIODS,
+}: Props) {
   const quickSelectId = `${inputId}-quick`
 
-  function handleQuickSelect(e: React.ChangeEvent<HTMLSelectElement>) {
-    const period = QUICK_SELECT_PERIODS.find(option => option.label === e.target.value)
+  function handleQuickSelect(e: ChangeEvent<HTMLSelectElement>) {
+    const period = quickSelectPeriods.find(option => option.label === e.target.value)
     if (!period) return
     const date = new Date()
-    if (period.unit === 'month') {
-      date.setMonth(date.getMonth() - period.amount)
-    } else {
-      date.setFullYear(date.getFullYear() - period.amount)
+    switch (period.unit) {
+      case 'day':
+        date.setDate(date.getDate() - period.amount)
+        break
+      case 'week':
+        date.setDate(date.getDate() - period.amount * 7)
+        break
+      case 'month':
+        date.setMonth(date.getMonth() - period.amount)
+        break
+      case 'year':
+        date.setFullYear(date.getFullYear() - period.amount)
+        break
     }
     onChange(formatLocalDate(date))
     e.target.value = ''
@@ -64,7 +88,7 @@ export default function DateFieldWithQuickSelect({ label, inputId, value, onChan
         </div>
         <select id={quickSelectId} aria-label="Date period back" onChange={handleQuickSelect}>
           <option value="">Period</option>
-          {QUICK_SELECT_PERIODS.map(period => (
+          {quickSelectPeriods.map(period => (
             <option key={period.label} value={period.label}>{period.label}</option>
           ))}
         </select>

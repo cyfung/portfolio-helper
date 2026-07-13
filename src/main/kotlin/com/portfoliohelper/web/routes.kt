@@ -25,6 +25,7 @@ import io.ktor.server.sse.*
 import io.ktor.sse.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import org.jetbrains.exposed.sql.*
@@ -638,7 +639,7 @@ private suspend fun ApplicationCall.respondApiError(
     e: Exception,
     status: HttpStatusCode = HttpStatusCode.InternalServerError
 ) = respondText(
-    "{\"status\":\"error\",\"message\":\"${e.message?.replace("\"", "\\\"")}\"}",
+    appJson.encodeToString(ApiErrorResponse(message = e.message)),
     ContentType.Application.Json,
     status
 )
@@ -729,6 +730,12 @@ private data class IbkrTradeDto(
 
 @Serializable
 private data class IbkrTradesResponse(val trades: List<IbkrTradeDto>)
+
+@Serializable
+private data class PriceRequestDto(val symbols: List<String> = emptyList())
+
+@Serializable
+private data class ApiErrorResponse(val status: String = "error", val message: String?)
 
 private fun toIbkrTradeDto(index: Int, trade: IbkrTradeEntry) = IbkrTradeDto(
     id = index,
@@ -2180,6 +2187,23 @@ fun Application.configureRouting() {
                     """{"error":"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}"}""",
                     ContentType.Application.Json, HttpStatusCode.UnprocessableEntity
                 )
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        post("/api/prices/request") {
+            try {
+                val request = appJson.decodeFromString<PriceRequestDto>(call.receiveText())
+                val symbols = request.symbols
+                    .map { it.trim().uppercase() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(100)
+                MarketDataCoordinator.requestExtraSymbols(symbols)
+                call.respondOk()
+            } catch (e: SerializationException) {
+                call.respondApiError(e, HttpStatusCode.BadRequest)
             } catch (e: Exception) {
                 call.respondApiError(e)
             }

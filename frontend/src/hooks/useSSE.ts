@@ -9,7 +9,7 @@ const DISCONNECT_RELOAD_MS = 5 * 60 * 1000  // 5 minutes
 export function useSSE() {
   const {
     portfolioId,
-    setFxRates, setStockDisplay, setCashDisplay,
+    setFxRates, setPriceQuote, setStockDisplay, setCashDisplay,
     setPortfolioTotals, setIbkrData, setGroupAllocData, setSseStatus,
   } = usePortfolioStore()
 
@@ -59,6 +59,9 @@ export function useSSE() {
             break
           case 'fx-rates':
             setFxRates(data.rates)
+            break
+          case 'price-quote':
+            setPriceQuote(data)
             break
           case 'stock-display':
             setStockDisplay(data)
@@ -116,5 +119,5 @@ export function useSSE() {
       window.removeEventListener('pagehide', close)
       window.removeEventListener('beforeunload', close)
     }
-  }, [portfolioId, setFxRates, setStockDisplay, setCashDisplay, setPortfolioTotals, setIbkrData, setGroupAllocData, setSseStatus])
+  }, [portfolioId, setFxRates, setPriceQuote, setStockDisplay, setCashDisplay, setPortfolioTotals, setIbkrData, setGroupAllocData, setSseStatus])
 }
