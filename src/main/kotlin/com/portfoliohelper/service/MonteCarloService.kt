@@ -3,6 +3,7 @@ package com.portfoliohelper.service
 import org.slf4j.LoggerFactory
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.stream.IntStream
 import kotlin.math.pow
 import kotlin.random.Random
 
@@ -198,7 +199,7 @@ object MonteCarloService {
             Array(portfolioCurveConfigs[pi].allLabels.size) { Array(numSims) { zero } }
         }
 
-        for (simIdx in 0 until numSims) {
+        IntStream.range(0, numSims).parallel().forEach { simIdx ->
             val rng = Random(masterSeed + simIdx)
             val path = assemblePath(rng, targetDays, minChunkDays, maxChunkDays, poolSize,
                 tickerReturnsByDay, effrxDailyRates)
@@ -406,6 +407,7 @@ object MonteCarloService {
         val startValue = startingBalance
         val holdings = tickers.associateWith { startValue * (targetWeights[it] ?: 0.0) }
             .toMutableMap()
+        var totalHoldings = startValue
 
         val values = ArrayList<Double>(path.size + 1)
         values.add(startValue)
@@ -415,20 +417,25 @@ object MonteCarloService {
             if (!day.isChunkBoundary) {
                 tradingDayCount++
                 if (shouldRebalanceByCount(pConfig.rebalanceStrategy, tradingDayCount)) {
-                    val total = holdings.values.sum()
-                    for (ticker in tickers) holdings[ticker] = total * (targetWeights[ticker] ?: 0.0)
+                    for (ticker in tickers) holdings[ticker] = totalHoldings * (targetWeights[ticker] ?: 0.0)
                 }
             }
+            var nextTotal = 0.0
             for (ticker in tickers) {
                 val ret = if (day.isChunkBoundary) 1.0 else (day.tickerReturns[ticker] ?: 1.0)
-                holdings[ticker] = (holdings[ticker] ?: 0.0) * ret
+                val nextHolding = (holdings[ticker] ?: 0.0) * ret
+                holdings[ticker] = nextHolding
+                nextTotal += nextHolding
             }
             if (!day.isChunkBoundary && cashflow != null && isCashflowDay(cashflow.frequency, tradingDayCount)) {
                 for (ticker in tickers) {
-                    holdings[ticker] = (holdings[ticker] ?: 0.0) + cashflow.amount * (targetWeights[ticker] ?: 0.0)
+                    val addition = cashflow.amount * (targetWeights[ticker] ?: 0.0)
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) + addition
+                    nextTotal += addition
                 }
             }
-            values.add(holdings.values.sum())
+            totalHoldings = nextTotal
+            values.add(totalHoldings)
         }
         return values
     }
@@ -447,6 +454,7 @@ object MonteCarloService {
         val holdings = tickers.associateWith {
             (startEquity + borrowed) * (targetWeights[it] ?: 0.0)
         }.toMutableMap()
+        var totalHoldings = startEquity + borrowed
 
         val result = ArrayList<Double>(path.size + 1)
         result.add(startEquity)
@@ -458,40 +466,45 @@ object MonteCarloService {
                 tradingDayCount++
                 rebalanceDay = shouldRebalanceByCount(pConfig.rebalanceStrategy, tradingDayCount)
                 if (rebalanceDay) {
-                    val currentEquity = holdings.values.sum() - borrowed
+                    val currentEquity = totalHoldings - borrowed
                     borrowed = currentEquity * mc.marginRatio
-                    val newTotal = currentEquity + borrowed
-                    for (ticker in tickers) holdings[ticker] = newTotal * (targetWeights[ticker] ?: 0.0)
+                    totalHoldings = currentEquity + borrowed
+                    for (ticker in tickers) holdings[ticker] = totalHoldings * (targetWeights[ticker] ?: 0.0)
                 }
             }
 
+            var nextTotal = 0.0
             for (ticker in tickers) {
                 val ret = if (day.isChunkBoundary) 1.0 else (day.tickerReturns[ticker] ?: 1.0)
-                holdings[ticker] = (holdings[ticker] ?: 0.0) * ret
+                val nextHolding = (holdings[ticker] ?: 0.0) * ret
+                holdings[ticker] = nextHolding
+                nextTotal += nextHolding
             }
+            totalHoldings = nextTotal
 
             if (!day.isChunkBoundary && cashflow != null && isCashflowDay(cashflow.frequency, tradingDayCount)) {
                 val contributionExposure = cashflow.amount * (1.0 + mc.marginRatio)
                 borrowed += cashflow.amount * mc.marginRatio
                 for (ticker in tickers) {
-                    holdings[ticker] =
-                        (holdings[ticker] ?: 0.0) + contributionExposure * (targetWeights[ticker] ?: 0.0)
+                    val addition = contributionExposure * (targetWeights[ticker] ?: 0.0)
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) + addition
+                    totalHoldings += addition
                 }
             }
 
             val dailyLoanRate = day.effrxRate + mc.marginSpread / 252.0
             borrowed *= (1.0 + dailyLoanRate)
 
-            val equity = holdings.values.sum() - borrowed
+            val equity = totalHoldings - borrowed
             val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
 
             if (isDailyMode) {
                 val newBorrowed = equity * mc.marginRatio
                 val delta = newBorrowed - borrowed
-                val totalHoldings = holdings.values.sum()
                 if (totalHoldings != 0.0)
                     for (ticker in tickers)
                         holdings[ticker] = (holdings[ticker] ?: 0.0) * (1.0 + delta / totalHoldings)
+                totalHoldings += delta
                 borrowed = newBorrowed
             } else {
                 val currentMarginRatio = if (equity != 0.0) borrowed / equity else mc.marginRatio
@@ -504,11 +517,12 @@ object MonteCarloService {
                     val mode = if (upperBreach) mc.upperRebalanceMode else mc.lowerRebalanceMode
                     val delta = newBorrowed - borrowed
                     BacktestService.applyAllocationMode(tickers, holdings, targetWeights, delta, mode)
+                    totalHoldings = holdings.values.sum()
                     borrowed = newBorrowed
                 }
             }
 
-            result.add(holdings.values.sum() - borrowed)
+            result.add(totalHoldings - borrowed)
         }
         return result
     }

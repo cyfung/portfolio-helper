@@ -457,10 +457,11 @@ class PaperTradingPortfolio(
     private val _holdings: MutableMap<String, Double> =
         tickers.associateWith { startEquity * (1.0 + marginRatio) * (targetWeights[it] ?: 0.0) }.toMutableMap()
     private var _cashBalance: Double = -startEquity * marginRatio
+    private var _grossStockValue: Double = _holdings.values.sum()
 
-    fun grossStockValue(): Double = _holdings.values.sum()
+    fun grossStockValue(): Double = _grossStockValue
     fun cashBalance(): Double = _cashBalance
-    fun equity(): Double = grossStockValue() + _cashBalance
+    fun equity(): Double = _grossStockValue + _cashBalance
     fun holding(ticker: String): Double = _holdings[ticker] ?: 0.0
     fun currentMarginRatio(): Double {
         val eq = equity()
@@ -468,8 +469,12 @@ class PaperTradingPortfolio(
     }
 
     fun applyDayReturns(returnRatios: Map<String, DoubleArray>, dayIndex: Int) {
-        for ((ticker, ratios) in returnRatios)
-            _holdings[ticker] = (_holdings[ticker] ?: 0.0) * ratios[dayIndex]
+        for ((ticker, ratios) in returnRatios) {
+            val before = _holdings[ticker] ?: 0.0
+            val after = before * ratios[dayIndex]
+            _holdings[ticker] = after
+            _grossStockValue += after - before
+        }
     }
 
     fun accrueMarginInterest(dailyRate: Double) {
@@ -479,12 +484,14 @@ class PaperTradingPortfolio(
     /** Buy [amount] of [ticker]: holdings increase, cash decreases. */
     fun buy(ticker: String, amount: Double) {
         _holdings[ticker] = (_holdings[ticker] ?: 0.0) + amount
+        _grossStockValue += amount
         _cashBalance -= amount
     }
 
     /** Sell [amount] of [ticker]: holdings decrease, cash increases. */
     fun sell(ticker: String, amount: Double) {
         _holdings[ticker] = (_holdings[ticker] ?: 0.0) - amount
+        _grossStockValue -= amount
         _cashBalance += amount
     }
 

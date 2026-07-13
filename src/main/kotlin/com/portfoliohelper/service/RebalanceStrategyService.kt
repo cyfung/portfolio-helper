@@ -11,35 +11,54 @@ import kotlin.math.max
 object RebalanceStrategyService {
   private data class CapePoint(val date: LocalDate, val cape: Double)
   private data class CapeHistory(val points: List<CapePoint>) {
+    private val valuations: List<Pair<Double, Double>?> = buildValuations()
+
     fun valuationFactor(date: LocalDate): Pair<Double, Double>? {
-      val usable = points.filter { it.date <= date }
-      if (usable.isEmpty()) return null
-      val current = usable.last().cape
-      if (current <= 0.0) return null
-      val earningsYields = usable.mapNotNull { point ->
-        if (point.cape > 0.0) 1.0 / point.cape else null
-      }.sorted()
-      if (earningsYields.isEmpty()) return null
-
-      fun percentile(p: Double): Double {
-        if (earningsYields.size == 1) return earningsYields.first()
-        val pos = p.coerceIn(0.0, 1.0) * (earningsYields.lastIndex)
-        val lowerIndex = pos.toInt()
-        val upperIndex = kotlin.math.ceil(pos).toInt()
-        val lower = earningsYields[lowerIndex]
-        val upper = earningsYields[upperIndex]
-        return lower + (upper - lower) * (pos - lowerIndex)
+      if (points.isEmpty()) return null
+      var lo = 0
+      var hi = points.lastIndex
+      var index = -1
+      while (lo <= hi) {
+        val mid = (lo + hi) ushr 1
+        if (points[mid].date <= date) {
+          index = mid
+          lo = mid + 1
+        } else {
+          hi = mid - 1
+        }
       }
+      return if (index >= 0) valuations[index] else null
+    }
 
-      val p5 = percentile(0.05)
-      val median = percentile(0.50)
-      val p95 = percentile(0.95)
-      val spread = p95 - p5
-      if (spread <= 0.0) return null
+    private fun buildValuations(): List<Pair<Double, Double>?> {
+      val earningsYields = mutableListOf<Double>()
+      return points.map { point ->
+        val current = point.cape
+        if (current <= 0.0) return@map null
+        val currentYield = 1.0 / current
+        val insertionIndex = earningsYields.binarySearch(currentYield).let { if (it >= 0) it else -it - 1 }
+        earningsYields.add(insertionIndex, currentYield)
 
-      val trimmedEp = (1.0 / current).coerceIn(p5, p95)
-      val equityWeight = (1.0 + (trimmedEp - median) / spread).coerceIn(0.5, 1.5)
-      return (equityWeight - 0.5).coerceIn(0.0, 1.0) to current
+        fun percentile(p: Double): Double {
+          if (earningsYields.size == 1) return earningsYields.first()
+          val pos = p.coerceIn(0.0, 1.0) * (earningsYields.lastIndex)
+          val lowerIndex = pos.toInt()
+          val upperIndex = kotlin.math.ceil(pos).toInt()
+          val lower = earningsYields[lowerIndex]
+          val upper = earningsYields[upperIndex]
+          return lower + (upper - lower) * (pos - lowerIndex)
+        }
+
+        val p5 = percentile(0.05)
+        val median = percentile(0.50)
+        val p95 = percentile(0.95)
+        val spread = p95 - p5
+        if (spread <= 0.0) return@map null
+
+        val trimmedEp = (1.0 / current).coerceIn(p5, p95)
+        val equityWeight = (1.0 + (trimmedEp - median) / spread).coerceIn(0.5, 1.5)
+        (equityWeight - 0.5).coerceIn(0.0, 1.0) to current
+      }
     }
   }
 
@@ -132,7 +151,12 @@ object RebalanceStrategyService {
             warningCollector = warningCollector,
         )
     val baseResult = runBasePortfolio(request)
-    val strategyResults = enabledStrategies.map { runConfiguredStrategy(request, it, context) }
+    val strategyResults =
+        if (enabledStrategies.size > 1) {
+          enabledStrategies.parallelStream().map { runConfiguredStrategy(request, it, context) }.toList()
+        } else {
+          enabledStrategies.map { runConfiguredStrategy(request, it, context) }
+        }
     warnings.addAll(baseResult.warnings)
     return MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
   }
@@ -914,8 +938,12 @@ object RebalanceStrategyService {
         }
 
     val firstDate = dates.first()
+    val tickerHistoryValueCache = mutableMapOf<Pair<String, Boolean>, List<Double>>()
+    val sortedSeriesEntriesCache = mutableMapOf<String, List<Map.Entry<LocalDate, Double>>>()
 
     fun tickerHistoryValues(ticker: String, normalizeLastToOne: Boolean): List<Double> {
+      val cacheKey = ticker to normalizeLastToOne
+      tickerHistoryValueCache[cacheKey]?.let { return it }
       val series = seriesMap[ticker] ?: return emptyList()
       val historyDates = (series.keys + firstDate)
           .filter { it <= firstDate }
@@ -923,9 +951,15 @@ object RebalanceStrategyService {
           .sorted()
       val filled = BacktestService.forwardFillSeries(series, historyDates)
       val values = historyDates.mapNotNull { filled[it] }
-      if (!normalizeLastToOne || values.isEmpty()) return values
-      val last = values.last().takeIf { it > 0.0 } ?: return values
-      return values.map { it / last }
+      val normalized =
+          if (!normalizeLastToOne || values.isEmpty()) {
+            values
+          } else {
+            val last = values.last().takeIf { it > 0.0 }
+            if (last == null) values else values.map { it / last }
+          }
+      tickerHistoryValueCache[cacheKey] = normalized
+      return normalized
     }
 
     fun baseReferenceHistoryPoints(): List<Pair<LocalDate, Double>> {
@@ -952,10 +986,13 @@ object RebalanceStrategyService {
       return historyDates.zip(values.map { it / last })
     }
 
-    val baseReferencePreStartHistory = baseReferenceHistoryPoints()
+    val baseReferencePreStartHistory by lazy(LazyThreadSafetyMode.NONE) { baseReferenceHistoryPoints() }
+    val baseReferencePreStartValues by lazy(LazyThreadSafetyMode.NONE) {
+      baseReferencePreStartHistory.map { it.second }
+    }
 
     fun baseReferenceHistoryValues(): List<Double> =
-        baseReferencePreStartHistory.map { it.second }
+        baseReferencePreStartValues
 
     fun portfolioReferenceHistoryValues(key: DipSurgeKey.Portfolio): List<Double> =
         when (key.source) {
@@ -1097,13 +1134,26 @@ object RebalanceStrategyService {
       return result
     }
 
-    fun seriesValueOnOrBefore(ticker: String, targetDate: LocalDate): Double? =
-        seriesMap[ticker]
-            ?.entries
-            ?.asSequence()
-            ?.filter { it.key <= targetDate }
-            ?.maxByOrNull { it.key }
-            ?.value
+    fun seriesValueOnOrBefore(ticker: String, targetDate: LocalDate): Double? {
+      val entries =
+          sortedSeriesEntriesCache.getOrPut(ticker) {
+            seriesMap[ticker]?.entries?.sortedBy { it.key }.orEmpty()
+          }
+      var lo = 0
+      var hi = entries.lastIndex
+      var result: Double? = null
+      while (lo <= hi) {
+        val mid = (lo + hi) ushr 1
+        val entry = entries[mid]
+        if (entry.key <= targetDate) {
+          result = entry.value
+          lo = mid + 1
+        } else {
+          hi = mid - 1
+        }
+      }
+      return result
+    }
 
     fun portfolioMomentumReturn(
         key: DipSurgeKey.Portfolio,
@@ -1231,9 +1281,12 @@ object RebalanceStrategyService {
 
       // Step 1: Apply daily price returns to holdings
       account.applyDayReturns(returnRatios, i)
+      var dailyBaseReferenceTotal = 0.0
       for (ticker in tickers) {
-        dailyBaseReferenceHoldings[ticker] =
+        val nextValue =
             (dailyBaseReferenceHoldings[ticker] ?: 0.0) * (returnRatios[ticker]?.get(i) ?: 1.0)
+        dailyBaseReferenceHoldings[ticker] = nextValue
+        dailyBaseReferenceTotal += nextValue
       }
       for (ticker in singleTickerReferenceTickers) {
         singleTickerReferenceValues[ticker] =
@@ -1241,7 +1294,6 @@ object RebalanceStrategyService {
                 (singleTickerReferenceReturnRatios[ticker]?.get(i) ?: 1.0)
       }
       // Independent reference path: no margin, no cashflow, daily target-weight rebalance.
-      val dailyBaseReferenceTotal = dailyBaseReferenceHoldings.values.sum()
       for (ticker in tickers) {
         dailyBaseReferenceHoldings[ticker] = dailyBaseReferenceTotal * (targetWeights[ticker] ?: 0.0)
       }
