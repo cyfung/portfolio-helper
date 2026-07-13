@@ -51,6 +51,30 @@
     background: var(--color-bg-secondary);
 }
 
+.mc-run-progress-slot {
+    min-width: 0;
+}
+
+.mc-run-progress.is-floating {
+    position: fixed;
+    left: 50%;
+    z-index: 80;
+    width: min(calc(100vw - 2rem), 1320px);
+    max-height: min(42vh, 240px);
+    margin-top: 0;
+    overflow: auto;
+    transform: translateX(-50%);
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--color-shadow, #000) 18%, transparent);
+}
+
+.mc-run-progress.is-floating.float-top {
+    top: 0.75rem;
+}
+
+.mc-run-progress.is-floating.float-bottom {
+    bottom: 0.75rem;
+}
+
 .mc-run-progress.done {
     border-color: color-mix(in srgb, var(--color-accent-primary) 35%, var(--color-border-subtle));
 }
@@ -124,6 +148,19 @@
 }
 
 @media (max-width: 640px) {
+    .mc-run-progress.is-floating {
+        width: calc(100vw - 1rem);
+        max-height: 48vh;
+    }
+
+    .mc-run-progress.is-floating.float-top {
+        top: 0.5rem;
+    }
+
+    .mc-run-progress.is-floating.float-bottom {
+        bottom: 0.5rem;
+    }
+
     .mc-run-progress-header {
         display: grid;
         gap: 0.35rem;

@@ -28,6 +28,7 @@ data class MonteCarloProgress(
     val phase: String,
     val phaseLabel: String,
     val action: String,
+    val progressLabel: String = "Progress",
     val completed: Int = 0,
     val total: Int = 0,
     val currentStep: Int = 0,
@@ -43,6 +44,13 @@ data class MonteCarloProgress(
         )
     }
 }
+
+@Serializable
+data class MonteCarloRunState(
+    val progress: MonteCarloProgress,
+    val result: MonteCarloResult? = null,
+    val error: String? = null
+)
 
 @Serializable
 data class MonteCarloPercentilePath(

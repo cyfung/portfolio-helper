@@ -1,6 +1,7 @@
 package com.portfoliohelper.service
 
 import com.portfoliohelper.AppDirs
+import kotlinx.coroutines.runBlocking
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,7 +9,7 @@ import kotlin.test.assertTrue
 
 class MonteCarloServiceTest {
     @Test
-    fun monteCarloWithFixedSeedIsDeterministic() {
+    fun monteCarloWithFixedSeedIsDeterministic() = runBlocking {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-mc-test")
         AppDirs.dataDir = tempDataDir
@@ -48,6 +49,9 @@ class MonteCarloServiceTest {
             assertEquals("complete", progress.phase)
             assertEquals(8, progress.details.first { it.label == "Simulations" }.value.toInt())
             assertTrue(progress.done)
+            val runState = MonteCarloService.getRunState()
+            assertEquals(second, runState.result)
+            assertEquals(null, runState.error)
             assertTrue(first.portfolios.single().curves.all { it.percentilePaths.all { path -> path.points.size == 253 } })
         } finally {
             AppDirs.dataDir = originalDataDir

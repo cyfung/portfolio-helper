@@ -73,6 +73,7 @@ interface McRunProgress {
   phase: string
   phaseLabel: string
   action: string
+  progressLabel: string
   completed: number
   total: number
   currentStep: number
@@ -88,6 +89,7 @@ function normalizeRunProgress(raw: any): McRunProgress {
     phase: String(raw?.phase ?? 'simulate'),
     phaseLabel: String(raw?.phaseLabel ?? 'Running simulations'),
     action: String(raw?.action ?? 'Computing simulation iterations'),
+    progressLabel: String(raw?.progressLabel ?? 'Progress'),
     completed: Number.isFinite(completed) ? completed : 0,
     total: Number.isFinite(total) ? total : 0,
     currentStep: Number(raw?.currentStep ?? (total > 0 ? 4 : 0)) || 0,
@@ -99,6 +101,10 @@ function normalizeRunProgress(raw: any): McRunProgress {
 
 function progressValue(value: string | number) {
   return typeof value === 'number' ? value.toLocaleString() : value
+}
+
+function isActiveRunProgress(progress: McRunProgress) {
+  return progress.phase !== 'idle' && !progress.done
 }
 
 function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
@@ -142,6 +148,10 @@ export default function MonteCarloPage() {
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
   const progressClearRef  = useRef<number | null>(null)
+  const progressSlotRef   = useRef<HTMLDivElement>(null)
+  const progressPanelRef  = useRef<HTMLDivElement>(null)
+  const [progressDock, setProgressDock] = useState<'inline' | 'top' | 'bottom'>('inline')
+  const [progressPanelHeight, setProgressPanelHeight] = useState(0)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
   const dateRangeError = validateDateRange(fromDate, toDate)
   const selectedTickerMappingSet = useMemo(
@@ -172,6 +182,59 @@ export default function MonteCarloPage() {
     if (pollRef.current != null) window.clearInterval(pollRef.current)
     if (progressClearRef.current != null) window.clearTimeout(progressClearRef.current)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    fetch('/api/montecarlo/run-state')
+      .then(r => r.json())
+      .then(state => {
+        if (!active) return
+        const keepPolling = applyRunState(state, true)
+        if (keepPolling) startRunStatePolling(true)
+      })
+      .catch(() => {})
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run-state recovery is intentionally mount-only.
+  }, [])
+
+  useEffect(() => {
+    if (!runProgress) {
+      setProgressDock('inline')
+      setProgressPanelHeight(0)
+      return
+    }
+
+    let frame = 0
+    const updateDock = () => {
+      frame = 0
+      const slot = progressSlotRef.current
+      const panel = progressPanelRef.current
+      if (!slot || !panel) return
+
+      setProgressPanelHeight(panel.getBoundingClientRect().height)
+
+      const rect = slot.getBoundingClientRect()
+      const nextDock =
+        rect.top >= window.innerHeight ? 'bottom' :
+        rect.bottom <= 0 ? 'top' :
+        'inline'
+      setProgressDock(nextDock)
+    }
+
+    const scheduleUpdate = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(updateDock)
+    }
+
+    updateDock()
+    window.addEventListener('scroll', scheduleUpdate, { passive: true })
+    window.addEventListener('resize', scheduleUpdate)
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', scheduleUpdate)
+      window.removeEventListener('resize', scheduleUpdate)
+    }
+  }, [runProgress])
 
   // Restore settings on mount
   useEffect(() => {
@@ -257,6 +320,7 @@ export default function MonteCarloPage() {
       phase: 'client',
       phaseLabel,
       action,
+      progressLabel: 'Progress',
       completed: 0,
       total: 0,
       currentStep,
@@ -271,6 +335,61 @@ export default function MonteCarloPage() {
       setRunProgress(null)
       progressClearRef.current = null
     }, 2500)
+  }
+
+  function stopRunStatePolling() {
+    if (pollRef.current != null) window.clearInterval(pollRef.current)
+    pollRef.current = null
+  }
+
+  function applyCachedResult(data: MonteCarloResults) {
+    if (data.seed != null) setLastSeed(data.seed)
+    setSelected(new Set())
+    setResults(data)
+  }
+
+  function applyRunState(raw: any, restoreResult: boolean, keepIdle = false) {
+    const progress = normalizeRunProgress(raw?.progress ?? raw)
+    const result = raw?.result as MonteCarloResults | null | undefined
+    const hasResult = !!result && Array.isArray(result.portfolios)
+
+    if (progress.phase === 'idle' && !hasResult) {
+      if (!keepIdle) {
+        setRunProgress(null)
+        setRunning(false)
+      }
+      return keepIdle
+    }
+
+    setRunProgress(progress)
+
+    if (progress.phase === 'error') {
+      setError(String(raw?.error || progress.action || 'Monte Carlo run failed'))
+      setRunning(false)
+      return false
+    }
+
+    if (hasResult && restoreResult) {
+      applyCachedResult(result)
+      setRunning(false)
+      if (progress.done) clearRunProgressSoon()
+      return false
+    }
+
+    const active = isActiveRunProgress(progress)
+    setRunning(active)
+    return active
+  }
+
+  function startRunStatePolling(restoreResult: boolean, keepIdle = false) {
+    stopRunStatePolling()
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const r = await fetch('/api/montecarlo/run-state')
+        const keepPolling = applyRunState(await r.json(), restoreResult, keepIdle)
+        if (!keepPolling) stopRunStatePolling()
+      } catch (_) {}
+    }, 300)
   }
 
   async function doRun(seed: number | null = null) {
@@ -334,12 +453,7 @@ export default function MonteCarloPage() {
       { label: 'Requested simulations', value: ns },
     ], 2)
 
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const r = await fetch('/api/montecarlo/progress')
-        setRunProgress(normalizeRunProgress(await r.json()))
-      } catch (_) {}
-    }, 300)
+    startRunStatePolling(false, true)
 
     const reqBody: any = {
       fromDate: fromDate || null,
@@ -374,6 +488,7 @@ export default function MonteCarloPage() {
         phase: 'complete',
         phaseLabel: 'Complete',
         action: 'Simulation results are ready',
+        progressLabel: 'Simulations',
         completed: data.numSimulations,
         total: data.numSimulations,
         currentStep: 7,
@@ -391,8 +506,7 @@ export default function MonteCarloPage() {
       setError('Request failed: ' + e.message)
       setRunProgress(null)
     } finally {
-      if (pollRef.current != null) clearInterval(pollRef.current)
-      pollRef.current = null
+      stopRunStatePolling()
       setRunning(false)
     }
   }
@@ -526,6 +640,20 @@ export default function MonteCarloPage() {
   const runProgressPercent = runProgress && runProgress.total > 0
     ? Math.min(100, Math.max(0, (runProgress.completed / runProgress.total) * 100))
     : null
+  const runProgressDetails = runProgress
+    ? runProgress.details.filter(detail =>
+        detail.label !== runProgress.progressLabel &&
+        detail.value !== undefined &&
+        detail.value !== null &&
+        String(detail.value) !== '',
+      )
+    : []
+  const runProgressDockClass = progressDock === 'inline'
+    ? ''
+    : ` is-floating ${progressDock === 'top' ? 'float-top' : 'float-bottom'}`
+  const progressSlotStyle = progressDock === 'inline' || !progressPanelHeight
+    ? undefined
+    : { minHeight: progressPanelHeight }
 
   return (
     <div className="container">
@@ -604,36 +732,43 @@ export default function MonteCarloPage() {
         </div>
 
         {runProgress && (
-          <div className={`mc-run-progress${runProgress.done ? ' done' : ''}`} role="status" aria-live="polite">
-            <div className="mc-run-progress-header">
-              <div className="mc-run-progress-title">
-                <strong>{runProgress.phaseLabel}</strong>
-                <span>{runProgress.action}</span>
+          <div className="mc-run-progress-slot" ref={progressSlotRef} style={progressSlotStyle}>
+            <div
+              ref={progressPanelRef}
+              className={`mc-run-progress${runProgress.done ? ' done' : ''}${runProgressDockClass}`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="mc-run-progress-header">
+                <div className="mc-run-progress-title">
+                  <strong>{runProgress.phaseLabel}</strong>
+                  <span>{runProgress.action}</span>
+                </div>
+                {runProgress.currentStep > 0 && runProgress.totalSteps > 0 && (
+                  <span className="mc-run-progress-step">
+                    Step {runProgress.currentStep}/{runProgress.totalSteps}
+                  </span>
+                )}
               </div>
-              {runProgress.currentStep > 0 && runProgress.totalSteps > 0 && (
-                <span className="mc-run-progress-step">
-                  Step {runProgress.currentStep}/{runProgress.totalSteps}
-                </span>
+              {runProgressPercent != null && (
+                <div className="mc-run-progress-bar" aria-label={`${runProgress.phaseLabel} progress`}>
+                  <div style={{ width: `${runProgressPercent}%` }} />
+                </div>
               )}
-            </div>
-            {runProgressPercent != null && (
-              <div className="mc-run-progress-bar" aria-label={`${runProgress.phaseLabel} progress`}>
-                <div style={{ width: `${runProgressPercent}%` }} />
+              <div className="mc-run-progress-details">
+                {runProgress.total > 0 && (
+                  <span>
+                    <span>{runProgress.progressLabel}</span>
+                    <strong>{runProgress.completed.toLocaleString()} / {runProgress.total.toLocaleString()}</strong>
+                  </span>
+                )}
+                {runProgressDetails.map((detail, i) => (
+                  <span key={`${detail.label}-${i}`}>
+                    <span>{detail.label}</span>
+                    <strong>{progressValue(detail.value)}</strong>
+                  </span>
+                ))}
               </div>
-            )}
-            <div className="mc-run-progress-details">
-              {runProgress.total > 0 && (
-                <span>
-                  <span>Progress</span>
-                  <strong>{runProgress.completed.toLocaleString()} / {runProgress.total.toLocaleString()}</strong>
-                </span>
-              )}
-              {runProgress.details.map((detail, i) => (
-                <span key={`${detail.label}-${i}`}>
-                  <span>{detail.label}</span>
-                  <strong>{progressValue(detail.value)}</strong>
-                </span>
-              ))}
             </div>
           </div>
         )}

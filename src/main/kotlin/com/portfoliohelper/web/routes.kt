@@ -1432,6 +1432,10 @@ fun Application.configureRouting() {
             call.respondText(appJson.encodeToString(MonteCarloService.getProgress()), ContentType.Application.Json)
         }
 
+        get("/api/montecarlo/run-state") {
+            call.respondText(appJson.encodeToString(MonteCarloService.getRunState()), ContentType.Application.Json)
+        }
+
         post("/api/montecarlo/run") {
             try {
                 val body = call.receiveText()
@@ -1468,6 +1472,7 @@ fun Application.configureRouting() {
 
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
+                MonteCarloService.markFailed(e.message)
                 call.respondText(
                     "{\"error\":\"${e.message?.replace("\\", "\\\\")?.replace("\"", "\\\"")}\"}",
                     ContentType.Application.Json,
