@@ -39,6 +39,7 @@ interface TaxDragTickerResult {
   totalDividend: number
   totalWithheldTax: number
   annual: TaxDragAnnualResult[]
+  commonPeriod?: boolean
   error: string | null
 }
 
@@ -49,6 +50,7 @@ interface TaxDragResponse {
 const TAX_DRAG_INPUTS_STORAGE_KEY = 'tax-drag-inputs'
 const DEFAULT_TAX_PCT = '30'
 const DEFAULT_TICKERS = 'SPY VTI VXUS'
+const DEFAULT_COMMON_PERIOD_TICKERS = ''
 
 function fmtPct(v: number | null | undefined, digits = 2) {
   return typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(digits)}%` : '-'
@@ -84,22 +86,35 @@ function formatExpenseModifier(value: number) {
   return Object.is(pct, -0) ? '0' : String(pct)
 }
 
+function resultKey(result: TaxDragTickerResult, index: number) {
+  return `${result.commonPeriod ? 'common' : 'main'}-${index}-${result.ticker}`
+}
+
 function loadTaxDragInputs() {
   try {
     const raw = localStorage.getItem(TAX_DRAG_INPUTS_STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) as Partial<{ taxPct: string; tickers: string }> : null
+    const parsed = raw ? JSON.parse(raw) as Partial<{ taxPct: string; tickers: string; commonPeriodTickers: string }> : null
     return {
       taxPct: typeof parsed?.taxPct === 'string' ? parsed.taxPct : DEFAULT_TAX_PCT,
       tickers: typeof parsed?.tickers === 'string' ? parsed.tickers : DEFAULT_TICKERS,
+      commonPeriodTickers: typeof parsed?.commonPeriodTickers === 'string'
+        ? parsed.commonPeriodTickers
+        : DEFAULT_COMMON_PERIOD_TICKERS,
     }
   } catch {
-    return { taxPct: DEFAULT_TAX_PCT, tickers: DEFAULT_TICKERS }
+    return {
+      taxPct: DEFAULT_TAX_PCT,
+      tickers: DEFAULT_TICKERS,
+      commonPeriodTickers: DEFAULT_COMMON_PERIOD_TICKERS,
+    }
   }
 }
 
 export default function TaxDragPage() {
-  const [taxPct, setTaxPct] = useState(() => loadTaxDragInputs().taxPct)
-  const [tickers, setTickers] = useState(() => loadTaxDragInputs().tickers)
+  const [initialInputs] = useState(() => loadTaxDragInputs())
+  const [taxPct, setTaxPct] = useState(() => initialInputs.taxPct)
+  const [tickers, setTickers] = useState(() => initialInputs.tickers)
+  const [commonPeriodTickers, setCommonPeriodTickers] = useState(() => initialInputs.commonPeriodTickers)
   const [results, setResults] = useState<TaxDragTickerResult[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
@@ -107,8 +122,8 @@ export default function TaxDragPage() {
   const [mappingStatus, setMappingStatus] = useState('')
 
   useEffect(() => {
-    localStorage.setItem(TAX_DRAG_INPUTS_STORAGE_KEY, JSON.stringify({ taxPct, tickers }))
-  }, [taxPct, tickers])
+    localStorage.setItem(TAX_DRAG_INPUTS_STORAGE_KEY, JSON.stringify({ taxPct, tickers, commonPeriodTickers }))
+  }, [taxPct, tickers, commonPeriodTickers])
 
   async function calculate() {
     setError('')
@@ -117,12 +132,13 @@ export default function TaxDragPage() {
 
     const withholdingTaxPct = parseFloat(taxPct)
     const parsedTickers = parseTickers(tickers)
+    const parsedCommonPeriodTickers = parseTickers(commonPeriodTickers)
 
     if (!Number.isFinite(withholdingTaxPct) || withholdingTaxPct < 0 || withholdingTaxPct > 100) {
       setError('Enter a withholding tax between 0 and 100%.')
       return
     }
-    if (parsedTickers.length === 0) {
+    if (parsedTickers.length === 0 && parsedCommonPeriodTickers.length === 0) {
       setError('Enter at least one ticker.')
       return
     }
@@ -132,7 +148,11 @@ export default function TaxDragPage() {
       const res = await fetch('/api/tax-drag/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ withholdingTaxPct, tickers: parsedTickers }),
+        body: JSON.stringify({
+          withholdingTaxPct,
+          tickers: parsedTickers,
+          commonPeriodTickers: parsedCommonPeriodTickers,
+        }),
       })
       if (!res.ok) {
         const text = await res.text()
@@ -140,7 +160,7 @@ export default function TaxDragPage() {
       }
       const data = await res.json() as TaxDragResponse
       setResults(data.results || [])
-      setExpanded(Object.fromEntries((data.results || []).map(r => [r.ticker, true])))
+      setExpanded(Object.fromEntries((data.results || []).map((r, index) => [resultKey(r, index), true])))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Tax drag calculation failed.')
     } finally {
@@ -170,7 +190,8 @@ export default function TaxDragPage() {
     }
 
     const settings = loadTickerMappingSettings()
-    const name = `Tax Drag E=${taxPct.trim() || 'custom'}%`
+    const hasCommonPeriodRows = results.some(result => result.commonPeriod)
+    const name = `Tax Drag E=${taxPct.trim() || 'custom'}%${hasCommonPeriodRows ? ' mixed periods' : ''}`
     const existing = settings.savedSets.find(set => set.name.trim().toLowerCase() === name.toLowerCase())
     const savedSet: TickerMappingSet = {
       id: existing?.id ?? newMappingSetId(),
@@ -229,13 +250,22 @@ export default function TaxDragPage() {
               placeholder="SPY VTI VXUS"
             />
           </label>
+          <label className="tax-drag-tickers">
+            <span>Common Period Tickers</span>
+            <input
+              type="text"
+              value={commonPeriodTickers}
+              onChange={e => setCommonPeriodTickers(e.target.value)}
+              placeholder="SCHD VIG DGRO"
+            />
+          </label>
           <button className="calculate-btn tax-drag-run" type="button" onClick={calculate} disabled={loading}>
             {loading ? 'Calculating...' : 'Calculate'}
           </button>
         </div>
 
         <p className="cashflow-hint">
-          Uses Yahoo raw close prices and Yahoo dividend events directly. Backtest E= is calibrated to the backtest modifier's 252-trading-day daily haircut.
+          Uses Yahoo raw close prices and Yahoo dividend events directly. Common-period tickers are recalculated over their overlapping Yahoo date range.
         </p>
 
         {error && <div className="backtest-error">{error}</div>}
@@ -267,19 +297,28 @@ export default function TaxDragPage() {
               </tr>
             </thead>
             <tbody>
-              {results.map(result => (
-                <tr key={result.ticker} className={result.error ? 'tax-drag-error-row' : undefined}>
+              {results.map((result, index) => {
+                const key = resultKey(result, index)
+                return (
+                <tr
+                  key={key}
+                  className={[
+                    result.error ? 'tax-drag-error-row' : '',
+                    result.commonPeriod ? 'tax-drag-common-row' : '',
+                  ].filter(Boolean).join(' ') || undefined}
+                >
                   <td>
                     <button
                       type="button"
                       className="tax-drag-expand"
-                      onClick={() => setExpanded(s => ({ ...s, [result.ticker]: !s[result.ticker] }))}
+                      onClick={() => setExpanded(s => ({ ...s, [key]: !s[key] }))}
                       disabled={!!result.error}
-                      aria-label={`${expanded[result.ticker] ? 'Collapse' : 'Expand'} ${result.ticker}`}
+                      aria-label={`${expanded[key] ? 'Collapse' : 'Expand'} ${result.ticker}`}
                     >
-                      {expanded[result.ticker] ? '-' : '+'}
+                      {expanded[key] ? '-' : '+'}
                     </button>
                     <span className="tax-drag-symbol">{result.ticker}</span>
+                    {result.commonPeriod && <span className="tax-drag-period-badge">Common</span>}
                   </td>
                   <td>{result.error || `${result.startDate} to ${result.endDate}`}</td>
                   <td>{result.error ? '-' : result.days.toLocaleString()}</td>
@@ -293,14 +332,19 @@ export default function TaxDragPage() {
                   <td>{fmtMoney(result.totalDividend)}</td>
                   <td>{fmtMoney(result.totalWithheldTax)}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
 
-          {results.filter(result => !result.error && expanded[result.ticker]).map(result => (
-            <section key={result.ticker} className="tax-drag-annual-section">
+          {results.map((result, index) => ({ result, key: resultKey(result, index) }))
+            .filter(row => !row.result.error && expanded[row.key])
+            .map(({ result, key }) => (
+            <section key={key} className={`tax-drag-annual-section${result.commonPeriod ? ' tax-drag-common-section' : ''}`}>
               <div className="backtest-chart-heading">
-                <h2 className="backtest-chart-title">{result.ticker} annual returns</h2>
+                <h2 className="backtest-chart-title">
+                  {result.ticker} annual returns
+                  {result.commonPeriod && <span className="tax-drag-period-badge">Common</span>}
+                </h2>
                 <span className="tax-drag-range">{result.startDate} to {result.endDate}</span>
               </div>
               <div className="tax-drag-table-wrap">

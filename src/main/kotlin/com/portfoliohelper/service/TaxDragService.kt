@@ -1,15 +1,18 @@
 package com.portfoliohelper.service
 
+import com.portfoliohelper.service.yahoo.YahooCloseDividendHistory
 import com.portfoliohelper.service.yahoo.YahooHistoricalFetcher
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import java.util.TreeMap
 import kotlin.math.pow
 
 @Serializable
 data class TaxDragRequest(
     val withholdingTaxPct: Double = 30.0,
-    val tickers: List<String> = emptyList()
+    val tickers: List<String> = emptyList(),
+    val commonPeriodTickers: List<String> = emptyList()
 )
 
 @Serializable
@@ -46,6 +49,7 @@ data class TaxDragTickerResult(
     val totalDividend: Double = 0.0,
     val totalWithheldTax: Double = 0.0,
     val annual: List<TaxDragAnnualResult> = emptyList(),
+    val commonPeriod: Boolean = false,
     val error: String? = null
 )
 
@@ -60,7 +64,9 @@ object TaxDragService {
         val tickers = request.tickers
             .map { it.trim().uppercase() }
             .filter { it.isNotBlank() }
-            .distinct()
+        val commonPeriodTickers = request.commonPeriodTickers
+            .map { it.trim().uppercase() }
+            .filter { it.isNotBlank() }
 
         return TaxDragResponse(
             tickers.map { ticker ->
@@ -72,12 +78,82 @@ object TaxDragService {
                             error = err.message ?: "Unable to calculate tax drag for $ticker"
                         )
                     }
-            }
+            } + calculateCommonPeriodTickers(commonPeriodTickers, taxPct)
         )
     }
 
     internal fun calculateTicker(ticker: String, withholdingTaxPct: Double): TaxDragTickerResult {
         val history = YahooHistoricalFetcher.fetchCloseDividendHistory(ticker)
+        return calculateTicker(ticker, withholdingTaxPct, history, commonPeriod = false)
+    }
+
+    private fun calculateCommonPeriodTickers(tickers: List<String>, withholdingTaxPct: Double): List<TaxDragTickerResult> {
+        if (tickers.isEmpty()) return emptyList()
+
+        data class LoadedHistory(val ticker: String, val history: YahooCloseDividendHistory)
+
+        val loaded = mutableListOf<LoadedHistory>()
+        val errors = mutableListOf<TaxDragTickerResult>()
+
+        for (ticker in tickers) {
+            runCatching {
+                val history = YahooHistoricalFetcher.fetchCloseDividendHistory(ticker)
+                if (history.closes.size < 2) {
+                    throw IllegalArgumentException("Yahoo returned fewer than two close prices for $ticker")
+                }
+                loaded.add(LoadedHistory(ticker, history))
+            }.getOrElse { err ->
+                errors.add(
+                    TaxDragTickerResult(
+                        ticker = ticker,
+                        withholdingTaxPct = withholdingTaxPct,
+                        commonPeriod = true,
+                        error = err.message ?: "Unable to load common-period history for $ticker"
+                    )
+                )
+            }
+        }
+
+        if (loaded.isEmpty()) return errors
+
+        val commonStart = loaded.maxOf { it.history.closes.firstKey() }
+        val commonEnd = loaded.minOf { it.history.closes.lastKey() }
+        if (!commonStart.isBefore(commonEnd)) {
+            return errors + loaded.map { row ->
+                TaxDragTickerResult(
+                    ticker = row.ticker,
+                    withholdingTaxPct = withholdingTaxPct,
+                    commonPeriod = true,
+                    error = "No overlapping Yahoo date range for common-period tickers"
+                )
+            }
+        }
+
+        return errors + loaded.map { row ->
+            runCatching {
+                calculateTicker(
+                    ticker = row.ticker,
+                    withholdingTaxPct = withholdingTaxPct,
+                    history = sliceHistory(row.history, commonStart, commonEnd),
+                    commonPeriod = true
+                )
+            }.getOrElse { err ->
+                TaxDragTickerResult(
+                    ticker = row.ticker,
+                    withholdingTaxPct = withholdingTaxPct,
+                    commonPeriod = true,
+                    error = err.message ?: "Unable to calculate common-period tax drag for ${row.ticker}"
+                )
+            }
+        }
+    }
+
+    private fun calculateTicker(
+        ticker: String,
+        withholdingTaxPct: Double,
+        history: YahooCloseDividendHistory,
+        commonPeriod: Boolean
+    ): TaxDragTickerResult {
         val closes = history.closes
         if (closes.size < 2) {
             throw IllegalArgumentException("Yahoo returned fewer than two close prices for $ticker")
@@ -157,7 +233,21 @@ object TaxDragService {
             endingValueAfterTax = afterTaxValue,
             totalDividend = totalDividend,
             totalWithheldTax = totalWithheldTax,
-            annual = annualRows
+            annual = annualRows,
+            commonPeriod = commonPeriod
+        )
+    }
+
+    private fun sliceHistory(
+        history: YahooCloseDividendHistory,
+        startDate: LocalDate,
+        endDate: LocalDate
+    ): YahooCloseDividendHistory {
+        val closes = TreeMap<LocalDate, Double>()
+        closes.putAll(history.closes.filterKeys { date -> date in startDate..endDate })
+        return YahooCloseDividendHistory(
+            closes = closes,
+            dividends = history.dividends.filterKeys { date -> date in startDate..endDate }
         )
     }
 

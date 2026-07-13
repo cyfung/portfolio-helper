@@ -11,7 +11,7 @@
 
 .tax-drag-controls {
     display: grid;
-    grid-template-columns: 9rem minmax(18rem, 1fr) auto;
+    grid-template-columns: 9rem minmax(14rem, 1fr) minmax(14rem, 1fr) auto;
     gap: 0.75rem;
     align-items: end;
 }
@@ -102,6 +102,25 @@
     font-weight: 700;
 }
 
+.tax-drag-period-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 1.2rem;
+    margin-left: 0.45rem;
+    padding: 0 0.4rem;
+    border: 1px solid color-mix(in srgb, var(--color-accent-primary), transparent 45%);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-accent-primary), transparent 88%);
+    color: var(--color-accent-primary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    vertical-align: middle;
+}
+
+.tax-drag-common-row td {
+    background: color-mix(in srgb, var(--color-accent-primary), transparent 96%);
+}
+
 .tax-drag-expand {
     width: 1.4rem;
     height: 1.4rem;
@@ -131,6 +150,10 @@
 
 .tax-drag-annual-section {
     min-width: 0;
+}
+
+.tax-drag-common-section .tax-drag-table-wrap {
+    border-color: color-mix(in srgb, var(--color-accent-primary), transparent 60%);
 }
 
 .tax-drag-range {
