@@ -56,7 +56,7 @@ internal object MonteCarloParallel {
         parallelMapRange(items.size) { index -> transform(index, items[index]) }
 
     private fun configuredParallelism(): Int {
-        val available = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val available = Runtime.getRuntime().availableProcessors().coerceAtLeast(1) * 2
         val configured = System.getProperty("portfoliohelper.monteCarlo.parallelism")
             ?.toIntOrNull()
             ?: System.getenv("PORTFOLIOHELPER_MONTE_CARLO_PARALLELISM")?.toIntOrNull()
