@@ -692,6 +692,7 @@ object RebalanceStrategyService {
 
   private fun RebalStrategyConfig.standaloneMarginReferenceTickers(): Set<String> =
       derivedSubStrategies
+          .filter { it.enabled }
           .mapNotNull {
             if (it.marginReferenceSource == DerivedMarginReferenceSource.STANDALONE_TICKER) {
               normalizeReferenceTicker(it.marginReferenceTicker)
