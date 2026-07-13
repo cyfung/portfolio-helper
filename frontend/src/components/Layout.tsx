@@ -3,12 +3,15 @@
 import { Children, isValidElement, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import PortfolioTabs from '@/components/portfolio/PortfolioTabs'
 import { showConfirm } from '@/components/ConfirmDialog'
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 
 // ── Section list (flattened — all pages as peers) ─────────────────────────────
 
+const PORTFOLIO_NAV_STORAGE_KEY = 'portfolio-helper-active-portfolio-page'
 const STRATEGY_NAV_STORAGE_KEY = 'portfolio-helper-active-strategy-page'
+const TOOLS_NAV_STORAGE_KEY = 'portfolio-helper-active-tools-page'
 
 const ALL_SECTIONS = [
   { href: '/portfolio/', label: 'Portfolio Viewer',   icon: 'viewer',    group: null         },
@@ -22,6 +25,27 @@ const ALL_SECTIONS = [
   { href: '/rebalance-strategy',  label: 'Rebalance Strategy',  icon: 'rebalance', group: 'strategy' },
   { href: '/market-timing',       label: 'Market Timing',       icon: 'marketTiming', group: 'strategy' },
 ] as const
+
+type NavGroupId = 'portfolio' | 'strategy' | 'tools'
+type NavSection = (typeof ALL_SECTIONS)[number]
+
+const NAV_GROUPS: Array<{ id: NavGroupId; label: string; storageKey: string }> = [
+  { id: 'strategy', label: 'Tests', storageKey: STRATEGY_NAV_STORAGE_KEY },
+  { id: 'tools', label: 'Tools', storageKey: TOOLS_NAV_STORAGE_KEY },
+  { id: 'portfolio', label: 'Portfolio', storageKey: PORTFOLIO_NAV_STORAGE_KEY },
+]
+
+const DEFAULT_SECTION_BY_GROUP: Record<NavGroupId, NavSection['href']> = {
+  portfolio: '/portfolio/',
+  strategy: '/portfolio-builder',
+  tools: '/loan',
+}
+
+function sectionGroupId(section: NavSection): NavGroupId {
+  if (section.group === 'strategy') return 'strategy'
+  if (section.group === 'tools') return 'tools'
+  return 'portfolio'
+}
 
 // ── Inline SVG helpers ────────────────────────────────────────────────────────
 
@@ -60,19 +84,43 @@ interface PageNavTabsProps {
 
 export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTabsProps) {
   const location = useLocation()
-  const [secOpen, setSecOpen] = useState(false)
+  const navigate = useNavigate()
+  const portfolioId = usePortfolioStore(s => s.portfolioId)
+  const portfolioName = usePortfolioStore(s => s.portfolioName)
+  const allPortfolios = usePortfolioStore(s => s.allPortfolios)
+  const [openGroup, setOpenGroup] = useState<NavGroupId | null>(null)
   const [ctxOpen, setCtxOpen] = useState(false)
-  const secRef = useRef<HTMLDivElement>(null)
+  const navGroupsRef = useRef<HTMLDivElement>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
+  const [lastActiveByGroup, setLastActiveByGroup] = useState<Record<NavGroupId, string>>(() => {
+    const defaults: Record<NavGroupId, string> = { ...DEFAULT_SECTION_BY_GROUP }
+    if (typeof localStorage === 'undefined') return defaults
+
+    for (const group of NAV_GROUPS) {
+      const stored = localStorage.getItem(group.storageKey)
+      if (stored && ALL_SECTIONS.some(section => section.href === stored && sectionGroupId(section) === group.id)) {
+        defaults[group.id] = stored
+      }
+    }
+
+    return defaults
+  })
 
   useEffect(() => {
-    const s = ALL_SECTIONS.find(s => s.group === 'strategy' && s.href === location.pathname)
-    if (s) localStorage.setItem(STRATEGY_NAV_STORAGE_KEY, s.href)
-  }, [location.pathname])
+    const section = ALL_SECTIONS.find(s => isActiveSection(s.href)) ?? ALL_SECTIONS.find(s => s.href === active)
+    if (!section) return
+
+    const groupId = sectionGroupId(section)
+    const storageKey = NAV_GROUPS.find(group => group.id === groupId)?.storageKey
+    if (storageKey) localStorage.setItem(storageKey, section.href)
+    setLastActiveByGroup(prev => (
+      prev[groupId] === section.href ? prev : { ...prev, [groupId]: section.href }
+    ))
+  }, [active, location.pathname])
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
-      if (!secRef.current?.contains(e.target as Node)) setSecOpen(false)
+      if (!navGroupsRef.current?.contains(e.target as Node)) setOpenGroup(null)
       if (!ctxRef.current?.contains(e.target as Node)) setCtxOpen(false)
     }
     document.addEventListener('mousedown', onDown)
@@ -87,10 +135,33 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
     return p === href
   }
 
-  const activeSec =
-    ALL_SECTIONS.find(s => isActiveSection(s.href)) ??
-    ALL_SECTIONS.find(s => s.href === active) ??
-    ALL_SECTIONS[0]
+  function groupSections(groupId: NavGroupId) {
+    return ALL_SECTIONS.filter(section => sectionGroupId(section) === groupId)
+  }
+
+  function selectedSectionForGroup(groupId: NavGroupId) {
+    const sections = groupSections(groupId)
+    return sections.find(section => isActiveSection(section.href)) ??
+      sections.find(section => section.href === lastActiveByGroup[groupId]) ??
+      sections[0]
+  }
+
+  function rememberSection(section: NavSection) {
+    const groupId = sectionGroupId(section)
+    const storageKey = NAV_GROUPS.find(group => group.id === groupId)?.storageKey
+    if (storageKey) localStorage.setItem(storageKey, section.href)
+    setLastActiveByGroup(prev => ({ ...prev, [groupId]: section.href }))
+  }
+
+  function navigateToSection(section: NavSection) {
+    rememberSection(section)
+    navigate(section.href)
+  }
+
+  function navigateToPortfolioContext(section: NavSection) {
+    rememberSection(section)
+    navigate(portfolioId ? `${section.href}${portfolioId}` : section.href)
+  }
 
   return (
     <nav className="page-nav-tabs">
@@ -101,80 +172,112 @@ export function PageNavTabs({ active, contextLabel, contextChildren }: PageNavTa
 
       <span className="v4-sep">/</span>
 
-      {/* Section dropdown */}
-      <div
-        className="v4-crumb-wrap"
-        ref={secRef}
-        onMouseEnter={() => { setSecOpen(true); setCtxOpen(false) }}
-        onMouseLeave={() => setSecOpen(false)}
-      >
-        <button className="v4-crumb" type="button">
-          <SectionSvg name={activeSec.icon} />
-          <span>{activeSec.label}</span>
-          <ChevronDown />
-        </button>
-        {secOpen && (
-          <>
-            <div className="v4-pop-bridge" />
-            <div className="v4-pop">
-              <div className="v4-pop-head">PORTFOLIO</div>
-              {ALL_SECTIONS.filter(s => !s.group).map(s => (
-                <Link key={s.href} to={s.href}
-                      className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
-                      onClick={() => setSecOpen(false)}>
-                  <SectionSvg name={s.icon} />
-                  <span>{s.label}</span>
-                </Link>
-              ))}
-              <div className="v4-pop-head">STRATEGY TOOLS</div>
-              {ALL_SECTIONS.filter(s => s.group === 'strategy').map(s => (
-                <Link key={s.href} to={s.href}
-                      className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
-                      onClick={() => setSecOpen(false)}>
-                  <SectionSvg name={s.icon} />
-                  <span>{s.label}</span>
-                </Link>
-              ))}
-              <div className="v4-pop-head">TOOLS</div>
-              {ALL_SECTIONS.filter(s => s.group === 'tools').map(s => (
-                <Link key={s.href} to={s.href}
-                      className={`v4-pop-item${isActiveSection(s.href) ? ' active' : ''}`}
-                      onClick={() => setSecOpen(false)}>
-                  <SectionSvg name={s.icon} />
-                  <span>{s.label}</span>
-                </Link>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+      <div className="v4-nav-group-pills" ref={navGroupsRef}>
+        {NAV_GROUPS.map(group => {
+          const selectedSection = selectedSectionForGroup(group.id)
+          const sections = groupSections(group.id)
+          const isCurrentGroup = sections.some(section => isActiveSection(section.href))
+          const groupDropdown = (
+            <>
+              <div className="v4-pop-bridge" />
+              <div className="v4-pop">
+                {group.id !== 'portfolio' && <div className="v4-pop-head">{group.label.toUpperCase()}</div>}
+                {sections.map(section => (
+                  <Link
+                    key={section.href}
+                    to={section.href}
+                    className={`v4-pop-item${section.href === selectedSection.href ? ' active' : ''}`}
+                    onClick={() => {
+                      rememberSection(section)
+                      setOpenGroup(null)
+                    }}
+                  >
+                    <SectionSvg name={section.icon} />
+                    <span>{section.label}</span>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )
 
-      {/* Portfolio / page context dropdown */}
-      {contextLabel && (
-        <>
-          <span className="v4-sep">/</span>
-          <div
-            className="v4-crumb-wrap"
-            ref={ctxRef}
-            onMouseEnter={() => { setCtxOpen(true); setSecOpen(false) }}
-            onMouseLeave={() => setCtxOpen(false)}
-          >
-            <button className="v4-crumb pf" type="button">
-              <span>{contextLabel}</span>
-              <ChevronDown />
-            </button>
-            {ctxOpen && contextChildren && (
-              <>
-                <div className="v4-pop-bridge" />
-                <div className="v4-pop">
-                  <div className="v4-pop-head">PORTFOLIOS</div>
-                  {contextChildren}
+          if (group.id === 'portfolio') {
+            const effectiveContextLabel = (
+              contextLabel ??
+              allPortfolios.find(portfolio => portfolio.slug === portfolioId)?.name ??
+              portfolioName
+            ) ||
+              'Portfolio'
+            const effectiveContextChildren = contextChildren ?? <PortfolioTabs basePath={selectedSection.href} />
+
+            return (
+              <div
+                key={group.id}
+                className={`v4-nav-pill v4-nav-pill-combo${isCurrentGroup ? ' active' : ''}`}
+              >
+                <div
+                  className="v4-crumb-wrap"
+                  onMouseEnter={() => { setOpenGroup(group.id); setCtxOpen(false) }}
+                  onMouseLeave={() => setOpenGroup(null)}
+                >
+                  <button className="v4-nav-pill-segment" type="button" onClick={() => navigateToSection(selectedSection)}>
+                    <SectionSvg name={selectedSection.icon} />
+                    <span className="v4-nav-pill-page">{selectedSection.label}</span>
+                    <ChevronDown />
+                  </button>
+                  {openGroup === group.id && groupDropdown}
                 </div>
-              </>
-            )}
-          </div>
-        </>
-      )}
+
+                <span className="v4-nav-pill-divider">/</span>
+                <div
+                  className="v4-crumb-wrap"
+                  ref={ctxRef}
+                  onMouseEnter={() => { setCtxOpen(true); setOpenGroup(null) }}
+                  onMouseLeave={() => setCtxOpen(false)}
+                >
+                  <button
+                    className="v4-nav-pill-segment v4-nav-pill-segment-context"
+                    type="button"
+                    onClick={() => navigateToPortfolioContext(selectedSection)}
+                  >
+                    <span>{effectiveContextLabel}</span>
+                    <ChevronDown />
+                  </button>
+                  {ctxOpen && (
+                    <>
+                      <div className="v4-pop-bridge" />
+                      <div className="v4-pop">
+                        <div className="v4-pop-head">PORTFOLIOS</div>
+                        {effectiveContextChildren}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          }
+
+          return (
+            <div
+              key={group.id}
+              className="v4-crumb-wrap"
+              onMouseEnter={() => { setOpenGroup(group.id); setCtxOpen(false) }}
+              onMouseLeave={() => setOpenGroup(null)}
+            >
+              <button
+                className={`v4-nav-pill${isCurrentGroup ? ' active' : ''}`}
+                type="button"
+                onClick={() => navigateToSection(selectedSection)}
+              >
+                <span className="v4-nav-pill-group">{group.label}</span>
+                <SectionSvg name={selectedSection.icon} />
+                <span className="v4-nav-pill-page">{selectedSection.label}</span>
+                <ChevronDown />
+              </button>
+              {openGroup === group.id && groupDropdown}
+            </div>
+          )
+        })}
+      </div>
     </nav>
   )
 }

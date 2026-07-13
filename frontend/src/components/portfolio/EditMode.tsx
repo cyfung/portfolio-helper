@@ -27,13 +27,11 @@ interface StockRow {
   symbol: string
   qty: NumericInputValue
   weight: NumericInputValue
-  letf: string
-  groups: string
   deleted?: boolean
 }
 
 
-const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight', 'letf', 'groups']
+const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight']
 
 function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
   const validRows = rows.filter(row => row.ticker.trim() && row.weight !== 0 && !isPlaceholderTicker(row.ticker))
@@ -58,14 +56,6 @@ function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
   }
 
   return scaled.map(row => ({ ticker: row.ticker, weight: row.cents / 100 }))
-}
-
-function letfAttrToStr(attr: string): string {
-  if (!attr) return ''
-  const tokens = attr.split(',')
-  const parts: string[] = []
-  for (let i = 0; i + 1 < tokens.length; i += 2) parts.push(`${tokens[i]} ${tokens[i + 1]}`)
-  return parts.join(' ')
 }
 
 function inputRawValue(input: HTMLInputElement | null): string {
@@ -129,6 +119,24 @@ function flashCopyButton(btn: HTMLElement) {
   setTimeout(() => btn.classList.remove('copy-btn-flash'), 900)
 }
 
+async function fetchTickerConfig(symbol: string): Promise<{ letf: string; groups: string }> {
+  const res = await fetch(`/api/ticker-config?symbol=${encodeURIComponent(symbol)}`)
+  if (!res.ok) throw new Error(`Failed to load ticker config for ${symbol}`)
+  const data = await res.json()
+  return {
+    letf: String(data.letf ?? '').trim(),
+    groups: String(data.groups ?? '').trim(),
+  }
+}
+
+async function latestTickerConfigBySymbol(symbols: string[]) {
+  const uniqueSymbols = [...new Set(symbols.map(s => s.trim().toUpperCase()).filter(Boolean))]
+  const entries = await Promise.all(
+    uniqueSymbols.map(async symbol => [symbol, await fetchTickerConfig(symbol)] as const)
+  )
+  return new Map(entries)
+}
+
 export default function EditMode({ saveKey, onSaved, pendingDividendDate, initialStocks }: Props) {
   const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
   const dividendDate = pendingDividendDate ?? config.dividendStartDate ?? ''
@@ -146,8 +154,6 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         symbol: s.label,
         qty: zeroAsEmpty(s.originalAmount ?? s.amount),
         weight: zeroAsEmpty(s.targetWeight ?? 0),
-        letf: letfAttrToStr(s.letf),
-        groups: s.groups,
       }))
   )
   const [saving, setSaving] = useState(false)
@@ -160,7 +166,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         if (cancelled) return
         const list = data ?? []
         setSavedPortfolios(list)
-        setSelectedImportName(current => current || list[0]?.name || '')
+        setSelectedImportName(current => current || list[list.length - 1]?.name || '')
       })
       .catch(() => {
         if (!cancelled) setSavedPortfolios([])
@@ -182,14 +188,12 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }, [saveKey])
 
   async function doSave() {
-    const updates = stockRows
+    const stockUpdates = stockRows
       .filter(r => !r.deleted && r.symbol.trim() && !isPlaceholderTicker(r.symbol))
       .map(r => ({
         symbol: r.symbol.trim().toUpperCase(),
         amount: numberFromInputValue(r.qty),
         targetWeight: numberFromInputValue(r.weight),
-        letf: r.letf || '',
-        groups: r.groups || '',
       }))
 
     // Read cash from CashEditTable DOM (always-visible section)
@@ -197,6 +201,16 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
 
     setSaving(true)
     try {
+      const tickerConfigBySymbol = await latestTickerConfigBySymbol(stockUpdates.map(row => row.symbol))
+      const updates = stockUpdates.map(row => {
+        const tickerConfig = tickerConfigBySymbol.get(row.symbol)
+        return {
+          ...row,
+          letf: tickerConfig?.letf ?? '',
+          groups: tickerConfig?.groups ?? '',
+        }
+      })
+
       const r = await fetch(`/api/portfolio/save-all?portfolio=${portfolioId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,7 +230,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }
 
   function addStockRow() {
-    setStockRows(rows => [...rows, { symbol: '', qty: '', weight: '', letf: '', groups: '' }])
+    setStockRows(rows => [...rows, { symbol: '', qty: '', weight: '' }])
   }
 
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
@@ -281,7 +295,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             next[existingIdx].weight = row.weight
           } else {
             rowBySymbol.set(symbol, next.length)
-            next.push({ symbol, qty: '', weight: row.weight, letf: '', groups: '' })
+            next.push({ symbol, qty: '', weight: row.weight })
           }
         }
         return next
@@ -364,7 +378,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           targetIdx = visibleIndices[visiblePos]
         } else {
           // Need to append a new row
-          next.push({ symbol: '', qty: '', weight: '', letf: '', groups: '' })
+          next.push({ symbol: '', qty: '', weight: '' })
           targetIdx = next.length - 1
           visibleIndices.push(targetIdx)
         }
@@ -398,7 +412,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     if (copyTableBtn) {
       const lines = stockRows
         .filter(r => !r.deleted)
-        .map(r => [r.symbol, numberClipboardValue(r.qty), numberClipboardValue(r.weight), r.letf, r.groups].join('\t'))
+        .map(r => [r.symbol, numberClipboardValue(r.qty), numberClipboardValue(r.weight)].join('\t'))
       navigator.clipboard.writeText(lines.join('\n')).then(() => flashCopyButton(copyTableBtn))
       return
     }
@@ -425,7 +439,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
               setImportStatus('')
             }}
           >
-            {savedPortfolios.map(p => (
+            {[...savedPortfolios].reverse().map(p => (
               <option key={p.name} value={p.name}>{p.name}</option>
             ))}
           </select>
@@ -453,8 +467,6 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             <th>Symbol <button type="button" className="copy-col-btn" data-column="symbol" title="Copy Symbol column"><Copy size={12} /></button></th>
             <th className="amount">Qty <button type="button" className="copy-col-btn col-num" data-column="qty" title="Copy Qty column"><Copy size={12} /></button></th>
             <th>Weight % <button type="button" className="copy-col-btn" data-column="weight" title="Copy Weight % column"><Copy size={12} /></button></th>
-            <th>LETF</th>
-            <th>Groups</th>
             <th />
           </tr>
         </thead>
@@ -514,32 +526,6 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
                 />
               </td>
               <td>
-                <input
-                  type="text"
-                  className="edit-input edit-letf"
-                  data-column="letf"
-                  data-symbol={row.symbol}
-                  value={row.letf}
-                  placeholder="e.g. 2 IVV"
-                  style={{ textAlign: 'left', width: 180 }}
-                  onChange={e => updateStock(idx, 'letf', e.target.value)}
-                  onKeyDown={handleEnterKey}
-                />
-              </td>
-              <td>
-                <input
-                  type="text"
-                  className="edit-input edit-groups"
-                  data-column="groups"
-                  data-symbol={row.symbol}
-                  value={row.groups}
-                  placeholder="e.g. 1 Equity"
-                  style={{ textAlign: 'left', width: 180 }}
-                  onChange={e => updateStock(idx, 'groups', e.target.value)}
-                  onKeyDown={handleEnterKey}
-                />
-              </td>
-              <td>
                 <button
                   type="button"
                   className="delete-row-btn"
@@ -557,7 +543,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             <td id="target-weight-total" style={totalWeight > 0 && Math.abs(totalWeight - 100) > 0.001 ? { color: 'red' } : undefined}>
               {totalWeight > 0 ? `${totalWeight.toFixed(2)}%` : ''}
             </td>
-            <td /><td /><td />
+            <td />
           </tr>
         </tfoot>
       </table>
