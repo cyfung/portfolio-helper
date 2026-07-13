@@ -104,14 +104,13 @@ class ManagedPortfolioTest {
         BackupService.saveToDb(first, force = true)
         val backupId = BackupService.listDbBackups(first).single().id
         val exportedJson = BackupService.exportJson(first)
-        assertTrue("\"letf\"" !in exportedJson)
-        assertTrue("\"groups\"" !in exportedJson)
+        assertTrue("\"letf\":\"2 SPY\"" in exportedJson)
+        assertTrue("\"groups\":\"1 Equity\"" in exportedJson)
 
         transaction {
-            val oldBackupJson = exportedJson.replace(
-                "\"targetWeight\":100.0",
-                "\"targetWeight\":100.0,\"letf\":\"9 BAD\",\"groups\":\"9 Bad\""
-            )
+            val oldBackupJson = exportedJson
+                .replace("\"letf\":\"2 SPY\"", "\"letf\":\"9 BAD\"")
+                .replace("\"groups\":\"1 Equity\"", "\"groups\":\"9 Bad\"")
             assertTrue(oldBackupJson != exportedJson)
             PortfolioBackupsTable.update({ PortfolioBackupsTable.id eq backupId }) {
                 it[data] = oldBackupJson
@@ -148,8 +147,8 @@ class ManagedPortfolioTest {
             val ssoTicker = StockTickersTable.selectAll()
                 .where { StockTickersTable.symbol eq "SSO" }
                 .single()
-            assertEquals("2 SPY", ssoTicker[StockTickersTable.letf])
-            assertEquals("1 Equity", ssoTicker[StockTickersTable.groups])
+            assertEquals("9 BAD", ssoTicker[StockTickersTable.letf])
+            assertEquals("9 Bad", ssoTicker[StockTickersTable.groups])
 
             val uproTicker = StockTickersTable.selectAll()
                 .where { StockTickersTable.symbol eq "UPRO" }
