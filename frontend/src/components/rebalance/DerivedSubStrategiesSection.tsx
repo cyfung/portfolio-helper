@@ -20,10 +20,12 @@ interface Props {
   onCommit: () => void
 }
 
-const STEP_SCALE_FUNCTIONS = ['STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET']
-const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET']
-const RESET_ABOVE_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM']
-const STAIRS_RESET_TARGET_FUNCTIONS = ['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM']
+const STAIRS_SCALE_FUNCTIONS = ['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_FIXED_TARGET_REF', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET']
+const CONFIGURABLE_STAIRS_SCALE_FUNCTIONS = ['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_FIXED_TARGET_REF']
+const STEP_SCALE_FUNCTIONS = ['STEP', ...STAIRS_SCALE_FUNCTIONS]
+const HYSTERESIS_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', ...STAIRS_SCALE_FUNCTIONS]
+const RESET_ABOVE_SCALE_FUNCTIONS = ['HYSTERESIS_STEP', 'HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_FIXED_TARGET_REF', 'HYSTERESIS_STAIRS_MOMENTUM']
+const STAIRS_RESET_TARGET_FUNCTIONS = ['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_FIXED_TARGET_REF', 'HYSTERESIS_STAIRS_MOMENTUM']
 const SIGMOID_SCALE_FUNCTIONS = ['SIGMOID', 'ADAPTIVE_LOW_SIGMOID']
 const MARGIN_COVERAGE_REFERENCE_MAX = 1000
 
@@ -298,6 +300,7 @@ export default function DerivedSubStrategiesSection({
                   <option value="STEP">Step</option>
                   <option value="HYSTERESIS_STEP">Hysteresis Step</option>
                   <option value="HYSTERESIS_STAIRS">Hysteresis Stairs</option>
+                  <option value="HYSTERESIS_STAIRS_FIXED_TARGET_REF">HY Stairs Fixed Target Ref</option>
                   <option value="HYSTERESIS_STAIRS_REF_BL_RESET">Hysteresis Stairs Ref BL Reset</option>
                 </select>
               </DerivedField>
@@ -314,7 +317,7 @@ export default function DerivedSubStrategiesSection({
                   />
                 </DerivedField>
               )}
-              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
+              {CONFIGURABLE_STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
                 <DerivedField label="Ref Mode">
                   <select
                     value={derived.scale.hysteresisStairsReferenceMode ?? 'RESET_REF'}
@@ -384,7 +387,7 @@ export default function DerivedSubStrategiesSection({
                 </>
               )}
               {RESET_ABOVE_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') &&
-                  ((derived.scale.function ?? 'SIGMOID') !== 'HYSTERESIS_STAIRS' ||
+                  (!CONFIGURABLE_STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') ||
                     (derived.scale.hysteresisStairsReferenceMode ?? 'RESET_REF') === 'RESET_REF') && (
                 <DerivedMarginInput
                   label="Reset Ref"
@@ -397,7 +400,7 @@ export default function DerivedSubStrategiesSection({
                 />
               )}
               {STAIRS_RESET_TARGET_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') &&
-                  ((derived.scale.function ?? 'SIGMOID') !== 'HYSTERESIS_STAIRS' ||
+                  (!CONFIGURABLE_STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') ||
                     (derived.scale.hysteresisStairsReferenceMode ?? 'RESET_REF') === 'RESET_REF') && (
                 <DerivedMarginInput
                   label="Reset Target"
@@ -429,7 +432,7 @@ export default function DerivedSubStrategiesSection({
                 onChange={margin => updateSubStrategy(derived.id, { maxMargin: margin })}
                 onCommit={onCommit}
               />
-              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' && (
+              {CONFIGURABLE_STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') && (
                 <DerivedField label="Fall Mode">
                   <select
                     value={derived.scale.hysteresisStairsFallMode ?? 'DIRECT'}
@@ -443,7 +446,7 @@ export default function DerivedSubStrategiesSection({
                   </select>
                 </DerivedField>
               )}
-              {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' &&
+              {CONFIGURABLE_STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') &&
                   HYSTERESIS_STAIRS_MOMENTUM_FALL_MODES.includes(derived.scale.hysteresisStairsFallMode ?? 'DIRECT') && (
                 <NumberInputRow
                   label="Momentum Months"
@@ -461,7 +464,7 @@ export default function DerivedSubStrategiesSection({
                 {(derived.scale.steps?.length ? derived.scale.steps : [emptyDerivedTargetStep(0)]).map((step, stepIdx) => (
                   <div key={step.id} className="strategy-derived-step-row">
                     <DerivedMarginInput
-                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Ref` : `Step ${stepIdx + 1} Ref`}
+                      label={STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Ref` : `Step ${stepIdx + 1} Ref`}
                       value={step.referenceMargin}
                       placeholder={String(60 + stepIdx * 10)}
                       sliderMax={referenceInputMax}
@@ -470,7 +473,7 @@ export default function DerivedSubStrategiesSection({
                       onCommit={onCommit}
                     />
                     <DerivedMarginInput
-                      label={['HYSTERESIS_STAIRS', 'HYSTERESIS_STAIRS_MOMENTUM', 'HYSTERESIS_STAIRS_REF_BL_RESET'].includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}
+                      label={STAIRS_SCALE_FUNCTIONS.includes(derived.scale.function ?? 'SIGMOID') ? `Stair ${stepIdx + 1} Target` : `Step ${stepIdx + 1} Target`}
                       value={step.targetMargin}
                       placeholder={String(50 + stepIdx * 10)}
                       sliderMax={sliderMax}

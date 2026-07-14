@@ -94,7 +94,7 @@ export interface VmTimingMrState {
   allocStrategy: string
 }
 
-export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_MOMENTUM' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
+export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_FIXED_TARGET_REF' | 'HYSTERESIS_STAIRS_MOMENTUM' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
 export type HysteresisStairsReferenceMode = 'RESET_REF' | 'BUY_LOW_INTENTION'
 export type HysteresisStairsFallMode = 'DIRECT' | 'MOMENTUM' | 'MOMENTUM_WITH_RECOVERY'
 
@@ -607,6 +607,8 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
         : (
           item.scale?.function === 'HYSTERESIS_STEP'
             ? 'HYSTERESIS_STEP'
+            : item.scale?.function === 'HYSTERESIS_STAIRS_FIXED_TARGET_REF'
+            ? 'HYSTERESIS_STAIRS_FIXED_TARGET_REF'
             : item.scale?.function === 'HYSTERESIS_STAIRS' || item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
             ? 'HYSTERESIS_STAIRS'
             : item.scale?.function === 'HYSTERESIS_STAIRS_REF_BL_RESET'

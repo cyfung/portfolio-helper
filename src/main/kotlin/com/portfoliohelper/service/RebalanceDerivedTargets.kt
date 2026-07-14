@@ -20,6 +20,8 @@ internal fun DerivedTargetScaleConfig.withReferenceMetric(metric: DerivedMarginR
         stepBaseTarget =
             if (function == DerivedTargetScaleFunction.HYSTERESIS_STEP ||
                 function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM ||
+                (function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS_FIXED_TARGET_REF &&
+                    hysteresisStairsReferenceMode == HysteresisStairsReferenceMode.RESET_REF) ||
                 (function == DerivedTargetScaleFunction.HYSTERESIS_STAIRS &&
                     hysteresisStairsReferenceMode == HysteresisStairsReferenceMode.RESET_REF)
             ) {
@@ -104,6 +106,14 @@ internal sealed interface DerivedTargetRuntime {
                 HysteresisStairsMomentumDerivedTargetRuntime(scale)
               } else {
                 HysteresisStairsDerivedTargetRuntime(scale)
+              }
+          DerivedTargetScaleFunction.HYSTERESIS_STAIRS_FIXED_TARGET_REF ->
+              if (scale.hysteresisStairsReferenceMode == HysteresisStairsReferenceMode.BUY_LOW_INTENTION) {
+                HysteresisStairsBuyLowIntentionDerivedTargetRuntime(scale, fixedTargetReference = true)
+              } else if (scale.hysteresisStairsFallMode != HysteresisStairsFallMode.DIRECT) {
+                HysteresisStairsMomentumDerivedTargetRuntime(scale, fixedTargetReference = true)
+              } else {
+                HysteresisStairsDerivedTargetRuntime(scale, fixedTargetReference = true)
               }
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS_MOMENTUM -> HysteresisStairsMomentumDerivedTargetRuntime(scale)
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET -> HysteresisStairsRefBuyLowResetDerivedTargetRuntime(scale)
@@ -259,6 +269,7 @@ private class HysteresisStepDerivedTargetRuntime(
 
 private class HysteresisStairsDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
+    private val fixedTargetReference: Boolean = false,
 ) : DerivedTargetRuntimeBase(scale) {
   override val usesPostPriceMarginForTriggers: Boolean = true
 
@@ -267,8 +278,12 @@ private class HysteresisStairsDerivedTargetRuntime(
   private val resetThreshold = scale.resetThresholdAbove(highestReference)
   private val highTarget = scale.targetUpper.coerceAtLeast(0.0)
   private var nextStairIndex = 0
+  private var currentTarget = highTarget
 
-  override fun initialTarget(baseMargin: Double): Double = highTarget
+  override fun initialTarget(baseMargin: Double): Double {
+    currentTarget = highTarget
+    return highTarget
+  }
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
@@ -279,6 +294,7 @@ private class HysteresisStairsDerivedTargetRuntime(
   ): DerivedTargetSignal {
     if (nextStairIndex > 0 && baseMargin > resetThreshold) {
       nextStairIndex = 0
+      currentTarget = highTarget
       return DerivedTargetSignal(highTarget, forceExactTarget = true)
     }
 
@@ -291,11 +307,15 @@ private class HysteresisStairsDerivedTargetRuntime(
 
     if (crossedIndex != null) {
       nextStairIndex = crossedIndex + 1
-      return DerivedTargetSignal(stairs[crossedIndex].targetMargin, forceExactTarget = true)
+      currentTarget = stairs[crossedIndex].targetMargin
+      return DerivedTargetSignal(currentTarget, forceExactTarget = true)
     }
 
     return if (nextStairIndex == 0) {
+      currentTarget = highTarget
       DerivedTargetSignal(highTarget)
+    } else if (fixedTargetReference) {
+      DerivedTargetSignal(currentTarget)
     } else {
       DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
     }
@@ -304,6 +324,7 @@ private class HysteresisStairsDerivedTargetRuntime(
 
 private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
+    private val fixedTargetReference: Boolean = false,
 ) : DerivedTargetRuntimeBase(scale) {
   override val usesPostPriceMarginForTriggers: Boolean = true
   override val momentumLookbackMonths: Int? =
@@ -323,7 +344,11 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
   private var armedAfterExistingMomentum = false
   private var previousMomentumConfirmed = false
 
-  override fun initialTarget(baseMargin: Double): Double = baseMargin.coerceAtLeast(0.0)
+  override fun initialTarget(baseMargin: Double): Double {
+    val target = baseMargin.coerceAtLeast(0.0)
+    if (fixedTargetReference) resetTarget = target
+    return target
+  }
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
@@ -387,12 +412,12 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
         return recordMomentum(if (raisedTarget > heldTarget) {
           DerivedTargetSignal(raisedTarget)
         } else {
-          DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+          heldOrPaused()
         })
       }
 
       if (intentionStage > stageIndex) clearMomentumHalfStates()
-      return recordMomentum(DerivedTargetSignal(targetMargin = null, adjustmentPaused = true))
+      return recordMomentum(heldOrPaused())
     }
 
     val crossedIndex =
@@ -441,7 +466,7 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
         armedStairIndex = null
         armedAfterExistingMomentum = false
         recoveryStairIndex = armedIndex
-        return recordMomentum(DerivedTargetSignal(targetMargin = null, adjustmentPaused = true))
+        return recordMomentum(heldOrPaused())
       }
       armedStairIndex = null
       armedAfterExistingMomentum = false
@@ -453,19 +478,26 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
     if (!momentumConfirmed) armedAfterExistingMomentum = false
 
     return recordMomentum(if (armedIndex != null) {
-      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      heldOrPaused()
     } else if (recoveryIndex != null) {
-      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      heldOrPaused()
     } else if (stageIndex == 0) {
       currentTarget = null
       DerivedTargetSignal(resetTarget ?: baseMargin.coerceAtLeast(0.0))
     } else {
-      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      heldOrPaused()
     })
   }
 
   private fun currentStageTarget(): Double? =
       if (stageIndex > 0) stairs.getOrNull(stageIndex - 1)?.targetMargin else resetTarget
+
+  private fun heldOrPaused(): DerivedTargetSignal =
+      if (fixedTargetReference) {
+        DerivedTargetSignal(currentTarget ?: currentStageTarget() ?: resetTarget)
+      } else {
+        DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      }
 
   private fun stageForTarget(target: Double): Int {
     val crossedIndex = stairs.indexOfLast { target < it.targetMargin }
@@ -475,6 +507,7 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
 
 private class HysteresisStairsMomentumDerivedTargetRuntime(
     scale: DerivedTargetScaleConfig,
+    private val fixedTargetReference: Boolean = false,
 ) : DerivedTargetRuntimeBase(scale) {
   override val usesPostPriceMarginForTriggers: Boolean = true
   override val momentumLookbackMonths: Int = scale.momentumLookbackMonths.coerceAtLeast(1)
@@ -489,8 +522,12 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
   private var recoveryStairIndex: Int? = null
   private var armedAfterExistingMomentum = false
   private var previousMomentumConfirmed = false
+  private var currentTarget = highTarget
 
-  override fun initialTarget(baseMargin: Double): Double = highTarget
+  override fun initialTarget(baseMargin: Double): Double {
+    currentTarget = highTarget
+    return highTarget
+  }
 
   override fun targetReferenceIndex(currentIndex: Int): Int = currentIndex
 
@@ -513,6 +550,7 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
       armedStairIndex = null
       recoveryStairIndex = null
       armedAfterExistingMomentum = false
+      currentTarget = highTarget
       previousMomentumConfirmed = momentumConfirmed
       return DerivedTargetSignal(highTarget, forceExactTarget = true)
     }
@@ -545,8 +583,9 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
       armedStairIndex = nextArmedIndex
       armedAfterExistingMomentum = false
       nextStairIndex = recoveryIndex + 1
+      currentTarget = stairs[recoveryIndex].targetMargin
       previousMomentumConfirmed = momentumConfirmed
-      return DerivedTargetSignal(stairs[recoveryIndex].targetMargin, forceExactTarget = true)
+      return DerivedTargetSignal(currentTarget, forceExactTarget = true)
     }
 
     val armedIndex = armedStairIndex
@@ -556,24 +595,35 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
         armedAfterExistingMomentum = false
         recoveryStairIndex = armedIndex
         previousMomentumConfirmed = momentumConfirmed
-        return DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+        return heldOrPaused()
       }
       armedStairIndex = null
       armedAfterExistingMomentum = false
       nextStairIndex = armedIndex + 1
+      currentTarget = stairs[armedIndex].targetMargin
       previousMomentumConfirmed = momentumConfirmed
-      return DerivedTargetSignal(stairs[armedIndex].targetMargin, forceExactTarget = true)
+      return DerivedTargetSignal(currentTarget, forceExactTarget = true)
     }
     if (!momentumConfirmed) armedAfterExistingMomentum = false
     previousMomentumConfirmed = momentumConfirmed
 
     return when {
-      armedIndex != null -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
-      recoveryIndex != null -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
-      nextStairIndex == 0 -> DerivedTargetSignal(highTarget)
-      else -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      armedIndex != null -> heldOrPaused()
+      recoveryIndex != null -> heldOrPaused()
+      nextStairIndex == 0 -> {
+        currentTarget = highTarget
+        DerivedTargetSignal(highTarget)
+      }
+      else -> heldOrPaused()
     }
   }
+
+  private fun heldOrPaused(): DerivedTargetSignal =
+      if (fixedTargetReference) {
+        DerivedTargetSignal(currentTarget)
+      } else {
+        DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      }
 }
 
 private class HysteresisStairsRefBuyLowResetDerivedTargetRuntime(

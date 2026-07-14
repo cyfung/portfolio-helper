@@ -499,6 +499,7 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
     val rawFunction = obj["function"]?.jsonPrimitive?.content
     val function = when (rawFunction) {
             "HYSTERESIS_STAIRS_REF_BL_RESET" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS_REF_BL_RESET
+            "HYSTERESIS_STAIRS_FIXED_TARGET_REF" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS_FIXED_TARGET_REF
             "HYSTERESIS_STAIRS_MOMENTUM" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
             "HYSTERESIS_STAIRS" -> DerivedTargetScaleFunction.HYSTERESIS_STAIRS
             "HYSTERESIS_STEP" -> DerivedTargetScaleFunction.HYSTERESIS_STEP

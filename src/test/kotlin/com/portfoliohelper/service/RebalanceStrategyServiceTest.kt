@@ -3361,6 +3361,63 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedTarget_hysteresisStairsFixedTargetRefSupportsBuyLowIntentionMomentumRecovery() {
+        val runtime = DerivedTargetRuntime.from(
+            DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS_FIXED_TARGET_REF,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                momentumLookbackMonths = 1,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            )
+        )
+
+        assertApprox(0.90, runtime.initialTarget(0.90), label = "initial reference target is anchored")
+
+        val firstMomentum = runtime.target(baseMargin = 0.65, momentumLookbackMargin = 0.90)
+        assertApprox(
+            0.90,
+            requireNotNull(firstMomentum.targetMargin),
+            label = "first stair waits for recovery while holding the previous target",
+        )
+        assertFalse(firstMomentum.adjustmentPaused)
+
+        assertApprox(
+            0.50,
+            requireNotNull(runtime.target(baseMargin = 0.72, momentumLookbackMargin = 0.65).targetMargin),
+            label = "recovery fires the first stair target",
+        )
+
+        val deeperMomentum = runtime.target(baseMargin = 0.55, momentumLookbackMargin = 0.72)
+        assertApprox(
+            0.50,
+            requireNotNull(deeperMomentum.targetMargin),
+            label = "deeper pending stair keeps the fixed target instead of floating",
+        )
+        assertFalse(deeperMomentum.adjustmentPaused)
+
+        val noOpIntention = runtime.target(
+            baseMargin = 0.54,
+            referenceMarginIntentions = listOf(MarginIntention(MarginIntentionType.BUY_LOW, 0.40, triggerMargin = null)),
+            momentumLookbackMargin = 0.72,
+        )
+        assertApprox(
+            0.50,
+            requireNotNull(noOpIntention.targetMargin),
+            label = "same-stage BL intention keeps the fixed target and pending recovery state",
+        )
+
+        assertApprox(
+            0.20,
+            requireNotNull(runtime.target(baseMargin = 0.56, momentumLookbackMargin = 0.54).targetMargin),
+            label = "deeper stair still fires after recovery",
+        )
+    }
+
+    @Test
     fun derivedStrategy_hysteresisStairsBuyLowIntentionMomentumRecoveryKeepsPendingStateOnNoOpIntention() {
         val dates = listOf(
             LocalDate.of(2024, 1, 1),
