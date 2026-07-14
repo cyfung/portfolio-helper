@@ -148,10 +148,6 @@ export default function MonteCarloPage() {
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
   const progressClearRef  = useRef<number | null>(null)
-  const progressSlotRef   = useRef<HTMLDivElement>(null)
-  const progressPanelRef  = useRef<HTMLDivElement>(null)
-  const [progressDock, setProgressDock] = useState<'inline' | 'top' | 'bottom'>('inline')
-  const [progressPanelHeight, setProgressPanelHeight] = useState(0)
   const { chartWidth, chartContainerRef } = useChartContainerWidth()
   const dateRangeError = validateDateRange(fromDate, toDate)
   const selectedTickerMappingSet = useMemo(
@@ -196,45 +192,6 @@ export default function MonteCarloPage() {
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run-state recovery is intentionally mount-only.
   }, [])
-
-  useEffect(() => {
-    if (!runProgress) {
-      setProgressDock('inline')
-      setProgressPanelHeight(0)
-      return
-    }
-
-    let frame = 0
-    const updateDock = () => {
-      frame = 0
-      const slot = progressSlotRef.current
-      const panel = progressPanelRef.current
-      if (!slot || !panel) return
-
-      setProgressPanelHeight(panel.getBoundingClientRect().height)
-
-      const rect = slot.getBoundingClientRect()
-      const nextDock =
-        rect.top >= window.innerHeight ? 'bottom' :
-        rect.bottom <= 0 ? 'top' :
-        'inline'
-      setProgressDock(nextDock)
-    }
-
-    const scheduleUpdate = () => {
-      if (frame) return
-      frame = window.requestAnimationFrame(updateDock)
-    }
-
-    updateDock()
-    window.addEventListener('scroll', scheduleUpdate, { passive: true })
-    window.addEventListener('resize', scheduleUpdate)
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame)
-      window.removeEventListener('scroll', scheduleUpdate)
-      window.removeEventListener('resize', scheduleUpdate)
-    }
-  }, [runProgress])
 
   // Restore settings on mount
   useEffect(() => {
@@ -648,13 +605,6 @@ export default function MonteCarloPage() {
         String(detail.value) !== '',
       )
     : []
-  const runProgressDockClass = progressDock === 'inline'
-    ? ''
-    : ` is-floating ${progressDock === 'top' ? 'float-top' : 'float-bottom'}`
-  const progressSlotStyle = progressDock === 'inline' || !progressPanelHeight
-    ? undefined
-    : { minHeight: progressPanelHeight }
-
   return (
     <div className="container">
       <BacktestPageHeader active="/montecarlo" />
@@ -732,10 +682,9 @@ export default function MonteCarloPage() {
         </div>
 
         {runProgress && (
-          <div className="mc-run-progress-slot" ref={progressSlotRef} style={progressSlotStyle}>
+          <div className="mc-run-progress-slot">
             <div
-              ref={progressPanelRef}
-              className={`mc-run-progress${runProgress.done ? ' done' : ''}${runProgressDockClass}`}
+              className={`mc-run-progress is-floating${runProgress.done ? ' done' : ''}`}
               role="status"
               aria-live="polite"
             >

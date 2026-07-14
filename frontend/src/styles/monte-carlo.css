@@ -52,27 +52,19 @@
 }
 
 .mc-run-progress-slot {
-    min-width: 0;
+    display: contents;
 }
 
 .mc-run-progress.is-floating {
     position: fixed;
-    left: 50%;
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
     z-index: 80;
-    width: min(calc(100vw - 2rem), 1320px);
-    max-height: min(42vh, 240px);
+    width: min(12rem, calc(100vw - 1.5rem));
+    max-height: min(72vh, 34rem);
     margin-top: 0;
     overflow: auto;
-    transform: translateX(-50%);
     box-shadow: 0 12px 32px color-mix(in srgb, var(--color-shadow, #000) 18%, transparent);
-}
-
-.mc-run-progress.is-floating.float-top {
-    top: 0.75rem;
-}
-
-.mc-run-progress.is-floating.float-bottom {
-    bottom: 0.75rem;
 }
 
 .mc-run-progress.done {
@@ -80,10 +72,8 @@
 }
 
 .mc-run-progress-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
+    display: grid;
+    gap: 0.35rem;
 }
 
 .mc-run-progress-title {
@@ -104,7 +94,6 @@
 }
 
 .mc-run-progress-step {
-    flex: 0 0 auto;
     color: var(--color-text-tertiary);
     font-family: var(--font-family-mono), monospace;
     font-size: var(--font-size-xs);
@@ -126,15 +115,16 @@
 }
 
 .mc-run-progress-details {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.45rem;
     margin-top: 0.65rem;
 }
 
 .mc-run-progress-details > span {
-    display: inline-flex;
+    display: flex;
     align-items: baseline;
+    justify-content: space-between;
     gap: 0.35rem;
     min-width: 0;
     color: var(--color-text-tertiary);
@@ -149,26 +139,10 @@
 
 @media (max-width: 640px) {
     .mc-run-progress.is-floating {
-        width: calc(100vw - 1rem);
-        max-height: 48vh;
-    }
-
-    .mc-run-progress.is-floating.float-top {
-        top: 0.5rem;
-    }
-
-    .mc-run-progress.is-floating.float-bottom {
+        right: 0.5rem;
         bottom: 0.5rem;
-    }
-
-    .mc-run-progress-header {
-        display: grid;
-        gap: 0.35rem;
-    }
-
-    .mc-run-progress-details {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
+        width: calc(100vw - 1rem);
+        max-height: 58vh;
     }
 }
 
