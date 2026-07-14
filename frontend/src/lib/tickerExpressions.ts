@@ -129,6 +129,13 @@ function parseSwapLeg(raw: string): WeightedTickerExpression | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
 
+  const prefixMatch = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+(.*?)\s*$/.exec(trimmed)
+  if (prefixMatch) {
+    const weight = parseFloat(prefixMatch[1])
+    const ticker = prefixMatch[2].trim()
+    return ticker && Number.isFinite(weight) ? { ticker, weight } : null
+  }
+
   const hashMatch = /^(.*?)\s*#\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(trimmed)
   if (hashMatch) {
     const ticker = hashMatch[1].trim()
@@ -211,7 +218,6 @@ export function expandSwapTickerRows(rows: WeightedTickerExpression[]): Weighted
 
 export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]): WeightedTickerExpression[] {
   const weights = new Map<string, number>()
-  const swapRows: { ticker: string; weight: number | '*'; swap: SwapExpression }[] = []
 
   function add(ticker: string, weight: number) {
     const key = normalizeTickerExpression(ticker)
@@ -236,16 +242,13 @@ export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]
 
   for (const row of rows) {
     const swap = parseSwapExpression(row.ticker)
-    if (swap) {
-      swapRows.push({ ticker: row.ticker, weight: row.weight, swap })
-    } else {
+    if (!swap) {
       if (row.weight === '*') throw new Error('Wildcard weight * is only supported on swap rows.')
       expand(row.ticker, row.weight)
+      continue
     }
-  }
 
-  swapRows.forEach(row => {
-    const from = normalizeTickerExpression(row.swap.from)
+    const from = normalizeTickerExpression(swap.from)
 
     if (row.weight !== '*') {
       if (row.weight > 0) {
@@ -255,7 +258,7 @@ export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]
         }
       }
       expand(row.ticker, row.weight)
-      return
+      continue
     }
 
     const available = weights.get(from) ?? 0
@@ -263,7 +266,7 @@ export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]
       throw new Error(`No available ${from} weight to swap.`)
     }
     expand(row.ticker, available)
-  })
+  }
 
   return [...weights.entries()].map(([ticker, weight]) => ({ ticker, weight }))
 }

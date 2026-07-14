@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useSSE } from '@/hooks/useSSE'
 import { useUpdateChecker } from '@/hooks/useUpdateChecker'
+import MonteCarloProgressOverlay from '@/components/MonteCarloProgressOverlay'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { PortfolioData } from '@/types/portfolio'
 
@@ -42,25 +43,28 @@ export default function App() {
   }, [loadPortfolioData, setSseStatus])
 
   return (
-    <Suspense fallback={null}>
-    <Routes>
-      <Route path="/" element={<Navigate to="/portfolio/" replace />} />
-      <Route path="/portfolio/" element={<PortfolioPage />} />
-      <Route path="/portfolio/:slug" element={<PortfolioPage />} />
-      <Route path="/analyst/" element={<PortfolioAnalystPage />} />
-      <Route path="/analyst/:slug" element={<PortfolioAnalystPage />} />
-      <Route path="/trades/" element={<TradesPage />} />
-      <Route path="/trades/:slug" element={<TradesPage />} />
-      <Route path="/loan" element={<LoanPage />} />
-      <Route path="/tax-drag" element={<TaxDragPage />} />
-      <Route path="/backtest" element={<BacktestPage />} />
-      <Route path="/portfolio-builder" element={<PortfolioBuilderPage />} />
-      <Route path="/montecarlo" element={<MonteCarloPage />} />
-      <Route path="/rebalance-strategy" element={<RebalanceStrategyPage />} />
-      <Route path="/market-timing" element={<MarketTimingPage />} />
-      <Route path="/ticker-edit" element={<TickerEditPage />} />
-      <Route path="/config" element={<ConfigPage />} />
-    </Routes>
-    </Suspense>
+    <>
+      <MonteCarloProgressOverlay />
+      <Suspense fallback={null}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/portfolio/" replace />} />
+          <Route path="/portfolio/" element={<PortfolioPage />} />
+          <Route path="/portfolio/:slug" element={<PortfolioPage />} />
+          <Route path="/analyst/" element={<PortfolioAnalystPage />} />
+          <Route path="/analyst/:slug" element={<PortfolioAnalystPage />} />
+          <Route path="/trades/" element={<TradesPage />} />
+          <Route path="/trades/:slug" element={<TradesPage />} />
+          <Route path="/loan" element={<LoanPage />} />
+          <Route path="/tax-drag" element={<TaxDragPage />} />
+          <Route path="/backtest" element={<BacktestPage />} />
+          <Route path="/portfolio-builder" element={<PortfolioBuilderPage />} />
+          <Route path="/montecarlo" element={<MonteCarloPage />} />
+          <Route path="/rebalance-strategy" element={<RebalanceStrategyPage />} />
+          <Route path="/market-timing" element={<MarketTimingPage />} />
+          <Route path="/ticker-edit" element={<TickerEditPage />} />
+          <Route path="/config" element={<ConfigPage />} />
+        </Routes>
+      </Suspense>
+    </>
   )
 }

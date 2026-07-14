@@ -216,6 +216,34 @@ class BacktestChainExtendTest {
     }
 
     @Test
+    fun convertYahooAdjustedCloseToUsdIgnoresIsolatedFxOutlier() {
+        val oct21 = LocalDate.of(2011, 10, 21)
+        val oct24 = LocalDate.of(2011, 10, 24)
+        val oct25 = LocalDate.of(2011, 10, 25)
+        val result = YahooAdjustedCloseResult(
+            prices = mapOf(
+                oct21 to 100.0,
+                oct24 to 101.0,
+                oct25 to 102.0,
+            ),
+            currency = "TWD",
+        )
+
+        val converted = BacktestService.convertYahooAdjustedCloseToUsd("0050.TW", result) { fxTicker, _, _ ->
+            assertEquals("TWDUSD=X", fxTicker)
+            mapOf(
+                oct21 to 0.0332,
+                oct24 to 0.555092990398407,
+                oct25 to 0.03321,
+            )
+        }
+
+        assertClose(3.32, converted[oct21])
+        assertClose(101.0 * 0.0332, converted[oct24])
+        assertClose(102.0 * 0.03321, converted[oct25])
+    }
+
+    @Test
     fun convertYahooAdjustedCloseToUsdLeavesUsdPricesUntouched() {
         val jan2 = LocalDate.of(2026, 1, 2)
         val prices = mapOf(jan2 to 100.0)

@@ -111,7 +111,12 @@ export function resolveSavedPortfolioConfig(
   savedByName: Map<string, any>,
   stack: string[] = [],
 ): ResolvedStockWeight[] {
-  const rows: WeightedOrWildcardTickerExpression[] = []
+  let resolvedRows: ResolvedStockWeight[] = []
+
+  function applyRows(rows: WeightedOrWildcardTickerExpression[]) {
+    if (rows.length === 0) return
+    resolvedRows = mergedNonZeroRows(resolveSwapTickerRows([...resolvedRows, ...rows]))
+  }
 
   for (const row of config?.tickers ?? []) {
     const weight = rowResolveWeight(row)
@@ -126,15 +131,13 @@ export function resolveSavedPortfolioConfig(
       if (!child) throw new Error(`Missing portfolio reference: ${name}`)
       if (stack.includes(name)) throw new Error(`Circular portfolio reference: ${[...stack, name].join(' -> ')}`)
 
-      for (const childStock of scaledChildRows(weight, resolveSavedPortfolioConfig(child, savedByName, [...stack, name]))) {
-        rows.push(childStock)
-      }
+      applyRows(scaledChildRows(weight, resolveSavedPortfolioConfig(child, savedByName, [...stack, name])))
     } else {
-      rows.push({ ticker, weight })
+      applyRows([{ ticker, weight }])
     }
   }
 
-  return mergedNonZeroRows(resolveSwapTickerRows(rows))
+  return resolvedRows
 }
 
 export function resolveBlockState(

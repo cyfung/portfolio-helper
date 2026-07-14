@@ -32,6 +32,8 @@ object BacktestService {
     private val fullTickerDir get() = AppDirs.dataDir.resolve(".ticker-full").toFile()
     private val tickerCacheMaxAge = 15.minutes
     private val fullHistoryFetchStartDate: LocalDate = LocalDate.of(1900, 1, 1)
+    private const val isolatedFxOutlierMinJump = 1.2
+    private const val isolatedFxOutlierNeighborMaxJump = 1.1
     private val yahooNullRowsWarningRangePattern =
         Regex("""^(Yahoo adjusted-close data for .+ contains unsupported null rows) for range [^;]+; (.+);$""")
 
@@ -703,7 +705,11 @@ object BacktestService {
 
         val dates = result.prices.keys.sorted()
         val fxRates = fxFetcher(conversion.fxTicker, dates.first(), dates.last())
-        val converted = convertPricesToUsd(result.prices, conversion, fxRates)
+        val converted = convertPricesToUsd(
+            result.prices,
+            conversion,
+            removeIsolatedFxOutliers(conversion.fxTicker, fxRates)
+        )
         logger.info(
             "Converted Yahoo historical prices for $ticker from ${result.currency} to USD using ${conversion.fxTicker}"
         )
@@ -730,6 +736,46 @@ object BacktestService {
                 ?: throw IllegalStateException("No ${conversion.fxTicker} FX rate available on or before $date")
             prices.getValue(date) * fx * conversion.priceMultiplier
         }
+    }
+
+    internal fun removeIsolatedFxOutliers(
+        fxTicker: String,
+        fxRates: Map<LocalDate, Double>
+    ): Map<LocalDate, Double> {
+        if (fxRates.size < 3) return fxRates
+        val sortedDates = fxRates.keys.sorted()
+        val outlierDates = mutableSetOf<LocalDate>()
+
+        fun jump(a: Double, b: Double): Double =
+            if (a >= b) a / b else b / a
+
+        for (i in 1 until sortedDates.lastIndex) {
+            val prevDate = sortedDates[i - 1]
+            val date = sortedDates[i]
+            val nextDate = sortedDates[i + 1]
+            val prev = fxRates[prevDate] ?: continue
+            val current = fxRates[date] ?: continue
+            val next = fxRates[nextDate] ?: continue
+            if (prev <= 0.0 || current <= 0.0 || next <= 0.0) continue
+
+            val prevCurrentJump = jump(prev, current)
+            val currentNextJump = jump(current, next)
+            val neighborJump = jump(prev, next)
+            if (
+                prevCurrentJump >= isolatedFxOutlierMinJump &&
+                currentNextJump >= isolatedFxOutlierMinJump &&
+                neighborJump <= isolatedFxOutlierNeighborMaxJump
+            ) {
+                outlierDates += date
+                logger.warn(
+                    "Ignoring isolated FX outlier for $fxTicker on $date: $current " +
+                            "(previous $prevDate=$prev, next $nextDate=$next)"
+                )
+            }
+        }
+
+        if (outlierDates.isEmpty()) return fxRates
+        return fxRates.filterKeys { it !in outlierDates }
     }
 
     internal fun currencyUsdConversion(currency: String?): CurrencyUsdConversion? {
