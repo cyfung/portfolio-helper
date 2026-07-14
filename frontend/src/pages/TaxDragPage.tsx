@@ -170,8 +170,14 @@ export default function TaxDragPage() {
 
   function createTickerMapping() {
     setMappingStatus('')
+    const ignoredCommonPeriodRows = results.filter(result => result.commonPeriod).length
     const mappingRows = results
-      .filter(result => !result.error && typeof result.backtestExpenseRatio === 'number' && Number.isFinite(result.backtestExpenseRatio))
+      .filter(result => (
+        !result.commonPeriod &&
+        !result.error &&
+        typeof result.backtestExpenseRatio === 'number' &&
+        Number.isFinite(result.backtestExpenseRatio)
+      ))
       .map(result => {
         const ticker = result.ticker.trim().toUpperCase()
         const expense = formatExpenseModifier(result.backtestExpenseRatio ?? 0)
@@ -185,13 +191,16 @@ export default function TaxDragPage() {
       })
 
     if (mappingRows.length === 0) {
-      setMappingStatus('No valid Backtest E= values to map.')
+      setMappingStatus(
+        ignoredCommonPeriodRows > 0
+          ? 'No valid non-common-period Backtest E= values to map.'
+          : 'No valid Backtest E= values to map.',
+      )
       return
     }
 
     const settings = loadTickerMappingSettings()
-    const hasCommonPeriodRows = results.some(result => result.commonPeriod)
-    const name = `Tax Drag E=${taxPct.trim() || 'custom'}%${hasCommonPeriodRows ? ' mixed periods' : ''}`
+    const name = `Tax Drag E=${taxPct.trim() || 'custom'}%`
     const existing = settings.savedSets.find(set => set.name.trim().toLowerCase() === name.toLowerCase())
     const savedSet: TickerMappingSet = {
       id: existing?.id ?? newMappingSetId(),
@@ -209,7 +218,10 @@ export default function TaxDragPage() {
     }
     saveTickerMappingSettings(nextSettings)
     notifyTickerMappingsChanged()
-    setMappingStatus(`Created ${name} with ${mappingRows.length} row${mappingRows.length === 1 ? '' : 's'}.`)
+    setMappingStatus(
+      `Created ${name} with ${mappingRows.length} row${mappingRows.length === 1 ? '' : 's'}.` +
+      (ignoredCommonPeriodRows > 0 ? ` Ignored ${ignoredCommonPeriodRows} common-period row${ignoredCommonPeriodRows === 1 ? '' : 's'}.` : ''),
+    )
   }
 
   return (
