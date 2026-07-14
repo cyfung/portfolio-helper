@@ -41,6 +41,12 @@ const HYSTERESIS_STAIRS_REFERENCE_MODE_OPTIONS: { value: DerivedSubStrategyState
 const HYSTERESIS_STAIRS_FALL_MODE_OPTIONS: { value: DerivedSubStrategyState['scale']['hysteresisStairsFallMode']; label: string }[] = [
   { value: 'DIRECT', label: 'Direct' },
   { value: 'MOMENTUM', label: 'Momentum' },
+  { value: 'MOMENTUM_WITH_RECOVERY', label: 'With Recovery' },
+]
+
+const HYSTERESIS_STAIRS_MOMENTUM_FALL_MODES: DerivedSubStrategyState['scale']['hysteresisStairsFallMode'][] = [
+  'MOMENTUM',
+  'MOMENTUM_WITH_RECOVERY',
 ]
 
 function referenceMetricToMargin(value: number, metric: DerivedSubStrategyState['marginReferenceMetric']) {
@@ -438,7 +444,7 @@ export default function DerivedSubStrategiesSection({
                 </DerivedField>
               )}
               {(derived.scale.function ?? 'SIGMOID') === 'HYSTERESIS_STAIRS' &&
-                  (derived.scale.hysteresisStairsFallMode ?? 'DIRECT') === 'MOMENTUM' && (
+                  HYSTERESIS_STAIRS_MOMENTUM_FALL_MODES.includes(derived.scale.hysteresisStairsFallMode ?? 'DIRECT') && (
                 <NumberInputRow
                   label="Momentum Months"
                   value={derived.scale.momentumLookbackMonths ?? '12'}

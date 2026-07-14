@@ -2877,6 +2877,137 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_hysteresisStairsMomentumWithRecoveryWaitsForRecoveryAfterMomentum() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+            LocalDate.of(2024, 5, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                targetUpper = 0.80,
+                stepBaseTarget = 0.95,
+                momentumLookbackMonths = 1,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.90, 0.65, 0.55, 0.54, 0.56),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.80, margins[1], label = "momentum signal arms recovery instead of firing")
+        assertApprox(0.80, margins[2], label = "deeper stair remains pending until recovery")
+        assertApprox(0.80, margins[3], label = "continued drawdown still waits for recovery")
+        assertApprox(0.20, margins[4], label = "recovery signal fires the deepest pending stair")
+    }
+
+    @Test
+    fun derivedTarget_hysteresisStairsMomentumWithRecoveryFiresRecoveredStairAndArmsDeeperCrossedStair() {
+        val runtime = DerivedTargetRuntime.from(
+            DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                targetUpper = 0.80,
+                stepBaseTarget = 0.95,
+                momentumLookbackMonths = 1,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            )
+        )
+
+        assertNull(
+            runtime.target(baseMargin = 0.65, momentumLookbackMargin = 0.90).targetMargin,
+            "first stair waits for recovery after momentum",
+        )
+        assertApprox(
+            0.50,
+            requireNotNull(runtime.target(baseMargin = 0.55, momentumLookbackMargin = 0.50).targetMargin),
+            label = "same-day deeper margin trigger should not replace the recovered stair target",
+        )
+        val secondMomentum = runtime.target(baseMargin = 0.54, momentumLookbackMargin = 0.60)
+        assertNull(secondMomentum.targetMargin, "deeper crossed stair starts a new recovery wait after fresh momentum")
+        assertTrue(secondMomentum.adjustmentPaused)
+        assertApprox(
+            0.20,
+            requireNotNull(runtime.target(baseMargin = 0.56, momentumLookbackMargin = 0.54).targetMargin),
+            label = "deeper stair fires after its own recovery",
+        )
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsMomentumWithRecoveryCancelsPendingStateOnResetRef() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+            LocalDate.of(2024, 5, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                targetUpper = 0.80,
+                stepBaseTarget = 0.95,
+                momentumLookbackMonths = 1,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            ),
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.90, 0.65, 0.55, 0.96, 0.85),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.80, margins[1], label = "first stair waits after momentum")
+        assertApprox(0.80, margins[2], label = "deeper stair remains pending")
+        assertApprox(0.80, margins[3], label = "reset ref cancels the pending recovery state")
+        assertApprox(0.80, margins[4], label = "stale pending stair must not fire after reset")
+    }
+
+    @Test
     fun derivedStrategy_hysteresisStairsUsesExactTargetWhenPortfolioRebalanceRunsOnCrossingDay() {
         val dates = days(LocalDate.of(2024, 1, 2), 3)
         val prices = flatCurve(dates)
@@ -3193,6 +3324,172 @@ class RebalanceStrategyServiceTest {
         assertApprox(0.50, margins[2], label = "deeper stair remains armed until fresh momentum confirms")
         assertApprox(0.20, margins[3], label = "momentum confirmation fires the deepest armed stair")
         assertApprox(0.60, margins[4], label = "BL intention target still applies in momentum fall mode")
+    }
+
+    @Test
+    fun derivedTarget_hysteresisStairsBuyLowIntentionMomentumRecoveryFiresRecoveredStairAndArmsDeeperCrossedStair() {
+        val runtime = DerivedTargetRuntime.from(
+            DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                momentumLookbackMonths = 1,
+                steps = listOf(
+                    DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.50),
+                    DerivedTargetStepConfig(referenceMargin = 0.60, targetMargin = 0.20),
+                ),
+            )
+        )
+
+        assertNull(
+            runtime.target(baseMargin = 0.65, momentumLookbackMargin = 0.90).targetMargin,
+            "first stair waits for recovery after momentum",
+        )
+        assertApprox(
+            0.50,
+            requireNotNull(runtime.target(baseMargin = 0.55, momentumLookbackMargin = 0.50).targetMargin),
+            label = "same-day deeper margin trigger should not replace the recovered stair target",
+        )
+        val secondMomentum = runtime.target(baseMargin = 0.54, momentumLookbackMargin = 0.60)
+        assertNull(secondMomentum.targetMargin, "deeper crossed stair starts a new recovery wait after fresh momentum")
+        assertTrue(secondMomentum.adjustmentPaused)
+        assertApprox(
+            0.20,
+            requireNotNull(runtime.target(baseMargin = 0.56, momentumLookbackMargin = 0.54).targetMargin),
+            label = "deeper stair fires after its own recovery",
+        )
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionMomentumRecoveryKeepsPendingStateOnNoOpIntention() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                momentumLookbackMonths = 1,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.90, 0.65, 0.55, 0.56),
+            baseBuyLowTargetMarginSeries = listOf(null, null, 0.50, null),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.90, margins[1], label = "momentum signal moves the stair into recovery wait")
+        assertApprox(0.55, margins[2], label = "non-raising BL intention follows reference without clearing recovery wait")
+        assertApprox(0.20, margins[3], label = "recovery still fires the pending stair after no-op BL intention")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionMomentumRecoveryCancelsPendingStateWhenIntentionLowersStairs() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                momentumLookbackMonths = 1,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.90, 0.65, 0.55, 0.56),
+            baseBuyLowTargetMarginSeries = listOf(null, null, 0.10, null),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.90, margins[1], label = "momentum signal moves the stair into recovery wait")
+        assertApprox(0.55, margins[2], label = "lower-stair BL intention does not lower the held reference target")
+        assertApprox(0.55, margins[3], label = "lower-stair BL intention cancels the pending recovery state")
+    }
+
+    @Test
+    fun derivedStrategy_hysteresisStairsBuyLowIntentionMomentumRecoveryCancelsPendingStateOnRaisingIntention() {
+        val dates = listOf(
+            LocalDate.of(2024, 1, 1),
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2024, 3, 1),
+            LocalDate.of(2024, 4, 1),
+        )
+        val prices = flatCurve(dates)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.HYSTERESIS_STAIRS,
+                hysteresisStairsReferenceMode = HysteresisStairsReferenceMode.BUY_LOW_INTENTION,
+                hysteresisStairsFallMode = HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY,
+                momentumLookbackMonths = 1,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.50,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(marginRatio = 0.5, marginSpread = 0.0),
+            derived,
+            baseMarginSeries = listOf(0.90, 0.65, 0.55, 0.56),
+            baseBuyLowTargetMarginSeries = listOf(null, null, 0.80, null),
+            cashflow = null,
+            seriesMap = mapOf("SPY" to prices),
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val margins = requireNotNull(result.marginPoints).map { it.value }
+        assertApprox(0.90, margins[1], label = "momentum signal moves the stair into recovery wait")
+        assertApprox(0.80, margins[2], label = "raising BL intention updates reference target")
+        assertApprox(0.80, margins[3], label = "raising BL intention cancels the pending recovery state")
     }
 
     @Test

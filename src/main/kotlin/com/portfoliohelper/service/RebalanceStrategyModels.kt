@@ -43,7 +43,7 @@ enum class DerivedTargetScaleFunction {
 
 enum class HysteresisStairsReferenceMode { RESET_REF, BUY_LOW_INTENTION }
 
-enum class HysteresisStairsFallMode { DIRECT, MOMENTUM }
+enum class HysteresisStairsFallMode { DIRECT, MOMENTUM, MOMENTUM_WITH_RECOVERY }
 
 // ── DipSurgeKey ───────────────────────────────────────────────────────────────
 

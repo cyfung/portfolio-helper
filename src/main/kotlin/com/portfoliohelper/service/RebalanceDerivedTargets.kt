@@ -100,7 +100,7 @@ internal sealed interface DerivedTargetRuntime {
           DerivedTargetScaleFunction.HYSTERESIS_STAIRS ->
               if (scale.hysteresisStairsReferenceMode == HysteresisStairsReferenceMode.BUY_LOW_INTENTION) {
                 HysteresisStairsBuyLowIntentionDerivedTargetRuntime(scale)
-              } else if (scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM) {
+              } else if (scale.hysteresisStairsFallMode != HysteresisStairsFallMode.DIRECT) {
                 HysteresisStairsMomentumDerivedTargetRuntime(scale)
               } else {
                 HysteresisStairsDerivedTargetRuntime(scale)
@@ -307,17 +307,19 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
 ) : DerivedTargetRuntimeBase(scale) {
   override val usesPostPriceMarginForTriggers: Boolean = true
   override val momentumLookbackMonths: Int? =
-      if (scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM) {
+      if (scale.hysteresisStairsFallMode != HysteresisStairsFallMode.DIRECT) {
         scale.momentumLookbackMonths.coerceAtLeast(1)
       } else {
         null
       }
 
   private val stairs = scale.descendingStairs(strict = true)
+  private val requiresRecovery = scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY
   private var stageIndex = 0
   private var resetTarget: Double? = null
   private var currentTarget: Double? = null
   private var armedStairIndex: Int? = null
+  private var recoveryStairIndex: Int? = null
   private var armedAfterExistingMomentum = false
   private var previousMomentumConfirmed = false
 
@@ -334,19 +336,27 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
         momentumLookbackMargin != null &&
             momentumLookbackMargin.isFinite() &&
             baseMargin < momentumLookbackMargin
+    val recoveryConfirmed =
+        momentumLookbackMargin != null &&
+            momentumLookbackMargin.isFinite() &&
+            baseMargin > momentumLookbackMargin
     fun recordMomentum(signal: DerivedTargetSignal): DerivedTargetSignal {
       previousMomentumConfirmed = momentumConfirmed
       return signal
+    }
+    fun clearMomentumHalfStates() {
+      armedStairIndex = null
+      recoveryStairIndex = null
+      armedAfterExistingMomentum = false
     }
 
     val referenceBuyLowIntention =
         referenceMarginIntentions.lastOrNull { it.type == MarginIntentionType.BUY_LOW }
     if (referenceBuyLowIntention != null) {
-      armedStairIndex = null
-      armedAfterExistingMomentum = false
       val intentionTarget = (referenceBuyLowIntention.targetMargin ?: baseMargin).coerceAtLeast(0.0)
       val intentionStage = stageForTarget(intentionTarget)
       if (intentionStage < stageIndex) {
+        clearMomentumHalfStates()
         val heldTarget = currentTarget ?: currentStageTarget() ?: intentionTarget
         stageIndex = intentionStage
         if (stageIndex == 0) {
@@ -361,8 +371,11 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
       }
 
       if (stageIndex == 0) {
+        val heldTarget = resetTarget ?: baseMargin.coerceAtLeast(0.0)
+        val raisedTarget = maxOf(heldTarget, intentionTarget)
+        if (raisedTarget > heldTarget || intentionStage > stageIndex) clearMomentumHalfStates()
         currentTarget = null
-        resetTarget = maxOf(resetTarget ?: baseMargin.coerceAtLeast(0.0), intentionTarget)
+        resetTarget = raisedTarget
         return recordMomentum(DerivedTargetSignal(resetTarget))
       }
 
@@ -370,6 +383,7 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
         val heldTarget = currentTarget ?: currentStageTarget() ?: intentionTarget
         val raisedTarget = maxOf(heldTarget, intentionTarget)
         currentTarget = raisedTarget
+        if (raisedTarget > heldTarget) clearMomentumHalfStates()
         return recordMomentum(if (raisedTarget > heldTarget) {
           DerivedTargetSignal(raisedTarget)
         } else {
@@ -377,6 +391,7 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
         })
       }
 
+      if (intentionStage > stageIndex) clearMomentumHalfStates()
       return recordMomentum(DerivedTargetSignal(targetMargin = null, adjustmentPaused = true))
     }
 
@@ -387,11 +402,18 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
             .lastOrNull { (_, stair) -> baseMargin < stair.referenceMargin }
             ?.index
     if (crossedIndex != null) {
-      if (scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM) {
-        val currentArmedIndex = armedStairIndex
-        if (currentArmedIndex == null || crossedIndex > currentArmedIndex) {
-          armedStairIndex = crossedIndex
-          armedAfterExistingMomentum = previousMomentumConfirmed
+      if (scale.hysteresisStairsFallMode != HysteresisStairsFallMode.DIRECT) {
+        val currentRecoveryIndex = recoveryStairIndex
+        if (currentRecoveryIndex != null) {
+          if (crossedIndex > currentRecoveryIndex && !recoveryConfirmed) {
+            recoveryStairIndex = crossedIndex
+          }
+        } else {
+          val currentArmedIndex = armedStairIndex
+          if (currentArmedIndex == null || crossedIndex > currentArmedIndex) {
+            armedStairIndex = crossedIndex
+            armedAfterExistingMomentum = previousMomentumConfirmed
+          }
         }
       } else {
         stageIndex = crossedIndex + 1
@@ -401,8 +423,26 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
       }
     }
 
+    val recoveryIndex = recoveryStairIndex
+    if (recoveryIndex != null && recoveryConfirmed) {
+      val nextArmedIndex = crossedIndex?.takeIf { it > recoveryIndex }
+      recoveryStairIndex = null
+      armedStairIndex = nextArmedIndex
+      armedAfterExistingMomentum = false
+      stageIndex = recoveryIndex + 1
+      resetTarget = null
+      currentTarget = stairs[recoveryIndex].targetMargin
+      return recordMomentum(DerivedTargetSignal(currentTarget, forceExactTarget = true))
+    }
+
     val armedIndex = armedStairIndex
     if (armedIndex != null && momentumConfirmed && !armedAfterExistingMomentum) {
+      if (requiresRecovery) {
+        armedStairIndex = null
+        armedAfterExistingMomentum = false
+        recoveryStairIndex = armedIndex
+        return recordMomentum(DerivedTargetSignal(targetMargin = null, adjustmentPaused = true))
+      }
       armedStairIndex = null
       armedAfterExistingMomentum = false
       stageIndex = armedIndex + 1
@@ -413,6 +453,8 @@ private class HysteresisStairsBuyLowIntentionDerivedTargetRuntime(
     if (!momentumConfirmed) armedAfterExistingMomentum = false
 
     return recordMomentum(if (armedIndex != null) {
+      DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+    } else if (recoveryIndex != null) {
       DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
     } else if (stageIndex == 0) {
       currentTarget = null
@@ -441,8 +483,10 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
   private val highestReference = stairs.firstOrNull()?.referenceMargin ?: Double.NEGATIVE_INFINITY
   private val resetThreshold = scale.resetThresholdAbove(highestReference)
   private val highTarget = scale.targetUpper.coerceAtLeast(0.0)
+  private val requiresRecovery = scale.hysteresisStairsFallMode == HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY
   private var nextStairIndex = 0
   private var armedStairIndex: Int? = null
+  private var recoveryStairIndex: Int? = null
   private var armedAfterExistingMomentum = false
   private var previousMomentumConfirmed = false
 
@@ -459,10 +503,15 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
         momentumLookbackMargin != null &&
             momentumLookbackMargin.isFinite() &&
             baseMargin < momentumLookbackMargin
+    val recoveryConfirmed =
+        momentumLookbackMargin != null &&
+            momentumLookbackMargin.isFinite() &&
+            baseMargin > momentumLookbackMargin
 
-    if ((nextStairIndex > 0 || armedStairIndex != null) && baseMargin > resetThreshold) {
+    if ((nextStairIndex > 0 || armedStairIndex != null || recoveryStairIndex != null) && baseMargin > resetThreshold) {
       nextStairIndex = 0
       armedStairIndex = null
+      recoveryStairIndex = null
       armedAfterExistingMomentum = false
       previousMomentumConfirmed = momentumConfirmed
       return DerivedTargetSignal(highTarget, forceExactTarget = true)
@@ -475,15 +524,40 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
             .lastOrNull { (_, stair) -> baseMargin < stair.referenceMargin }
             ?.index
     if (crossedIndex != null) {
-      val currentArmedIndex = armedStairIndex
-      if (currentArmedIndex == null || crossedIndex > currentArmedIndex) {
-        armedStairIndex = crossedIndex
-        armedAfterExistingMomentum = previousMomentumConfirmed
+      val currentRecoveryIndex = recoveryStairIndex
+      if (currentRecoveryIndex != null) {
+        if (crossedIndex > currentRecoveryIndex && !recoveryConfirmed) {
+          recoveryStairIndex = crossedIndex
+        }
+      } else {
+        val currentArmedIndex = armedStairIndex
+        if (currentArmedIndex == null || crossedIndex > currentArmedIndex) {
+          armedStairIndex = crossedIndex
+          armedAfterExistingMomentum = previousMomentumConfirmed
+        }
       }
+    }
+
+    val recoveryIndex = recoveryStairIndex
+    if (recoveryIndex != null && recoveryConfirmed) {
+      val nextArmedIndex = crossedIndex?.takeIf { it > recoveryIndex }
+      recoveryStairIndex = null
+      armedStairIndex = nextArmedIndex
+      armedAfterExistingMomentum = false
+      nextStairIndex = recoveryIndex + 1
+      previousMomentumConfirmed = momentumConfirmed
+      return DerivedTargetSignal(stairs[recoveryIndex].targetMargin, forceExactTarget = true)
     }
 
     val armedIndex = armedStairIndex
     if (armedIndex != null && momentumConfirmed && !armedAfterExistingMomentum) {
+      if (requiresRecovery) {
+        armedStairIndex = null
+        armedAfterExistingMomentum = false
+        recoveryStairIndex = armedIndex
+        previousMomentumConfirmed = momentumConfirmed
+        return DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      }
       armedStairIndex = null
       armedAfterExistingMomentum = false
       nextStairIndex = armedIndex + 1
@@ -495,6 +569,7 @@ private class HysteresisStairsMomentumDerivedTargetRuntime(
 
     return when {
       armedIndex != null -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
+      recoveryIndex != null -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
       nextStairIndex == 0 -> DerivedTargetSignal(highTarget)
       else -> DerivedTargetSignal(targetMargin = null, adjustmentPaused = true)
     }

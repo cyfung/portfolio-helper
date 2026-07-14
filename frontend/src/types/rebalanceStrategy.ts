@@ -96,7 +96,7 @@ export interface VmTimingMrState {
 
 export type DerivedTargetScaleFunction = 'SIGMOID' | 'ADAPTIVE_LOW_SIGMOID' | 'LINEAR' | 'STEP' | 'HYSTERESIS_STEP' | 'HYSTERESIS_STAIRS' | 'HYSTERESIS_STAIRS_MOMENTUM' | 'HYSTERESIS_STAIRS_REF_BL_RESET'
 export type HysteresisStairsReferenceMode = 'RESET_REF' | 'BUY_LOW_INTENTION'
-export type HysteresisStairsFallMode = 'DIRECT' | 'MOMENTUM'
+export type HysteresisStairsFallMode = 'DIRECT' | 'MOMENTUM' | 'MOMENTUM_WITH_RECOVERY'
 
 export interface DerivedTargetStepState {
   id: string
@@ -625,9 +625,11 @@ function normalizeDerivedSubStrategies(configValue: any): DerivedSubStrategyStat
       hysteresisStairsReferenceMode: item.scale?.hysteresisStairsReferenceMode === 'BUY_LOW_INTENTION'
         ? 'BUY_LOW_INTENTION'
         : 'RESET_REF',
-      hysteresisStairsFallMode: item.scale?.hysteresisStairsFallMode === 'MOMENTUM' || item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
-        ? 'MOMENTUM'
-        : 'DIRECT',
+      hysteresisStairsFallMode: item.scale?.hysteresisStairsFallMode === 'MOMENTUM_WITH_RECOVERY'
+        ? 'MOMENTUM_WITH_RECOVERY'
+        : (item.scale?.hysteresisStairsFallMode === 'MOMENTUM' || item.scale?.function === 'HYSTERESIS_STAIRS_MOMENTUM'
+          ? 'MOMENTUM'
+          : 'DIRECT'),
     },
     absoluteDeviationPct: item.absoluteDeviationPct ?? '5',
     buyDeviationPct: item.buyDeviationPct ?? item.absoluteDeviationPct ?? '5',
@@ -804,9 +806,9 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
         hysteresisStairsReferenceMode: scale.hysteresisStairsReferenceMode === 'BUY_LOW_INTENTION'
           ? 'BUY_LOW_INTENTION'
           : 'RESET_REF',
-        hysteresisStairsFallMode: scale.hysteresisStairsFallMode === 'MOMENTUM'
-          ? 'MOMENTUM'
-          : 'DIRECT',
+        hysteresisStairsFallMode: scale.hysteresisStairsFallMode === 'MOMENTUM_WITH_RECOVERY'
+          ? 'MOMENTUM_WITH_RECOVERY'
+          : (scale.hysteresisStairsFallMode === 'MOMENTUM' ? 'MOMENTUM' : 'DIRECT'),
         steps: (scale.steps?.length ? scale.steps : [emptyDerivedTargetStep(0)]).map(serializeStep),
       },
       absoluteDeviationPct: pctAllowZero(d.absoluteDeviationPct, 5),

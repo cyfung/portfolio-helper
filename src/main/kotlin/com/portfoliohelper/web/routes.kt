@@ -522,6 +522,7 @@ internal fun parseDerivedTargetScaleConfig(obj: JsonObject): DerivedTargetScaleC
             else -> HysteresisStairsReferenceMode.RESET_REF
         },
         hysteresisStairsFallMode = when (obj["hysteresisStairsFallMode"]?.jsonPrimitive?.contentOrNull) {
+            "MOMENTUM_WITH_RECOVERY" -> HysteresisStairsFallMode.MOMENTUM_WITH_RECOVERY
             "MOMENTUM" -> HysteresisStairsFallMode.MOMENTUM
             else -> if (rawFunction == "HYSTERESIS_STAIRS_MOMENTUM") {
                 HysteresisStairsFallMode.MOMENTUM
