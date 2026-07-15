@@ -9,8 +9,11 @@ export const PORTFOLIO_STOCK_COLUMNS = [
   { id: 'pnl', label: 'P&L' },
   { id: 'mktVal', label: 'Mkt Val' },
   { id: 'weight', label: 'Weight' },
+  { id: 'flexWeight', label: 'F Weight' },
   { id: 'rebalQty', label: 'Rebal Qty' },
   { id: 'rebalDollars', label: 'Rebal💰' },
+  { id: 'flexRebalQty', label: 'F Rebal Qty' },
+  { id: 'flexRebalDollars', label: 'F Rebal💰' },
   { id: 'allocQty', label: 'Alloc Qty' },
   { id: 'allocDollars', label: 'Alloc💰' },
   { id: 'ccy', label: 'CCY' },
@@ -40,6 +43,11 @@ export const DEFAULT_PORTFOLIO_COLUMN_MODES: PortfolioColumnMode[] = [
     name: 'Full',
     columns: ['symbol', 'qty', 'lastNav', 'est', 'last', 'mark', 'change', 'pnl', 'mktVal', 'weight', 'rebalQty', 'rebalDollars', 'allocQty', 'allocDollars', 'ccy'],
   },
+  {
+    id: 'mode-4',
+    name: 'Flexible',
+    columns: ['symbol', 'est', 'mark', 'change', 'pnl', 'weight', 'flexWeight', 'flexRebalDollars', 'allocDollars', 'ccy'],
+  },
 ]
 
 const VALID_COLUMNS = new Set<PortfolioColumnId>(PORTFOLIO_STOCK_COLUMNS.map(c => c.id))
@@ -54,7 +62,7 @@ export function normalizePortfolioColumnModes(raw?: string | PortfolioColumnMode
     if (!raw.trim()) return DEFAULT_PORTFOLIO_COLUMN_MODES
     try {
       parsed = JSON.parse(raw)
-    } catch (_) {
+    } catch {
       return DEFAULT_PORTFOLIO_COLUMN_MODES
     }
   }
@@ -106,9 +114,9 @@ export function legacyVisibilityToDefaultModeId(moreInfoVisible: boolean, rebalV
 }
 
 export function portfolioModeHasMoreInfo(columns: PortfolioColumnId[]): boolean {
-  return columns.some(col => ['qty', 'lastNav', 'last', 'mktVal', 'rebalQty', 'allocQty'].includes(col))
+  return columns.some(col => ['qty', 'lastNav', 'last', 'mktVal', 'rebalQty', 'flexRebalQty', 'allocQty'].includes(col))
 }
 
 export function portfolioModeHasRebal(columns: PortfolioColumnId[]): boolean {
-  return columns.some(col => col === 'rebalQty' || col === 'rebalDollars')
+  return columns.some(col => col === 'rebalQty' || col === 'rebalDollars' || col === 'flexRebalQty' || col === 'flexRebalDollars')
 }

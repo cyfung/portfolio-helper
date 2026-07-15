@@ -122,6 +122,18 @@
     box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }
 
+.edit-tables-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--spacing-lg);
+}
+
+.editing-active .flex-map-input {
+    width: 240px;
+    text-align: left;
+}
+
 /* Drag handle column */
 .drag-handle-col,
 .drag-handle-cell {

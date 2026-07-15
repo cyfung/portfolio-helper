@@ -7,6 +7,7 @@ import {
   weightDiffCls, actionCls, hasFxRate,
 } from '@/lib/portfolio-utils'
 import { computeDisplay } from '@/lib/rebalance'
+import { computeFlexibleStockDisplay, parseFlexibleWeightMappings } from '@/lib/flexibleWeights'
 import {
   getPortfolioColumnMode,
   normalizePortfolioColumnModes,
@@ -25,10 +26,10 @@ const COLUMN_LABELS = new Map(PORTFOLIO_STOCK_COLUMNS.map(column => [column.id, 
 
 function headerClassName(columnId: PortfolioColumnId): string {
   return [
-    ['qty', 'lastNav', 'est', 'last', 'mark', 'change', 'pnl', 'mktVal', 'weight'].includes(columnId) ? 'col-num' : '',
+    ['qty', 'lastNav', 'est', 'last', 'mark', 'change', 'pnl', 'mktVal', 'weight', 'flexWeight'].includes(columnId) ? 'col-num' : '',
     ['lastNav', 'est', 'last', 'mark', 'change', 'pnl', 'mktVal'].includes(columnId) ? 'col-market-data' : '',
-    ['qty', 'lastNav', 'last', 'mktVal', 'rebalQty', 'allocQty'].includes(columnId) ? 'col-moreinfo' : '',
-    ['rebalQty', 'rebalDollars'].includes(columnId) ? 'rebal-column' : '',
+    ['qty', 'lastNav', 'last', 'mktVal', 'rebalQty', 'flexRebalQty', 'allocQty'].includes(columnId) ? 'col-moreinfo' : '',
+    ['rebalQty', 'rebalDollars', 'flexRebalQty', 'flexRebalDollars'].includes(columnId) ? 'rebal-column' : '',
     ['allocQty', 'allocDollars'].includes(columnId) ? 'alloc-column' : '',
     columnId === 'ccy' ? 'col-ccy' : '',
   ].filter(Boolean).join(' ')
@@ -50,12 +51,34 @@ function columnHeader(columnId: PortfolioColumnId): ReactNode {
       </th>
     )
   }
+  if (columnId === 'flexWeight') {
+    return (
+      <th className={className}>
+        <span className="flex-column-marker">F</span> Weight <span className="th-sub">Cur / Flex / Dev</span>
+      </th>
+    )
+  }
+  if (columnId === 'flexRebalQty') {
+    return (
+      <th className={className}>
+        <span className="flex-column-marker">F</span> Rebal Qty
+      </th>
+    )
+  }
+  if (columnId === 'flexRebalDollars') {
+    return (
+      <th className={className}>
+        <span className="flex-column-marker">F</span> Rebal💰
+      </th>
+    )
+  }
   return <th className={className}>{COLUMN_LABELS.get(columnId) ?? columnId}</th>
 }
 
 export default function StockTable() {
   const {
     stocks, fxRates, currentDisplayCurrency,
+    config,
     lastStockDisplay, lastGroupAllocData, lastPortfolioTotals,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     allocAddMode, allocReduceMode,
@@ -78,6 +101,10 @@ export default function StockTable() {
     [appConfig?.portfolioColumnModes],
   )
   const visibleColumnIds = getPortfolioColumnMode(columnModes, portfolioColumnModeId).columns
+  const flexibleWeightMappings = useMemo(
+    () => parseFlexibleWeightMappings(config.flexibleWeightMappings),
+    [config.flexibleWeightMappings],
+  )
 
   const stockGrossUsd = lastPortfolioTotals?.stockGrossUsd ?? 0
   const stockGrossKnown = lastPortfolioTotals?.stockGrossKnown ?? false
@@ -129,6 +156,21 @@ export default function StockTable() {
         marginTargetUsd,
         serverAllocDollars,
         appConfig?.hybridAllocStrategies,
+      )
+    : null
+  const computedFlexible = (stockGrossKnown && stockGrossUsd > 0)
+    ? computeFlexibleStockDisplay(
+        stocks.map(s => {
+          const sym = s.label
+          const positionValueUsd = liveBySymbol.get(sym)?.positionValueUsd ?? 0
+          return {
+            symbol: sym,
+            currentWeightPct: (positionValueUsd / stockGrossUsd) * 100,
+            targetWeight: s.targetWeight ?? 0,
+            rebalDollars: computedAlloc?.rebalDollars[sym] ?? 0,
+          }
+        }),
+        flexibleWeightMappings,
       )
     : null
 
@@ -262,6 +304,13 @@ export default function StockTable() {
                   const rebalDollars = stockGrossKnown ? (computedAlloc?.rebalDollars[sym] ?? null) : null
                   const rebalQty = (rebalDollars !== null && markPrice && markPrice > 0 && fxRate)
                     ? rebalDollars / (markPrice * fxRate) : null
+                  const flexTargetWeight = computedFlexible?.targetWeight[sym] ?? targetWeight
+                  const flexWeightDiff = curWeight - flexTargetWeight
+                  const flexDiffCls = weightDiffCls(flexWeightDiff)
+                  const flexPillSign = flexWeightDiff >= 0 ? '+' : ''
+                  const flexRebalDollars = stockGrossKnown ? (computedFlexible?.rebalDollars[sym] ?? rebalDollars) : null
+                  const flexRebalQty = (flexRebalDollars !== null && markPrice && markPrice > 0 && fxRate)
+                    ? flexRebalDollars / (markPrice * fxRate) : null
                   const allocDollars = stockGrossKnown ? (computedAlloc?.allocDollars[sym] ?? null) : null
                   const allocQty = (allocDollars !== null && markPrice && markPrice > 0 && fxRate)
                     ? allocDollars / (markPrice * fxRate) : null
@@ -317,8 +366,22 @@ export default function StockTable() {
                         )}
                       </td>
                     ),
+                    flexWeight: (
+                      <td className="weight-display col-num" id={`flex-weight-${sym}`}>
+                        {stockGrossKnown && (
+                          <>
+                            <span className="weight-cur">{curWeight.toFixed(1)}%</span>
+                            <span className="weight-sep">/</span>
+                            <span className="weight-tgt">{flexTargetWeight.toFixed(1)}%</span>
+                            <span className={`weight-diff ${flexDiffCls}`}>{flexPillSign}{flexWeightDiff.toFixed(1)}%</span>
+                          </>
+                        )}
+                      </td>
+                    ),
                     rebalQty: <td className={`action-neutral rebal-column col-moreinfo ${actionCls(rebalDollars)}`} id={`rebal-qty-${sym}`}>{rebalQty !== null ? formatSignedQty(rebalQty) : ''}</td>,
                     rebalDollars: <td className={`action-neutral rebal-column ${actionCls(rebalDollars)}`} id={`rebal-dollars-${sym}`}>{rebalDollars !== null && fxRate !== null ? formatSignedCurrency(rebalDollars / fxRate) : '-'}</td>,
+                    flexRebalQty: <td className={`action-neutral rebal-column col-moreinfo ${actionCls(flexRebalDollars)}`} id={`flex-rebal-qty-${sym}`}>{flexRebalQty !== null ? formatSignedQty(flexRebalQty) : ''}</td>,
+                    flexRebalDollars: <td className={`action-neutral rebal-column ${actionCls(flexRebalDollars)}`} id={`flex-rebal-dollars-${sym}`}>{flexRebalDollars !== null && fxRate !== null ? formatSignedCurrency(flexRebalDollars / fxRate) : '-'}</td>,
                     allocQty: <td className={`action-neutral alloc-column col-moreinfo ${actionCls(allocDollars)}`} id={`alloc-qty-${sym}`}>{allocQty !== null ? formatSignedQty(allocQty) : ''}</td>,
                     allocDollars: <td className={`action-neutral alloc-column ${actionCls(allocDollars)}`} id={`alloc-dollars-${sym}`}>{allocDollars !== null && fxRate !== null ? formatSignedCurrency(allocDollars / fxRate) : '-'}</td>,
                     ccy: (

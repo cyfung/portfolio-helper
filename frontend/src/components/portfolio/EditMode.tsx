@@ -2,7 +2,7 @@
 // Cash editing is handled by the always-visible CashEditTable in summary-and-rates.
 // On save, cash is read from the DOM (matching the original JS approach).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Copy } from 'lucide-react'
+import { Copy, X } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   isPlaceholderTicker,
@@ -11,6 +11,11 @@ import {
   savedPortfolioConfigMap,
   stripPlaceholderAndNormalizeResolvedRows,
 } from '@/lib/portfolioRefs'
+import {
+  parseFlexibleWeightMappings,
+  serializeFlexibleWeightMappings,
+  type FlexibleWeightMapping,
+} from '@/lib/flexibleWeights'
 import type { SavedPortfolio } from '@/types/backtest'
 import type { StockData } from '@/types/portfolio'
 
@@ -27,6 +32,10 @@ interface StockRow {
   symbol: string
   qty: NumericInputValue
   weight: NumericInputValue
+  deleted?: boolean
+}
+
+interface FlexibleMappingRow extends FlexibleWeightMapping {
   deleted?: boolean
 }
 
@@ -156,6 +165,10 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         weight: zeroAsEmpty(s.targetWeight ?? 0),
       }))
   )
+  const [flexibleRows, setFlexibleRows] = useState<FlexibleMappingRow[]>(() => {
+    const rows = parseFlexibleWeightMappings(config.flexibleWeightMappings)
+    return rows.length ? rows : [{ left: '', right: '' }]
+  })
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -218,6 +231,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           stocks: updates,
           cash: cashUpdates,
           dividendStartDate: dividendDate || null,
+          flexibleWeightMappings: serializeFlexibleWeightMappings(flexibleRows.filter(r => !r.deleted)),
         }),
       })
       if (!r.ok) throw new Error('Save failed')
@@ -233,8 +247,16 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     setStockRows(rows => [...rows, { symbol: '', qty: '', weight: '' }])
   }
 
+  function addFlexibleRow() {
+    setFlexibleRows(rows => [...rows, { left: '', right: '' }])
+  }
+
   function updateStock(idx: number, field: keyof StockRow, value: string | number | boolean) {
     setStockRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  function updateFlexible(idx: number, field: keyof FlexibleMappingRow, value: string | boolean) {
+    setFlexibleRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
   }
 
   function setQtyFocused(idx: number, focused: boolean) {
@@ -313,7 +335,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     e.preventDefault()
     const col = (e.currentTarget as HTMLElement).getAttribute('data-column')
     if (!col) return
-    const tbody = document.querySelector('#stock-edit-table tbody')
+    const tbody = e.currentTarget.closest('tbody') ?? document.querySelector('#stock-edit-table tbody')
     if (!tbody) return
     const allInputs = Array.from(tbody.querySelectorAll<HTMLInputElement>(`input[data-column="${col}"]`))
     const currentIdx = allInputs.indexOf(e.currentTarget)
@@ -346,9 +368,45 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       return
     }
 
-    e.preventDefault()
-
     const rows = lines.map((l: string) => l.split('\t'))
+    const flexTable = activeEl.closest('#flex-weight-mapping-table')
+    if (flexTable) {
+      e.preventDefault()
+      const focusedCol = activeEl.getAttribute('data-column') as 'left' | 'right' | null
+      const startColIdx = focusedCol === 'left' ? 0 : focusedCol === 'right' ? 1 : -1
+      if (startColIdx < 0) return
+      const tbody = flexTable.querySelector('tbody')
+      if (!tbody) return
+      const allTrs = Array.from(tbody.querySelectorAll('tr'))
+      const focusedTr = activeEl.closest('tr')
+      let startRowIdx = focusedTr ? allTrs.indexOf(focusedTr as HTMLTableRowElement) : allTrs.length
+      if (startRowIdx < 0) startRowIdx = allTrs.length
+
+      setFlexibleRows(prev => {
+        const next = prev.map(r => ({ ...r }))
+        const visibleIndices = next.map((r, i) => (!r.deleted ? i : -1)).filter(i => i >= 0)
+        rows.forEach((cols: string[], i: number) => {
+          const visiblePos = startRowIdx + i
+          let targetIdx: number
+          if (visiblePos < visibleIndices.length) {
+            targetIdx = visibleIndices[visiblePos]
+          } else {
+            next.push({ left: '', right: '' })
+            targetIdx = next.length - 1
+            visibleIndices.push(targetIdx)
+          }
+          cols.forEach((val: string, j: number) => {
+            const colIdx = startColIdx + j
+            if (colIdx === 0) next[targetIdx].left = val.trim().toUpperCase()
+            if (colIdx === 1) next[targetIdx].right = val.trim().toUpperCase()
+          })
+        })
+        return next
+      })
+      return
+    }
+
+    e.preventDefault()
 
     // Find which column index the focused input is in
     const focusedCol = activeEl.getAttribute('data-column') as keyof StockRow | null
@@ -456,6 +514,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       )}
 
       {/* ── Stock edit table ─────────────────────────────────────────── */}
+      <div className="edit-tables-row">
       <table className="portfolio-table" id="stock-edit-table" onClick={handleCopyClick}>
         <thead>
           <tr>
@@ -529,9 +588,11 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
                 <button
                   type="button"
                   className="delete-row-btn"
+                  aria-label="Delete stock row"
+                  title="Delete row"
                   onClick={() => updateStock(idx, 'deleted', true)}
                 >
-                  ×
+                  <X size={14} />
                 </button>
               </td>
             </tr>
@@ -548,6 +609,56 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         </tfoot>
       </table>
 
+      <table className="portfolio-table" id="flex-weight-mapping-table">
+        <thead>
+          <tr>
+            <th>Flexible From</th>
+            <th>Flexible To</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {flexibleRows.map((row, idx) => row.deleted ? null : (
+            <tr key={idx}>
+              <td>
+                <input
+                  type="text"
+                  className="edit-input flex-map-input"
+                  data-column="left"
+                  value={row.left}
+                  placeholder="VXUS"
+                  onChange={e => updateFlexible(idx, 'left', e.target.value.toUpperCase())}
+                  onKeyDown={handleEnterKey}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  className="edit-input flex-map-input"
+                  data-column="right"
+                  value={row.right}
+                  placeholder="0.67 EXUS.L 0.33 EIMI.L"
+                  onChange={e => updateFlexible(idx, 'right', e.target.value.toUpperCase())}
+                  onKeyDown={handleEnterKey}
+                />
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="delete-row-btn"
+                  aria-label="Delete flexible rule"
+                  title="Delete rule"
+                  onClick={() => updateFlexible(idx, 'deleted', true)}
+                >
+                  <X size={14} />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+
       <p className="edit-hint" id="stock-edit-hint">
         Paste from spreadsheet (Ctrl+V) fills from focused cell
       </p>
@@ -555,6 +666,9 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       <div className="edit-add-buttons">
         <button type="button" id="add-stock-btn" className="add-stock-btn" onClick={addStockRow}>
           + Add Stock
+        </button>
+        <button type="button" className="add-stock-btn" onClick={addFlexibleRow}>
+          + Add Flexible Rule
         </button>
       </div>
 

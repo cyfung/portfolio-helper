@@ -32,6 +32,7 @@ export interface PortfolioConfig {
   virtualBalanceEnabled: boolean
   dividendCalcUpToDate: string
   dividendStartDate: string
+  flexibleWeightMappings: string
 }
 
 import type { HybridAllocStrategyConfig } from '@/lib/allocStrategies'

@@ -371,6 +371,11 @@
     margin-top: 1px;
 }
 
+.flex-column-marker {
+    color: var(--color-accent-primary);
+    font-weight: var(--font-weight-bold);
+}
+
 /* ============================================
    Rebalancing Column Visibility
    ============================================ */

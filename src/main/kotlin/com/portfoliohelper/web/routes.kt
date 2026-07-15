@@ -900,7 +900,8 @@ private data class PortfolioConfigDto(
     val allocReduceMode: String,
     val virtualBalanceEnabled: Boolean,
     val dividendCalcUpToDate: String,
-    val dividendStartDate: String
+    val dividendStartDate: String,
+    val flexibleWeightMappings: String
 )
 
 @Serializable
@@ -1057,7 +1058,8 @@ fun Application.configureRouting() {
                     allocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL",
                     virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true",
                     dividendCalcUpToDate = portfolioConf["dividendCalcUpToDate"] ?: "",
-                    dividendStartDate = portfolioConf["dividendStartDate"] ?: ""
+                    dividendStartDate = portfolioConf["dividendStartDate"] ?: "",
+                    flexibleWeightMappings = portfolioConf["flexibleWeightMappings"] ?: ""
                 ),
                 appConfig = AppConfigDto(
                     version = APP_VERSION,
@@ -1577,6 +1579,7 @@ fun Application.configureRouting() {
                 val cashEntries = (root["cash"] as? JsonArray)?.parseCashEntries() ?: emptyList()
 
                 val dividendStartDate = root["dividendStartDate"]?.jsonPrimitive?.contentOrNull
+                val flexibleWeightMappings = root["flexibleWeightMappings"]?.jsonPrimitive?.contentOrNull
 
                 val pid = portfolioEntry.serialId
                 transaction {
@@ -1591,6 +1594,19 @@ fun Application.configureRouting() {
                     } else if (dividendStartDate != null) {
                         PortfolioCfgTable.deleteWhere {
                             (PortfolioCfgTable.portfolioId eq pid) and (PortfolioCfgTable.cfgKey eq "dividendStartDate")
+                        }
+                    }
+                    if (flexibleWeightMappings != null) {
+                        if (flexibleWeightMappings.isBlank()) {
+                            PortfolioCfgTable.deleteWhere {
+                                (PortfolioCfgTable.portfolioId eq pid) and (PortfolioCfgTable.cfgKey eq "flexibleWeightMappings")
+                            }
+                        } else {
+                            PortfolioCfgTable.upsert {
+                                it[PortfolioCfgTable.portfolioId] = pid
+                                it[PortfolioCfgTable.cfgKey] = "flexibleWeightMappings"
+                                it[PortfolioCfgTable.cfgValue] = flexibleWeightMappings
+                            }
                         }
                     }
                 }

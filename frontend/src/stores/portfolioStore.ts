@@ -116,6 +116,7 @@ const DEFAULT_CONFIG: PortfolioConfig = {
   virtualBalanceEnabled: false,
   dividendCalcUpToDate: '',
   dividendStartDate: '',
+  flexibleWeightMappings: '',
 }
 
 export const usePortfolioStore = create<PortfolioState>((set, get) => ({

@@ -72,6 +72,14 @@
     flex-shrink: 0;
 }
 
+.delete-row-btn {
+    font-size: 0;
+}
+
+.delete-row-btn svg {
+    display: block;
+}
+
 /* cf-remove - extra padding, no shrink */
 .cf-remove {
     padding: var(--spacing-sm);
