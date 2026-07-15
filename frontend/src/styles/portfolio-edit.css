@@ -134,25 +134,19 @@
     text-align: left;
 }
 
-/* Drag handle column */
-.drag-handle-col,
-.drag-handle-cell {
+/* Copy/row marker column */
+.row-marker-cell {
     width: 20px;
     padding: 0 4px;
     text-align: center;
 }
 
-.drag-handle {
+.row-index {
     color: var(--color-text-tertiary);
-    cursor: grab;
     user-select: none;
-    opacity: 0.5;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
 }
-
-.drag-handle:hover { opacity: 1; }
-.editing-active .portfolio-table tbody tr.dragging { opacity: 0.4; }
-.portfolio-table tbody tr.drag-over-top td { border-top: 2px solid var(--color-accent-primary); }
-.portfolio-table tbody tr.drag-over-bottom td { border-bottom: 2px solid var(--color-accent-primary); }
 
 .date-input-row {
     flex: 1;

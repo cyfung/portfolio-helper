@@ -41,6 +41,7 @@ interface FlexibleMappingRow extends FlexibleWeightMapping {
 
 
 const STOCK_COLUMNS: (keyof StockRow)[] = ['symbol', 'qty', 'weight']
+const FLEXIBLE_COLUMNS: (keyof Pick<FlexibleMappingRow, 'left' | 'right'>)[] = ['left', 'right']
 
 function roundWeightsToHundred(rows: { ticker: string; weight: number }[]) {
   const validRows = rows.filter(row => row.ticker.trim() && row.weight !== 0 && !isPlaceholderTicker(row.ticker))
@@ -98,6 +99,15 @@ function sanitizeNumberEditValue(value: string): string {
 function numberClipboardValue(value: NumericInputValue): string {
   if (value === '' || numberFromInputValue(value) === 0) return ''
   return String(value)
+}
+
+function parseFlexibleClipboardRows(lines: string[]): string[][] {
+  return lines.map(line => {
+    if (line.includes('\t')) return line.split('\t')
+    const match = line.match(/^\s*(.*?)\s*(?:->|=>)\s*(.*?)\s*$/)
+    if (match) return [match[1], match[2]]
+    return [line]
+  })
 }
 
 /** Read all cash rows from the CashEditTable DOM (matching original JS save logic) */
@@ -350,30 +360,18 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     if (!activeEl || !activeEl.classList.contains('edit-input')) return
 
     const clipText = (e.clipboardData || (window as any).clipboardData)?.getData('text') ?? ''
-    const lines = clipText.split(/[\r\n]+/).filter((l: string) => l.trim() !== '')
-
-    // Single-line paste: strip % from weight field
-    if (lines.length <= 1) {
-      const isWeight = activeEl.classList.contains('edit-weight') ||
-        activeEl.getAttribute('data-column') === 'weight'
-      if (isWeight) {
-        const stripped = clipText.replace(/%/g, '').trim()
-        if (stripped !== clipText.trim()) {
-          e.preventDefault()
-          const inp = activeEl as HTMLInputElement
-          inp.value = stripped
-          inp.dispatchEvent(new Event('input', { bubbles: true }))
-        }
-      }
-      return
-    }
-
-    const rows = lines.map((l: string) => l.split('\t'))
+    const lines: string[] = String(clipText).split(/[\r\n]+/).filter((l: string) => l.trim() !== '')
     const flexTable = activeEl.closest('#flex-weight-mapping-table')
+
     if (flexTable) {
+      const rows = parseFlexibleClipboardRows(lines)
+      const isStructuredPaste = lines.length > 1 || rows.some(cols => cols.length > 1)
+      if (!isStructuredPaste) return
+
       e.preventDefault()
       const focusedCol = activeEl.getAttribute('data-column') as 'left' | 'right' | null
-      const startColIdx = focusedCol === 'left' ? 0 : focusedCol === 'right' ? 1 : -1
+      const isMessagingFormat = lines.some(line => /^\s*.*?\s*(?:->|=>)\s*.*?\s*$/.test(line))
+      const startColIdx = isMessagingFormat ? 0 : focusedCol ? FLEXIBLE_COLUMNS.indexOf(focusedCol) : -1
       if (startColIdx < 0) return
       const tbody = flexTable.querySelector('tbody')
       if (!tbody) return
@@ -397,8 +395,8 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           }
           cols.forEach((val: string, j: number) => {
             const colIdx = startColIdx + j
-            if (colIdx === 0) next[targetIdx].left = val.trim().toUpperCase()
-            if (colIdx === 1) next[targetIdx].right = val.trim().toUpperCase()
+            if (colIdx >= FLEXIBLE_COLUMNS.length) return
+            next[targetIdx][FLEXIBLE_COLUMNS[colIdx]] = val.trim().toUpperCase()
           })
         })
         return next
@@ -406,7 +404,24 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       return
     }
 
+    // Single-line paste: strip % from weight field
+    if (lines.length <= 1) {
+      const isWeight = activeEl.classList.contains('edit-weight') ||
+        activeEl.getAttribute('data-column') === 'weight'
+      if (isWeight) {
+        const stripped = clipText.replace(/%/g, '').trim()
+        if (stripped !== clipText.trim()) {
+          e.preventDefault()
+          const inp = activeEl as HTMLInputElement
+          inp.value = stripped
+          inp.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+      }
+      return
+    }
+
     e.preventDefault()
+    const rows = lines.map((l: string) => l.split('\t'))
 
     // Find which column index the focused input is in
     const focusedCol = activeEl.getAttribute('data-column') as keyof StockRow | null
@@ -465,9 +480,18 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   // ── Copy table / column handler ───────────────────────────────────────────
   function handleCopyClick(e: React.MouseEvent<HTMLTableElement>) {
     const target = e.target as HTMLElement
+    const isFlexibleTable = e.currentTarget.id === 'flex-weight-mapping-table'
 
     const copyTableBtn = target.closest('.copy-table-btn') as HTMLElement | null
     if (copyTableBtn) {
+      if (isFlexibleTable) {
+        const lines = flexibleRows
+          .filter(r => !r.deleted && (r.left.trim() || r.right.trim()))
+          .map(r => `${r.left.trim()} -> ${r.right.trim()}`)
+        navigator.clipboard.writeText(lines.join('\n')).then(() => flashCopyButton(copyTableBtn))
+        return
+      }
+
       const lines = stockRows
         .filter(r => !r.deleted)
         .map(r => [r.symbol, numberClipboardValue(r.qty), numberClipboardValue(r.weight)].join('\t'))
@@ -477,6 +501,15 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
 
     const copyColBtn = target.closest('.copy-col-btn[data-column]') as HTMLElement | null
     if (copyColBtn) {
+      if (isFlexibleTable) {
+        const col = copyColBtn.getAttribute('data-column') as 'left' | 'right'
+        const values = flexibleRows
+          .filter(r => !r.deleted)
+          .map(r => String(r[col] ?? ''))
+        navigator.clipboard.writeText(values.join('\n')).then(() => flashCopyButton(copyColBtn))
+        return
+      }
+
       const col = copyColBtn.getAttribute('data-column') as keyof StockRow
       const values = stockRows
         .filter(r => !r.deleted)
@@ -518,7 +551,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       <table className="portfolio-table" id="stock-edit-table" onClick={handleCopyClick}>
         <thead>
           <tr>
-            <th className="drag-handle-cell">
+            <th className="row-marker-cell">
               <button type="button" className="copy-table-btn copy-col-btn" title="Copy table to clipboard (Google Sheets)">
                 <Copy size={12} />
               </button>
@@ -530,10 +563,13 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           </tr>
         </thead>
         <tbody>
-          {stockRows.map((row, idx) => row.deleted ? null : (
+          {stockRows
+            .map((row, idx) => ({ row, idx }))
+            .filter(({ row }) => !row.deleted)
+            .map(({ row, idx }, visibleIdx) => (
             <tr key={idx}>
-              <td className="drag-handle-cell">
-                <span className="drag-handle">⠿</span>
+              <td className="row-marker-cell">
+                <span className="row-index">{visibleIdx + 1}</span>
               </td>
               <td>
                 <input
@@ -609,17 +645,28 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         </tfoot>
       </table>
 
-      <table className="portfolio-table" id="flex-weight-mapping-table">
+      <table className="portfolio-table" id="flex-weight-mapping-table" onClick={handleCopyClick}>
         <thead>
           <tr>
-            <th>Flexible From</th>
-            <th>Flexible To</th>
+            <th className="row-marker-cell">
+              <button type="button" className="copy-table-btn copy-col-btn" title="Copy flexible rules">
+                <Copy size={12} />
+              </button>
+            </th>
+            <th>Flexible From <button type="button" className="copy-col-btn" data-column="left" title="Copy Flexible From column"><Copy size={12} /></button></th>
+            <th>Flexible To <button type="button" className="copy-col-btn" data-column="right" title="Copy Flexible To column"><Copy size={12} /></button></th>
             <th />
           </tr>
         </thead>
         <tbody>
-          {flexibleRows.map((row, idx) => row.deleted ? null : (
+          {flexibleRows
+            .map((row, idx) => ({ row, idx }))
+            .filter(({ row }) => !row.deleted)
+            .map(({ row, idx }, visibleIdx) => (
             <tr key={idx}>
+              <td className="row-marker-cell">
+                <span className="row-index">{visibleIdx + 1}</span>
+              </td>
               <td>
                 <input
                   type="text"
