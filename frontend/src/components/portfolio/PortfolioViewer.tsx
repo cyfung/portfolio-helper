@@ -91,6 +91,15 @@ type PendingBackupDependencyImport = {
   mode: 'fileImport' | 'dbRestore'
 }
 
+type HeaderHoverMenuOption = {
+  id: string
+  label: string
+  active: boolean
+  onSelect: () => void
+}
+
+type HeaderHoverMenuId = 'currency' | 'columnMode'
+
 export default function PortfolioViewer() {
   const navigate = useNavigate()
   const store = usePortfolioStore()
@@ -117,6 +126,7 @@ export default function PortfolioViewer() {
   const [pendingBackupDependencyImport, setPendingBackupDependencyImport] = useState<PendingBackupDependencyImport | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
+  const [suppressedHoverMenu, setSuppressedHoverMenu] = useState<HeaderHoverMenuId | null>(null)
   const syncToastTimer = useRef<number | null>(null)
 
   function showSyncToast(msg: string, type: string) {
@@ -239,6 +249,29 @@ export default function PortfolioViewer() {
   const activeColumnMode = getPortfolioColumnMode(portfolioColumnModes, portfolioColumnModeId)
   const modeHasMoreInfo = portfolioModeHasMoreInfo(activeColumnMode.columns)
   const modeHasRebal = portfolioModeHasRebal(activeColumnMode.columns)
+
+  function renderHeaderHoverMenu(menuId: HeaderHoverMenuId, options: HeaderHoverMenuOption[], ariaLabel: string) {
+    return (
+      <div className="header-hover-menu" role="menu" aria-label={ariaLabel}>
+        {options.map(option => (
+          <button
+            key={option.id}
+            type="button"
+            className={`header-hover-menu-item${option.active ? ' active' : ''}`}
+            role="menuitemradio"
+            aria-checked={option.active}
+            onClick={e => {
+              option.onSelect()
+              setSuppressedHoverMenu(menuId)
+              e.currentTarget.blur()
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
 
   // ── TWS sync ──────────────────────────────────────────────────────────────
   const handleTwsSync = useCallback(async () => {
@@ -396,31 +429,37 @@ export default function PortfolioViewer() {
     if (displayCurrencies.length === 1) {
       return <span className="currency-pill">{displayCurrencies[0]}</span>
     }
-    if (displayCurrencies.length <= 3) {
-      return (
+    const currencyOptions = displayCurrencies.map(currency => ({
+      id: currency,
+      label: currency,
+      active: currency === currentDisplayCurrency,
+      onSelect: () => store.setDisplayCurrency(currency),
+    }))
+    return (
+      <div
+        className={`header-hover-menu-wrap${suppressedHoverMenu === 'currency' ? ' is-suppressed' : ''}`}
+        onMouseLeave={() => {
+          if (suppressedHoverMenu === 'currency') setSuppressedHoverMenu(null)
+        }}
+      >
         <button
           className="currency-toggle active"
           type="button"
+          aria-haspopup="menu"
           title="Switch display currency"
-          onClick={() => {
+          onClick={e => {
             const idx = displayCurrencies.indexOf(currentDisplayCurrency)
             const next = displayCurrencies[(idx + 1) % displayCurrencies.length]
             store.setDisplayCurrency(next)
+            setSuppressedHoverMenu('currency')
+            e.currentTarget.blur()
           }}
         >
           <span className="currency-toggle-icon">⇄</span>
           <span className="toggle-label">{currentDisplayCurrency}</span>
         </button>
-      )
-    }
-    return (
-      <select
-        className="currency-select"
-        value={currentDisplayCurrency}
-        onChange={e => store.setDisplayCurrency(e.target.value)}
-      >
-        {displayCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
-      </select>
+        {renderHeaderHoverMenu('currency', currencyOptions, 'Display currencies')}
+      </div>
     )
   }
 
@@ -428,20 +467,37 @@ export default function PortfolioViewer() {
     if (portfolioColumnModes.length === 1) {
       return <span className="portfolio-column-mode-pill">{activeColumnMode.name}</span>
     }
+    const columnModeOptions = portfolioColumnModes.map(mode => ({
+      id: mode.id,
+      label: mode.name,
+      active: mode.id === activeColumnMode.id,
+      onSelect: () => setPortfolioColumnModeId(mode.id),
+    }))
     return (
-      <button
-        className="portfolio-column-mode-toggle active"
-        type="button"
-        title="Switch portfolio column mode"
-        onClick={() => {
-          const idx = portfolioColumnModes.findIndex(mode => mode.id === activeColumnMode.id)
-          const next = portfolioColumnModes[(idx + 1) % portfolioColumnModes.length]
-          setPortfolioColumnModeId(next.id)
+      <div
+        className={`header-hover-menu-wrap${suppressedHoverMenu === 'columnMode' ? ' is-suppressed' : ''}`}
+        onMouseLeave={() => {
+          if (suppressedHoverMenu === 'columnMode') setSuppressedHoverMenu(null)
         }}
       >
-        <span className="currency-toggle-icon">⇄</span>
-        <span className="toggle-label">{activeColumnMode.name}</span>
-      </button>
+        <button
+          className="portfolio-column-mode-toggle active"
+          type="button"
+          aria-haspopup="menu"
+          title="Switch portfolio column mode"
+          onClick={e => {
+            const idx = portfolioColumnModes.findIndex(mode => mode.id === activeColumnMode.id)
+            const next = portfolioColumnModes[(idx + 1) % portfolioColumnModes.length]
+            setPortfolioColumnModeId(next.id)
+            setSuppressedHoverMenu('columnMode')
+            e.currentTarget.blur()
+          }}
+        >
+          <span className="currency-toggle-icon">⇄</span>
+          <span className="toggle-label">{activeColumnMode.name}</span>
+        </button>
+        {renderHeaderHoverMenu('columnMode', columnModeOptions, 'Portfolio display modes')}
+      </div>
     )
   }
 
