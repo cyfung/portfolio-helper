@@ -14,6 +14,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.asFlow
@@ -164,12 +166,18 @@ fun PortfolioSelectorTitle(
     selectedId: Int,
     onSelect: (Int) -> Unit,
     marketData: Map<String, YahooQuote>,
-    relatedSymbols: Set<String>
+    relatedSymbols: Set<String>,
+    modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = portfolios.find { it.serialId == selectedId } ?: portfolios.firstOrNull()
 
-    Box {
+    BoxWithConstraints(modifier = modifier) {
+        val titleFontSize = when {
+            maxWidth < 96.dp -> 14.sp
+            maxWidth < 132.dp -> 16.sp
+            else -> MaterialTheme.typography.titleLarge.fontSize
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -180,9 +188,9 @@ fun PortfolioSelectorTitle(
             Text(
                 text = selected?.displayName ?: selectedId.toString(),
                 modifier = Modifier.weight(1f, fill = false),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = titleFontSize),
                 fontWeight = FontWeight.Bold,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
@@ -202,6 +210,38 @@ fun PortfolioSelectorTitle(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun StaticHeaderTitle(
+    label: String,
+    marketData: Map<String, YahooQuote>,
+    relatedSymbols: Set<String>,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val titleFontSize = when {
+            maxWidth < 96.dp -> 14.sp
+            maxWidth < 132.dp -> 16.sp
+            else -> MaterialTheme.typography.titleLarge.fontSize
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.weight(1f, fill = false),
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = titleFontSize),
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(8.dp))
+            UpdateTimestamp(marketData, relatedSymbols)
         }
     }
 }
@@ -301,46 +341,53 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
 
             TopAppBar(
                 title = {
-                    if (!isSettingsScreen && portfolios.size > 1) {
-                        PortfolioSelectorTitle(
-                            portfolios = portfolios,
-                            selectedId = selectedPortfolioId,
-                            onSelect = vm::selectPortfolio,
-                            marketData = marketData,
-                            relatedSymbols = activeSymbols
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Start
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (!isSettingsScreen && portfolios.size > 1) {
+                            PortfolioSelectorTitle(
+                                portfolios = portfolios,
+                                selectedId = selectedPortfolioId,
+                                onSelect = vm::selectPortfolio,
+                                marketData = marketData,
+                                relatedSymbols = activeSymbols,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp)
+                            )
+                        } else if (!isSettingsScreen) {
+                            StaticHeaderTitle(
+                                label = currentItem?.label ?: "Portfolio Helper",
+                                marketData = marketData,
+                                relatedSymbols = activeSymbols,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp)
+                            )
+                        } else {
                             Text(
                                 text = currentItem?.label ?: "Portfolio Helper",
-                                modifier = Modifier.weight(1f, fill = false),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (!isSettingsScreen) {
-                                Spacer(Modifier.width(8.dp))
-                                UpdateTimestamp(marketData, activeSymbols)
-                            }
                         }
+                        PrivacyScalingToggleButton(
+                            configuredPercent = configuredScalingPercent,
+                            enabled = scalingEnabled,
+                            onEnabledChange = vm::saveScalingEnabled
+                        )
+                        DynamicCurrencySwitcher(
+                            currencies = currencies,
+                            selected = selectedCurrency,
+                            onCurrencySelected = { vm.saveDisplayCurrency(it) }
+                        )
                     }
-                },
-                actions = {
-                    PrivacyScalingToggleButton(
-                        configuredPercent = configuredScalingPercent,
-                        enabled = scalingEnabled,
-                        onEnabledChange = vm::saveScalingEnabled
-                    )
-                    DynamicCurrencySwitcher(
-                        currencies = currencies,
-                        selected = selectedCurrency,
-                        onCurrencySelected = { vm.saveDisplayCurrency(it) }
-                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = ext.bgPrimary,

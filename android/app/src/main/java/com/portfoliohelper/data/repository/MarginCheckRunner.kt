@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.portfoliohelper.MainActivity
 import com.portfoliohelper.PortfolioHelperApp
+import com.portfoliohelper.data.model.withTickerSettings
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 
@@ -73,7 +74,10 @@ object MarginCheckRunner {
 
         ensureChannels(context)
 
+        val tickerSettings = app.database.tickerSettingsDao().getAll()
+            .associateBy { it.symbol.uppercase() }
         val allPositions = app.database.positionDao().getAllPositions()
+            .map { it.withTickerSettings(tickerSettings) }
         val allCashEntries = app.database.cashDao().getAllEntries()
 
         Log.d(TAG, "Fetching latest market prices from Yahoo Finance...")

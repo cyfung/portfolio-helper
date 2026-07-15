@@ -12,6 +12,8 @@ import com.portfoliohelper.data.model.GroupRow
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.model.TickerSettings
+import com.portfoliohelper.data.model.withTickerSettings
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import com.portfoliohelper.data.repository.AndroidNavService
@@ -90,12 +92,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Portfolio-scoped data flows ───────────────────────────────────────────
 
-    val positions: StateFlow<List<Position>> = selectedPortfolioId
+    val tickerSettings: StateFlow<List<TickerSettings>> = db.tickerSettingsDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val rawPositions: StateFlow<List<Position>> = selectedPortfolioId
         .flatMapLatest { pid -> db.positionDao().observeAll(pid) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val allPositions: StateFlow<List<Position>> = db.positionDao().observeAll()
+    val positions: StateFlow<List<Position>> = combine(rawPositions, tickerSettings) { pos, settings ->
+        val bySymbol = settings.associateBy { it.symbol.uppercase() }
+        pos.map { it.withTickerSettings(bySymbol) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val rawAllPositions: StateFlow<List<Position>> = db.positionDao().observeAll()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val allPositions: StateFlow<List<Position>> = combine(rawAllPositions, tickerSettings) { pos, settings ->
+        val bySymbol = settings.associateBy { it.symbol.uppercase() }
+        pos.map { it.withTickerSettings(bySymbol) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val cashEntries: StateFlow<List<CashEntry>> = selectedPortfolioId
         .flatMapLatest { pid -> db.cashDao().observeAll(pid) }
@@ -336,7 +351,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Write operations ──────────────────────────────────────────────────────
 
     fun upsertPosition(position: Position) = viewModelScope.launch {
-        db.positionDao().upsert(position.copy(portfolioId = selectedPortfolioId.value))
+        val symbol = position.symbol.trim().uppercase()
+        val existingTickerSettings = db.tickerSettingsDao().get(symbol)
+        db.positionDao().upsert(
+            position.copy(
+                portfolioId = selectedPortfolioId.value,
+                symbol = symbol,
+                letf = "",
+                groups = ""
+            )
+        )
+        db.tickerSettingsDao().upsert(
+            TickerSettings(
+                symbol = symbol,
+                letf = position.letf.trim().ifBlank { existingTickerSettings?.letf ?: "" },
+                groups = position.groups.trim()
+            )
+        )
         refreshMarketData()
     }
 

@@ -6,6 +6,7 @@ import com.portfoliohelper.data.model.MarketPrice
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.model.TickerSettings
 import kotlinx.coroutines.flow.Flow
 
 // ── Portfolio DAO ─────────────────────────────────────────────────────────────
@@ -89,6 +90,27 @@ interface PositionDao {
 // ── Cash DAO ──────────────────────────────────────────────────────────────────
 
 @Dao
+interface TickerSettingsDao {
+    @Query("SELECT * FROM ticker_settings ORDER BY symbol")
+    fun observeAll(): Flow<List<TickerSettings>>
+
+    @Query("SELECT * FROM ticker_settings ORDER BY symbol")
+    suspend fun getAll(): List<TickerSettings>
+
+    @Query("SELECT * FROM ticker_settings WHERE symbol = :symbol LIMIT 1")
+    suspend fun get(symbol: String): TickerSettings?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(settings: TickerSettings)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(settings: List<TickerSettings>)
+
+    @Query("DELETE FROM ticker_settings")
+    suspend fun deleteAll()
+}
+
+@Dao
 interface CashDao {
     @Query("SELECT * FROM cash_entries WHERE portfolioId = :portfolioId ORDER BY label")
     fun observeAll(portfolioId: Int): Flow<List<CashEntry>>
@@ -146,15 +168,17 @@ interface MarketPriceDao {
         Position::class,
         CashEntry::class,
         MarketPrice::class,
-        PortfolioMarginAlert::class
+        PortfolioMarginAlert::class,
+        TickerSettings::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun portfolioDao(): PortfolioDao
     abstract fun portfolioMarginAlertDao(): PortfolioMarginAlertDao
     abstract fun positionDao(): PositionDao
+    abstract fun tickerSettingsDao(): TickerSettingsDao
     abstract fun cashDao(): CashDao
     abstract fun marketPriceDao(): MarketPriceDao
 }

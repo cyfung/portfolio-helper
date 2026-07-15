@@ -12,6 +12,7 @@ import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
+import com.portfoliohelper.data.model.TickerSettings
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.request.*
@@ -265,6 +266,19 @@ class SyncRepository(
 
             var maxSerialId = 0
 
+            val syncedTickerSettings = response.tickerSettings
+                ?.map { TickerSettings(it.symbol.trim().uppercase(), it.letf.trim(), it.groups.trim()) }
+                ?.filter { it.symbol.isNotBlank() }
+                .orEmpty()
+            val syncedTickerSettingsBySymbol = syncedTickerSettings.associateBy { it.symbol }
+
+            db.tickerSettingsDao().deleteAll()
+            if (response.tickerSettings != null) {
+                if (syncedTickerSettings.isNotEmpty()) {
+                    db.tickerSettingsDao().upsertAll(syncedTickerSettings)
+                }
+            }
+
             for (entry in response.portfolios) {
                 val serialId = entry.serialId
                 if (serialId > maxSerialId) maxSerialId = serialId
@@ -274,14 +288,23 @@ class SyncRepository(
                 )
 
                 entry.stocks.forEach { s ->
+                    val symbol = s.symbol.trim().uppercase()
+                    val tickerSettings = syncedTickerSettingsBySymbol[symbol]
+                    val letf = tickerSettings?.letf ?: s.letf
+                    val groups = tickerSettings?.groups ?: s.groups
+
+                    if (response.tickerSettings == null && (letf.isNotBlank() || groups.isNotBlank())) {
+                        db.tickerSettingsDao().upsert(TickerSettings(symbol, letf.trim(), groups.trim()))
+                    }
+
                     db.positionDao().upsert(
                         Position(
                             portfolioId = serialId,
-                            symbol = s.symbol,
+                            symbol = symbol,
                             quantity = s.amount,
                             targetWeight = s.targetWeight,
-                            letf = s.letf,
-                            groups = s.groups
+                            letf = letf,
+                            groups = groups
                         )
                     )
                 }
@@ -342,7 +365,18 @@ data class PortfolioSyncEntry(
 )
 
 @kotlinx.serialization.Serializable
-data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>, val checksum: String)
+data class AllSyncResponse(
+    val portfolios: List<PortfolioSyncEntry>,
+    val checksum: String,
+    val tickerSettings: List<BackupTickerSettings>? = null
+)
+
+@kotlinx.serialization.Serializable
+data class BackupTickerSettings(
+    val symbol: String,
+    val letf: String = "",
+    val groups: String = ""
+)
 
 @kotlinx.serialization.Serializable
 data class BackupStock(

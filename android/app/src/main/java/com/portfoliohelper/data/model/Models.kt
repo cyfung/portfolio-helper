@@ -27,6 +27,19 @@ data class Position(
     val isDeleted: Boolean = false
 )
 
+@Entity(tableName = "ticker_settings")
+@Serializable
+data class TickerSettings(
+    @PrimaryKey val symbol: String,
+    val letf: String = "",
+    val groups: String = ""
+)
+
+fun Position.withTickerSettings(settings: Map<String, TickerSettings>): Position {
+    val ticker = settings[symbol.uppercase()] ?: return this
+    return copy(letf = ticker.letf, groups = ticker.groups)
+}
+
 // ── Group aggregation (computed, not stored) ──────────────────────────────────
 
 data class GroupRow(

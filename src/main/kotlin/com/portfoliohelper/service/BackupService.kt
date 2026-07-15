@@ -39,7 +39,11 @@ data class PortfolioSyncEntry(
 )
 
 @Serializable
-data class AllSyncResponse(val portfolios: List<PortfolioSyncEntry>, val checksum: String)
+data class AllSyncResponse(
+    val portfolios: List<PortfolioSyncEntry>,
+    val checksum: String,
+    val tickerSettings: List<BackupTickerSettings>? = null
+)
 
 fun computeSyncChecksum(entries: List<PortfolioSyncEntry>): String {
     val lines = entries
@@ -56,7 +60,8 @@ data class BackupRoot(
     val portfolioSlug: String,
     val stocks: List<BackupStock>,
     val cash: List<BackupCash>,
-    val dividendStartDate: String? = null
+    val dividendStartDate: String? = null,
+    val tickerSettings: List<BackupTickerSettings>? = null
 )
 
 @Serializable
@@ -77,6 +82,13 @@ data class BackupCash(
     val amount: Double,
     val portfolioRef: String? = null,
     val snapshotUsd: Double? = null   // P entries only; ignored on restore/import
+)
+
+@Serializable
+data class BackupTickerSettings(
+    val symbol: String,
+    val letf: String = "",
+    val groups: String = ""
 )
 
 @Serializable
@@ -220,7 +232,7 @@ object BackupService {
         root(portfolio, resolveUsd = true, includeTickerMetadata = true)
 
     fun exportSyncEntry(portfolio: ManagedPortfolio): PortfolioSyncEntry {
-        val r = root(portfolio, resolveUsd = true)
+        val r = root(portfolio, resolveUsd = true, includeTickerMetadata = true)
         return PortfolioSyncEntry(
             serialId = portfolio.serialId,
             name = portfolio.name,
@@ -228,6 +240,19 @@ object BackupService {
             stocks = r.stocks,
             cash = r.cash
         )
+    }
+
+    fun exportTickerSettings(): List<BackupTickerSettings> = transaction {
+        StockTickersTable.selectAll()
+            .orderBy(StockTickersTable.symbol to SortOrder.ASC)
+            .map {
+                BackupTickerSettings(
+                    symbol = it[StockTickersTable.symbol],
+                    letf = it[StockTickersTable.letf],
+                    groups = it[StockTickersTable.groups]
+                )
+            }
+            .filter { it.letf.isNotBlank() || it.groups.isNotBlank() }
     }
 
     fun parseImportFile(bytes: ByteArray, filename: String): ImportResult {
@@ -318,7 +343,8 @@ object BackupService {
             portfolioSlug = portfolio.slug,
             stocks = stocks,
             cash = cashBackup,
-            dividendStartDate = portfolio.getConfig("dividendStartDate") ?: ""
+            dividendStartDate = portfolio.getConfig("dividendStartDate") ?: "",
+            tickerSettings = if (includeTickerMetadata) exportTickerSettings() else null
         )
         return root
     }
