@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { adjustMarginPoint, clamp, normalizeMarginPoints, parsePoint } from './RebalanceStrategyControlUtils'
 import { useMarginWheelAdjustEnabled, useUnlockMarginWheelAdjust } from './MarginWheelAdjustContext'
 
@@ -64,7 +64,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
   return (
     <div className={`margin-point-endpoint margin-percent-input${compact ? ' margin-percent-input-compact' : ''}`} ref={wrapRef}>
       {!compact && (
-        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); stepBy(-1) }}>-</button>
+        <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); stepBy(-1) }}>-</button>
       )}
       <input
         className="margin-point-number-input"
@@ -82,7 +82,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
         onBlur={onCommit}
       />
       {!compact && (
-        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); stepBy(1) }}>+</button>
+        <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); stepBy(1) }}>+</button>
       )}
     </div>
   )
@@ -90,65 +90,41 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
 
 export const MarginPointSlider = React.memo(function MarginPointSlider({
   points, max, showComfortPoints, onChange, onCommit,
-}: { points: string[]; max: number; showComfortPoints: boolean; onChange: (points: string[]) => void; onCommit?: () => void }) {
-  const trackRef = useRef<HTMLDivElement>(null)
-  const draggingRef = useRef<number | null>(null)
+}: { points: string[]; max: number; showComfortPoints: boolean; onChange: (points: string[]) => void; onCommit?: (points: string[]) => void }) {
   const idleCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRefs = useRef<(HTMLInputElement | null)[]>([null, null, null, null, null])
   const endpointDivRefs = useRef<(HTMLDivElement | null)[]>([null, null, null, null, null])
-  const [activeThumb, setActiveThumb] = useState<number | null>(null)
   const wheelAdjustEnabled = useMarginWheelAdjustEnabled()
   const unlockMarginWheelAdjust = useUnlockMarginWheelAdjust()
   const safePoints = useMemo(() => normalizeMarginPoints(points, max), [points, max])
-  const [minPoint, maxPoint] = [safePoints[0], safePoints[4]]
-  const span = Math.max(maxPoint - minPoint, 1)
+  const safePointsRef = useRef(safePoints)
+
+  useEffect(() => {
+    safePointsRef.current = safePoints
+  }, [safePoints])
 
   const emit = useCallback((values: number[]) => {
     onChange(values.map(String))
   }, [onChange])
 
   const updatePoint = useCallback((i: number, value: number) => {
-    emit(adjustMarginPoint(safePoints, i, value, max))
-  }, [emit, max, safePoints])
+    const next = adjustMarginPoint(safePointsRef.current, i, value, max)
+    safePointsRef.current = next
+    emit(next)
+  }, [emit, max])
+
+  const commitCurrentPoints = useCallback(() => {
+    onCommit?.(safePointsRef.current.map(String))
+  }, [onCommit])
 
   const scheduleIdleCommit = useCallback(() => {
     if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
-    idleCommitTimerRef.current = setTimeout(() => onCommit?.(), 180)
-  }, [onCommit])
+    idleCommitTimerRef.current = setTimeout(commitCurrentPoints, 180)
+  }, [commitCurrentPoints])
 
   const handleLockedInputWheel = useCallback((e: React.WheelEvent<HTMLInputElement>) => {
     if (!wheelAdjustEnabled) e.currentTarget.blur()
   }, [wheelAdjustEnabled])
-
-  const valueFromClientX = useCallback((clientX: number) => {
-    const rect = trackRef.current?.getBoundingClientRect()
-    if (!rect) return minPoint
-    const pct = clamp((clientX - rect.left) / rect.width, 0, 1)
-    return Math.round(minPoint + pct * span)
-  }, [minPoint, span])
-
-  const handlePointerMove = useCallback((event: PointerEvent) => {
-    const i = draggingRef.current
-    if (i == null) return
-    updatePoint(i, valueFromClientX(event.clientX))
-  }, [updatePoint, valueFromClientX])
-
-  useEffect(() => {
-    const handlePointerUp = () => {
-      if (draggingRef.current != null) onCommit?.()
-      draggingRef.current = null
-      setActiveThumb(null)
-    }
-
-    window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp)
-    window.addEventListener('pointercancel', handlePointerUp)
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove)
-      window.removeEventListener('pointerup', handlePointerUp)
-      window.removeEventListener('pointercancel', handlePointerUp)
-    }
-  }, [handlePointerMove, onCommit])
 
   useEffect(() => {
     if (!wheelAdjustEnabled) {
@@ -162,7 +138,7 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
       if (!el) continue
       const fn = (e: WheelEvent) => {
         e.preventDefault()
-        updatePoint(i, safePoints[i] + (e.deltaY < 0 ? 5 : -5))
+        updatePoint(i, safePointsRef.current[i] + (e.deltaY < 0 ? 5 : -5))
         scheduleIdleCommit()
       }
       el.addEventListener('wheel', fn, { passive: false })
@@ -172,25 +148,13 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
       handlers.forEach(({ el, fn }) => el.removeEventListener('wheel', fn))
       if (idleCommitTimerRef.current) clearTimeout(idleCommitTimerRef.current)
     }
-  }, [safePoints, scheduleIdleCommit, updatePoint, wheelAdjustEnabled])
-
-  function startDrag(i: number, event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault()
-    unlockMarginWheelAdjust()
-    draggingRef.current = i
-    setActiveThumb(i)
-    updatePoint(i, valueFromClientX(event.clientX))
-  }
-
-  function pctFromValue(value: number) {
-    return `${((value - minPoint) / span) * 100}%`
-  }
+  }, [scheduleIdleCommit, updatePoint, wheelAdjustEnabled])
 
   function renderFlanked(i: number) {
     const p = safePoints[i]
     return (
       <div key={i} className="margin-point-endpoint" ref={el => { endpointDivRefs.current[i] = el }}>
-        <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); updatePoint(i, p - 1); scheduleIdleCommit() }}>-</button>
+        <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); updatePoint(i, p - 1); scheduleIdleCommit() }}>-</button>
         <input
           className="margin-point-number-input"
           ref={el => { inputRefs.current[i] = el }}
@@ -204,9 +168,9 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
           onClick={unlockMarginWheelAdjust}
           onWheel={handleLockedInputWheel}
           onChange={e => updatePoint(i, parsePoint(e.target.value, p))}
-          onBlur={onCommit}
+          onBlur={commitCurrentPoints}
         />
-        <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); updatePoint(i, p + 1); scheduleIdleCommit() }}>+</button>
+        <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); updatePoint(i, p + 1); scheduleIdleCommit() }}>+</button>
       </div>
     )
   }
@@ -217,23 +181,6 @@ export const MarginPointSlider = React.memo(function MarginPointSlider({
         {renderFlanked(0)}
         {renderFlanked(2)}
         {renderFlanked(4)}
-      </div>
-      <div className="margin-point-range-stack" ref={trackRef}>
-        <div className="margin-point-track" />
-        <div
-          className="margin-point-track-active"
-          style={{ left: pctFromValue(safePoints[1]), right: `${100 - parseFloat(pctFromValue(safePoints[3]))}%` }}
-        />
-        {[1, 2, 3].map(i => (
-          <button
-            key={i}
-            type="button"
-            className={`margin-point-thumb${activeThumb === i ? ' active' : ''}`}
-            style={{ left: pctFromValue(safePoints[i]) }}
-            aria-label={`Margin point ${i + 1}`}
-            onPointerDown={e => startDrag(i, e)}
-          />
-        ))}
       </div>
       {showComfortPoints && (
         <div className="margin-point-values margin-point-comfort-values">

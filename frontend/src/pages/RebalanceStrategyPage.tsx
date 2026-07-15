@@ -81,6 +81,7 @@ export default function RebalanceStrategyPage() {
               idx={i}
               value={strategy}
               onChange={page.strategyHandlers[i]}
+              onCommitSave={page.strategyCommitSaveHandlers[i]}
               onSavedRefresh={page.refreshSavedStrategies}
             />
           ))}

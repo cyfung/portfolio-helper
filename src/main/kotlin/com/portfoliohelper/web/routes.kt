@@ -631,6 +631,9 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     buyCooldownAfterSellHighDays = obj["buyCooldownAfterSellHighDays"]?.jsonPrimitive?.intOrNull ?: 10,
     sellCooldownAfterBuyLowDays = obj["sellCooldownAfterBuyLowDays"]?.jsonPrimitive?.intOrNull ?: 10,
     enabled                    = obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true,
+    baseEnabled                = obj["baseEnabled"]?.jsonPrimitive?.booleanOrNull
+        ?: obj["enabled"]?.jsonPrimitive?.booleanOrNull
+        ?: true,
     derivedSubStrategies        = parseDerivedSubStrategies(obj["derivedSubStrategies"]),
 )
 

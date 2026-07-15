@@ -233,7 +233,7 @@ object MonteCarloService {
             pConfig.rebalanceStrategies
                 .filter { it.enabled }
                 .flatMap { strategy ->
-                    listOf(strategy.label) +
+                    (if (strategy.baseEnabled) listOf(strategy.label) else emptyList()) +
                         strategy.derivedSubStrategies
                             .filter { it.enabled }
                             .map { derived -> "${strategy.label} / ${derived.label}" }

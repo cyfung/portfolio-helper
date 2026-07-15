@@ -274,6 +274,7 @@ data class RebalStrategyConfig(
     val buyCooldownAfterSellHighDays: Int = 10,
     val sellCooldownAfterBuyLowDays: Int = 10,
     val enabled: Boolean = true,
+    val baseEnabled: Boolean = true,
     val derivedSubStrategies: List<DerivedSubStrategyConfig> = emptyList(),
 )
 

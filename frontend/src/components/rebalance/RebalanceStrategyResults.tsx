@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { ReferenceDot } from 'recharts'
 import { ActionDiagnosticsTable, ResultsStatsTable } from '@/components/rebalance/RebalanceResultTables'
 import {
@@ -102,7 +102,7 @@ function ActionPointTypeFilter({
   )
 }
 
-export default function RebalanceStrategyResults({
+const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
   results,
   selected,
   setSelected,
@@ -540,4 +540,6 @@ export default function RebalanceStrategyResults({
       )}
     </>
   )
-}
+})
+
+export default RebalanceStrategyResults

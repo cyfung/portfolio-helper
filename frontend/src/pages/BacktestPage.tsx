@@ -31,7 +31,7 @@ import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
   cashflowToPayload, configToBlockInputLabel, DEFAULT_CASHFLOW_FREQUENCY,
-  normalizeBlockSpreadInputs, startingBalanceToPayload,
+  hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
@@ -539,16 +539,22 @@ export default function BacktestPage() {
 
   // ── Curve keys (for toggle / master checkbox) ────────────────────────────
 
-  const backtestKeys = results
-    ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
-    : []
-  const realKeys: string[] = realSlug && realData ? [
-    ...(realData.navSeries.length      ? ['real-nav'] : []),
-    ...(realData.twrSeries.length      ? ['real-twr'] : []),
-    ...(realData.mwrSeries    != null  ? ['real-mwr'] : []),
-    ...(realData.positionSeries != null ? ['real-pos'] : []),
-  ] : []
-  const allKeys    = [...backtestKeys, ...realKeys]
+  const backtestKeys = useMemo(
+    () => results
+      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
+      : [],
+    [results],
+  )
+  const realKeys: string[] = useMemo(
+    () => realSlug && realData ? [
+      ...(realData.navSeries.length      ? ['real-nav'] : []),
+      ...(realData.twrSeries.length      ? ['real-twr'] : []),
+      ...(realData.mwrSeries    != null  ? ['real-mwr'] : []),
+      ...(realData.positionSeries != null ? ['real-pos'] : []),
+    ] : [],
+    [realData, realSlug],
+  )
+  const allKeys = useMemo(() => [...backtestKeys, ...realKeys], [backtestKeys, realKeys])
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
   const anyChecked = selected.size > 0
 
@@ -808,7 +814,7 @@ export default function BacktestPage() {
       setError('Add at least one portfolio block with a positive net weight.')
       return
     }
-    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && (p.rebalanceStrategies?.length ?? 0) === 0)) {
+    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && !hasActiveRebalanceStrategyRows(p.rebalanceStrategies))) {
       setError('Each portfolio must have Unlevered enabled or at least one margin or rebalance strategy row.')
       return
     }
@@ -941,18 +947,18 @@ export default function BacktestPage() {
 
   // ── Curve toggle ──────────────────────────────────────────────────────────
 
-  function toggleCurve(key: string, checked: boolean) {
+  const toggleCurve = useCallback((key: string, checked: boolean) => {
     setViewState(prev => {
       const selected = new Set(prev.selected)
       if (checked) selected.add(key)
       else selected.delete(key)
       return { ...prev, selected }
     })
-  }
+  }, [])
 
-  function toggleAll(checked: boolean) {
+  const toggleAll = useCallback((checked: boolean) => {
     setViewState(prev => ({ ...prev, selected: checked ? new Set(allKeys) : new Set() }))
-  }
+  }, [allKeys])
 
   function toggleActionPointType(type: string, checked: boolean) {
     setVisibleActionPointTypes(prev => {

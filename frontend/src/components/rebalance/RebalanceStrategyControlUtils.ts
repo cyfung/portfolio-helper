@@ -63,37 +63,31 @@ export function parsePoint(v: string | undefined, fallback: number) {
 }
 
 export function normalizeMarginPoints(points: string[] | undefined, max: number) {
-  const sliderMax = Math.max(4, Math.floor(max))
+  const sliderMax = Math.max(0, Math.floor(max))
   const values = DEFAULT_POINTS.map((def, i) => clamp(parsePoint(points?.[i], parseInt(def, 10)), 0, sliderMax))
 
-  values[0] = clamp(values[0], 0, sliderMax - 4)
-  values[1] = clamp(values[1], values[0] + 1, sliderMax - 3)
-  values[2] = clamp(values[2], values[1] + 1, sliderMax - 2)
-  values[3] = clamp(values[3], values[2] + 1, sliderMax - 1)
-  values[4] = clamp(values[4], values[3] + 1, sliderMax)
-
-  for (let i = 3; i >= 0; i -= 1) {
-    values[i] = Math.min(values[i], values[i + 1] - 1)
-  }
   for (let i = 1; i < values.length; i += 1) {
-    values[i] = Math.max(values[i], values[i - 1] + 1)
+    values[i] = Math.max(values[i], values[i - 1])
+  }
+  for (let i = values.length - 2; i >= 0; i -= 1) {
+    values[i] = Math.min(values[i], values[i + 1])
   }
 
   return values
 }
 
 export function adjustMarginPoint(points: number[], index: number, value: number, max: number) {
-  const sliderMax = Math.max(4, Math.floor(max))
+  const sliderMax = Math.max(0, Math.floor(max))
   const next = [...points]
-  const target = clamp(Math.round(value), index, sliderMax - (next.length - 1 - index))
+  const target = clamp(Math.round(value), 0, sliderMax)
 
   next[index] = target
 
   for (let i = index - 1; i >= 0; i -= 1) {
-    if (next[i] >= next[i + 1]) next[i] = next[i + 1] - 1
+    if (next[i] > next[i + 1]) next[i] = next[i + 1]
   }
   for (let i = index + 1; i < next.length; i += 1) {
-    if (next[i] <= next[i - 1]) next[i] = next[i - 1] + 1
+    if (next[i] < next[i - 1]) next[i] = next[i - 1]
   }
 
   return next.map(v => clamp(v, 0, sliderMax))

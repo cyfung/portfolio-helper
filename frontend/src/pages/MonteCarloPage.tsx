@@ -1,6 +1,7 @@
 // ── MonteCarloPage.tsx — Full React port of Monte Carlo simulation ────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Brush,
@@ -46,7 +47,7 @@ import {
   blockStateToAPIPortfolio, configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
   cashflowStateFromSettings, cashflowToPayload, configToBlockInputLabel,
-  DEFAULT_CASHFLOW_FREQUENCY, normalizeBlockSpreadInputs, startingBalanceToPayload,
+  DEFAULT_CASHFLOW_FREQUENCY, hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -80,6 +81,40 @@ function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+interface MonteCarloChartRenderBoundaryProps {
+  render: () => ReactNode
+  results: MonteCarloResults | null
+  chartData: unknown
+  selected: Set<string>
+  percentile: number
+  allChecked: boolean
+  anyChecked: boolean
+  logScale: boolean
+  chartWidth: number
+  isDark: boolean
+  gridColor: string
+  textColor: string
+}
+
+const MonteCarloChartRenderBoundary = memo(
+  function MonteCarloChartRenderBoundary({ render }: MonteCarloChartRenderBoundaryProps) {
+    return <>{render()}</>
+  },
+  (prev, next) => (
+    prev.results === next.results &&
+    prev.chartData === next.chartData &&
+    prev.selected === next.selected &&
+    prev.percentile === next.percentile &&
+    prev.allChecked === next.allChecked &&
+    prev.anyChecked === next.anyChecked &&
+    prev.logScale === next.logScale &&
+    prev.chartWidth === next.chartWidth &&
+    prev.isDark === next.isDark &&
+    prev.gridColor === next.gridColor &&
+    prev.textColor === next.textColor
+  ),
+)
 
 export default function MonteCarloPage() {
   const [blocks, setBlocks]           = useState<BlockState[]>([0, 1, 2].map(emptyBlock))
@@ -352,7 +387,7 @@ export default function MonteCarloPage() {
       clearMonteCarloRunProgress()
       return
     }
-    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && (p.rebalanceStrategies?.length ?? 0) === 0)) {
+    if (portfolios.some(p => !p.includeNoMargin && p.marginStrategies.length === 0 && !hasActiveRebalanceStrategyRows(p.rebalanceStrategies))) {
       setError('Each portfolio must have Unlevered enabled, at least one margin row, or at least one rebalance strategy.')
       setRunning(false)
       clearMonteCarloRunProgress()
@@ -509,16 +544,21 @@ export default function MonteCarloPage() {
 
   // ── Curve toggle ──────────────────────────────────────────────────────────
 
-  const allKeys = results
-    ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
-    : []
+  const allKeys = useMemo(
+    () => results
+      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
+      : [],
+    [results],
+  )
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
   const anyChecked = selected.size > 0
 
-  function toggleCurve(key: string, checked: boolean) {
+  const toggleCurve = useCallback((key: string, checked: boolean) => {
     setSelected(prev => { const s = new Set(prev); checked ? s.add(key) : s.delete(key); return s })
-  }
-  function toggleAll(checked: boolean) { setSelected(checked ? new Set(allKeys) : new Set()) }
+  }, [])
+  const toggleAll = useCallback((checked: boolean) => {
+    setSelected(checked ? new Set(allKeys) : new Set())
+  }, [allKeys])
 
   const updateBlock = useCallback((i: number, s: BlockState) =>
     setBlocks(prev => { const n = [...prev]; n[i] = s; return n }),
@@ -635,8 +675,20 @@ export default function MonteCarloPage() {
         </div>
       )}
 
-      {results && chartData && (
-        <>
+      <MonteCarloChartRenderBoundary
+        results={results}
+        chartData={chartData}
+        selected={selected}
+        percentile={percentile}
+        allChecked={allChecked}
+        anyChecked={anyChecked}
+        logScale={logScale}
+        chartWidth={chartWidth}
+        isDark={isDark}
+        gridColor={gridColor}
+        textColor={textColor}
+        render={() => results && chartData ? (
+          <>
           <div style={{ opacity: 0.7, margin: '0.5rem 0 1rem', lineHeight: 1.5 }}>
             <p style={{ fontSize: 'var(--font-size-md)', margin: 0 }}>
               ⚠︎ Each metric is independently ranked across all simulations.
@@ -783,8 +835,9 @@ export default function MonteCarloPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </>
-      )}
+          </>
+        ) : null}
+      />
       {pendingImport && (
         <ImportDependenciesDialog
           preview={pendingImport.preview}

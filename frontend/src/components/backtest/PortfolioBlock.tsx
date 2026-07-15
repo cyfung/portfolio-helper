@@ -344,6 +344,36 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     })
   }
 
+  function updateRebalanceStrategyConfig(id: string, updater: (strategy: ReturnType<typeof savedConfigToStrategyState>) => ReturnType<typeof savedConfigToStrategyState>) {
+    commit({
+      ...localRef.current,
+      rebalanceStrategies: (localRef.current.rebalanceStrategies ?? []).map(row => {
+        if (row.id !== id) return row
+        const strategy = savedConfigToStrategyState(row.config, row.name)
+        const nextStrategy = updater(strategy)
+        const baseEnabled = nextStrategy.baseEnabled ?? nextStrategy.enabled ?? true
+        const anyDerivedEnabled = (nextStrategy.derivedSubStrategies ?? []).some(d => d.enabled)
+        return { ...row, config: { ...nextStrategy, enabled: baseEnabled || anyDerivedEnabled } }
+      }),
+    })
+  }
+
+  function toggleRebalanceBase(row: RebalanceStrategyRow) {
+    updateRebalanceStrategyConfig(row.id, strategy => {
+      const nextBaseEnabled = !(strategy.baseEnabled ?? strategy.enabled ?? true)
+      return { ...strategy, baseEnabled: nextBaseEnabled }
+    })
+  }
+
+  function toggleDerivedRebalanceStrategy(row: RebalanceStrategyRow, derivedId: string) {
+    updateRebalanceStrategyConfig(row.id, strategy => ({
+      ...strategy,
+      derivedSubStrategies: (strategy.derivedSubStrategies ?? []).map(d =>
+        d.id === derivedId ? { ...d, enabled: !d.enabled } : d,
+      ),
+    }))
+  }
+
   // ── Save / Clear ──────────────────────────────────────────────────────────
 
   async function handleSave(overwrite: boolean) {
@@ -414,58 +444,18 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   const hasLabel = local.label.trim().length > 0
-  const summarizeStrategyRow = (row: RebalanceStrategyRow, kind: string, label: string, sourceDetail = '') => {
+  const summarizeStrategyRow = (row: RebalanceStrategyRow) => {
     const strategy = savedConfigToStrategyState(row.config, row.name)
-    const points = strategy.marginPoints ?? []
-    const btd = strategy.buyTheDip
-    const sos = strategy.sellOnSurge
-    const dmo = strategy.drawdownMarginOverride
-    const ddBl = strategy.drawdownBuyOnLowMargin
     return {
       row,
-      key: `${row.id}:${kind}:${label}`,
-      kind,
-      label,
-      sourceDetail,
-      low: points[0] ?? '40',
-      mid: points[2] ?? strategy.marginRatio ?? '50',
-      high: points[4] ?? '60',
-      marginEnabled: strategy.marginRebalanceEnabled ?? true,
-      buyLowEnabled: strategy.buyLowEnabled,
-      sellHighEnabled: strategy.sellHighEnabled,
-      ddBl: ddBl?.enabled,
-      ddBlSgp: ddBl?.enabled && ddBl.portfolioSource === 'STRATEGY_GROSS',
-      ddBlPv: ddBl?.enabled && ddBl.portfolioSource === 'STRATEGY_VALUE',
-      ddBlR: ddBl?.enabled && ddBl.portfolioSource !== 'STRATEGY_GROSS' && ddBl.portfolioSource !== 'STRATEGY_VALUE',
-      ddMr: dmo?.enabled,
-      ddMrSgp: dmo?.enabled && dmo.portfolioSource === 'STRATEGY_GROSS',
-      ddMrPv: dmo?.enabled && dmo.portfolioSource === 'STRATEGY_VALUE',
-      ddMrR: dmo?.enabled && dmo.portfolioSource !== 'STRATEGY_GROSS' && dmo.portfolioSource !== 'STRATEGY_VALUE',
-      bdSgp: btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
-      bdPv:  btd?.basePortfolio != null && btd.basePortfolio.portfolioSource === 'STRATEGY_VALUE',
-      bdR:   btd?.basePortfolio != null && btd.basePortfolio.portfolioSource !== 'STRATEGY_GROSS' && btd.basePortfolio.portfolioSource !== 'STRATEGY_VALUE',
-      bdI:   btd?.individualStock != null,
-      ssSgp: sos?.basePortfolio != null && sos.basePortfolio.portfolioSource === 'STRATEGY_GROSS',
-      ssPv:  sos?.basePortfolio != null && sos.basePortfolio.portfolioSource === 'STRATEGY_VALUE',
-      ssR:   sos?.basePortfolio != null && sos.basePortfolio.portfolioSource !== 'STRATEGY_GROSS' && sos.basePortfolio.portfolioSource !== 'STRATEGY_VALUE',
-      ssI:   sos?.individualStock != null,
+      key: row.id,
+      strategy,
+      baseEnabled: strategy.baseEnabled ?? strategy.enabled ?? true,
+      derived: strategy.derivedSubStrategies ?? [],
     }
   }
 
-  const strategySummaries = (local.rebalanceStrategies ?? []).flatMap(row => {
-    const strategy = savedConfigToStrategyState(row.config, row.name)
-    const derived = (strategy.derivedSubStrategies ?? [])
-      .filter(d => d.enabled)
-      .map(d => summarizeStrategyRow(
-        row,
-        'Derived',
-        d.label?.trim() || 'Derived',
-        d.marginReferenceSource === 'STANDALONE_TICKER'
-          ? `Ref ${d.marginReferenceTicker || 'ticker'}`
-          : 'Ref base',
-      ))
-    return [summarizeStrategyRow(row, 'Base', row.name), ...derived]
-  })
+  const strategySummaries = (local.rebalanceStrategies ?? []).map(summarizeStrategyRow)
 
   return (
     <div
@@ -709,35 +699,40 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeMargin(m.id)}>✕</button>
             </div>
           ))}
-          {strategySummaries.map(({ row, key, kind, label, sourceDetail, low, mid, high, marginEnabled, buyLowEnabled, sellHighEnabled, ddBl, ddBlSgp, ddBlPv, ddBlR, ddMr, ddMrSgp, ddMrPv, ddMrR, bdSgp, bdPv, bdR, bdI, ssSgp, ssPv, ssR, ssI }) => (
+          {strategySummaries.map(({ row, key, strategy, baseEnabled, derived }) => (
             <div key={key} className="margin-config-row rebalance-strategy-margin-row">
               <span className="margin-drag-handle" aria-hidden="true">S</span>
               <div className="strategy-margin-info">
-                <span className="strategy-margin-name" title={kind === 'Base' ? row.name : `${row.name} / ${label}`}>{kind === 'Base' ? row.name : label}</span>
-                <span className="strategy-margin-source">{kind}</span>
-                {sourceDetail && <span>{sourceDetail}</span>}
-                <span>L {low}%</span>
-                <span>M {mid}%</span>
-                <span>H {high}%</span>
-                {marginEnabled && <span>MR</span>}
-                {ddMr && <span>DD-MR</span>}
-                {ddMrSgp && <span>DD-SGP</span>}
-                {ddMrPv && <span>DD-PV</span>}
-                {ddMrR && <span>DD-R</span>}
-                {buyLowEnabled && <span>BL</span>}
-                {sellHighEnabled && <span>SH</span>}
-                {ddBl && <span>DD-BL</span>}
-                {ddBlSgp && <span>DD-BL-SGP</span>}
-                {ddBlPv && <span>DD-BL-PV</span>}
-                {ddBlR && <span>DD-BL-R</span>}
-                {bdSgp && <span>BD-SGP</span>}
-                {bdPv && <span>BD-PV</span>}
-                {bdR && <span>BD-R</span>}
-                {bdI && <span>BD-I</span>}
-                {ssSgp && <span>SS-SGP</span>}
-                {ssPv && <span>SS-PV</span>}
-                {ssR && <span>SS-R</span>}
-                {ssI && <span>SS-I</span>}
+                <span className="strategy-margin-name" title={row.name}>{row.name}</span>
+                <button
+                  type="button"
+                  className="strategy-run-pill"
+                  data-active={String(baseEnabled)}
+                  aria-pressed={baseEnabled}
+                  title={`${baseEnabled ? 'Run' : 'Skip'} ${strategy.label || row.name}`}
+                  onClick={() => toggleRebalanceBase(row)}
+                >
+                  Base
+                </button>
+                {derived.map(d => {
+                  const label = d.label?.trim() || 'Derived'
+                  const sourceDetail = d.marginReferenceSource === 'STANDALONE_TICKER'
+                    ? `Ref ${d.marginReferenceTicker || 'ticker'}`
+                    : 'Ref base'
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className="strategy-run-pill"
+                      data-active={String(d.enabled)}
+                      aria-pressed={d.enabled}
+                      title={`${d.enabled ? 'Run' : 'Skip'} ${row.name} / ${label} (${sourceDetail})`}
+                      onClick={() => toggleDerivedRebalanceStrategy(row, d.id)}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
               </div>
               <button type="button" className="remove-margin-btn" title="Remove" onClick={() => removeRebalanceStrategy(row.id)}>✕</button>
             </div>

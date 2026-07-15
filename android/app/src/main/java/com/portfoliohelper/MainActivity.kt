@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -170,15 +172,18 @@ fun PortfolioSelectorTitle(
     Box {
         Row(
             modifier = Modifier
+                .fillMaxWidth()
                 .clickable { expanded = true }
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = selected?.displayName ?: selectedId.toString(),
+                modifier = Modifier.weight(1f, fill = false),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             Spacer(Modifier.width(8.dp))
@@ -306,14 +311,17 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
                         )
                     } else {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Start
                         ) {
                             Text(
                                 text = currentItem?.label ?: "Portfolio Helper",
+                                modifier = Modifier.weight(1f, fill = false),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                maxLines = 1
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                             if (!isSettingsScreen) {
                                 Spacer(Modifier.width(8.dp))
@@ -354,6 +362,13 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
                         selected = currentDestination?.hierarchy?.any {
                             it.route?.contains(item.route::class.simpleName ?: "") == true
                         } == true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = ext.actionPositive,
+                            selectedTextColor = ext.actionPositive,
+                            indicatorColor = ext.actionPositive.copy(alpha = 0.14f),
+                            unselectedIconColor = ext.textSecondary,
+                            unselectedTextColor = ext.textSecondary
+                        ),
                         onClick = {
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }

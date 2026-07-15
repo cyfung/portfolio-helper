@@ -186,7 +186,7 @@ object RebalanceStrategyService {
                   ),
                   standaloneBaseCache,
               )
-          listOf(baseRun.curve) + derivedCurves
+          if (strategy.baseEnabled) listOf(baseRun.curve) + derivedCurves else derivedCurves
         }
   }
 
@@ -255,7 +255,7 @@ object RebalanceStrategyService {
             ),
             standaloneBaseCache,
         )
-    return PortfolioResult(request.portfolio.label, listOf(curve) + derivedCurves)
+    return PortfolioResult(request.portfolio.label, if (strategy.baseEnabled) listOf(curve) + derivedCurves else derivedCurves)
   }
 
   private fun runDerivedSubStrategies(

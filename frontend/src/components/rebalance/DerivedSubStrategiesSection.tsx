@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { GripVertical, PlusCircle } from 'lucide-react'
 import type { AllocStrategyOption } from '@/lib/allocStrategies'
 import {
@@ -105,6 +105,16 @@ export default function DerivedSubStrategiesSection({
   onChange,
   onCommit,
 }: Props) {
+  const [activeDerivedId, setActiveDerivedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setActiveDerivedId(current => {
+      if (value.length === 0) return null
+      if (current && value.some(item => item.id === current)) return current
+      return value[0].id
+    })
+  }, [value])
+
   const updateSubStrategy = useCallback((id: string, patch: Partial<DerivedSubStrategyState>) => {
     onChange({
       derivedSubStrategies: value.map(item => item.id === id ? { ...item, ...patch } : item),
@@ -152,7 +162,9 @@ export default function DerivedSubStrategiesSection({
   }, [onChange, value])
 
   const addSubStrategy = useCallback(() => {
-    onChange({ derivedSubStrategies: [...value, emptyDerivedSubStrategy(value.length)] })
+    const next = emptyDerivedSubStrategy(value.length)
+    setActiveDerivedId(next.id)
+    onChange({ derivedSubStrategies: [...value, next] })
   }, [onChange, value])
 
   const removeSubStrategy = useCallback((id: string) => {
@@ -207,11 +219,35 @@ export default function DerivedSubStrategiesSection({
     })
   }
 
+  const activeDerived = value.find(item => item.id === activeDerivedId) ?? value[0]
+  const activeDerivedIdx = activeDerived ? value.findIndex(item => item.id === activeDerived.id) : -1
+  const derivedForEdit = activeDerived ? [{ derived: activeDerived, derivedIdx: activeDerivedIdx }] : []
+
   return (
     <details open className="strategy-subsection">
       <summary className="strategy-section-title" onClick={keepSectionOpen}>Derived</summary>
       <div className="strategy-section-body strategy-derived-section-body">
-        {value.map((derived, derivedIdx) => {
+        {value.length > 1 && (
+          <div className="strategy-derived-tabs" role="tablist" aria-label="Derived strategy components">
+            {value.map((derived, derivedIdx) => {
+              const label = derived.label?.trim() || `Derived ${derivedIdx + 1}`
+              return (
+                <button
+                  key={derived.id}
+                  type="button"
+                  className={`strategy-derived-tab${derived.id === activeDerived?.id ? ' active' : ''}`}
+                  role="tab"
+                  aria-selected={derived.id === activeDerived?.id}
+                  title={label}
+                  onClick={() => setActiveDerivedId(derived.id)}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {derivedForEdit.map(({ derived, derivedIdx }) => {
           const referenceMetric = derived.marginReferenceMetric ?? 'MARGIN'
           const referenceInputMax =
             referenceMetric === 'MARGIN_COVERAGE'

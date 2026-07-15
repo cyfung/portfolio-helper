@@ -181,6 +181,16 @@ export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
   return changed ? { ...state, margins } : state
 }
 
+export function hasActiveRebalanceStrategyRows(strategies: any[] | null | undefined): boolean {
+  return (strategies ?? []).some(strategy => {
+    if (strategy?.enabled === false) return false
+    const baseEnabled = strategy?.baseEnabled !== false
+    const derivedEnabled = Array.isArray(strategy?.derivedSubStrategies) &&
+      strategy.derivedSubStrategies.some((derived: any) => derived?.enabled !== false)
+    return baseEnabled || derivedEnabled
+  })
+}
+
 type ApiTickerWeight = number | '*'
 
 function apiTickerWeight(value: string | number | null | undefined): ApiTickerWeight {

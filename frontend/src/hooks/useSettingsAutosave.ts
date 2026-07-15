@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 function safeSerialize(value: unknown) {
   const seen = new WeakSet<object>()
@@ -28,6 +28,58 @@ function safeSerialize(value: unknown) {
 export function useSettingsAutosave(endpoint: string, payload: unknown, enabled: boolean, delayMs = 400) {
   const initializedRef = useRef(false)
   const lastSavedRef = useRef('')
+  const pendingSerializedRef = useRef<string | null>(null)
+  const endpointRef = useRef(endpoint)
+  const timeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    endpointRef.current = endpoint
+  }, [endpoint])
+
+  const clearPendingTimeout = useCallback(() => {
+    if (timeoutRef.current == null) return
+    window.clearTimeout(timeoutRef.current)
+    timeoutRef.current = null
+  }, [])
+
+  const saveSerialized = useCallback((serialized: string | null, keepalive = false) => {
+    if (!serialized || serialized === lastSavedRef.current) return
+
+    clearPendingTimeout()
+    lastSavedRef.current = serialized
+    pendingSerializedRef.current = null
+
+    if (keepalive) {
+      const body = new Blob([serialized], { type: 'application/json' })
+      if (navigator.sendBeacon?.(endpointRef.current, body)) return
+    }
+
+    fetch(endpointRef.current, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: serialized,
+      keepalive,
+    }).catch(() => {})
+  }, [clearPendingTimeout])
+
+  const flush = useCallback((nextPayload?: unknown) => {
+    if (!enabled) return
+    saveSerialized(nextPayload === undefined ? pendingSerializedRef.current : safeSerialize(nextPayload), true)
+  }, [enabled, saveSerialized])
+
+  useEffect(() => {
+    if (!enabled) return
+
+    const flushPending = () => {
+      saveSerialized(pendingSerializedRef.current, true)
+    }
+
+    window.addEventListener('pagehide', flushPending)
+    return () => {
+      window.removeEventListener('pagehide', flushPending)
+      flushPending()
+    }
+  }, [enabled, saveSerialized])
 
   useEffect(() => {
     if (!enabled) return
@@ -40,15 +92,14 @@ export function useSettingsAutosave(endpoint: string, payload: unknown, enabled:
     }
     if (serialized === lastSavedRef.current) return
 
-    const timeoutId = window.setTimeout(() => {
-      lastSavedRef.current = serialized
-      fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: serialized,
-      }).catch(() => {})
+    pendingSerializedRef.current = serialized
+    clearPendingTimeout()
+    timeoutRef.current = window.setTimeout(() => {
+      saveSerialized(serialized)
     }, delayMs)
 
-    return () => window.clearTimeout(timeoutId)
-  }, [delayMs, enabled, endpoint, payload])
+    return clearPendingTimeout
+  }, [clearPendingTimeout, delayMs, enabled, payload, saveSerialized])
+
+  return useMemo(() => ({ flush }), [flush])
 }

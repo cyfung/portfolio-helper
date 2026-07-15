@@ -127,16 +127,23 @@ export function useRebalanceStrategyPage() {
     () => resolveSelectedTickerMappingSet(tickerMappingSettings),
     [tickerMappingSettings],
   )
-  const settingsPayload = useMemo(() => ({
-    fromDate: fromDate || null,
-    toDate: toDate || null,
-    startingBalance: startingBalanceToPayload(startingBalance),
-    cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
-    includeActionDiagnostics,
-    settingsPortfolio: blockStateToSettingsPortfolio(portfolio, 0),
-    strategies: strategies.map(strategy => strategyStateToAPI(strategy)),
-    strategyStates: strategies,
-  }), [
+  const buildSettingsPayload = useCallback((overrides?: {
+    portfolio?: BlockState
+    strategies?: RebalStrategyState[]
+  }) => {
+    const nextPortfolio = overrides?.portfolio ?? portfolio
+    const nextStrategies = overrides?.strategies ?? strategies
+    return {
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      startingBalance: startingBalanceToPayload(startingBalance),
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      includeActionDiagnostics,
+      settingsPortfolio: blockStateToSettingsPortfolio(nextPortfolio, 0),
+      strategies: nextStrategies.map(strategy => strategyStateToAPI(strategy)),
+      strategyStates: nextStrategies,
+    }
+  }, [
     cashflowAmount,
     cashflowFrequency,
     fromDate,
@@ -146,8 +153,9 @@ export function useRebalanceStrategyPage() {
     strategies,
     toDate,
   ])
+  const settingsPayload = useMemo(() => buildSettingsPayload(), [buildSettingsPayload])
 
-  useSettingsAutosave('/api/rebalance-strategy/settings', settingsPayload, settingsLoaded)
+  const settingsAutosave = useSettingsAutosave('/api/rebalance-strategy/settings', settingsPayload, settingsLoaded)
 
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
@@ -394,6 +402,14 @@ export function useRebalanceStrategyPage() {
     ),
     [],
   )
+  const strategyCommitSaveHandlers = useMemo(
+    () => [0, 1].map(i => (strategy: RebalStrategyState) => {
+      const next = [...strategies]
+      next[i] = strategy
+      settingsAutosave.flush(buildSettingsPayload({ strategies: next }))
+    }),
+    [buildSettingsPayload, settingsAutosave, strategies],
+  )
   const refreshSaved = useCallback(() => savedBarRef.current?.refresh(), [])
   const refreshSavedStrategies = useCallback(() => savedStrategiesBarRef.current?.refresh(), [])
 
@@ -441,6 +457,7 @@ export function useRebalanceStrategyPage() {
     handleImport,
     confirmPendingImport,
     strategyHandlers,
+    strategyCommitSaveHandlers,
     refreshSaved,
     refreshSavedStrategies,
   }

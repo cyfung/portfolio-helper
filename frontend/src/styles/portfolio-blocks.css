@@ -305,22 +305,37 @@ input.input-error,
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
     white-space: nowrap;
+    margin-right: 0.25rem;
 }
 
-.strategy-margin-info span:not(.strategy-margin-name) {
+.strategy-run-pill {
     border: 1px solid var(--color-border-medium);
     border-radius: 4px;
-    padding: 0.12rem 0.35rem;
+    padding: 0.12rem 0.45rem;
+    background: var(--color-bg-primary);
     color: var(--color-text-secondary);
+    cursor: pointer;
     font-size: var(--font-size-xs);
     line-height: 1.35;
     white-space: nowrap;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.strategy-margin-info .strategy-margin-source {
+.strategy-run-pill:hover {
+    background: var(--color-bg-hover);
+}
+
+.strategy-run-pill[data-active="true"] {
     border-color: color-mix(in srgb, var(--color-accent-primary) 55%, var(--color-border-medium));
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, var(--color-bg-primary));
     color: var(--color-accent-primary);
     font-weight: 600;
+}
+
+.strategy-run-pill[data-active="false"] {
+    opacity: 0.55;
 }
 
 /* Margin drop-zone highlight */

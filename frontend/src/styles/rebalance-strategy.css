@@ -132,6 +132,39 @@
     gap: 0.5rem;
 }
 
+.strategy-derived-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.strategy-derived-tab {
+    max-width: 12rem;
+    min-height: var(--block-compact-control-height, 1.625rem);
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: 4px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.strategy-derived-tab:hover {
+    background: var(--color-bg-hover);
+}
+
+.strategy-derived-tab.active {
+    border-color: color-mix(in srgb, var(--color-accent-primary) 55%, var(--color-border-medium));
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, var(--color-bg-primary));
+    color: var(--color-accent-primary);
+}
+
 .strategy-derived-card {
     display: grid;
     gap: 0.55rem;
@@ -462,56 +495,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.3rem;
     align-items: center;
-}
-
-.margin-point-range-stack {
-    position: relative;
-    height: 1.5rem;
-    display: flex;
-    align-items: center;
-    touch-action: none;
-}
-
-.margin-point-track,
-.margin-point-track-active {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 0.3rem;
-    border-radius: 999px;
-}
-
-.margin-point-track {
-    background: var(--color-border-light);
-}
-
-.margin-point-track-active {
-    background: var(--color-accent-primary);
-}
-
-.margin-point-thumb {
-    position: absolute;
-    top: 50%;
-    width: 1rem;
-    height: 1rem;
-    padding: 0;
-    border: 2px solid var(--color-accent-primary);
-    border-radius: 999px;
-    background: var(--color-bg-primary);
-    box-shadow: 0 0 0 2px var(--color-bg-primary);
-    cursor: grab;
-    transform: translate(-50%, -50%);
-    z-index: 2;
-}
-
-.margin-point-thumb.active {
-    cursor: grabbing;
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-primary) 26%, transparent);
-}
-
-.margin-point-thumb:focus-visible {
-    outline: 2px solid var(--color-accent-primary);
-    outline-offset: 3px;
 }
 
 .margin-point-values {

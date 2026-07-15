@@ -142,6 +142,7 @@ export interface DerivedSubStrategyState {
 export interface RebalStrategyState {
   label: string
   enabled: boolean
+  baseEnabled: boolean
   marginRatio: string
   marginSpread: string
   marginPoints: string[]
@@ -366,6 +367,7 @@ export function emptyStrategy(idx: number): RebalStrategyState {
   return {
     label: `Strategy ${idx + 1}`,
     enabled: true,
+    baseEnabled: true,
     marginRatio: '50',
     marginSpread: '1.5',
     marginPoints: ['40', '45', '50', '55', '60'],
@@ -725,6 +727,7 @@ export function savedConfigToStrategyState(config: any, name: string): RebalStra
     ...source,
     label: name || source.label || base.label,
     enabled: source.enabled ?? base.enabled,
+    baseEnabled: source.baseEnabled ?? source.enabled ?? base.baseEnabled,
     portfolioRebalancePeriod: source.portfolioRebalancePeriod ?? base.portfolioRebalancePeriod,
     portfolioRebalanceUseComfortZone: source.portfolioRebalanceUseComfortZone ?? source.useComfortZone ?? base.portfolioRebalanceUseComfortZone,
     marginRebalanceEnabled: source.marginRebalanceEnabled ?? base.marginRebalanceEnabled,
@@ -870,6 +873,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
   return {
     label: s.label.trim() || 'Strategy',
     enabled: s.enabled ?? true,
+    baseEnabled: s.baseEnabled ?? s.enabled ?? true,
     marginRatio: margin / 100,
     marginSpread: percentInputToFraction(s.marginSpread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
     portfolioRebalancePeriod: s.portfolioRebalancePeriod || 'INHERIT',

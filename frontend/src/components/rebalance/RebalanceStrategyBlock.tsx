@@ -48,6 +48,7 @@ interface Props {
   onChange: (s: RebalStrategyState) => void
   sliderMax?: number
   onSavedRefresh?: () => void
+  onCommitSave?: (s: RebalStrategyState) => void
 }
 
 export interface RebalanceStrategyBlockRef {
@@ -140,20 +141,20 @@ function cloneDerivedSubStrategy(derived: DerivedSubStrategyState): DerivedSubSt
 }
 
 const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBlockRef, Props>(function RebalanceStrategyBlock(
-  { idx, value, onChange, sliderMax = 150, onSavedRefresh },
+  { idx, value, onChange, sliderMax = 150, onSavedRefresh, onCommitSave },
   ref,
 ) {
   const allocOptions = useAllocStrategyOptions(false)
   const [local, setLocal] = useState<RebalStrategyState>(value)
   const [spreadTouched, setSpreadTouched] = useState(false)
   const localRef = useRef(local)
-  const prevValueRef = useRef(value)
+  const lastValuePropRef = useRef(value)
   const s = local
 
-  const commit = useCallback((next = localRef.current) => {
-    prevValueRef.current = next
+  const commit = useCallback((next = localRef.current, saveNow = false) => {
     onChange(next)
-  }, [onChange])
+    if (saveNow) onCommitSave?.(next)
+  }, [onChange, onCommitSave])
 
   const updateLocal = useCallback((next: RebalStrategyState, sync = false) => {
     localRef.current = next
@@ -166,12 +167,12 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   }, [updateLocal])
 
   useEffect(() => {
-    if (prevValueRef.current !== value) {
-      prevValueRef.current = value
-      localRef.current = value
-      setLocal(value)
-      setSpreadTouched(false)
-    }
+    if (lastValuePropRef.current === value) return
+
+    lastValuePropRef.current = value
+    localRef.current = value
+    setLocal(value)
+    setSpreadTouched(false)
   }, [value])
 
   const valueMarginPoints = useMemo(
@@ -189,13 +190,16 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
   }, [valueMarginPoints])
 
   const commitMarginPoints = useCallback((points = draftMarginPointsRef.current) => {
-    commit({ ...localRef.current, marginPoints: points, marginRatio: points[2] })
+    const next = { ...localRef.current, marginPoints: points, marginRatio: points[2] }
+    localRef.current = next
+    setLocal(next)
+    commit(next, true)
   }, [commit])
 
   const handleMarginChange = useCallback((points: string[]) => {
     draftMarginPointsRef.current = points
     setDraftMarginPoints(points)
-    updateLocal({ ...localRef.current, marginPoints: points, marginRatio: points[2] })
+    updateLocal({ ...localRef.current, marginPoints: points, marginRatio: points[2] }, true)
   }, [updateLocal])
 
   const marginPoints = draftMarginPoints
@@ -327,7 +331,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           saveMsg={saveMsg}
           onLabelChange={label => set({ label })}
           onEnabledChange={enabled => set({ enabled })}
-          onCommit={() => commit()}
+          onCommit={() => commit(undefined, true)}
           onSave={handleSave}
         />
 
@@ -338,7 +342,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           spreadTouched={spreadTouched}
           onSet={set}
           onSpreadTouched={() => setSpreadTouched(true)}
-          onCommit={() => commit()}
+          onCommit={() => commit(undefined, true)}
           onMarginChange={handleMarginChange}
           onMarginCommit={commitMarginPoints}
         />
@@ -354,7 +358,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             sliderMax={sliderMax}
             onSet={set}
             onRemove={removeOptionalStrategySection}
-            onCommit={() => commit()}
+            onCommit={() => commit(undefined, true)}
           />
         )}
 
@@ -365,7 +369,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             sliderMax={sliderMax}
             onChange={updateDrawdownMarginOverride}
             onRemove={removeOptionalStrategySection}
-            onCommit={() => commit()}
+            onCommit={() => commit(undefined, true)}
           />
         )}
 
@@ -376,7 +380,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             sliderMax={sliderMax}
             onChange={updateVmTimingMr}
             onRemove={removeOptionalStrategySection}
-            onCommit={() => commit()}
+            onCommit={() => commit(undefined, true)}
           />
         )}
 
@@ -386,7 +390,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           midMarginPoint={midMarginPoint}
           sliderMax={sliderMax}
           onSet={set}
-          onCommit={() => commit()}
+          onCommit={() => commit(undefined, true)}
         />
 
         {s.buyLowEnabled && (
@@ -400,7 +404,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             sliderMax={sliderMax}
             onSet={set}
             onRemove={removeOptionalStrategySection}
-            onCommit={() => commit()}
+            onCommit={() => commit(undefined, true)}
           />
         )}
 
@@ -415,7 +419,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             sliderMax={sliderMax}
             onSet={set}
             onRemove={removeOptionalStrategySection}
-            onCommit={() => commit()}
+            onCommit={() => commit(undefined, true)}
           />
         )}
 
@@ -430,7 +434,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
             allocOptions={allocOptions}
             onChange={value => set({ drawdownBuyOnLowMargin: value })}
             onRemove={() => removeOptionalStrategySection('drawdownBuyOnLowMargin')}
-            onCommit={() => commit()}
+            onCommit={() => commit(undefined, true)}
           />
         )}
 
@@ -499,7 +503,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           sliderMax={sliderMax}
           allocOptions={allocOptions}
           onChange={set}
-          onCommit={() => commit()}
+          onCommit={() => commit(undefined, true)}
         />
       </MarginWheelAdjustContext.Provider>
 

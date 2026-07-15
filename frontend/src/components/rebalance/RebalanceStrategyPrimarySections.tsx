@@ -87,7 +87,7 @@ export function MarginSection({
   onSpreadTouched: () => void
   onCommit: () => void
   onMarginChange: (points: string[]) => void
-  onMarginCommit: () => void
+  onMarginCommit: (points: string[]) => void
 }) {
   const spreadInvalid = spreadTouched && !isValidNumberInput(strategy.marginSpread, { min: 0 })
 

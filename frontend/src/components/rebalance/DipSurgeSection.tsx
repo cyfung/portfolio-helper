@@ -83,7 +83,7 @@ function MarginPercentInput({
 
   return (
     <div className="margin-point-endpoint margin-percent-input" ref={wrapRef}>
-      <button type="button" className="margin-point-step" aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); stepBy(-1) }}>-</button>
+      <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); stepBy(-1) }}>-</button>
       <input
         className="margin-point-number-input"
         type="number"
@@ -98,7 +98,7 @@ function MarginPercentInput({
         onWheel={handleLockedInputWheel}
         onChange={e => onChange(e.target.value)}
       />
-      <button type="button" className="margin-point-step" aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); stepBy(1) }}>+</button>
+      <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); stepBy(1) }}>+</button>
     </div>
   )
 }
