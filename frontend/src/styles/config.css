@@ -581,6 +581,42 @@
     gap: var(--spacing-sm);
 }
 
+.column-mode-table .column-mode-drag-col {
+    width: 2.2rem;
+    padding-right: 0;
+}
+
+.column-mode-row.drop-before td {
+    border-top: 2px solid var(--color-accent-primary);
+}
+
+.column-mode-row.drop-after td {
+    border-bottom: 2px solid var(--color-accent-primary);
+}
+
+.column-mode-drag-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: grab;
+}
+
+.column-mode-drag-handle:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-text-secondary);
+}
+
+.column-mode-drag-handle:active {
+    cursor: grabbing;
+}
+
 .column-mode-edit-btn {
     padding: var(--spacing-xs) var(--spacing-lg);
     font-size: var(--font-size-xs);

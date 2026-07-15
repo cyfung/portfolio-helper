@@ -1,6 +1,7 @@
 // ── ConfigPage.tsx — App Settings (full React port, no vanilla JS) ────────────
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
+import { GripVertical } from 'lucide-react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 import { showConfirm } from '@/components/ConfirmDialog'
@@ -374,6 +375,10 @@ export default function ConfigPage() {
     target: 'used' | 'unused'
     beforeId?: PortfolioColumnId | null
   } | null>(null)
+  const [columnModeDropTarget, setColumnModeDropTarget] = useState<{
+    modeId: string
+    position: 'before' | 'after'
+  } | null>(null)
   const saveTimers = useRef<Map<string, number>>(new Map())
   const statusTimer = useRef<number>(0)
   const downloadPollRef = useRef<number | null>(null)
@@ -538,6 +543,51 @@ export default function ConfigPage() {
     commitColumnModes(DEFAULT_PORTFOLIO_COLUMN_MODES)
   }
 
+  function onColumnModeDragStart(e: DragEvent, modeId: string) {
+    e.dataTransfer.setData('application/x-portfolio-column-mode', modeId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onColumnModeDragEnd() {
+    setColumnModeDropTarget(null)
+  }
+
+  function readColumnModeDrag(e: DragEvent): string | null {
+    return e.dataTransfer.getData('application/x-portfolio-column-mode') || null
+  }
+
+  function columnModeDropPosition(e: DragEvent): 'before' | 'after' {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  }
+
+  function markColumnModeDropTarget(e: DragEvent, modeId: string) {
+    if (!e.dataTransfer.types.includes('application/x-portfolio-column-mode')) return
+    e.preventDefault()
+    e.stopPropagation()
+    setColumnModeDropTarget({ modeId, position: columnModeDropPosition(e) })
+  }
+
+  function handleColumnModeDrop(e: DragEvent, targetModeId: string) {
+    const sourceModeId = readColumnModeDrag(e)
+    if (!sourceModeId) return
+    e.preventDefault()
+    e.stopPropagation()
+    setColumnModeDropTarget(null)
+    if (sourceModeId === targetModeId) return
+
+    const position = columnModeDropPosition(e)
+    const movedMode = columnModes.find(mode => mode.id === sourceModeId)
+    if (!movedMode) return
+    const withoutMoved = columnModes.filter(mode => mode.id !== sourceModeId)
+    const targetIndex = withoutMoved.findIndex(mode => mode.id === targetModeId)
+    if (targetIndex < 0) return
+
+    const next = [...withoutMoved]
+    next.splice(position === 'before' ? targetIndex : targetIndex + 1, 0, movedMode)
+    commitColumnModes(next)
+  }
+
   function onColumnDragStart(e: DragEvent, modeIndex: number, columnId: PortfolioColumnId, source: 'used' | 'unused') {
     e.dataTransfer.setData('application/x-portfolio-column', JSON.stringify({ modeIndex, columnId, source }))
     e.dataTransfer.effectAllowed = 'move'
@@ -669,11 +719,33 @@ export default function ConfigPage() {
       <div className="portfolio-column-modes-config">
         <table className="portfolio-config-table column-mode-table">
           <thead>
-            <tr><th>Mode Name</th><th>Columns</th><th /></tr>
+            <tr><th className="column-mode-drag-col" /><th>Mode Name</th><th>Columns</th><th /></tr>
           </thead>
           <tbody>
             {columnModes.map((mode, index) => (
-              <tr key={mode.id}>
+              <tr
+                key={mode.id}
+                className={[
+                  'column-mode-row',
+                  columnModeDropTarget?.modeId === mode.id ? `drop-${columnModeDropTarget.position}` : '',
+                ].filter(Boolean).join(' ')}
+                onDragEnter={e => markColumnModeDropTarget(e, mode.id)}
+                onDragOver={e => markColumnModeDropTarget(e, mode.id)}
+                onDrop={e => handleColumnModeDrop(e, mode.id)}
+              >
+                <td className="column-mode-drag-col">
+                  <button
+                    type="button"
+                    className="column-mode-drag-handle"
+                    draggable
+                    aria-label={`Move ${mode.name}`}
+                    title="Drag to reorder"
+                    onDragStart={e => onColumnModeDragStart(e, mode.id)}
+                    onDragEnd={onColumnModeDragEnd}
+                  >
+                    <GripVertical size={14} />
+                  </button>
+                </td>
                 <td>
                   <input
                     type="text"
