@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { GripVertical } from 'lucide-react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
+import TransientToast from '@/components/TransientToast'
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
 import { showConfirm } from '@/components/ConfirmDialog'
 import IbkrConfigDialog, { IbkrConfig } from '@/components/portfolio/IbkrConfigDialog'
+import { durationForToastType, useTransientToast, type ToastType } from '@/hooks/useTransientToast'
 import {
   BASE_ALLOC_OPTIONS,
   DEFAULT_HYBRID_ALLOC_STRATEGIES,
@@ -352,8 +354,8 @@ export default function ConfigPage() {
   const [cfg, setCfg]               = useState<ConfigValues>({})
   const [loaded, setLoaded]         = useState(false)
   const [portfolios, setPortfolios] = useState<PortfolioRow[]>([])
-  const [status, setStatus]         = useState({ msg: '', type: '' })
-  const [updateStatus, setUpdateStatus] = useState({ msg: '', type: '' })
+  const { toast: status, showToast: showStatusBase, clearToast: clearStatus } = useTransientToast()
+  const { toast: updateStatus, showToast: showUpdateStatus, clearToast: clearUpdateStatus } = useTransientToast(null)
   const [updateProgress, setUpdateProgress] = useState<{ phase: string; received: number; total: number } | null>(null)
   const [latestVersion, setLatestVersion] = useState('')
   const [hasUpdate, setHasUpdate]   = useState(false)
@@ -380,12 +382,29 @@ export default function ConfigPage() {
     position: 'before' | 'after'
   } | null>(null)
   const saveTimers = useRef<Map<string, number>>(new Map())
-  const statusTimer = useRef<number>(0)
   const downloadPollRef = useRef<number | null>(null)
 
   const isJpackage   = cfg._isJpackageInstall === 'true'
   const downloadPhase = cfg._downloadPhase ?? 'IDLE'
   const version       = cfg._version ?? ''
+
+  const startDownloadPoll = useCallback(() => {
+    if (downloadPollRef.current) return
+    downloadPollRef.current = window.setInterval(async () => {
+      try {
+        const r = await fetch('/api/admin/update-info')
+        const info = await r.json()
+        const phase = info.download?.phase || 'IDLE'
+        setCfg(prev => ({ ...prev, _downloadPhase: phase }))
+        setUpdateProgress({ phase, received: info.download?.bytesReceived || 0, total: info.download?.totalBytes || 0 })
+        if (phase !== 'DOWNLOADING') {
+          clearInterval(downloadPollRef.current!)
+          downloadPollRef.current = null
+          if (phase === 'READY') showUpdateStatus('Download complete. Click "Apply Update & Restart" to install.', 'ok')
+        }
+      } catch (_) {}
+    }, 1000)
+  }, [showUpdateStatus])
 
   useEffect(() => {
     fetch('/api/admin/config-values')
@@ -426,15 +445,13 @@ export default function ConfigPage() {
         })
       })
       .catch(() => {})
-  }, [])
+  }, [startDownloadPoll])
 
   // ── Auto-save helpers ─────────────────────────────────────────────────────
 
-  function showStatus(msg: string, type: string) {
-    setStatus({ msg, type })
-    clearTimeout(statusTimer.current)
-    statusTimer.current = window.setTimeout(() => setStatus({ msg: '', type: '' }), type === 'ok' ? 2500 : 5000)
-  }
+  const showStatus = useCallback((msg: string, type: ToastType) => {
+    showStatusBase(msg, type, durationForToastType(type))
+  }, [showStatusBase])
 
   const saveField = useCallback((key: string, value: string, portfolioId?: string) => {
     const timerKey = portfolioId ? `${portfolioId}:${key}` : key
@@ -455,7 +472,7 @@ export default function ConfigPage() {
         showStatus('Error: ' + err.message, 'error')
       }
     }, 600))
-  }, [])
+  }, [showStatus])
 
   function saveHybridStrategies(rows = hybridStrategies) {
     const strategies = ensureUniqueStrategyIds(rows.map(rowToStrategy).filter(row => row.id && row.first && row.second))
@@ -892,24 +909,6 @@ export default function ConfigPage() {
 
   // ── Update management ─────────────────────────────────────────────────────
 
-  function startDownloadPoll() {
-    if (downloadPollRef.current) return
-    downloadPollRef.current = window.setInterval(async () => {
-      try {
-        const r = await fetch('/api/admin/update-info')
-        const info = await r.json()
-        const phase = info.download?.phase || 'IDLE'
-        setCfg(prev => ({ ...prev, _downloadPhase: phase }))
-        setUpdateProgress({ phase, received: info.download?.bytesReceived || 0, total: info.download?.totalBytes || 0 })
-        if (phase !== 'DOWNLOADING') {
-          clearInterval(downloadPollRef.current!)
-          downloadPollRef.current = null
-          if (phase === 'READY') setUpdateStatus({ msg: 'Download complete. Click "Apply Update & Restart" to install.', type: 'ok' })
-        }
-      } catch (_) {}
-    }, 1000)
-  }
-
   function setUpdateInfo(info: any) {
     if (info.hasUpdate != null)      setHasUpdate(info.hasUpdate)
     if (info.latestVersion != null)  setLatestVersion(info.latestVersion)
@@ -917,47 +916,47 @@ export default function ConfigPage() {
   }
 
   async function handleCheckUpdate() {
-    setUpdateStatus({ msg: 'Checking for updates…', type: 'ok' })
+    showUpdateStatus('Checking for updates…', 'ok')
     try {
       const r = await fetch('/api/admin/check-update', { method: 'POST' })
       const info = await r.json()
       setUpdateInfo(info)
-      if (info.lastCheckError) setUpdateStatus({ msg: 'Check failed: ' + info.lastCheckError, type: 'error' })
-      else if (info.hasUpdate) setUpdateStatus({ msg: 'Update available: v' + info.latestVersion, type: 'warn' })
-      else setUpdateStatus({ msg: 'You are up to date (v' + info.currentVersion + ').', type: 'ok' })
-    } catch (err: any) { setUpdateStatus({ msg: 'Error: ' + err.message, type: 'error' }) }
+      if (info.lastCheckError) showUpdateStatus('Check failed: ' + info.lastCheckError, 'error')
+      else if (info.hasUpdate) showUpdateStatus('Update available: v' + info.latestVersion, 'warn')
+      else showUpdateStatus('You are up to date (v' + info.currentVersion + ').', 'ok')
+    } catch (err: any) { showUpdateStatus('Error: ' + err.message, 'error') }
   }
 
   async function handleDownloadUpdate() {
-    setUpdateStatus({ msg: 'Starting download…', type: 'ok' })
+    showUpdateStatus('Starting download…', 'ok')
     try {
       const r = await fetch('/api/admin/download-update', { method: 'POST' })
       if (r.status === 409) {
         const body = await r.json().catch(() => ({}))
         if (body.status === 'already-downloading') {
-          setUpdateStatus({ msg: 'Download already in progress.', type: 'warn' })
+          showUpdateStatus('Download already in progress.', 'warn')
           startDownloadPoll()
         } else {
-          setUpdateStatus({ msg: 'Not supported on this install type.', type: 'error' })
+          showUpdateStatus('Not supported on this install type.', 'error')
         }
       } else {
         startDownloadPoll()
       }
-    } catch (err: any) { setUpdateStatus({ msg: 'Error: ' + err.message, type: 'error' }) }
+    } catch (err: any) { showUpdateStatus('Error: ' + err.message, 'error') }
   }
 
   async function handleApplyUpdate() {
     showRestartOverlay()
-    setUpdateStatus({ msg: 'Applying update and restarting…', type: 'ok' })
+    showUpdateStatus('Applying update and restarting…', 'ok')
     try {
       await fetch('/api/admin/apply-update', { method: 'POST' })
       setTimeout(attemptReconnect, 2000)
-    } catch (err: any) { setUpdateStatus({ msg: 'Error: ' + err.message, type: 'error' }) }
+    } catch (err: any) { showUpdateStatus('Error: ' + err.message, 'error') }
   }
 
   async function handleRestart() {
     showRestartOverlay()
-    setUpdateStatus({ msg: 'Restarting app…', type: 'ok' })
+    showUpdateStatus('Restarting app…', 'ok')
     try {
       await fetch('/api/admin/restart', { method: 'POST' })
     } catch (_) {}
@@ -1298,9 +1297,7 @@ export default function ConfigPage() {
             <button type="button" className="config-restore-btn" onClick={handleRestart}>Restart App</button>
           </div>
 
-          {updateStatus.msg && (
-            <div className={`config-status config-status-${updateStatus.type}`}>{updateStatus.msg}</div>
-          )}
+          <TransientToast msg={updateStatus.msg} type={updateStatus.type} onDismiss={clearUpdateStatus} />
         </ConfigSection>
 
         {/* ── Market Data ──────────────────────────────────────────────── */}
@@ -1331,9 +1328,7 @@ export default function ConfigPage() {
           <button type="button" className="config-restore-btn" onClick={handleRestoreDefaults}>
             Restore Defaults
           </button>
-          {status.msg && (
-            <div className={`config-status config-status-${status.type} visible`}>{status.msg}</div>
-          )}
+          <TransientToast msg={status.msg} type={status.type} onDismiss={clearStatus} />
         </div>
         </>)}
       </main>

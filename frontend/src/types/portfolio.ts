@@ -24,9 +24,9 @@ export interface CashData {
 }
 
 export interface PortfolioConfig {
-  rebalTargetUsd: number
-  marginTargetPct: number
-  marginTargetUsd: number
+  rebalTargetUsd: number | null
+  marginTargetPct: number | null
+  marginTargetUsd: number | null
   allocAddMode: AllocMode
   allocReduceMode: AllocMode
   virtualBalanceEnabled: boolean

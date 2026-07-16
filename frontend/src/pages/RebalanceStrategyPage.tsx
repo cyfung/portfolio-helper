@@ -10,6 +10,7 @@ import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBlock'
 import RebalanceStrategyResults from '@/components/rebalance/RebalanceStrategyResults'
 import SavedStrategiesBar from '@/components/rebalance/SavedStrategiesBar'
+import TransientToast from '@/components/TransientToast'
 import { useRebalanceStrategyPage } from '@/hooks/useRebalanceStrategyPage'
 
 export default function RebalanceStrategyPage() {
@@ -18,9 +19,7 @@ export default function RebalanceStrategyPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/rebalance-strategy" />
-      <div className={`config-status config-status-${page.importToast.type}${page.importToast.msg ? ' visible' : ''}`}>
-        {page.importToast.msg}
-      </div>
+      <TransientToast msg={page.importToast.msg} type={page.importToast.type} onDismiss={page.clearImportToast} />
 
       <div className="backtest-form-card">
         <ScenarioSetupControls

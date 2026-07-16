@@ -107,10 +107,14 @@ function readInitialColumnMode(): string {
   return legacyVisibilityToDefaultModeId(lsGet(LS_KEYS.moreInfo) === 'true', lsGet(LS_KEYS.rebal) === 'true')
 }
 
+function finiteOrNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 const DEFAULT_CONFIG: PortfolioConfig = {
-  rebalTargetUsd: 0,
-  marginTargetPct: 0,
-  marginTargetUsd: 0,
+  rebalTargetUsd: null,
+  marginTargetPct: null,
+  marginTargetUsd: null,
   allocAddMode: 'PROPORTIONAL',
   allocReduceMode: 'PROPORTIONAL',
   virtualBalanceEnabled: false,
@@ -162,9 +166,9 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
     const displayCurrency = (savedCurrency && appConfig.displayCurrencies.includes(savedCurrency))
       ? savedCurrency : appConfig.displayCurrencies[0] ?? 'USD'
 
-    const rebalTarget = config.rebalTargetUsd > 0 ? config.rebalTargetUsd : null
-    const marginTarget = config.marginTargetPct > 0 ? config.marginTargetPct : null
-    const marginUsdTarget = config.marginTargetUsd > 0 ? config.marginTargetUsd : null
+    const rebalTarget = finiteOrNull(config.rebalTargetUsd)
+    const marginTarget = finiteOrNull(config.marginTargetPct)
+    const marginUsdTarget = finiteOrNull(config.marginTargetUsd)
 
     // Alloc modes: prefer server-saved config over localStorage
     const allocAdd = config.allocAddMode as AllocMode

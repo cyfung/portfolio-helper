@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import { BacktestPageHeader } from '@/components/backtest/CommonBacktestSections'
+import TransientToast from '@/components/TransientToast'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
@@ -145,7 +146,7 @@ export default function MarketTimingPage() {
   const [normalizeWindowDayZero, setNormalizeWindowDayZero] = useState(true)
   const [marginComparisonResultIndex, setMarginComparisonResultIndex] = useState(0)
   const [marginComparisonBaseMargin, setMarginComparisonBaseMargin] = useState(0)
-  const { toast: importToast, showToast: showImportToast } = useTransientToast()
+  const { toast: importToast, showToast: showImportToast, clearToast: clearImportToast } = useTransientToast()
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const dateRangeError = validateDateRange(fromDate, toDate)
   const settingsPayload = useMemo(() => ({
@@ -391,9 +392,7 @@ export default function MarketTimingPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/market-timing" />
-      <div className={`config-status config-status-${importToast.type}${importToast.msg ? ' visible' : ''}`}>
-        {importToast.msg}
-      </div>
+      <TransientToast msg={importToast.msg} type={importToast.type} onDismiss={clearImportToast} />
 
       <MarketTimingSetupCard
         portfolio={portfolio}

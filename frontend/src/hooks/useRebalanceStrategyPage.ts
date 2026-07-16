@@ -116,7 +116,7 @@ export function useRebalanceStrategyPage() {
   const [zeroMarginInterestResults, setZeroMarginInterestResults] = useState<BacktestResults | null>(null)
   const [zeroMarginInterestRunning, setZeroMarginInterestRunning] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const { toast: importToast, showToast: showImportToast } = useTransientToast()
+  const { toast: importToast, showToast: showImportToast, clearToast: clearImportToast } = useTransientToast()
   const savedBarRef = useRef<SavedPortfoliosBarRef>(null)
   const savedStrategiesBarRef = useRef<SavedStrategiesBarRef>(null)
   const strategyBlockRefs = useRef<(RebalanceStrategyBlockRef | null)[]>([])
@@ -447,6 +447,7 @@ export function useRebalanceStrategyPage() {
     setSelected,
     importToast,
     showImportToast,
+    clearImportToast,
     savedBarRef,
     savedStrategiesBarRef,
     strategyBlockRefs,

@@ -516,11 +516,12 @@
     top: 5rem;
     left: 50%;
     transform: translateX(-50%) translateY(-2rem);
-    padding: 0.85rem 2.5rem;
+    padding: 0.85rem 3.25rem;
     border-radius: 9999px;
     font-size: 1rem;
     font-weight: 600;
     min-width: 280px;
+    max-width: min(720px, calc(100vw - 2rem));
     text-align: center;
     background: var(--color-bg-elevated);
     border: 1.5px solid var(--color-border-medium);
@@ -530,6 +531,40 @@
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.4s ease-out, transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.config-status-message {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.config-status-dismiss {
+    position: absolute;
+    top: 50%;
+    right: 0.8rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    border: none;
+    border-radius: 9999px;
+    background: transparent;
+    color: currentColor;
+    cursor: pointer;
+}
+
+.config-status-dismiss:hover,
+.config-status-dismiss:focus-visible {
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.config-status-dismiss:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
 }
 
 .config-status.visible {

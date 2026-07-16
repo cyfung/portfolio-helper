@@ -893,9 +893,9 @@ private data class CashDto(
 
 @Serializable
 private data class PortfolioConfigDto(
-    val rebalTargetUsd: Double,
-    val marginTargetPct: Double,
-    val marginTargetUsd: Double,
+    val rebalTargetUsd: Double?,
+    val marginTargetPct: Double?,
+    val marginTargetUsd: Double?,
     val allocAddMode: String,
     val allocReduceMode: String,
     val virtualBalanceEnabled: Boolean,
@@ -1020,10 +1020,10 @@ fun Application.configureRouting() {
             fun scaleQty(q: Double) =
                 if (privacyScalePct != null) kotlin.math.round(q * privacyScalePct / 100.0) else q
 
-            val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull() ?: 0.0
-            val displayRebalTarget =
-                if (privacyScalePct != null) savedRebalTargetUsd * privacyScalePct / 100.0
-                else savedRebalTargetUsd
+            val savedRebalTargetUsd = portfolioConf["rebalTarget"]?.toDoubleOrNull()
+            val displayRebalTarget = savedRebalTargetUsd?.let {
+                if (privacyScalePct != null) it * privacyScalePct / 100.0 else it
+            }
 
             val displayCurrencies: List<String> = buildList {
                 add("USD")
@@ -1052,8 +1052,8 @@ fun Application.configureRouting() {
                 cash = cashEntries.map { CashDto(it.label, it.currency, it.amount, it.marginFlag, it.portfolioRef) },
                 config = PortfolioConfigDto(
                     rebalTargetUsd = displayRebalTarget,
-                    marginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull() ?: 0.0,
-                    marginTargetUsd = portfolioConf["marginTargetUsd"]?.toDoubleOrNull() ?: 0.0,
+                    marginTargetPct = portfolioConf["marginTarget"]?.toDoubleOrNull(),
+                    marginTargetUsd = portfolioConf["marginTargetUsd"]?.toDoubleOrNull(),
                     allocAddMode = portfolioConf["allocAddMode"] ?: "PROPORTIONAL",
                     allocReduceMode = portfolioConf["allocReduceMode"] ?: "PROPORTIONAL",
                     virtualBalanceEnabled = portfolioConf["virtualBalance"] == "true",

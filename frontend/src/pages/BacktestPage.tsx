@@ -12,6 +12,7 @@ import {
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
+import TransientToast from '@/components/TransientToast'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
@@ -386,7 +387,7 @@ export default function BacktestPage() {
   const [forceActionPointChartDots, setForceActionPointChartDots] = useState<Record<ActionPointChartKey, boolean>>(
     () => ({ ...DEFAULT_FORCE_ACTION_POINT_CHART_DOTS }),
   )
-  const { toast: importToast, showToast: showImportToast } = useTransientToast()
+  const { toast: importToast, showToast: showImportToast, clearToast: clearImportToast } = useTransientToast()
 
   // Real portfolio overlay
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
@@ -1167,9 +1168,7 @@ export default function BacktestPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/backtest" />
-      <div className={`config-status config-status-${importToast.type}${importToast.msg ? ' visible' : ''}`}>
-        {importToast.msg}
-      </div>
+      <TransientToast msg={importToast.msg} type={importToast.type} onDismiss={clearImportToast} />
 
       <div className="backtest-form-card">
         <ScenarioSetupControls

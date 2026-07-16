@@ -11,6 +11,7 @@ import {
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
+import TransientToast from '@/components/TransientToast'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
@@ -141,7 +142,7 @@ export default function MonteCarloPage() {
   const [percentile, setPercentile]   = useState(50)
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [logScale, setLogScale]       = useState(false)
-  const { toast: importToast, showToast: showImportToast } = useTransientToast()
+  const { toast: importToast, showToast: showImportToast, clearToast: clearImportToast } = useTransientToast()
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
@@ -591,9 +592,7 @@ export default function MonteCarloPage() {
   return (
     <div className="container">
       <BacktestPageHeader active="/montecarlo" />
-      <div className={`config-status config-status-${importToast.type}${importToast.msg ? ' visible' : ''}`}>
-        {importToast.msg}
-      </div>
+      <TransientToast msg={importToast.msg} type={importToast.type} onDismiss={clearImportToast} />
 
       <div className="backtest-form-card">
         <ScenarioSetupControls

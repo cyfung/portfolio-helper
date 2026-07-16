@@ -444,9 +444,9 @@ class RebalGaService(
 
         val ec = stockGrossUsd + marginUsd  // equity (unleveraged base)
         val rebalTotal = when {
-            rebalTargetUsd != null && rebalTargetUsd > 0 -> rebalTargetUsd
-            marginTargetPct != null && marginTargetPct > 0 -> ec * (1.0 + marginTargetPct / 100.0)
-            marginTargetUsd != null && marginTargetUsd > 0 -> ec + marginTargetUsd
+            rebalTargetUsd != null && rebalTargetUsd >= 0 -> rebalTargetUsd
+            marginTargetPct != null && marginTargetPct >= 0 -> ec * (1.0 + marginTargetPct / 100.0)
+            marginTargetUsd != null && marginTargetUsd >= 0 -> ec + marginTargetUsd
             else -> stockGrossUsd + max(marginUsd, 0.0)
         }
 

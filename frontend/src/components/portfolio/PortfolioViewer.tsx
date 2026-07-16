@@ -1,10 +1,12 @@
 // ── PortfolioViewer.tsx — Port of PortfolioRenderer.kt body structure ─────────
-import { useState, useCallback, useRef, type CSSProperties } from 'react'
+import { useState, useCallback, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { StockData, CashData, StockDisplayItem } from '@/types/portfolio'
 import { computeDisplay } from '@/lib/rebalance'
 import { TWS_CASH_LABEL, isTwsManagedCashLabel } from '@/lib/twsCashLabels'
+import TransientToast from '@/components/TransientToast'
+import { durationForToastType, useTransientToast, type ToastType } from '@/hooks/useTransientToast'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
 function parseCashKey(key: string, value: string): CashData | null {
@@ -120,23 +122,17 @@ export default function PortfolioViewer() {
   const [editResetKey, setEditResetKey] = useState(0)
   const [dividendDate, setDividendDate] = useState(store.config.dividendStartDate ?? '')
   const [twsSyncing, setTwsSyncing] = useState(false)
-  const [syncToast, setSyncToast] = useState({ msg: '', type: '' })
+  const { toast: syncToast, showToast: showSyncToastBase, clearToast: clearSyncToast } = useTransientToast()
   const [stagedEditStocks, setStagedEditStocks] = useState<StockData[] | null>(null)
   const [stagedEditCash, setStagedEditCash] = useState<CashData[] | null>(null)
   const [pendingBackupDependencyImport, setPendingBackupDependencyImport] = useState<PendingBackupDependencyImport | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
   const [suppressedHoverMenu, setSuppressedHoverMenu] = useState<HeaderHoverMenuId | null>(null)
-  const syncToastTimer = useRef<number | null>(null)
 
-  function showSyncToast(msg: string, type: string) {
-    setSyncToast({ msg, type })
-    if (syncToastTimer.current) clearTimeout(syncToastTimer.current)
-    syncToastTimer.current = window.setTimeout(
-      () => setSyncToast({ msg: '', type: '' }),
-      type === 'ok' ? 2500 : 5000
-    )
-  }
+  const showSyncToast = useCallback((msg: string, type: ToastType) => {
+    showSyncToastBase(msg, type, durationForToastType(type))
+  }, [showSyncToastBase])
 
   const hasMargin = cash.some(c => c.marginFlag)
   const virtualBalance = store.config.virtualBalanceEnabled
@@ -319,7 +315,7 @@ export default function PortfolioViewer() {
     } finally {
       setTwsSyncing(false)
     }
-  }, [portfolioId, store, setEditModeActive])
+  }, [portfolioId, store, setEditModeActive, showSyncToast])
 
   async function restoreDbBackupFromPayload(json: BackupImportPayload, preview?: ImportDependencyPreview) {
     const importedStocks = importedStocksFromBackup(json, preview) ?? store.stocks
@@ -356,7 +352,7 @@ export default function PortfolioViewer() {
     } catch (e) {
       showSyncToast(`Import failed: ${errorMessage(e)}`, 'error')
     }
-  }, [store])
+  }, [store, showSyncToast])
 
   const handleRestorePreview = useCallback(async (json: BackupImportPayload, _backupId: number) => {
     try {
@@ -366,7 +362,7 @@ export default function PortfolioViewer() {
     } catch (e) {
       showSyncToast(`Restore failed: ${errorMessage(e)}`, 'error')
     }
-  }, [store, portfolioId, navigate])
+  }, [store, portfolioId, navigate, showSyncToast])
 
   async function confirmPendingBackupDependencyImport(previewArg?: ImportDependencyPreview) {
     if (!pendingBackupDependencyImport || importDependencyApplying) return
@@ -400,7 +396,7 @@ export default function PortfolioViewer() {
     const config = {
       tickers,
       rebalanceStrategy: 'YEARLY',
-      marginStrategies: marginTargetPct && marginTargetPct > 0 ? [{
+      marginStrategies: marginTargetPct !== null && marginTargetPct >= 0 ? [{
         marginRatio:          marginTargetPct / 100,
         marginSpread:         0.015,
         marginDeviationUpper: 0.05,
@@ -416,7 +412,7 @@ export default function PortfolioViewer() {
       body: JSON.stringify({ name, config }),
     })
     if (res.ok) showSyncToast('Saved to backtest!', 'ok')
-  }, [store, portfolioId, allPortfolios])
+  }, [store, portfolioId, allPortfolios, showSyncToast])
 
   // ── After save callback ────────────────────────────────────────────────────
   const handleSaved = useCallback(() => {
@@ -614,9 +610,7 @@ export default function PortfolioViewer() {
           <ThemeToggle />
         </HeaderRight>
       </div>
-      <div className={`config-status config-status-${syncToast.type}${syncToast.msg ? ' visible' : ''}`}>
-        {syncToast.msg}
-      </div>
+      <TransientToast msg={syncToast.msg} type={syncToast.type} onDismiss={clearSyncToast} />
 
       {/* ── Main content ──────────────────────────────────────────────── */}
       <div className="portfolio-tables-wrapper" style={contentScaleStyle}>

@@ -3,6 +3,7 @@
 // On save, cash is read from the DOM (matching the original JS approach).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy, X } from 'lucide-react'
+import TransientToast from '@/components/TransientToast'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import {
   isPlaceholderTicker,
@@ -167,7 +168,7 @@ async function latestTickerConfigBySymbol(symbols: string[]) {
 
 export default function EditMode({ saveKey, onSaved, pendingDividendDate, initialStocks }: Props) {
   const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
-  const { toast, showToast } = useTransientToast()
+  const { toast, showToast, clearToast } = useTransientToast()
   const dividendDate = pendingDividendDate ?? config.dividendStartDate ?? ''
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedImportName, setSelectedImportName] = useState('')
@@ -555,9 +556,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
 
   return (
     <>
-      <div className={`config-status config-status-${toast.type}${toast.msg ? ' visible' : ''}`}>
-        {toast.msg}
-      </div>
+      <TransientToast msg={toast.msg} type={toast.type} onDismiss={clearToast} />
 
       {savedPortfolios.length > 0 && (
         <div className="edit-import-controls">

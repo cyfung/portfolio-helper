@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PageNavTabs, ConfigButton, HeaderRight, PrivacyToggleButton, ThemeToggle } from '@/components/Layout'
+import TransientToast from '@/components/TransientToast'
 import PortfolioTabs from '@/components/portfolio/PortfolioTabs'
 import IbkrConfigDialog from '@/components/portfolio/IbkrConfigDialog'
 import DateFieldWithQuickSelect, { type DateQuickSelectPeriod } from '@/components/backtest/DateFieldWithQuickSelect'
@@ -245,7 +246,7 @@ export default function TradesPage() {
   const [notice, setNotice] = useState('')
   const [exchangeSuffixes, setExchangeSuffixes] = useState<Map<string, string>>(new Map())
   const xmlInputRef = useRef<HTMLInputElement>(null)
-  const { toast, showToast } = useTransientToast()
+  const { toast, showToast, clearToast } = useTransientToast()
 
   const dateRangeError = validateDateRange(fromDate, toDate)
   const from = fromDate
@@ -653,9 +654,7 @@ export default function TradesPage() {
         </HeaderRight>
       </div>
 
-      <div className={`config-status config-status-${toast.type}${toast.msg ? ' visible' : ''}`}>
-        {toast.msg}
-      </div>
+      <TransientToast msg={toast.msg} type={toast.type} onDismiss={clearToast} />
 
       <div className="trades-page">
         <div className="trades-toolbar">

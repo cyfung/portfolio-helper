@@ -5,7 +5,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import PortfolioTabs from '@/components/portfolio/PortfolioTabs'
 import { showConfirm } from '@/components/ConfirmDialog'
+import TransientToast from '@/components/TransientToast'
 import { showRestartOverlay, attemptReconnect } from '@/lib/restartUtils'
+import { durationForToastType, useTransientToast, type ToastType } from '@/hooks/useTransientToast'
 
 // ── Section list (flattened — all pages as peers) ─────────────────────────────
 
@@ -416,12 +418,10 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const updateAppConfig = usePortfolioStore(s => s.updateAppConfig)
   const [updOpen, setUpdOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
-  const [updateToast, setUpdateToast] = useState({ msg: '', type: '' })
-  const updateToastTimer = useRef<number | null>(null)
+  const { toast: updateToast, showToast: showUpdateToastBase, clearToast: clearUpdateToast } = useTransientToast()
   const downloadPollRef = useRef<number | null>(null)
 
   useEffect(() => () => {
-    if (updateToastTimer.current) clearTimeout(updateToastTimer.current)
     if (downloadPollRef.current) clearInterval(downloadPollRef.current)
   }, [])
 
@@ -457,13 +457,8 @@ export function HeaderRight({ children }: HeaderRightProps) {
   const hasAnyUpdate = showUpdateTag || showUpdateDot || showDownloadingTag || showReadyTag
   const showBlueVersionState = isCheckingUpdate || showDownloadingTag
 
-  function showUpdateToast(msg: string, type: string) {
-    setUpdateToast({ msg, type })
-    if (updateToastTimer.current) clearTimeout(updateToastTimer.current)
-    updateToastTimer.current = window.setTimeout(
-      () => setUpdateToast({ msg: '', type: '' }),
-      type === 'ok' ? 2500 : 5000
-    )
+  function showUpdateToast(msg: string, type: ToastType) {
+    showUpdateToastBase(msg, type, durationForToastType(type))
   }
 
   async function handleCheckUpdate() {
@@ -643,9 +638,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
             </div>
           )}
         </span>
-        <div className={`config-status config-status-${updateToast.type}${updateToast.msg ? ' visible' : ''}`}>
-          {updateToast.msg}
-        </div>
+        <TransientToast msg={updateToast.msg} type={updateToast.type} onDismiss={clearUpdateToast} />
         {utilityControls}
         <ServerStatusIndicator />
       </div>

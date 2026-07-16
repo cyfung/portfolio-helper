@@ -134,18 +134,11 @@ data class TwsExecutionReport(
                     .atStartOfDay()
                     .format(twsTimeFormatter)
 
-                val accountExecutions = client.getExecutions(
+                val executions = client.getExecutions(
                     accountFilter = resolvedAccount,
                     since = since,
                     timeoutSeconds = timeoutSeconds
                 )
-                val executions = accountExecutions.ifEmpty {
-                    client.getExecutions(
-                        accountFilter = null,
-                        since = since,
-                        timeoutSeconds = timeoutSeconds
-                    )
-                }
 
                 return TwsExecutionReport(
                     account = resolvedAccount,

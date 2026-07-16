@@ -4,8 +4,10 @@ import {
   ComposedChart, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ResponsiveContainer, Brush,
 } from 'recharts'
+import { X } from 'lucide-react'
 import { useChartTheme } from '@/lib/chartTheme'
 import { usePortfolioStore } from '@/stores/portfolioStore'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import type { SavedPortfolio } from '@/types/backtest'
 import { configToBlockState } from '@/types/backtest'
 import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
@@ -54,9 +56,8 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [loading, setLoading]             = useState(false)
   const [ingesting, setIngesting]         = useState(false)
   const [error, setError]                 = useState('')
-  const [toast, setToast]                 = useState('')
+  const { toast, showToast: showInlineToast, clearToast } = useTransientToast()
   const [gaps, setGaps]                   = useState<{ from: string; to: string; days: number }[]>([])
-  const toastTimerRef                     = useRef<number | null>(null)
   const xmlInputRef                       = useRef<HTMLInputElement>(null)
 
   const [showIbkrConfig, setShowIbkrConfig] = useState(false)
@@ -179,7 +180,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   // ── Import XML files ──────────────────────────────────────────────────────
   async function handleXmlImport(files: FileList) {
     setIngesting(true)
-    clearTimeout(toastTimerRef.current ?? undefined)
+    clearToast()
     try {
       let totalWritten = 0
       for (let i = 0; i < files.length; i++) {
@@ -216,7 +217,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   // ── Ingest from IBKR ──────────────────────────────────────────────────────
   async function handleIngest() {
     setIngesting(true)
-    clearTimeout(toastTimerRef.current ?? undefined)
+    clearToast()
     try {
       const r = await fetch(`/api/performance/ingest/${portfolioSlug}`, { method: 'POST' })
       const d = await r.json()
@@ -236,8 +237,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   }
 
   function showToast(msg: string, isError = false) {
-    setToast(isError ? `⚠ ${msg}` : `✓ ${msg}`)
-    toastTimerRef.current = window.setTimeout(() => setToast(''), isError ? 6000 : 3000)
+    showInlineToast(msg, isError ? 'error' : 'ok', isError ? 6000 : 3000)
   }
 
   // ── Build chart rows ──────────────────────────────────────────────────────
@@ -430,14 +430,40 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       </div>
 
       {/* ── Toast ──────────────────────────────────────────────────────── */}
-      {toast && (
+      {toast.msg && (
         <div style={{
           padding: '0.4rem 0.8rem', borderRadius: 4, marginBottom: '0.5rem',
-          background: toast.startsWith('⚠') ? 'var(--color-error, #5c1a1a)' : 'var(--color-success-bg, #1a4a2a)',
-          color: toast.startsWith('⚠') ? '#ffaaaa' : '#aaffcc',
+          background: toast.type === 'error' ? 'var(--color-error, #5c1a1a)' : 'var(--color-success-bg, #1a4a2a)',
+          color: toast.type === 'error' ? '#ffaaaa' : '#aaffcc',
           fontSize: '0.83rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
         }}>
-          {toast}
+          <span>{toast.type === 'error' ? '⚠' : '✓'} {toast.msg}</span>
+          <button
+            type="button"
+            aria-label="Dismiss notification"
+            title="Dismiss"
+            onClick={clearToast}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '1.35rem',
+              height: '1.35rem',
+              padding: 0,
+              border: 'none',
+              borderRadius: 999,
+              background: 'transparent',
+              color: 'currentColor',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <X aria-hidden="true" size={14} strokeWidth={2.25} />
+          </button>
         </div>
       )}
 

@@ -46,11 +46,11 @@ export function getRebalTotal(
   marginUsd: number,
   marginTargetUsd: number | null = null
 ): number {
-  if (marginTargetPct !== null && marginTargetPct > 0) {
+  if (marginTargetPct !== null && marginTargetPct >= 0) {
     return deriveRebalFromMarginPct(marginTargetPct, stockGross, marginUsd)
   }
-  if (rebalTargetUsd !== null && rebalTargetUsd > 0) return rebalTargetUsd
-  if (marginTargetUsd !== null && marginTargetUsd > 0) return (stockGross + marginUsd) + marginTargetUsd
+  if (rebalTargetUsd !== null && rebalTargetUsd >= 0) return rebalTargetUsd
+  if (marginTargetUsd !== null && marginTargetUsd >= 0) return (stockGross + marginUsd) + marginTargetUsd
   return stockGross + Math.max(marginUsd, 0)
 }
 
