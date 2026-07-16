@@ -14,8 +14,11 @@ import {
 import {
   parseFlexibleWeightMappings,
   serializeFlexibleWeightMappings,
+  validateFlexibleWeightMappings,
+  type FlexibleWeightRuleValidation,
   type FlexibleWeightMapping,
 } from '@/lib/flexibleWeights'
+import { useTransientToast } from '@/hooks/useTransientToast'
 import type { SavedPortfolio } from '@/types/backtest'
 import type { StockData } from '@/types/portfolio'
 
@@ -110,6 +113,12 @@ function parseFlexibleClipboardRows(lines: string[]): string[][] {
   })
 }
 
+function flexibleLimitToastMessage(validation: FlexibleWeightRuleValidation): string {
+  const over = validation.checks.filter(check => check.over)
+  if (!over.length) return ''
+  return `Flexible rules exceed ${over.map(check => `${check.label} ${check.current}/${check.limit}`).join(', ')}`
+}
+
 /** Read all cash rows from the CashEditTable DOM (matching original JS save logic) */
 function readCashFromDom(): object[] {
   const cashUpdates: object[] = []
@@ -158,6 +167,7 @@ async function latestTickerConfigBySymbol(symbols: string[]) {
 
 export default function EditMode({ saveKey, onSaved, pendingDividendDate, initialStocks }: Props) {
   const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
+  const { toast, showToast } = useTransientToast()
   const dividendDate = pendingDividendDate ?? config.dividendStartDate ?? ''
   const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
   const [selectedImportName, setSelectedImportName] = useState('')
@@ -179,6 +189,9 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     const rows = parseFlexibleWeightMappings(config.flexibleWeightMappings)
     return rows.length ? rows : [{ left: '', right: '' }]
   })
+  const [flexibleRuleValidation, setFlexibleRuleValidation] = useState<FlexibleWeightRuleValidation>(() =>
+    validateFlexibleWeightMappings(parseFlexibleWeightMappings(config.flexibleWeightMappings))
+  )
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -202,6 +215,19 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     .reduce((sum, r) => sum + numberFromInputValue(r.weight), 0)
 
   // ── Trigger save when saveKey increments ──────────────────────────────────
+  const currentFlexibleMappings = useCallback((): FlexibleWeightMapping[] => {
+    return flexibleRows
+      .filter(r => !r.deleted && r.left.trim() && r.right.trim())
+      .map(r => ({ left: r.left.trim(), right: r.right.trim() }))
+  }, [flexibleRows])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFlexibleRuleValidation(validateFlexibleWeightMappings(currentFlexibleMappings()))
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [currentFlexibleMappings])
+
   const prevSaveKey = useRef(saveKey)
   useEffect(() => {
     if (saveKey !== prevSaveKey.current) {
@@ -211,6 +237,14 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }, [saveKey])
 
   async function doSave() {
+    const flexibleMappings = currentFlexibleMappings()
+    const validation = validateFlexibleWeightMappings(flexibleMappings)
+    setFlexibleRuleValidation(validation)
+    if (!validation.ok) {
+      showToast(flexibleLimitToastMessage(validation), 'error', 5000)
+      return
+    }
+
     const stockUpdates = stockRows
       .filter(r => !r.deleted && r.symbol.trim() && !isPlaceholderTicker(r.symbol))
       .map(r => ({
@@ -241,13 +275,14 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           stocks: updates,
           cash: cashUpdates,
           dividendStartDate: dividendDate || null,
-          flexibleWeightMappings: serializeFlexibleWeightMappings(flexibleRows.filter(r => !r.deleted)),
+          flexibleWeightMappings: serializeFlexibleWeightMappings(flexibleMappings),
         }),
       })
       if (!r.ok) throw new Error('Save failed')
       onSaved()
     } catch (err) {
-      alert(`Failed to save: ${err}`)
+      const message = err instanceof Error ? err.message : String(err)
+      showToast(`Failed to save: ${message}`, 'error', 5000)
     } finally {
       setSaving(false)
     }
@@ -520,6 +555,10 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
 
   return (
     <>
+      <div className={`config-status config-status-${toast.type}${toast.msg ? ' visible' : ''}`}>
+        {toast.msg}
+      </div>
+
       {savedPortfolios.length > 0 && (
         <div className="edit-import-controls">
           <span className="edit-import-label">Import Weights</span>
@@ -645,7 +684,20 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         </tfoot>
       </table>
 
-      <table className="portfolio-table" id="flex-weight-mapping-table" onClick={handleCopyClick}>
+      <div className="flex-rule-panel">
+        <div className="flex-rule-limits" aria-live="polite">
+          {flexibleRuleValidation.checks.map(check => (
+            <span
+              key={check.key}
+              className={`flex-rule-limit${check.over ? ' over' : ''}`}
+              title={`${check.label}: ${check.current} of ${check.limit}`}
+            >
+              {check.label}: {check.current}/{check.limit}
+            </span>
+          ))}
+        </div>
+
+        <table className="portfolio-table" id="flex-weight-mapping-table" onClick={handleCopyClick}>
         <thead>
           <tr>
             <th className="row-marker-cell">
@@ -703,7 +755,8 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
       </div>
 
       <p className="edit-hint" id="stock-edit-hint">

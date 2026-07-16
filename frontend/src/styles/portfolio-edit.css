@@ -134,6 +134,35 @@
     text-align: left;
 }
 
+.flex-rule-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.flex-rule-limits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    justify-content: flex-start;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+}
+
+.flex-rule-limit {
+    border: 1px solid var(--color-border-medium);
+    border-radius: 6px;
+    padding: 2px 6px;
+    background: var(--color-bg-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.flex-rule-limit.over {
+    border-color: var(--color-negative);
+    color: var(--color-negative);
+    background: color-mix(in srgb, var(--color-negative) 10%, transparent);
+}
+
 /* Copy/row marker column */
 .row-marker-cell {
     width: 20px;
