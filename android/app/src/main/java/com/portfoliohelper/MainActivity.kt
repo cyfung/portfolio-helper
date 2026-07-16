@@ -45,6 +45,8 @@ import androidx.lifecycle.asFlow
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavDestination
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,6 +71,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlin.reflect.KClass
 
 @Serializable object PortfolioRoute
 @Serializable object RebalanceRoute
@@ -150,15 +153,23 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class NavItem<T : Any>(val route: T, val label: String, val icon: ImageVector)
+data class NavItem<T : Any>(
+    val route: T,
+    val routeClass: KClass<T>,
+    val label: String,
+    val icon: ImageVector
+)
 
 val navItems = listOf(
-    NavItem(PortfolioRoute, "Portfolio", Icons.Default.ShowChart),
-    NavItem(RebalanceRoute, "Rebal", Icons.Default.Calculate),
-    NavItem(GroupsRoute, "Groups", Icons.Default.AccountTree),
-    NavItem(CashRoute, "Cash", Icons.Default.AccountBalance),
-    NavItem(SettingsRoute, "Settings", Icons.Default.Settings)
+    NavItem(PortfolioRoute, PortfolioRoute::class, "Portfolio", Icons.Default.ShowChart),
+    NavItem(RebalanceRoute, RebalanceRoute::class, "Rebal", Icons.Default.Calculate),
+    NavItem(GroupsRoute, GroupsRoute::class, "Groups", Icons.Default.AccountTree),
+    NavItem(CashRoute, CashRoute::class, "Cash", Icons.Default.AccountBalance),
+    NavItem(SettingsRoute, SettingsRoute::class, "Settings", Icons.Default.Settings)
 )
+
+private fun NavDestination?.matchesRoute(routeClass: KClass<out Any>): Boolean =
+    this?.hierarchy?.any { it.hasRoute(routeClass) } == true
 
 @Composable
 fun PortfolioSelectorTitle(
@@ -333,9 +344,7 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = navBackStackEntry?.destination
             val currentItem = navItems.find { item ->
-                currentDestination?.hierarchy?.any {
-                    it.route?.contains(item.route::class.simpleName ?: "") == true
-                } == true
+                currentDestination.matchesRoute(item.routeClass)
             }
             val isSettingsScreen = currentItem?.route is SettingsRoute
 
@@ -406,9 +415,7 @@ fun PortfolioHelperApp(vm: MainViewModel, onAskPermission: () -> Unit) {
                     NavigationBarItem(
                         icon = { Icon(item.icon, contentDescription = item.label) },
                         label = { Text(item.label) },
-                        selected = currentDestination?.hierarchy?.any {
-                            it.route?.contains(item.route::class.simpleName ?: "") == true
-                        } == true,
+                        selected = currentDestination.matchesRoute(item.routeClass),
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ext.actionPositive,
                             selectedTextColor = ext.actionPositive,
