@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.concurrent.TimeUnit
@@ -69,6 +70,33 @@ object YahooHistoricalFetcher {
         endDate: LocalDate
     ): Map<LocalDate, Double> =
         fetchAdjustedCloseWithWarnings(ticker, startDate, endDate).prices
+
+    fun fetchIntradayCloseAtOrBefore(
+        ticker: String,
+        at: Instant
+    ): Double? {
+        val p1 = at.minus(10, ChronoUnit.DAYS).epochSecond
+        val p2 = at.plus(5, ChronoUnit.MINUTES).epochSecond
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+                "?period1=$p1&period2=$p2&interval=1m&includePrePost=false"
+
+        logger.info("Fetching intraday $ticker close at or before $at")
+        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker intraday" }
+        val response = appJson.decodeFromString<YahooChartResponse>(body)
+        val result = response.chart.result?.firstOrNull() ?: return null
+        val timestamps = result.timestamp ?: return null
+        val closes = result.indicators?.quote?.firstOrNull()?.close ?: return null
+        val targetEpoch = at.epochSecond
+        return timestamps.indices
+            .asSequence()
+            .mapNotNull { index ->
+                val epoch = timestamps.getOrNull(index) ?: return@mapNotNull null
+                val close = closes.getOrNull(index) ?: return@mapNotNull null
+                if (epoch <= targetEpoch && close > 0.0) epoch to close else null
+            }
+            .maxByOrNull { it.first }
+            ?.second
+    }
 
     fun fetchAdjustedCloseWithWarnings(
         ticker: String,

@@ -57,7 +57,8 @@ class StockDisplayService(
     val updates: SharedFlow<StockDisplaySnapshot> = _updates.asSharedFlow()
     private val letfEstPriceCalculator = LetfEstPriceCalculator(
         quoteProvider = YahooMarketDataService::getQuote,
-        historicalPriceProvider = YahooHistoricalFetcher::fetchAdjustedClose
+        historicalPriceProvider = YahooHistoricalFetcher::fetchAdjustedClose,
+        intradayPriceAtOrBeforeProvider = YahooHistoricalFetcher::fetchIntradayCloseAtOrBefore
     )
 
     fun initialize(scope: CoroutineScope) {
@@ -203,9 +204,12 @@ class StockDisplayService(
 
 internal class LetfEstPriceCalculator(
     private val quoteProvider: (String) -> YahooQuote?,
-    private val historicalPriceProvider: (String, LocalDate, LocalDate) -> Map<LocalDate, Double>
+    private val historicalPriceProvider: (String, LocalDate, LocalDate) -> Map<LocalDate, Double>,
+    private val intradayPriceAtOrBeforeProvider: (String, Instant) -> Double? = { _, _ -> null },
+    private val currentEpochSecondProvider: () -> Long = { System.currentTimeMillis() / 1000 }
 ) {
     private val historicalSeriesCache = ConcurrentHashMap<HistoricalSeriesKey, HistoricalSeries>()
+    private val intradayPriceCache = ConcurrentHashMap<IntradayPriceKey, IntradayPrice>()
 
     fun compute(
         components: List<Pair<Double, String>>?,
@@ -221,6 +225,8 @@ internal class LetfEstPriceCalculator(
             when {
                 navDate == stockDate -> return nav
                 navDate < stockDate -> {
+                    computeFromNavDateTargetClose(components, quote, nav, navDate)?.let { return it }
+
                     computeFromReferenceCloses(components, nav) { sym ->
                         historicalAdjustedClose(sym, navDate)
                     }?.let { return it }
@@ -235,6 +241,8 @@ internal class LetfEstPriceCalculator(
                 }
             }
         }
+
+        computeFromClosedTargetQuote(components, quote)?.let { return it }
 
         if (nav == null && stockDate != null) {
             val referenceDate = latestTradingDateBefore(quote.symbol, stockDate)
@@ -255,6 +263,38 @@ internal class LetfEstPriceCalculator(
         }
     }
 
+    private fun computeFromClosedTargetQuote(
+        components: List<Pair<Double, String>>,
+        quote: YahooQuote
+    ): Double? {
+        val basePrice = quote.regularMarketPrice?.takeIf { it > 0.0 } ?: return null
+        val targetCloseInstant = quote.closedRegularSessionEnd() ?: return null
+        return computeFromTargetCloseInstant(components, basePrice, targetCloseInstant)
+    }
+
+    private fun computeFromNavDateTargetClose(
+        components: List<Pair<Double, String>>,
+        quote: YahooQuote,
+        nav: Double,
+        navDate: LocalDate
+    ): Double? {
+        val targetCloseInstant = quote.regularSessionEndOn(navDate) ?: return null
+        return computeFromTargetCloseInstant(components, nav, targetCloseInstant)
+    }
+
+    private fun computeFromTargetCloseInstant(
+        components: List<Pair<Double, String>>,
+        basePrice: Double,
+        targetCloseInstant: Instant
+    ): Double? {
+        return computeFromReferencePrices(
+            components = components,
+            basePrice = basePrice,
+            referencePrice = { sym -> intradayPriceAtOrBefore(sym, targetCloseInstant) },
+            currentPrice = { sym -> quoteProvider(sym)?.estimateCurrentPrice() }
+        )
+    }
+
     private fun computeFromReferenceCloses(
         components: List<Pair<Double, String>>,
         basePrice: Double,
@@ -265,6 +305,22 @@ internal class LetfEstPriceCalculator(
             val compQuote = quoteProvider(sym) ?: return null
             val compMark = compQuote.regularMarketPrice ?: return null
             val compClose = referenceClose(sym) ?: return null
+            if (compClose == 0.0) return null
+            sumComponent += mult * (compMark - compClose) / compClose
+        }
+        return (1.0 + sumComponent) * basePrice
+    }
+
+    private fun computeFromReferencePrices(
+        components: List<Pair<Double, String>>,
+        basePrice: Double,
+        referencePrice: (String) -> Double?,
+        currentPrice: (String) -> Double?
+    ): Double? {
+        var sumComponent = 0.0
+        for ((mult, sym) in components) {
+            val compMark = currentPrice(sym) ?: return null
+            val compClose = referencePrice(sym) ?: return null
             if (compClose == 0.0) return null
             sumComponent += mult * (compMark - compClose) / compClose
         }
@@ -298,11 +354,39 @@ internal class LetfEstPriceCalculator(
         }.prices
     }
 
+    private fun intradayPriceAtOrBefore(symbol: String, at: Instant): Double? {
+        val key = IntradayPriceKey(symbol, at)
+        return intradayPriceCache.computeIfAbsent(key) {
+            IntradayPrice(runCatching { intradayPriceAtOrBeforeProvider(symbol, at) }.getOrNull())
+        }.price
+    }
+
     private fun YahooQuote.tradingDate(): LocalDate? {
         if (tradingPeriodEnd == null || gmtoffset == null) return null
         return Instant.ofEpochSecond(tradingPeriodEnd + gmtoffset)
             .atOffset(ZoneOffset.UTC).toLocalDate()
     }
+
+    private fun YahooQuote.closedRegularSessionEnd(): Instant? {
+        val end = tradingPeriodEnd ?: return null
+        val localCloseDate = tradingDate()
+        if (!isMarketClosed || currentEpochSecondProvider() < end) return null
+        if (markPriceDate != null && localCloseDate != null && markPriceDate != localCloseDate) return null
+        return Instant.ofEpochSecond(end)
+    }
+
+    private fun YahooQuote.regularSessionEndOn(date: LocalDate): Instant? {
+        val end = tradingPeriodEnd ?: return null
+        val offset = gmtoffset ?: return null
+        val localCloseTime = Instant.ofEpochSecond(end)
+            .atOffset(ZoneOffset.ofTotalSeconds(offset))
+            .toLocalTime()
+        return date.atTime(localCloseTime)
+            .toInstant(ZoneOffset.ofTotalSeconds(offset))
+    }
+
+    private fun YahooQuote.estimateCurrentPrice(): Double? =
+        regularMarketPrice ?: previousClose
 
     private data class HistoricalSeriesKey(
         val symbol: String,
@@ -311,4 +395,8 @@ internal class LetfEstPriceCalculator(
     )
 
     private data class HistoricalSeries(val prices: Map<LocalDate, Double>)
+
+    private data class IntradayPriceKey(val symbol: String, val at: Instant)
+
+    private data class IntradayPrice(val price: Double?)
 }
