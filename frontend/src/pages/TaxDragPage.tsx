@@ -47,7 +47,13 @@ interface TaxDragResponse {
   results: TaxDragTickerResult[]
 }
 
-const TAX_DRAG_INPUTS_STORAGE_KEY = 'tax-drag-inputs'
+interface TaxDragInputs {
+  taxPct: string
+  tickers: string
+  commonPeriodTickers: string
+}
+
+const TAX_DRAG_SETTINGS_ENDPOINT = '/api/tax-drag/settings'
 const DEFAULT_TAX_PCT = '30'
 const DEFAULT_TICKERS = 'SPY VTI VXUS'
 const DEFAULT_COMMON_PERIOD_TICKERS = ''
@@ -90,31 +96,49 @@ function resultKey(result: TaxDragTickerResult, index: number) {
   return `${result.commonPeriod ? 'common' : 'main'}-${index}-${result.ticker}`
 }
 
-function loadTaxDragInputs() {
-  try {
-    const raw = localStorage.getItem(TAX_DRAG_INPUTS_STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) as Partial<{ taxPct: string; tickers: string; commonPeriodTickers: string }> : null
-    return {
-      taxPct: typeof parsed?.taxPct === 'string' ? parsed.taxPct : DEFAULT_TAX_PCT,
-      tickers: typeof parsed?.tickers === 'string' ? parsed.tickers : DEFAULT_TICKERS,
-      commonPeriodTickers: typeof parsed?.commonPeriodTickers === 'string'
-        ? parsed.commonPeriodTickers
-        : DEFAULT_COMMON_PERIOD_TICKERS,
-    }
-  } catch {
-    return {
-      taxPct: DEFAULT_TAX_PCT,
-      tickers: DEFAULT_TICKERS,
-      commonPeriodTickers: DEFAULT_COMMON_PERIOD_TICKERS,
-    }
+function defaultTaxDragInputs(): TaxDragInputs {
+  return {
+    taxPct: DEFAULT_TAX_PCT,
+    tickers: DEFAULT_TICKERS,
+    commonPeriodTickers: DEFAULT_COMMON_PERIOD_TICKERS,
   }
 }
 
+function normalizeTaxDragInputs(value: unknown): TaxDragInputs {
+  const parsed = value && typeof value === 'object' ? value as Partial<TaxDragInputs> : null
+  return {
+    taxPct: typeof parsed?.taxPct === 'string' ? parsed.taxPct : DEFAULT_TAX_PCT,
+    tickers: typeof parsed?.tickers === 'string' ? parsed.tickers : DEFAULT_TICKERS,
+    commonPeriodTickers: typeof parsed?.commonPeriodTickers === 'string'
+      ? parsed.commonPeriodTickers
+      : DEFAULT_COMMON_PERIOD_TICKERS,
+  }
+}
+
+async function fetchTaxDragInputsFromServer() {
+  try {
+    const res = await fetch(TAX_DRAG_SETTINGS_ENDPOINT)
+    if (!res.ok) return defaultTaxDragInputs()
+    return normalizeTaxDragInputs(await res.json())
+  } catch {
+    return defaultTaxDragInputs()
+  }
+}
+
+async function saveTaxDragInputsToServer(inputs: TaxDragInputs) {
+  const res = await fetch(TAX_DRAG_SETTINGS_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(normalizeTaxDragInputs(inputs)),
+  })
+  if (!res.ok) throw new Error(`Failed to save tax drag inputs: HTTP ${res.status}`)
+}
+
 export default function TaxDragPage() {
-  const [initialInputs] = useState(() => loadTaxDragInputs())
-  const [taxPct, setTaxPct] = useState(() => initialInputs.taxPct)
-  const [tickers, setTickers] = useState(() => initialInputs.tickers)
-  const [commonPeriodTickers, setCommonPeriodTickers] = useState(() => initialInputs.commonPeriodTickers)
+  const [taxDragInputsLoaded, setTaxDragInputsLoaded] = useState(false)
+  const [taxPct, setTaxPct] = useState(DEFAULT_TAX_PCT)
+  const [tickers, setTickers] = useState(DEFAULT_TICKERS)
+  const [commonPeriodTickers, setCommonPeriodTickers] = useState(DEFAULT_COMMON_PERIOD_TICKERS)
   const [results, setResults] = useState<TaxDragTickerResult[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(false)
@@ -122,8 +146,21 @@ export default function TaxDragPage() {
   const [mappingStatus, setMappingStatus] = useState('')
 
   useEffect(() => {
-    localStorage.setItem(TAX_DRAG_INPUTS_STORAGE_KEY, JSON.stringify({ taxPct, tickers, commonPeriodTickers }))
-  }, [taxPct, tickers, commonPeriodTickers])
+    let cancelled = false
+    fetchTaxDragInputsFromServer().then(inputs => {
+      if (cancelled) return
+      setTaxPct(inputs.taxPct)
+      setTickers(inputs.tickers)
+      setCommonPeriodTickers(inputs.commonPeriodTickers)
+      setTaxDragInputsLoaded(true)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!taxDragInputsLoaded) return
+    void saveTaxDragInputsToServer({ taxPct, tickers, commonPeriodTickers }).catch(() => {})
+  }, [taxDragInputsLoaded, taxPct, tickers, commonPeriodTickers])
 
   async function calculate() {
     setError('')

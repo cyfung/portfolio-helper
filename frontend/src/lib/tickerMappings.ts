@@ -9,6 +9,8 @@ import {
   tokenizeDefinition,
 } from '@/lib/tickerExpressions'
 
+export type TickerMappingStorage = 'server' | 'local'
+
 export interface TickerMapping {
   id: string
   from: string
@@ -23,6 +25,8 @@ export interface TickerMappingSet {
   id: string
   name: string
   mappings: TickerMapping[]
+  storage?: TickerMappingStorage
+  persistentId?: string
   updatedAt?: string
   sourceSavedSetId?: string
   sourceSavedSetName?: string
@@ -48,6 +52,7 @@ export interface TickerMappingResult<T> {
 }
 
 const STORAGE_KEY = 'ticker-mapping-settings'
+const SERVER_SETTINGS_ENDPOINT = '/api/ticker-mapping/settings'
 export const TICKER_MAPPINGS_CHANGED_EVENT = 'ticker-mappings-changed'
 const ACTIVE_MAPPING_SET_DEFAULTS: TickerMappingSet[] = [
   { id: 'set-1', name: 'Mapping Set 1', mappings: [] },
@@ -58,6 +63,11 @@ export const DEFAULT_TICKER_MAPPING_SETTINGS: TickerMappingSettings = {
   sets: ACTIVE_MAPPING_SET_DEFAULTS,
   savedSets: [],
 }
+
+let cachedTickerMappingSettings = DEFAULT_TICKER_MAPPING_SETTINGS
+let cachedLegacyLocalTickerMappingSettings = DEFAULT_TICKER_MAPPING_SETTINGS
+let hydrateTickerMappingSettingsPromise: Promise<TickerMappingSettings> | null = null
+let localTickerMappingMutationVersion = 0
 
 function newMappingId() {
   return `mapping-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -121,6 +131,8 @@ function normalizeSet(
     id,
     name: String(raw.name || fallback?.name || `Mapping Set ${idx + 1}`).trim() || fallback?.name || `Mapping Set ${idx + 1}`,
     mappings,
+    storage: raw.storage === 'local' || raw.storage === 'server' ? raw.storage : fallback?.storage,
+    persistentId: typeof raw.persistentId === 'string' ? raw.persistentId : fallback?.persistentId,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : fallback?.updatedAt,
     sourceSavedSetId: typeof raw.sourceSavedSetId === 'string' ? raw.sourceSavedSetId : fallback?.sourceSavedSetId,
     sourceSavedSetName: typeof raw.sourceSavedSetName === 'string' ? raw.sourceSavedSetName : fallback?.sourceSavedSetName,
@@ -144,16 +156,161 @@ export function normalizeTickerMappingSettings(raw: unknown): TickerMappingSetti
 }
 
 export function loadTickerMappingSettings(): TickerMappingSettings {
+  return cachedTickerMappingSettings
+}
+
+function sourceSetId(source: TickerMappingStorage, id: string) {
+  return id.startsWith(`${source}:`) ? id : `${source}:${id}`
+}
+
+function persistedSetId(set: TickerMappingSet) {
+  return set.persistentId ?? set.id.replace(/^(server|local):/, '')
+}
+
+function sourceSettings(settings: TickerMappingSettings, source: TickerMappingStorage): TickerMappingSettings {
+  const savedSets = settings.savedSets.map(set => ({
+    ...set,
+    id: sourceSetId(source, persistedSetId(set)),
+    persistentId: persistedSetId(set),
+    storage: source,
+  }))
+  const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+  return {
+    ...settings,
+    selectedSetId: selected ? sourceSetId(source, persistedSetId(selected)) : '',
+    savedSets,
+  }
+}
+
+function combineServerAndLocalSettings(
+  serverSettings: TickerMappingSettings,
+  localSettings: TickerMappingSettings,
+): TickerMappingSettings {
+  const serverNames = new Set(serverSettings.savedSets.map(set => set.name.trim().toLowerCase()).filter(Boolean))
+  const localOnlySets = localSettings.savedSets.filter(set => !serverNames.has(set.name.trim().toLowerCase()))
+  return normalizeTickerMappingSettings({
+    ...serverSettings,
+    savedSets: [...serverSettings.savedSets, ...localOnlySets],
+    selectedSetId: serverSettings.selectedSetId,
+  })
+}
+
+function readLegacyTickerMappingSettings(): TickerMappingSettings | null {
   try {
+    // Legacy localStorage is read only as an old mapping source. Do not write new
+    // mappings here; server settings are the source of truth for new changes.
     const raw = localStorage.getItem(STORAGE_KEY)
-    return normalizeTickerMappingSettings(raw ? JSON.parse(raw) : null)
+    return raw ? sourceSettings(normalizeTickerMappingSettings(JSON.parse(raw)), 'local') : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchTickerMappingSettingsFromServer(): Promise<TickerMappingSettings> {
+  try {
+    const res = await fetch(SERVER_SETTINGS_ENDPOINT)
+    if (!res.ok) return DEFAULT_TICKER_MAPPING_SETTINGS
+    return sourceSettings(normalizeTickerMappingSettings(await res.json()), 'server')
   } catch {
     return DEFAULT_TICKER_MAPPING_SETTINGS
   }
 }
 
+function stripSetForPersistence(set: TickerMappingSet): TickerMappingSet {
+  const { storage: _storage, persistentId: _persistentId, ...rest } = set
+  return {
+    ...rest,
+    id: persistedSetId(set),
+    mappings: set.mappings.map(mapping => ({ ...mapping })),
+  }
+}
+
+function serverSettingsForPersistence(settings: TickerMappingSettings): TickerMappingSettings {
+  const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+  const savedSets = settings.savedSets
+    .filter(set => set.storage !== 'local')
+    .map(stripSetForPersistence)
+  const selectedSetId = selected && selected.storage !== 'local'
+    ? persistedSetId(selected)
+    : ''
+  return normalizeTickerMappingSettings({
+    ...settings,
+    selectedSetId,
+    sets: settings.sets.map(stripSetForPersistence),
+    savedSets,
+  })
+}
+
+function localSettingsForPersistence(settings: TickerMappingSettings): TickerMappingSettings {
+  const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+  const savedSets = settings.savedSets
+    .filter(set => set.storage === 'local')
+    .map(stripSetForPersistence)
+  const selectedSetId = selected?.storage === 'local'
+    ? persistedSetId(selected)
+    : ''
+  return normalizeTickerMappingSettings({
+    ...DEFAULT_TICKER_MAPPING_SETTINGS,
+    selectedSetId,
+    savedSets,
+  })
+}
+
+function sameJsonContent(a: unknown, b: unknown) {
+  return stableStringify(a) === stableStringify(b)
+}
+
+function cleanupLegacyLocalTickerMappings(settings: TickerMappingSettings) {
+  const nextLocalSettings = localSettingsForPersistence(settings)
+  const currentLocalSettings = localSettingsForPersistence(cachedLegacyLocalTickerMappingSettings)
+  if (sameJsonContent(nextLocalSettings, currentLocalSettings)) return
+
+  try {
+    // Cleanup only: remove/delete legacy local mappings that were replaced or
+    // deleted. Never add newly saved mappings to this legacy localStorage key.
+    if (nextLocalSettings.savedSets.length === 0) localStorage.removeItem(STORAGE_KEY)
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(nextLocalSettings))
+    cachedLegacyLocalTickerMappingSettings = sourceSettings(nextLocalSettings, 'local')
+  } catch {}
+}
+
+async function saveTickerMappingSettingsToServer(settings: TickerMappingSettings) {
+  const res = await fetch(SERVER_SETTINGS_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(serverSettingsForPersistence(settings)),
+  })
+  if (!res.ok) throw new Error(`Failed to save ticker mapping settings: HTTP ${res.status}`)
+}
+
+export async function hydrateTickerMappingSettings(): Promise<TickerMappingSettings> {
+  if (hydrateTickerMappingSettingsPromise) return hydrateTickerMappingSettingsPromise
+  const mutationVersionAtStart = localTickerMappingMutationVersion
+
+  hydrateTickerMappingSettingsPromise = (async () => {
+    const [serverSettings, legacySettings] = await Promise.all([
+      fetchTickerMappingSettingsFromServer(),
+      Promise.resolve(readLegacyTickerMappingSettings()),
+    ])
+    if (localTickerMappingMutationVersion !== mutationVersionAtStart) return cachedTickerMappingSettings
+    cachedLegacyLocalTickerMappingSettings = legacySettings ?? DEFAULT_TICKER_MAPPING_SETTINGS
+    cachedTickerMappingSettings = combineServerAndLocalSettings(serverSettings, cachedLegacyLocalTickerMappingSettings)
+    notifyTickerMappingsChanged()
+    return cachedTickerMappingSettings
+  })().finally(() => {
+    hydrateTickerMappingSettingsPromise = null
+  })
+
+  return hydrateTickerMappingSettingsPromise
+}
+
 export function saveTickerMappingSettings(settings: TickerMappingSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeTickerMappingSettings(settings)))
+  const normalized = normalizeTickerMappingSettings(settings)
+  localTickerMappingMutationVersion += 1
+  cachedTickerMappingSettings = normalized
+
+  cleanupLegacyLocalTickerMappings(normalized)
+  void saveTickerMappingSettingsToServer(normalized).catch(() => {})
 }
 
 export function notifyTickerMappingsChanged() {
@@ -232,7 +389,7 @@ export function normalizeTickerMappingSets(value: unknown): TickerMappingSet[] {
 }
 
 export function exportableSavedTickerMappings(settings: TickerMappingSettings) {
-  return normalizeTickerMappingSets(settings.savedSets)
+  return normalizeTickerMappingSets(settings.savedSets).map(stripSetForPersistence)
 }
 
 export function resolveTickerMappingSet(

@@ -226,6 +226,14 @@
     font-size: var(--font-size-sm);
 }
 
+.trades-summary-pnl.positive {
+    color: var(--color-positive);
+}
+
+.trades-summary-pnl.negative {
+    color: var(--color-negative);
+}
+
 .trades-result-controls {
     display: flex;
     align-items: center;

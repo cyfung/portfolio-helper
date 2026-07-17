@@ -151,6 +151,20 @@ function groupPnl(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>, exc
   return total
 }
 
+function totalPnlByCurrency(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>, exchangeSuffixes: Map<string, string>) {
+  const totalsByCurrency = new Map<string, number>()
+  for (const trade of rows) {
+    const pnl = tradePnl(trade, quotes, exchangeSuffixes)
+    if (pnl === null) return null
+    const currency = trade.currency.trim().toUpperCase() || 'USD'
+    totalsByCurrency.set(currency, (totalsByCurrency.get(currency) ?? 0) + pnl)
+  }
+
+  return [...totalsByCurrency.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, value]) => ({ currency, value }))
+}
+
 function tradeDateTime(trade: TradeRow) {
   return trade.tradeTime ? `${trade.tradeDate} ${trade.tradeTime}` : trade.tradeDate
 }
@@ -381,6 +395,19 @@ export default function TradesPage() {
   function groupPnlCellText(rows: TradeRow[], pnl: number | null, currency?: string) {
     if (pnl !== null) return money2(pnl, currency)
     return '-'
+  }
+
+  function summaryPnlText(pnlTotals: { currency: string; value: number }[] | null) {
+    if (pnlTotals === null) return '-'
+    if (pnlTotals.length === 0) return money2(0)
+    return pnlTotals.map(total => money2(total.value, total.currency)).join(', ')
+  }
+
+  function summaryPnlClass(pnlTotals: { currency: string; value: number }[] | null) {
+    if (pnlTotals === null) return 'neutral'
+    const nonZeroTotals = pnlTotals.filter(total => Math.abs(total.value) >= 1e-9)
+    if (nonZeroTotals.length !== 1) return 'neutral'
+    return pnlClass(nonZeroTotals[0].value)
   }
 
   function pnlClass(value: number | null) {
@@ -627,13 +654,14 @@ export default function TradesPage() {
 
   const totals = useMemo(() => {
     const commissions = trades.reduce((sum, t) => sum + (t.commission ?? 0), 0)
+    const pnl = totalPnlByCurrency(trades, priceQuotes, exchangeSuffixes)
     const hiddenCurrencyTrades = allTrades.filter(trade =>
       (!from || trade.tradeDate >= from) &&
       trade.tradeDate <= to &&
       isCurrencyTrade(trade)
     ).length
-    return { count: trades.length, commissions, hiddenCurrencyTrades }
-  }, [allTrades, from, to, trades])
+    return { count: trades.length, commissions, pnl, hiddenCurrencyTrades }
+  }, [allTrades, exchangeSuffixes, from, priceQuotes, to, trades])
 
   if (loading) return <div className="container"><div className="trades-page-status">Loading...</div></div>
 
@@ -778,6 +806,7 @@ export default function TradesPage() {
               <span>{totals.count} trade(s)</span>
               {selectedVisibleCount > 0 && <span>{selectedVisibleCount} selected</span>}
               {!showCurrencyTrades && totals.hiddenCurrencyTrades > 0 && <span>{totals.hiddenCurrencyTrades} currency hidden</span>}
+              <span className={`trades-summary-pnl ${summaryPnlClass(totals.pnl)}`}>P&amp;L: {summaryPnlText(totals.pnl)}</span>
               <span>Commission: {money(totals.commissions, trades.find(t => t.commissionCurrency)?.commissionCurrency)}</span>
             </div>
             <div className="trades-result-controls">

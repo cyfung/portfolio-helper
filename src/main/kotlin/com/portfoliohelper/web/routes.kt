@@ -74,6 +74,40 @@ private fun saveBacktestPortfolios(json: JsonObject) = transaction {
     upsert("backtest.portfolios", (json["portfolios"] ?: JsonArray(emptyList())).toString())
 }
 
+private fun loadGlobalJsonSettings(settingsKey: String, defaultValue: JsonObject): String = transaction {
+    GlobalSettingsTable.selectAll()
+        .where { GlobalSettingsTable.key eq settingsKey }
+        .firstOrNull()
+        ?.get(GlobalSettingsTable.value)
+        ?.let { raw -> runCatching { Json.parseToJsonElement(raw).jsonObject.toString() }.getOrNull() }
+        ?: defaultValue.toString()
+}
+
+private fun saveGlobalJsonSettings(settingsKey: String, json: JsonObject) = transaction {
+    GlobalSettingsTable.upsert {
+        it[GlobalSettingsTable.key] = settingsKey
+        it[GlobalSettingsTable.value] = json.toString()
+    }
+}
+
+private val defaultTickerMappingSettingsJson = buildJsonObject {
+    put("selectedSetId", "")
+    put("sets", buildJsonArray {
+        add(buildJsonObject {
+            put("id", "set-1")
+            put("name", "Mapping Set 1")
+            put("mappings", buildJsonArray {})
+        })
+    })
+    put("savedSets", buildJsonArray {})
+}
+
+private val defaultTaxDragInputsJson = buildJsonObject {
+    put("taxPct", "30")
+    put("tickers", "SPY VTI VXUS")
+    put("commonPeriodTickers", "")
+}
+
 private val firstPortfolioCommonSettingsKeys = setOf("fromDate", "toDate")
 
 private val backtestSettingsKeys = setOf(
@@ -1154,6 +1188,32 @@ fun Application.configureRouting() {
             } catch (e: Exception) {
                 call.respondApiError(e)
             }
+        }
+
+        get("/api/ticker-mapping/settings") {
+            call.respondText(
+                loadGlobalJsonSettings("ticker-mapping.settings", defaultTickerMappingSettingsJson),
+                ContentType.Application.Json
+            )
+        }
+
+        post("/api/ticker-mapping/settings") {
+            val json = Json.parseToJsonElement(call.receiveText()).jsonObject
+            saveGlobalJsonSettings("ticker-mapping.settings", json)
+            call.respondOk()
+        }
+
+        get("/api/tax-drag/settings") {
+            call.respondText(
+                loadGlobalJsonSettings("tax-drag.inputs", defaultTaxDragInputsJson),
+                ContentType.Application.Json
+            )
+        }
+
+        post("/api/tax-drag/settings") {
+            val json = Json.parseToJsonElement(call.receiveText()).jsonObject
+            saveGlobalJsonSettings("tax-drag.inputs", json)
+            call.respondOk()
         }
 
         get("/api/backtest/settings") {

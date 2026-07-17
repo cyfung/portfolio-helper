@@ -279,11 +279,15 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
       return
     }
 
-    const existing = draft.savedSets.find(saved => saved.name.trim().toLowerCase() === name.toLowerCase())
+    const existing = draft.savedSets.find(saved =>
+      saved.storage !== 'local' && saved.name.trim().toLowerCase() === name.toLowerCase()
+    )
     const savedSet: TickerMappingSet = {
       id: existing?.id ?? newMappingSetId(),
       name,
       mappings: cloneMappings(mappings),
+      storage: 'server',
+      persistentId: existing?.persistentId,
       updatedAt: new Date().toISOString(),
     }
     updateDraft({
@@ -329,6 +333,12 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
   }
 
   const selectedSet = selectedTickerMappingSet(value)
+  const serverSavedSets = value.savedSets.filter(set => set.storage !== 'local')
+  const localSavedSets = value.savedSets.filter(set => set.storage === 'local')
+  const draftServerSavedSets = draft.savedSets.filter(set => set.storage !== 'local')
+  const draftLocalSavedSets = draft.savedSets.filter(set => set.storage === 'local')
+  const hasLocalSavedSets = localSavedSets.length > 0
+  const draftHasLocalSavedSets = draftLocalSavedSets.length > 0
   const editSet = draft.sets[0]
   const hasSourceReference = !!editSet?.sourceSavedSetHash && (!!editSet.sourceSavedSetId || !!editSet.sourceSavedSetName)
   const referencedSavedSet = editSet && hasSourceReference
@@ -363,13 +373,24 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             onChange={e => selectSet(e.target.value)}
           >
             <option value="">None</option>
-            {value.savedSets.length > 0 && (
-              <optgroup label="Saved">
-                {value.savedSets.map(set => (
-                  <option key={set.id} value={set.id}>{set.name} ({mappingSetSummary(set)})</option>
-                ))}
-              </optgroup>
-            )}
+            {hasLocalSavedSets ? (
+              <>
+                {serverSavedSets.length > 0 && (
+                  <optgroup label="Saved">
+                    {serverSavedSets.map(set => (
+                      <option key={set.id} value={set.id}>{set.name} ({mappingSetSummary(set)})</option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Local legacy">
+                  {localSavedSets.map(set => (
+                    <option key={set.id} value={set.id}>{set.name} ({mappingSetSummary(set)})</option>
+                  ))}
+                </optgroup>
+              </>
+            ) : serverSavedSets.map(set => (
+              <option key={set.id} value={set.id}>{set.name} ({mappingSetSummary(set)})</option>
+            ))}
           </select>
           <button type="button" className="ticker-config-btn ticker-mapping-config-btn" onClick={openEditor} title="Configure ticker mappings" aria-label="Configure ticker mappings">
             <Settings size={15} />
@@ -401,37 +422,80 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             <div className="ticker-mapping-saved-section">
               <div className="ticker-mapping-saved-title">Saved Mappings</div>
               {draft.savedSets.length ? (
-                <div className="saved-portfolios-bar ticker-mapping-saved-bar">
-                  {draft.savedSets.map(savedSet => (
-                    <div
-                      key={savedSet.id}
-                      className="saved-portfolio-chip ticker-mapping-saved-chip"
-                      draggable
-                      title={`${savedSet.name} (${mappingSetSummary(savedSet)})`}
-                      onClick={() => editSet && loadSavedSetIntoActive(savedSet.id, editSet.id)}
-                      onDragStart={e => {
-                        e.dataTransfer.setData('application/x-ticker-mapping-set', savedSet.id)
-                        e.dataTransfer.effectAllowed = 'copy'
-                      }}
-                      onDragEnd={() => {
-                        setDragOverSetId('')
-                        setDragOverRowsSetId('')
-                        setDragOverMapping(null)
-                      }}
-                    >
-                      <span>{savedSet.name}</span>
-                      <span className="ticker-mapping-chip-count">{savedSet.mappings.length}</span>
-                      <button
-                        className="saved-portfolio-chip-del"
-                        type="button"
-                        title="Delete"
-                        onClick={e => { e.stopPropagation(); deleteSavedSet(savedSet.id) }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  {draftServerSavedSets.length > 0 && (
+                    <>
+                      {draftHasLocalSavedSets && <div className="ticker-mapping-saved-title">Saved</div>}
+                      <div className="saved-portfolios-bar ticker-mapping-saved-bar">
+                        {draftServerSavedSets.map(savedSet => (
+                          <div
+                            key={savedSet.id}
+                            className="saved-portfolio-chip ticker-mapping-saved-chip"
+                            draggable
+                            title={`${savedSet.name} (${mappingSetSummary(savedSet)})`}
+                            onClick={() => editSet && loadSavedSetIntoActive(savedSet.id, editSet.id)}
+                            onDragStart={e => {
+                              e.dataTransfer.setData('application/x-ticker-mapping-set', savedSet.id)
+                              e.dataTransfer.effectAllowed = 'copy'
+                            }}
+                            onDragEnd={() => {
+                              setDragOverSetId('')
+                              setDragOverRowsSetId('')
+                              setDragOverMapping(null)
+                            }}
+                          >
+                            <span>{savedSet.name}</span>
+                            <span className="ticker-mapping-chip-count">{savedSet.mappings.length}</span>
+                            <button
+                              className="saved-portfolio-chip-del"
+                              type="button"
+                              title="Delete"
+                              onClick={e => { e.stopPropagation(); deleteSavedSet(savedSet.id) }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {draftLocalSavedSets.length > 0 && (
+                    <>
+                      <div className="ticker-mapping-saved-title">Local Legacy</div>
+                      <div className="saved-portfolios-bar ticker-mapping-saved-bar">
+                        {draftLocalSavedSets.map(savedSet => (
+                          <div
+                            key={savedSet.id}
+                            className="saved-portfolio-chip ticker-mapping-saved-chip"
+                            draggable
+                            title={`${savedSet.name} (${mappingSetSummary(savedSet)})`}
+                            onClick={() => editSet && loadSavedSetIntoActive(savedSet.id, editSet.id)}
+                            onDragStart={e => {
+                              e.dataTransfer.setData('application/x-ticker-mapping-set', savedSet.id)
+                              e.dataTransfer.effectAllowed = 'copy'
+                            }}
+                            onDragEnd={() => {
+                              setDragOverSetId('')
+                              setDragOverRowsSetId('')
+                              setDragOverMapping(null)
+                            }}
+                          >
+                            <span>{savedSet.name}</span>
+                            <span className="ticker-mapping-chip-count">{savedSet.mappings.length}</span>
+                            <button
+                              className="saved-portfolio-chip-del"
+                              type="button"
+                              title="Delete local legacy mapping"
+                              onClick={e => { e.stopPropagation(); deleteSavedSet(savedSet.id) }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
               ) : (
                 <div className="ticker-mapping-saved-empty">No saved mappings yet.</div>
               )}

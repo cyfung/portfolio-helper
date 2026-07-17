@@ -5,6 +5,7 @@ import { useUpdateChecker } from '@/hooks/useUpdateChecker'
 import MonteCarloProgressOverlay from '@/components/MonteCarloProgressOverlay'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { PortfolioData } from '@/types/portfolio'
+import { hydrateTickerMappingSettings } from '@/lib/tickerMappings'
 
 const PortfolioPage        = lazy(() => import('@/pages/PortfolioPage'))
 const PortfolioAnalystPage = lazy(() => import('@/pages/PortfolioAnalystPage'))
@@ -41,6 +42,10 @@ export default function App() {
       .then(data => { if (data) loadPortfolioData(data) })
       .catch(() => setSseStatus('error'))
   }, [loadPortfolioData, setSseStatus])
+
+  useEffect(() => {
+    void hydrateTickerMappingSettings()
+  }, [])
 
   return (
     <>
