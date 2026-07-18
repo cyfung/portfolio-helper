@@ -705,6 +705,52 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_usesInternalBaseMarginHistoryWhenBaseStartsAtZeroMargin() {
+        val dates = days(LocalDate.of(2024, 1, 2), 3)
+        val series = mapOf("SPY" to flatCurve(dates))
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.STEP,
+                stepBaseTarget = 0.50,
+                steps = listOf(DerivedTargetStepConfig(referenceMargin = 0.70, targetMargin = 0.20)),
+            ),
+            absoluteDeviationPct = 0.0,
+            buyDeviationPct = 0.0,
+            sellDeviationPct = 0.0,
+            timeoutDays = 0,
+            maxMargin = 1.0,
+            allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+        )
+        val baseStrategy = strategy(
+            marginRatio = 0.0,
+            marginSpread = 0.0,
+            buyOnLowMargin = MarginTriggerAction(
+                deviationPct = 0.10,
+                allocStrategy = MarginRebalanceMode.PROPORTIONAL.name,
+                targetMargin = 0.80,
+            ),
+        ).copy(derivedSubStrategies = listOf(derived))
+
+        val result = RebalanceStrategyService.run(
+            RebalanceStrategyRequest(
+                fromDate = dates.first().toString(),
+                toDate = dates.last().toString(),
+                portfolio = singleStockPortfolio(),
+                cashflow = null,
+                strategies = listOf(baseStrategy),
+                startingBalance = 10_000.0,
+                zeroMarginInterest = true,
+            )
+        )
+
+        val curves = result.portfolios.last().curves
+        assertNull(curves[0].marginPoints, "zero-start base curve keeps the public no-margin shape")
+        val derivedMargins = requireNotNull(curves[1].marginPoints).map { it.value }
+        assertApprox(0.20, derivedMargins[2], label = "derived sees base BL margin history instead of configured fallback")
+    }
+
+    @Test
     fun flatCurve_monthlyRebalance() {
         val dates = days(LocalDate.of(2024, 1, 2), 45)
         val series = mapOf("SPY" to flatCurve(dates))

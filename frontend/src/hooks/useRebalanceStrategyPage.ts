@@ -140,7 +140,6 @@ export function useRebalanceStrategyPage() {
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       includeActionDiagnostics,
       settingsPortfolio: blockStateToSettingsPortfolio(nextPortfolio, 0),
-      strategies: nextStrategies.map(strategy => strategyStateToAPI(strategy)),
       strategyStates: nextStrategies,
     }
   }, [

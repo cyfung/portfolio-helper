@@ -116,7 +116,12 @@ export default function DipSurgeSection({
   const allocOptions = useAllocStrategyOptions(false)
   const enabled = value !== null
   const midMarginPoint = marginPoints[2] ?? '50'
-  const limitMargin = value ? (value.limit || marginValueFromLegacyPoint(marginPoints, value.limitPointIndex)) : ''
+  const explicitLimit = value?.limit
+  const limitMargin = value
+    ? (explicitLimit != null && String(explicitLimit) !== ''
+      ? String(explicitLimit)
+      : marginValueFromLegacyPoint(marginPoints, value.limitPointIndex))
+    : ''
 
   function enable() {
     onChange(emptyDipSurge(scope ?? 'INDIVIDUAL_STOCK'))

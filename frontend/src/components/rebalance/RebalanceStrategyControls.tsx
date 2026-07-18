@@ -3,13 +3,14 @@ import { adjustMarginPoint, clamp, normalizeMarginPoints, parsePoint } from './R
 import { useMarginWheelAdjustEnabled, useUnlockMarginWheelAdjust } from './MarginWheelAdjustContext'
 
 export const MarginPercentInput = React.memo(function MarginPercentInput({
-  value, placeholder, max, ariaLabel, compact = false, onChange, onCommit,
+  value, placeholder, max, ariaLabel, compact = false, invalid = false, onChange, onCommit,
 }: {
   value: string
   placeholder: string
   max: number
   ariaLabel: string
   compact?: boolean
+  invalid?: boolean
   onChange: (value: string) => void
   onCommit?: () => void
 }) {
@@ -67,7 +68,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
         <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Decrease" onClick={() => { unlockMarginWheelAdjust(); stepBy(-1) }}>-</button>
       )}
       <input
-        className="margin-point-number-input"
+        className={`margin-point-number-input${invalid ? ' input-error' : ''}`}
         type="number"
         min="0"
         max={max}
@@ -80,6 +81,7 @@ export const MarginPercentInput = React.memo(function MarginPercentInput({
         onWheel={handleLockedInputWheel}
         onChange={e => onChange(e.target.value)}
         onBlur={onCommit}
+        aria-invalid={invalid || undefined}
       />
       {!compact && (
         <button type="button" className="margin-point-step" tabIndex={-1} aria-label="Increase" onClick={() => { unlockMarginWheelAdjust(); stepBy(1) }}>+</button>

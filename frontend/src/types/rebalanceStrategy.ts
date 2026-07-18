@@ -183,6 +183,16 @@ export interface RebalStrategyState {
   derivedSubStrategies: DerivedSubStrategyState[]
 }
 
+export class RebalanceStrategyValidationError extends Error {
+  field?: string
+
+  constructor(message: string, field?: string) {
+    super(message)
+    this.name = 'RebalanceStrategyValidationError'
+    this.field = field
+  }
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const REBALANCE_PERIOD_OVERRIDE_OPTIONS = [
@@ -437,11 +447,25 @@ function serializeTrigger(t: PriceMoveTriggerState): object {
 }
 
 function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
-  const pointIdx = parseInt(d.limitPointIndex, 10)
-  const selectedLimit = Number.isFinite(pointIdx) && marginPoints[pointIdx] != null
-    ? marginPoints[pointIdx]
-    : parseFloat(d.limit)
-  const mid = marginPoints[2] ?? 50
+  const explicitLimit = parseFloat(d.limit)
+  if (d.limitPointIndex === undefined && !Number.isFinite(explicitLimit)) {
+    throw new Error('Dip/surge margin point index is missing.')
+  }
+  const rawPointIndex = d.limitPointIndex === null || d.limitPointIndex === undefined
+    ? ''
+    : String(d.limitPointIndex).trim()
+  const pointIdx = parseInt(rawPointIndex, 10)
+  let selectedLimit: number
+  if (rawPointIndex !== '') {
+    if (!Number.isInteger(pointIdx) || pointIdx < 0 || pointIdx >= marginPoints.length) {
+      throw new Error(`Dip/surge margin point index ${d.limitPointIndex} is invalid.`)
+    }
+    selectedLimit = marginPoints[pointIdx]
+  } else if (Number.isFinite(explicitLimit)) {
+    selectedLimit = explicitLimit
+  } else {
+    selectedLimit = marginPoints[2]
+  }
   const coolingOffDays = parseInt(d.coolingOffDays ?? '', 10)
   const minAdjustmentPct = parseFloat(d.minAdjustmentPct ?? '')
   const portfolioSource = d.portfolioSource || 'REFERENCE_PORTFOLIO'
@@ -453,7 +477,7 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
     referenceTicker: d.scope === 'BASE_PORTFOLIO' && portfolioSource === 'REFERENCE_PORTFOLIO' && referenceTicker ? referenceTicker : null,
     triggers: d.triggers.map(serializeTrigger),
     method: serializeExecution(d.execution),
-    limit: (Number.isFinite(selectedLimit) ? selectedLimit : mid) / 100,
+    limit: selectedLimit / 100,
     coolingOffDays: Number.isFinite(coolingOffDays) ? Math.max(0, coolingOffDays) : 10,
     minAdjustmentPct: (Number.isFinite(minAdjustmentPct) ? Math.max(0, minAdjustmentPct) : 0.5) / 100,
   }
@@ -757,21 +781,53 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     const parsed = parseFloat(v ?? '')
     return (Number.isFinite(parsed) ? parsed : def) / 100
   }
-  const points = [...Array(5)].map((_, i) => parseFloat(s.marginPoints?.[i] ?? '') || [40, 45, 50, 55, 60][i])
+  const requireMarginPoint = (index: number) => {
+    const value = s.marginPoints?.[index]
+    const parsed = parseFloat(value ?? '')
+    if (!Number.isFinite(parsed)) {
+      throw new RebalanceStrategyValidationError(
+        `Margin point ${index + 1} must be a number.`,
+        `marginPoints.${index}`,
+      )
+    }
+    return parsed
+  }
+  const points = [...Array(5)].map((_, i) => requireMarginPoint(i))
   const margin = points[2]
   const lowComfort = points[1]
   const highComfort = points[3]
-  const customOrPointPct = (customValue: string | undefined, legacyPointIndex: string | undefined, offset = 0, fallbackPointIndex = 2) => {
+  const customOrPointPct = (
+    customValue: string | undefined,
+    legacyPointIndex: string | null | undefined,
+    offset = 0,
+    defaultPointIndex = 2,
+    field = 'margin',
+  ) => {
     const custom = parseFloat(customValue ?? '')
     if (Number.isFinite(custom)) return custom / 100
-    const idx = parseInt(legacyPointIndex ?? '', 10)
-    const pointIdx = Number.isFinite(idx) ? idx - offset : NaN
-    return (Number.isFinite(pointIdx) && points[pointIdx] != null ? points[pointIdx] : (points[fallbackPointIndex] ?? margin)) / 100
+    if (legacyPointIndex === undefined) {
+      throw new RebalanceStrategyValidationError('Margin point index is missing.', field)
+    }
+    const rawPointIndex = legacyPointIndex === null ? '' : String(legacyPointIndex).trim()
+    const pointIdx =
+      rawPointIndex === ''
+        ? defaultPointIndex
+        : parseInt(rawPointIndex, 10) - offset
+    if (!Number.isInteger(pointIdx) || pointIdx < 0 || pointIdx >= points.length) {
+      throw new RebalanceStrategyValidationError('Margin point index is invalid.', field)
+    }
+    return points[pointIdx] / 100
   }
-  const marginTriggerPct = (customValue: string | undefined, pointIndex: string | undefined, fallbackPointIndex: number) =>
-    customOrPointPct(customValue, pointIndex, 0, fallbackPointIndex)
+  const marginTriggerPct = (customValue: string | undefined, pointIndex: string | null | undefined, fallbackPointIndex: number, field: string) =>
+    customOrPointPct(customValue, pointIndex, 0, fallbackPointIndex, field)
   const cashflowIdx = parseInt(s.cashflowScalingPointIndex, 10)
-  const cashflowScalingMargin = customOrPointPct(s.cashflowScalingMargin, cashflowIdx <= 0 ? '' : s.cashflowScalingPointIndex, 1)
+  const cashflowScalingMargin = customOrPointPct(
+    s.cashflowScalingMargin,
+    cashflowIdx <= 0 ? null : s.cashflowScalingPointIndex,
+    1,
+    2,
+    'cashflowScalingMargin',
+  )
   const buyCooldownAfterSellHighDays = parseInt(s.buyCooldownAfterSellHighDays ?? '', 10)
   const sellCooldownAfterBuyLowDays = parseInt(s.sellCooldownAfterBuyLowDays ?? '', 10)
   const drawdownOverride = s.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
@@ -820,7 +876,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       buyDeviationPct: pctAllowZero(d.buyDeviationPct ?? d.absoluteDeviationPct, 5),
       sellDeviationPct: pctAllowZero(d.sellDeviationPct ?? d.absoluteDeviationPct, 5),
       timeoutDays: Number.isFinite(timeoutDays) ? Math.max(0, timeoutDays) : 10,
-      maxMargin: customOrPointPct(d.maxMargin, undefined, 0, 4),
+      maxMargin: customOrPointPct(d.maxMargin, null, 0, 4, 'derivedSubStrategies.maxMargin'),
       allocStrategy: d.buyAllocStrategy || d.allocStrategy || 'PROPORTIONAL',
       buyAllocStrategy: d.buyAllocStrategy || d.allocStrategy || 'PROPORTIONAL',
       sellAllocStrategy: d.sellAllocStrategy || d.allocStrategy || 'PROPORTIONAL',
@@ -839,12 +895,23 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     const exitExtensionMonths = parseInt(cfg.exitExtensionMonths ?? '', 10)
     const exitTargetMargin = parseFloat(cfg.exitTargetMargin ?? '')
     const tiers = drawdownTriggerTiers(cfg, direction)
-      .map(tier => ({
+      .map((tier, tierIndex) => ({
         enterDrawdownPct: pctAllowZero(tier.enterDrawdownPct, 10),
         exitDrawdownPct: pctAllowZero(tier.exitDrawdownPct, 5),
-        triggerMargin: marginTriggerPct(tier.triggerMargin, tier.triggerPointIndex, direction === 'buy' ? 0 : 4),
+        triggerMargin: marginTriggerPct(
+          tier.triggerMargin,
+          tier.triggerPointIndex,
+          direction === 'buy' ? 0 : 4,
+          `drawdownBuyOnLowMargin.tiers.${tierIndex}.triggerMargin`,
+        ),
         allocStrategy: tier.allocStrategy || 'PROPORTIONAL',
-        targetMargin: customOrPointPct(tier.restoreMargin, tier.restorePointIndex, 0, 2),
+        targetMargin: customOrPointPct(
+          tier.restoreMargin,
+          tier.restorePointIndex,
+          0,
+          2,
+          `drawdownBuyOnLowMargin.tiers.${tierIndex}.restoreMargin`,
+        ),
       }))
       .sort((a, b) => a.enterDrawdownPct - b.enterDrawdownPct)
     const firstTier = tiers[0]
@@ -863,9 +930,20 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
         : null,
       enterDrawdownPct: firstTier?.enterDrawdownPct ?? pctAllowZero(cfg.enterDrawdownPct, 10),
       exitDrawdownPct: firstTier?.exitDrawdownPct ?? pctAllowZero(cfg.exitDrawdownPct, 5),
-      triggerMargin: firstTier?.triggerMargin ?? marginTriggerPct(cfg.triggerMargin, cfg.triggerPointIndex, direction === 'buy' ? 0 : 4),
+      triggerMargin: firstTier?.triggerMargin ?? marginTriggerPct(
+        cfg.triggerMargin,
+        cfg.triggerPointIndex,
+        direction === 'buy' ? 0 : 4,
+        'drawdownBuyOnLowMargin.triggerMargin',
+      ),
       allocStrategy: firstTier?.allocStrategy ?? cfg.allocStrategy ?? 'PROPORTIONAL',
-      targetMargin: firstTier?.targetMargin ?? customOrPointPct(cfg.restoreMargin, cfg.restorePointIndex, 0, 2),
+      targetMargin: firstTier?.targetMargin ?? customOrPointPct(
+        cfg.restoreMargin,
+        cfg.restorePointIndex,
+        0,
+        2,
+        'drawdownBuyOnLowMargin.restoreMargin',
+      ),
       tiers,
     }
   }
@@ -884,7 +962,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       : 'NONE',
     rebalanceAllocStrategy: s.rebalanceAllocStrategy || 'PROPORTIONAL',
     marginRebalanceTradeDirection: s.marginRebalanceTradeDirection || 'BOTH',
-    marginRebalanceRestoreMargin: customOrPointPct(s.marginRebalanceRestoreMargin, undefined),
+    marginRebalanceRestoreMargin: customOrPointPct(s.marginRebalanceRestoreMargin, null, 0, 2, 'marginRebalanceRestoreMargin'),
     drawdownMarginOverride: (s.marginRebalanceEnabled ?? true) && drawdownOverride.enabled
       ? {
         enabled: true,
@@ -907,16 +985,16 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     deviationMode: 'ABSOLUTE',
     sellOnHighMargin: s.sellHighEnabled
       ? {
-        deviationPct: marginTriggerPct(s.sellHighTriggerMargin, s.sellHighTriggerPointIndex, 4),
+        deviationPct: marginTriggerPct(s.sellHighTriggerMargin, s.sellHighTriggerPointIndex, 4, 'sellHighTriggerMargin'),
         allocStrategy: s.sellHighAllocStrategy || 'PROPORTIONAL',
-        targetMargin: customOrPointPct(s.sellHighRestoreMargin, s.sellHighRestorePointIndex),
+        targetMargin: customOrPointPct(s.sellHighRestoreMargin, s.sellHighRestorePointIndex, 0, 2, 'sellHighRestoreMargin'),
       }
       : null,
     buyOnLowMargin: s.buyLowEnabled
       ? {
-        deviationPct: marginTriggerPct(s.buyLowTriggerMargin, s.buyLowTriggerPointIndex, 0),
+        deviationPct: marginTriggerPct(s.buyLowTriggerMargin, s.buyLowTriggerPointIndex, 0, 'buyLowTriggerMargin'),
         allocStrategy: s.buyLowAllocStrategy || 'PROPORTIONAL',
-        targetMargin: customOrPointPct(s.buyLowRestoreMargin, s.buyLowRestorePointIndex),
+        targetMargin: customOrPointPct(s.buyLowRestoreMargin, s.buyLowRestorePointIndex, 0, 2, 'buyLowRestoreMargin'),
       }
       : null,
     drawdownBuyOnLowMargin: serializeDrawdownMarginTrigger(s.drawdownBuyOnLowMargin, 'buy'),

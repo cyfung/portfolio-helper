@@ -180,8 +180,7 @@ object RebalanceStrategyService {
                   strategy,
                   context,
                   DerivedReferenceSeries(
-                      baseRun.curve.marginPoints?.map { it.value }
-                          ?: List(context.dates.size) { strategy.marginRatio },
+                      baseRun.marginHistory,
                       baseRun.marginIntentions,
                   ),
                   standaloneBaseCache,
@@ -204,6 +203,7 @@ object RebalanceStrategyService {
   private data class StrategyRunResult(
       val curve: CurveResult,
       val marginIntentions: List<List<MarginIntention>>,
+      val marginHistory: List<Double>,
   )
 
   private data class StandaloneDerivedReferenceCacheKey(
@@ -250,7 +250,7 @@ object RebalanceStrategyService {
             strategy,
             context,
             DerivedReferenceSeries(
-                curve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
+                baseRun.marginHistory,
                 baseRun.marginIntentions,
             ),
             standaloneBaseCache,
@@ -335,9 +335,8 @@ object RebalanceStrategyService {
               includeActionDiagnostics = false,
               zeroMarginInterest = request.zeroMarginInterest,
           )
-      val standaloneCurve = standaloneRun.curve
       DerivedReferenceSeries(
-          standaloneCurve.marginPoints?.map { it.value } ?: List(context.dates.size) { strategy.marginRatio },
+          standaloneRun.marginHistory,
           standaloneRun.marginIntentions,
       )
     }
@@ -1730,6 +1729,7 @@ object RebalanceStrategyService {
             vmTimingPoints.takeIf { it.isNotEmpty() },
         ),
         marginIntentions.map { it.toList() },
+        marginUtils.toList(),
     )
   }
 
