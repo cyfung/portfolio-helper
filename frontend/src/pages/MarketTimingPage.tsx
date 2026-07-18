@@ -82,6 +82,16 @@ function percentLikeToInput(value: unknown, fallback: string) {
   return fallback
 }
 
+function parseNonNegativePercentInput(value: string, label: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return 0
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${label} must be 0 or greater.`)
+  }
+  return parsed / 100
+}
+
 function drawdownConfigToInput(config: DrawdownConfigInput) {
   const drawdownPct = Math.abs(config.drawdownPct) <= 1
     ? config.drawdownPct * 100
@@ -223,7 +233,13 @@ export default function MarketTimingPage() {
 
   async function handleExport() {
     setConfigError('')
-    const exportPortfolio = blockStateToAPIPortfolio(portfolio, 0)
+    let exportPortfolio
+    try {
+      exportPortfolio = blockStateToAPIPortfolio(portfolio, 0, { strict: true })
+    } catch (e: unknown) {
+      setConfigError(errorMessage(e, 'Invalid portfolio config'))
+      return
+    }
     const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate,
       toDate,
@@ -317,14 +333,14 @@ export default function MarketTimingPage() {
       const runPortfolio = normalizeBlockSpreadInputs(portfolio)
       if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
       const savedPortfolios = await fetchSavedPortfolios()
-      const apiPortfolio = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, savedPortfolios)
+      const apiPortfolio = resolvedBlockStateToAPIPortfolio(runPortfolio, 0, savedPortfolios, { strict: true })
       const settingsPortfolio = blockStateToSettingsPortfolio(runPortfolio, 0)
       const runAnnualSpread = interestMode === 'SPREAD'
         ? normalizeNumberInput(annualSpread, DEFAULT_SPREAD_PERCENT, { min: 0 })
         : annualSpread
       if (runAnnualSpread !== annualSpread) setAnnualSpread(runAnnualSpread)
       const runReferenceTicker = referenceTicker.trim().toUpperCase()
-      const runFixedAnnualRate = (parseFloat(fixedAnnualRate) || 0) / 100
+      const runFixedAnnualRate = parseNonNegativePercentInput(fixedAnnualRate, 'Fixed annual rate')
 
       const response = await fetch('/api/market-timing/run', {
         method: 'POST',

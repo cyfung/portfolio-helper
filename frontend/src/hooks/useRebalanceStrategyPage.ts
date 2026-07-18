@@ -23,6 +23,11 @@ import {
   type TickerMappingSettings,
 } from '@/lib/tickerMappings'
 import {
+  cashflowStateFromSettingsWithSharedCache,
+  subscribeSharedCashflowSettings,
+  writeSharedCashflowSettings,
+} from '@/lib/sharedCashflowSettings'
+import {
   BacktestResults,
   BlockState,
   DEFAULT_CASHFLOW_FREQUENCY,
@@ -100,7 +105,7 @@ export function useRebalanceStrategyPage() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [startingBalance, setStartingBalance] = useState('10000')
-  const [cashflowAmount, setCashflowAmount] = useState('')
+  const [cashflowAmount, setCashflowAmount] = useState('0')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [includeActionDiagnostics, setIncludeActionDiagnostics] = useState(false)
@@ -156,6 +161,17 @@ export function useRebalanceStrategyPage() {
 
   const settingsAutosave = useSettingsAutosave('/api/rebalance-strategy/settings', settingsPayload, settingsLoaded)
 
+  useEffect(() => subscribeSharedCashflowSettings(shared => {
+    setStartingBalance(shared.startingBalance)
+    setCashflowAmount(shared.cashflowAmount)
+    setCashflowFrequency(shared.cashflowFrequency)
+  }), [])
+
+  useEffect(() => {
+    if (!settingsLoaded) return
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency })
+  }, [cashflowAmount, cashflowFrequency, settingsLoaded, startingBalance])
+
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
     window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
@@ -166,13 +182,13 @@ export function useRebalanceStrategyPage() {
     fetch('/api/backtest/settings')
       .then(r => r.json())
       .then((req: PageConfigLike) => {
+        const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
+        setStartingBalance(cashflowState.startingBalance)
+        setCashflowAmount(cashflowState.cashflowAmount)
+        setCashflowFrequency(cashflowState.cashflowFrequency)
         if (!req.portfolios) return
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate) setToDate(req.toDate)
-        const cashflowState = cashflowStateFromSettings(req)
-        if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
-        if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
-        if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
         if (typeof req.includeActionDiagnostics === 'boolean') setIncludeActionDiagnostics(req.includeActionDiagnostics)
         if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], configToBlockInputLabel(req.portfolios[0], 0)))
         const restoredStrategies = restoreStrategyStates(req)
@@ -195,7 +211,7 @@ export function useRebalanceStrategyPage() {
     if (runPortfolio !== portfolio) setPortfolio(runPortfolio)
 
     const mappedPortfolio = applyTickerMappingsToPortfolioWithWarnings(
-      resolvedBlockStateToAPIPortfolio(runPortfolio, 0, await fetchSavedPortfolios()),
+      resolvedBlockStateToAPIPortfolio(runPortfolio, 0, await fetchSavedPortfolios(), { strict: true }),
       selectedTickerMappingSet,
     )
     const portfolioApi = mappedPortfolio.value
@@ -254,7 +270,7 @@ export function useRebalanceStrategyPage() {
       const payload: RebalanceStrategyRunPayload = {
         fromDate: fromDate || null,
         toDate: toDate || null,
-        startingBalance: startingBalanceToPayload(startingBalance),
+        startingBalance: startingBalanceToPayload(startingBalance, { strict: true }),
         portfolio: runInputs.portfolioApi,
         settingsPortfolio: runInputs.settingsPortfolio,
         cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
@@ -315,14 +331,23 @@ export function useRebalanceStrategyPage() {
 
     const exportPortfolio = normalizeBlockSpreadInputs(portfolio)
     if (exportPortfolio !== portfolio) setPortfolio(exportPortfolio)
-    const portfolioConfig = blockStateToAPIPortfolio(exportPortfolio, 0)
+    let portfolioConfig
+    let exportStartingBalance
+    try {
+      portfolioConfig = blockStateToAPIPortfolio(exportPortfolio, 0, { strict: true })
+      exportStartingBalance = startingBalanceToPayload(startingBalance, { strict: true })
+    } catch (e: unknown) {
+      setConfigError(errorMessage(e, 'Invalid portfolio config.'))
+      setTimeout(() => setConfigError(''), 3000)
+      return
+    }
     const savedStrategies = currentStrategies
       .map(strategy => ({ name: strategy.label.trim(), config: strategyStateToSavedConfig(strategy) }))
       .filter((strategy): strategy is { name: string; config: RebalStrategyState } => !!strategy.name)
     const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null,
       toDate: toDate || null,
-      startingBalance: startingBalanceToPayload(startingBalance),
+      startingBalance: exportStartingBalance,
       portfolio: portfolioConfig,
       portfolioState: exportPortfolio,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),

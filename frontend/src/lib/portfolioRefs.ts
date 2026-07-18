@@ -1,5 +1,5 @@
 import { blockStateToAPIPortfolio } from '@/types/backtest'
-import type { BlockState, SavedPortfolio } from '@/types/backtest'
+import type { BlockConversionOptions, BlockState, SavedPortfolio } from '@/types/backtest'
 import {
   expandSwapTickerRows,
   isResolvedNonZeroWeight,
@@ -38,14 +38,11 @@ function refName(row: any) {
   return String(row?.portfolioRef || row?.ticker || '').trim()
 }
 
-function rowWeight(row: any) {
-  return parseFloat(String(row?.weight ?? '')) || 0
-}
-
 function rowResolveWeight(row: any): number | '*' {
   const raw = String(row?.weight ?? '').trim()
   if (raw === '*') return '*'
-  return parseFloat(raw) || 0
+  const weight = Number(raw)
+  return Number.isFinite(weight) ? weight : 0
 }
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
@@ -186,8 +183,9 @@ export function resolvedBlockStateToAPIPortfolio(
   block: BlockState,
   idx: number,
   savedPortfolios: SavedPortfolio[],
+  options: BlockConversionOptions = {},
 ) {
-  const apiPortfolio = blockStateToAPIPortfolio(block, idx)
+  const apiPortfolio = blockStateToAPIPortfolio(block, idx, options)
   const tickers = mergedNonZeroRows(resolveBlockState(block, savedPortfolios))
 
   return { ...apiPortfolio, tickers }

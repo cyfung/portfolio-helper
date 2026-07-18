@@ -4,9 +4,29 @@ import java.time.LocalDate
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 
 class BacktestLetfDefinitionTest {
+    @Test
+    fun parseLETFDefinition_preservesZeroModifiers() {
+        val def = assertNotNull(BacktestService.parseLETFDefinition("2 QQQ S=0 E=0 VOL=0"))
+
+        assertEquals(0.0, def.spread)
+        assertEquals(0.0, def.expenseRatio)
+        assertEquals(0.0, def.volatilityAdjustment)
+    }
+
+    @Test
+    fun parseLETFDefinition_rejectsInvalidModifiers() {
+        assertFailsWith<IllegalArgumentException> {
+            BacktestService.parseLETFDefinition("2 QQQ S=abc")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            BacktestService.parseLETFDefinition("2 QQQ R=abc")
+        }
+    }
+
     @Test
     fun parseLETFDefinition_acceptsNegativeExpenseRatio() {
         val def = assertNotNull(BacktestService.parseLETFDefinition("2 QQQ E=-1.5"))

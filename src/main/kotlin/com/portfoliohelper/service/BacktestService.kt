@@ -1148,11 +1148,15 @@ object BacktestService {
                 token.startsWith("V=", ignoreCase = true) ||
                 token.startsWith("VOL=", ignoreCase = true)
 
+        fun parsePercentModifier(token: String, prefixLength: Int): Double =
+            token.substring(prefixLength).toDoubleOrNull()?.div(100.0)
+                ?: throw IllegalArgumentException("Invalid LETF modifier '$token'")
+
         var i = 0
         while (i < tokens.size) {
             val token = tokens[i]
             if (token.startsWith("S=", ignoreCase = true)) {
-                spread = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
+                spread = parsePercentModifier(token, 2)
                 i++
             } else if (token.startsWith("R=", ignoreCase = true)) {
                 rebalanceStrategy = when (token.substring(2).uppercase()) {
@@ -1161,17 +1165,17 @@ object BacktestService {
                     "M" -> RebalanceStrategy.MONTHLY
                     "Q" -> RebalanceStrategy.QUARTERLY
                     "Y" -> RebalanceStrategy.YEARLY
-                    else -> rebalanceStrategy
+                    else -> throw IllegalArgumentException("Invalid LETF rebalance modifier '$token'")
                 }
                 i++
             } else if (token.startsWith("E=", ignoreCase = true)) {
-                expenseRatio = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
+                expenseRatio = parsePercentModifier(token, 2)
                 i++
             } else if (token.startsWith("V=", ignoreCase = true)) {
-                volatilityAdjustment = token.substring(2).toDoubleOrNull()?.div(100.0) ?: 0.0
+                volatilityAdjustment = parsePercentModifier(token, 2)
                 i++
             } else if (token.startsWith("VOL=", ignoreCase = true)) {
-                volatilityAdjustment = token.substring(4).toDoubleOrNull()?.div(100.0) ?: 0.0
+                volatilityAdjustment = parsePercentModifier(token, 4)
                 i++
             } else {
                 val multiplier = token.toDoubleOrNull()

@@ -88,8 +88,15 @@ export interface CashflowFormState {
   cashflowFrequency: string
 }
 
-export function startingBalanceToPayload(value: string): number {
-  return parseFloat(value) || 10000
+export type BlockConversionOptions = { strict?: boolean }
+
+export function startingBalanceToPayload(value: string, options: BlockConversionOptions = {}): number {
+  const trimmed = value.trim()
+  if (!trimmed) return 10000
+  const parsed = Number(trimmed)
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  if (options.strict) throw new Error('Starting balance must be greater than 0.')
+  return 10000
 }
 
 export function cashflowToPayload(amount: string, frequency: string): CashflowPayload | null {
@@ -105,7 +112,7 @@ export function cashflowStateFromSettings(req: any): Partial<CashflowFormState> 
 
   return {
     ...(req.startingBalance != null ? { startingBalance: String(req.startingBalance) } : {}),
-    ...(req.cashflow?.amount != null ? { cashflowAmount: String(req.cashflow.amount) } : {}),
+    cashflowAmount: req.cashflow?.amount != null ? String(req.cashflow.amount) : '0',
     ...(frequency ? { cashflowFrequency: frequency } : {}),
   }
 }
@@ -193,10 +200,33 @@ export function hasActiveRebalanceStrategyRows(strategies: any[] | null | undefi
 
 type ApiTickerWeight = number | '*'
 
-function apiTickerWeight(value: string | number | null | undefined): ApiTickerWeight {
+function parseInputNumber(
+  value: string | number | null | undefined,
+  fallback: number,
+  label: string,
+  options: BlockConversionOptions = {},
+) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return fallback
+  const parsed = Number(raw)
+  if (Number.isFinite(parsed)) return parsed
+  if (options.strict) throw new Error(`${label} is invalid.`)
+  return fallback
+}
+
+function percentInputOrDefault(
+  value: string | number | null | undefined,
+  fallback: number,
+  label: string,
+  options: BlockConversionOptions = {},
+) {
+  return parseInputNumber(value, fallback, label, options) / 100
+}
+
+function apiTickerWeight(value: string | number | null | undefined, options: BlockConversionOptions = {}): ApiTickerWeight {
   const raw = String(value ?? '').trim()
   if (raw === '*') return '*'
-  return parseFloat(raw) || 0
+  return parseInputNumber(raw, 0, 'Ticker weight', options)
 }
 
 function isNonZeroApiWeight(weight: ApiTickerWeight) {
@@ -221,11 +251,11 @@ function mergeAPITickerRows<T extends { ticker: string; weight: number; isPortfo
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
-function blockStateToAPITickers(state: BlockState) {
+function blockStateToAPITickers(state: BlockState, options: BlockConversionOptions = {}) {
   const rows = state.tickers
     .map(t => t.isPortfolioRef
-      ? { ticker: t.ticker.trim(), weight: apiTickerWeight(t.weight), isPortfolioRef: true, portfolioRef: t.ticker.trim() }
-      : { ticker: t.ticker.trim().toUpperCase(), weight: apiTickerWeight(t.weight) }
+      ? { ticker: t.ticker.trim(), weight: apiTickerWeight(t.weight, options), isPortfolioRef: true, portfolioRef: t.ticker.trim() }
+      : { ticker: t.ticker.trim().toUpperCase(), weight: apiTickerWeight(t.weight, options) }
     )
     .filter(t => t.ticker && isNonZeroApiWeight(t.weight))
 
@@ -240,18 +270,18 @@ function blockStateToAPILabel(state: BlockState, idx: number, tickers: ReturnTyp
 }
 
 /** Convert BlockState to the portfolio object expected by the run API. */
-export function blockStateToAPIPortfolio(state: BlockState, idx: number) {
-  const tickers = blockStateToAPITickers(state)
+export function blockStateToAPIPortfolio(state: BlockState, idx: number, options: BlockConversionOptions = {}) {
+  const tickers = blockStateToAPITickers(state, options)
   return {
     label: blockStateToAPILabel(state, idx, tickers),
     inputLabel: state.label.trim(),
     tickers,
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
-      marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,
+      marginRatio:          percentInputOrDefault(m.ratio, 0, 'Margin ratio', options),
       marginSpread:         percentInputToFraction(m.spread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
-      marginDeviationUpper: (parseFloat(m.devUpper) || 5)   / 100,
-      marginDeviationLower: (parseFloat(m.devLower) || 5)   / 100,
+      marginDeviationUpper: percentInputOrDefault(m.devUpper, 5, 'Upper margin deviation', options),
+      marginDeviationLower: percentInputOrDefault(m.devLower, 5, 'Lower margin deviation', options),
       upperRebalanceMode: m.modeUpper,
       lowerRebalanceMode: m.modeLower,
     })),
@@ -274,10 +304,10 @@ export function blockStateToSavedConfig(state: BlockState) {
       .filter(t => t.ticker && isNonZeroApiWeight(t.weight)),
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
-      marginRatio:          (parseFloat(m.ratio)    || 0)   / 100,
+      marginRatio:          percentInputOrDefault(m.ratio, 0, 'Margin ratio'),
       marginSpread:         percentInputToFraction(m.spread, DEFAULT_SPREAD_PERCENT, { min: 0 }),
-      marginDeviationUpper: (parseFloat(m.devUpper) || 5)   / 100,
-      marginDeviationLower: (parseFloat(m.devLower) || 5)   / 100,
+      marginDeviationUpper: percentInputOrDefault(m.devUpper, 5, 'Upper margin deviation'),
+      marginDeviationLower: percentInputOrDefault(m.devLower, 5, 'Lower margin deviation'),
       upperRebalanceMode: m.modeUpper,
       lowerRebalanceMode: m.modeLower,
     })),

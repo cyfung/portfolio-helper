@@ -44,6 +44,11 @@ import {
   type TickerMappingSettings,
 } from '@/lib/tickerMappings'
 import {
+  cashflowStateFromSettingsWithSharedCache,
+  subscribeSharedCashflowSettings,
+  writeSharedCashflowSettings,
+} from '@/lib/sharedCashflowSettings'
+import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
   blockStateToAPIPortfolio, configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
@@ -79,6 +84,36 @@ function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
     ...results,
     warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
   }
+}
+
+function parseMcNumberInput(value: string, fallback: number, label: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be greater than 0.`)
+  }
+  return parsed
+}
+
+function parseMcIntegerInput(value: string, fallback: number, label: string) {
+  const parsed = parseMcNumberInput(value, fallback, label)
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`${label} must be a whole number.`)
+  }
+  return parsed
+}
+
+function settingsMcNumber(value: string, fallback: number) {
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function settingsMcInteger(value: string, fallback: number) {
+  const parsed = settingsMcNumber(value, fallback)
+  return Number.isInteger(parsed) ? parsed : fallback
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -122,7 +157,7 @@ export default function MonteCarloPage() {
   const [fromDate, setFromDate]       = useState('')
   const [toDate, setToDate]           = useState('')
   const [startingBalance, setStartingBalance]     = useState('10000')
-  const [cashflowAmount, setCashflowAmount]       = useState('')
+  const [cashflowAmount, setCashflowAmount]       = useState('0')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [minChunk, setMinChunk]       = useState('3')
   const [maxChunk, setMaxChunk]       = useState('8')
@@ -155,16 +190,27 @@ export default function MonteCarloPage() {
   const settingsPayload = useMemo(() => ({
     fromDate: fromDate || null,
     toDate: toDate || null,
-    minChunkYears: parseFloat(minChunk) || 3,
-    maxChunkYears: parseFloat(maxChunk) || 8,
-    simulatedYears: parseInt(simYears, 10) || 20,
-    numSimulations: parseInt(numSims, 10) || 500,
+    minChunkYears: settingsMcNumber(minChunk, 3),
+    maxChunkYears: settingsMcNumber(maxChunk, 8),
+    simulatedYears: settingsMcInteger(simYears, 20),
+    numSimulations: settingsMcInteger(numSims, 500),
     startingBalance: startingBalanceToPayload(startingBalance),
     cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
   }), [blocks, cashflowAmount, cashflowFrequency, fromDate, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
 
   useSettingsAutosave('/api/montecarlo/settings', settingsPayload, settingsLoaded)
+
+  useEffect(() => subscribeSharedCashflowSettings(shared => {
+    setStartingBalance(shared.startingBalance)
+    setCashflowAmount(shared.cashflowAmount)
+    setCashflowFrequency(shared.cashflowFrequency)
+  }), [])
+
+  useEffect(() => {
+    if (!settingsLoaded) return
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency })
+  }, [cashflowAmount, cashflowFrequency, settingsLoaded, startingBalance])
 
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
@@ -195,13 +241,13 @@ export default function MonteCarloPage() {
     fetch('/api/montecarlo/settings')
       .then(r => r.json())
       .then((req: any) => {
+        const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
+        setStartingBalance(cashflowState.startingBalance)
+        setCashflowAmount(cashflowState.cashflowAmount)
+        setCashflowFrequency(cashflowState.cashflowFrequency)
         if (!req || !Object.keys(req).length) return
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate)   setToDate(req.toDate)
-        const cashflowState = cashflowStateFromSettings(req)
-        if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
-        if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
-        if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
         if (req.minChunkYears  != null) setMinChunk(String(req.minChunkYears))
         if (req.maxChunkYears  != null) setMaxChunk(String(req.maxChunkYears))
         if (req.simulatedYears != null) setSimYears(String(req.simulatedYears))
@@ -350,15 +396,30 @@ export default function MonteCarloPage() {
       setError(dateRangeError)
       return
     }
+    let minChunkYears: number
+    let maxChunkYears: number
+    let simulatedYears: number
+    let numSimulations: number
+    let runStartingBalance: number
+    try {
+      minChunkYears = parseMcNumberInput(minChunk, 3, 'Min chunk years')
+      maxChunkYears = parseMcNumberInput(maxChunk, 8, 'Max chunk years')
+      simulatedYears = parseMcIntegerInput(simYears, 20, 'Simulated years')
+      numSimulations = parseMcIntegerInput(numSims, 500, 'Simulations')
+      runStartingBalance = startingBalanceToPayload(startingBalance, { strict: true })
+    } catch (e: any) {
+      setError(e.message || 'Invalid Monte Carlo parameters.')
+      return
+    }
     const runBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (runBlocks.some((block, i) => block !== blocks[i])) setBlocks(runBlocks)
     const settingsPortfolios = runBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i))
-    const ns = parseInt(numSims, 10) || 500
+    const ns = numSimulations
     setRunning(true)
     setLocalProgress('Preparing request', 'Resolving saved portfolios and ticker mappings', [
       { label: 'Portfolio blocks', value: runBlocks.length },
       { label: 'Requested simulations', value: ns },
-      { label: 'Simulated years', value: parseInt(simYears, 10) || 20 },
+      { label: 'Simulated years', value: simulatedYears },
     ])
     let portfolios
     let mappingWarnings: string[]
@@ -369,7 +430,7 @@ export default function MonteCarloPage() {
         { label: 'Portfolio blocks', value: runBlocks.length },
       ])
       const mappedPortfolios = runBlocks
-        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios))
+        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios, { strict: true }))
         .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
       mappingWarnings = mappedPortfolios.flatMap(mapped => mapped.warnings)
       portfolios = mappedPortfolios
@@ -406,11 +467,11 @@ export default function MonteCarloPage() {
     const reqBody: any = {
       fromDate: fromDate || null,
       toDate: toDate || null,
-      minChunkYears:  parseFloat(minChunk)  || 3,
-      maxChunkYears:  parseFloat(maxChunk)  || 8,
-      simulatedYears: parseInt(simYears, 10) || 20,
+      minChunkYears,
+      maxChunkYears,
+      simulatedYears,
       numSimulations: ns,
-      startingBalance: startingBalanceToPayload(startingBalance),
+      startingBalance: runStartingBalance,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       portfolios,
       settingsPortfolios,
@@ -461,14 +522,37 @@ export default function MonteCarloPage() {
   // ── Import / Export ───────────────────────────────────────────────────────
 
   async function handleExport() {
+    let minChunkYears: number
+    let maxChunkYears: number
+    let simulatedYears: number
+    let numSimulations: number
+    let exportStartingBalance: number
+    try {
+      minChunkYears = parseMcNumberInput(minChunk, 3, 'Min chunk years')
+      maxChunkYears = parseMcNumberInput(maxChunk, 8, 'Max chunk years')
+      simulatedYears = parseMcIntegerInput(simYears, 20, 'Simulated years')
+      numSimulations = parseMcIntegerInput(numSims, 500, 'Simulations')
+      exportStartingBalance = startingBalanceToPayload(startingBalance, { strict: true })
+    } catch (e: any) {
+      setConfigError(e.message || 'Invalid Monte Carlo parameters.')
+      setTimeout(() => setConfigError(''), 3000)
+      return
+    }
     const exportBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
-    const portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
+    let portfolios
+    try {
+      portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i, { strict: true }))
+    } catch (e: any) {
+      setConfigError(e.message || 'Invalid portfolio config.')
+      setTimeout(() => setConfigError(''), 3000)
+      return
+    }
     const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null, toDate: toDate || null,
-      minChunkYears: parseFloat(minChunk) || 3, maxChunkYears: parseFloat(maxChunk) || 8,
-      simulatedYears: parseInt(simYears, 10) || 20, numSimulations: parseInt(numSims, 10) || 500,
-      startingBalance: startingBalanceToPayload(startingBalance),
+      minChunkYears, maxChunkYears,
+      simulatedYears, numSimulations,
+      startingBalance: exportStartingBalance,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       portfolios,
     }, portfolios))

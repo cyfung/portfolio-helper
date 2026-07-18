@@ -48,6 +48,11 @@ import {
   TICKER_MAPPINGS_CHANGED_EVENT,
   type TickerMappingSettings,
 } from '@/lib/tickerMappings'
+import {
+  cashflowStateFromSettingsWithSharedCache,
+  subscribeSharedCashflowSettings,
+  writeSharedCashflowSettings,
+} from '@/lib/sharedCashflowSettings'
 
 // ── Stats helper ──────────────────────────────────────────────────────────────
 
@@ -358,12 +363,13 @@ export default function BacktestPage() {
   const [fromDate, setFromDate]       = useState('')
   const [toDate, setToDate]           = useState('')
   const [startingBalance, setStartingBalance]     = useState('10000')
-  const [cashflowAmount, setCashflowAmount]       = useState('')
+  const [cashflowAmount, setCashflowAmount]       = useState('0')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [cashflowCacheLoaded, setCashflowCacheLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: StoredBacktestConfig; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -415,6 +421,17 @@ export default function BacktestPage() {
   }), [blocks, cashflowAmount, cashflowFrequency, fromDate, startingBalance, toDate])
 
   useSettingsAutosave('/api/backtest/settings', settingsPayload, settingsLoaded)
+
+  useEffect(() => subscribeSharedCashflowSettings(shared => {
+    setStartingBalance(shared.startingBalance)
+    setCashflowAmount(shared.cashflowAmount)
+    setCashflowFrequency(shared.cashflowFrequency)
+  }), [])
+
+  useEffect(() => {
+    if (!cashflowCacheLoaded) return
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency })
+  }, [cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
 
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
@@ -519,23 +536,24 @@ export default function BacktestPage() {
     fetch('/api/backtest/settings')
       .then(r => r.json())
       .then((req: StoredBacktestConfig) => {
-        if (!req.portfolios) return
-        const portfolios = req.portfolios
         if (req.fromDate) setFromDate(req.fromDate)
         if (req.toDate)   setToDate(req.toDate)
-        const cashflowState = cashflowStateFromSettings(req)
-        if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
-        if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
-        if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
-        setBlocks(prev => {
-          const next = [...prev]
-          portfolios.forEach((p, i) => {
-            if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
+        const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
+        setStartingBalance(cashflowState.startingBalance)
+        setCashflowAmount(cashflowState.cashflowAmount)
+        setCashflowFrequency(cashflowState.cashflowFrequency)
+        if (req.portfolios) {
+          setBlocks(prev => {
+            const next = [...prev]
+            req.portfolios?.forEach((p, i) => {
+              if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
+            })
+            return next
           })
-          return next
-        })
+        }
       })
       .catch(() => {})
+      .finally(() => setCashflowCacheLoaded(true))
   }, [])
 
   // ── Curve keys (for toggle / master checkbox) ────────────────────────────
@@ -801,7 +819,7 @@ export default function BacktestPage() {
     try {
       const latestSavedPortfolios = await fetchSavedPortfolios()
       const mappedPortfolios = runBlocks
-        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios))
+        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios, { strict: true }))
         .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
       mappingWarnings = mappedPortfolios.flatMap(mapped => mapped.warnings)
       portfolios = mappedPortfolios
@@ -829,7 +847,7 @@ export default function BacktestPage() {
           body: JSON.stringify({
             fromDate: fromDate || null,
             toDate: toDate || null,
-            startingBalance: startingBalanceToPayload(startingBalance),
+            startingBalance: startingBalanceToPayload(startingBalance, { strict: true }),
             portfolios,
             settingsPortfolios,
             cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
@@ -870,11 +888,20 @@ export default function BacktestPage() {
   async function handleExport() {
     const exportBlocks = blocks.map(normalizeBlockSpreadInputs)
     if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
-    const portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i))
+    let portfolios
+    let exportStartingBalance
+    try {
+      portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i, { strict: true }))
+      exportStartingBalance = startingBalanceToPayload(startingBalance, { strict: true })
+    } catch (e: unknown) {
+      setConfigError(errorMessage(e) || 'Invalid portfolio config.')
+      setTimeout(() => setConfigError(''), 3000)
+      return
+    }
     const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null,
       toDate: toDate || null,
-      startingBalance: startingBalanceToPayload(startingBalance),
+      startingBalance: exportStartingBalance,
       portfolios,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     }, portfolios))

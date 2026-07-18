@@ -29,7 +29,12 @@ function parseCashKey(key: string, value: string): CashData | null {
     const portfolioRef = (multiplierMatch?.[2] ?? trimmed.replace(/^[+-]/, '')).trim().toLowerCase()
     return { label, currency: 'P', amount: Number.isFinite(multiplier) ? multiplier : 1, marginFlag, portfolioRef }
   }
-  return { label, currency, amount: parseFloat(value) || 0, marginFlag }
+  const trimmed = String(value).trim()
+  const amount = Number(trimmed)
+  if (!trimmed || !Number.isFinite(amount)) {
+    throw new Error(`Invalid cash amount for ${key}`)
+  }
+  return { label, currency, amount, marginFlag }
 }
 
 function stockKey(symbol: string): string {
