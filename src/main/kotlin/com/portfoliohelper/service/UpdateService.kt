@@ -53,6 +53,7 @@ object UpdateService {
 
     val isJpackageInstall: Boolean
     val installDir: Path?
+    private val installedAppJarName: String
 
     init {
         val jarPath = runCatching {
@@ -71,10 +72,17 @@ object UpdateService {
         }
         installDir = detected
         isJpackageInstall = detected != null
+        installedAppJarName = if (detected != null) {
+            jarPath.fileName?.toString()?.takeIf { it.endsWith(".jar", ignoreCase = true) }
+                ?: "portfolio-helper-all.jar"
+        } else {
+            "portfolio-helper-all.jar"
+        }
         logger.debug(
-            "UpdateService: isJpackageInstall={}, installDir={}",
+            "UpdateService: isJpackageInstall={}, installDir={}, installedAppJarName={}",
             isJpackageInstall,
-            installDir
+            installDir,
+            installedAppJarName
         )
     }
 
@@ -304,7 +312,7 @@ object UpdateService {
                 appendLine("@echo off")
                 appendLine("set INSTALL=%~dp0")
                 appendLine("set PENDING=%INSTALL%app\\portfolio-helper-pending.jar")
-                appendLine("set DEST=%INSTALL%app\\portfolio-helper-all.jar")
+                appendLine("set DEST=%INSTALL%app\\$installedAppJarName")
                 appendLine(":wait")
                 appendLine("tasklist /FI \"PID eq %1\" 2>nul | find \"%1\" >nul || goto replace")
                 appendLine("timeout /t 1 /nobreak >nul")
@@ -324,7 +332,7 @@ object UpdateService {
                 appendLine("#!/bin/sh")
                 appendLine($$"D=\"$(cd \"$(dirname \"$0\")\" && pwd)\"")
                 appendLine($$"PENDING=\"$D/app/portfolio-helper-pending.jar\"")
-                appendLine($$"DEST=\"$D/app/portfolio-helper-all.jar\"")
+                appendLine("DEST=\"\$D/app/$installedAppJarName\"")
                 appendLine($$"while kill -0 \"$1\" 2>/dev/null; do sleep 0.5; done")
                 appendLine($$"rm -f \"$DEST\"")
                 appendLine($$"mv \"$PENDING\" \"$DEST\"")
@@ -367,9 +375,7 @@ object UpdateService {
                 jarCandidates += name to url
             }
         }
-        return jarCandidates.firstOrNull { (name, _) -> "update" in name.lowercase() }?.second
-            ?: jarCandidates.firstOrNull { (name, _) -> "jpackage" in name.lowercase() }?.second
-            ?: jarCandidates.firstOrNull()?.second
+        return selectUpdateJarAsset(jarCandidates)
     }
 
     private fun parseLatestReleaseTagFromAtom(xml: String): String? {
@@ -381,6 +387,37 @@ object UpdateService {
 
     private fun jpackageAssetDownloadUrl(repo: String, version: String): String =
         "https://github.com/$repo/releases/download/v$version/portfolio-helper-jpackage-$version.jar"
+
+    internal fun selectUpdateJarAsset(
+        jarCandidates: List<Pair<String, String>>,
+        windowsX64Runtime: Boolean = isWindowsX64Runtime()
+    ): String? {
+        val supportedCandidates = jarCandidates.filterNot { (name, _) ->
+            isWindowsX64AssetName(name) && !windowsX64Runtime
+        }
+        return if (windowsX64Runtime) {
+            supportedCandidates.firstOrNull { (name, _) -> isWindowsX64AssetName(name) }?.second
+                ?: selectGenericUpdateJarAsset(supportedCandidates)
+        } else {
+            selectGenericUpdateJarAsset(supportedCandidates)
+        }
+    }
+
+    private fun selectGenericUpdateJarAsset(jarCandidates: List<Pair<String, String>>): String? =
+        jarCandidates.firstOrNull { (name, _) -> "update" in name.lowercase() }?.second
+            ?: jarCandidates.firstOrNull { (name, _) -> "jpackage" in name.lowercase() }?.second
+            ?: jarCandidates.firstOrNull()?.second
+
+    private fun isWindowsX64AssetName(name: String): Boolean {
+        val lower = name.lowercase()
+        return "windows" in lower && ("x64" in lower || "amd64" in lower)
+    }
+
+    private fun isWindowsX64Runtime(): Boolean {
+        val os = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch").lowercase()
+        return "win" in os && (arch == "amd64" || arch == "x86_64" || arch == "x64")
+    }
 
     private fun Request.Builder.githubDefaults(accept: String = "*/*"): Request.Builder {
         header("Accept", accept)

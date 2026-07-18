@@ -1,6 +1,7 @@
 import com.github.jk1.license.render.ReportRenderer
 import com.github.jk1.license.render.TextReportRenderer
 import com.github.gradle.node.npm.task.NpmTask
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.api.file.CopySpec
 import org.gradle.api.tasks.bundling.Jar
 import com.github.jk1.license.render.InventoryHtmlReportRenderer
@@ -118,6 +119,54 @@ val generateVersionFile: TaskProvider<Task?> = tasks.register("generateVersionFi
 tasks.named("compileKotlin") { dependsOn(generateVersionFile) }
 kotlin.sourceSets.main { kotlin.srcDir(layout.buildDirectory.dir("generated/version")) }
 
+fun ShadowJar.configurePortfolioHelperShadowJar(classifier: String) {
+    archiveBaseName.set("portfolio-helper")
+    archiveClassifier.set(classifier)
+    archiveVersion.set("")
+
+    mergeServiceFiles()  // Critical for Ktor's ServiceLoader
+
+    manifest {
+        attributes(
+            "Main-Class" to "com.portfoliohelper.ApplicationKt",
+            "Implementation-Title" to "Portfolio Helper",
+            "Implementation-Version" to project.version
+        )
+    }
+
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+}
+
+fun ShadowJar.keepWindowsX64NativeLibrariesOnly() {
+    exclude(
+        // sqlite-jdbc bundles native libraries for many OS/CPU combinations.
+        "org/sqlite/native/Mac/**",
+        "org/sqlite/native/Linux/**",
+        "org/sqlite/native/Linux-Musl/**",
+        "org/sqlite/native/Linux-Android/**",
+        "org/sqlite/native/FreeBSD/**",
+        "org/sqlite/native/Windows/aarch64/**",
+        "org/sqlite/native/Windows/armv7/**",
+        "org/sqlite/native/Windows/x86/**",
+
+        // Jansi is only used transitively for terminal coloring; keep Windows x64 only here too.
+        "org/fusesource/jansi/internal/native/FreeBSD/**",
+        "org/fusesource/jansi/internal/native/Linux/**",
+        "org/fusesource/jansi/internal/native/Mac/**",
+        "org/fusesource/jansi/internal/native/Windows/arm64/**",
+        "org/fusesource/jansi/internal/native/Windows/x86/**",
+
+        // Netty native epoll/kqueue payloads are Linux/macOS specific and unused in Windows packages.
+        // Keep their Java classes because Ktor's Netty engine references them during startup.
+        "META-INF/native/libnetty_transport_native_epoll*",
+        "META-INF/native/libnetty_transport_native_kqueue*",
+        "META-INF/native-image/io.netty/netty-transport-classes-epoll/**",
+        "META-INF/native-image/io.netty/netty-transport-classes-kqueue/**",
+        "META-INF/maven/io.netty/netty-transport-native-epoll/**",
+        "META-INF/maven/io.netty/netty-transport-native-kqueue/**"
+    )
+}
+
 // Generate bundled app.db from DBBuilder
 val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
     group = "build"
@@ -157,21 +206,7 @@ tasks.named("processResources") { dependsOn(generateAppDb) }
 // Shadow JAR Configuration
 tasks {
     shadowJar {
-        archiveBaseName.set("portfolio-helper")
-        archiveClassifier.set("all")
-        archiveVersion.set("")
-
-        mergeServiceFiles()  // Critical for Ktor's ServiceLoader
-
-        manifest {
-            attributes(
-                "Main-Class" to "com.portfoliohelper.ApplicationKt",
-                "Implementation-Title" to "Portfolio Helper",
-                "Implementation-Version" to project.version
-            )
-        }
-
-        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+        configurePortfolioHelperShadowJar("all")
     }
 
     named("build") {
@@ -179,24 +214,42 @@ tasks {
     }
 }
 
+val windowsX64ShadowJar = tasks.register<ShadowJar>("windowsX64ShadowJar") {
+    group = "distribution"
+    description = "Creates a Windows x64 shadow JAR with non-Windows native libraries removed"
+
+    configurePortfolioHelperShadowJar("windows-x64")
+    keepWindowsX64NativeLibrariesOnly()
+
+    from(sourceSets.main.get().output)
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+}
+
+val packagedShadowJar: TaskProvider<out Jar> =
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        windowsX64ShadowJar
+    } else {
+        tasks.shadowJar
+    }
+
 val copyJar = tasks.register("copyJar", Copy::class) {
-    dependsOn(tasks.shadowJar)
+    dependsOn(packagedShadowJar)
     val dir = layout.buildDirectory.dir("latest-lib")
     delete(dir)
-    from(tasks.shadowJar).into(dir)
+    from(packagedShadowJar).into(dir)
 }
 
 // jpackage Configuration using Petr Panteleyev plugin
 // Creates an app image (portable application bundle) instead of an installer
 tasks.jpackage {
-    dependsOn(tasks.shadowJar, copyJar)
+    dependsOn(packagedShadowJar, copyJar)
 
     // Input: directory containing the shadow JAR
     input.set(layout.buildDirectory.dir("latest-lib"))
     destination.set(layout.buildDirectory.dir("jpackage"))
 
     // Application entry point
-    mainJar = tasks.shadowJar.get().archiveFileName.get()
+    mainJar = packagedShadowJar.get().archiveFileName.get()
     mainClass = "com.portfoliohelper.ApplicationKt"
 
     // Application metadata
@@ -245,7 +298,7 @@ launch4j {
     copyright.set("Copyright © 2026")
     companyName.set("Portfolio Helper")
     icon.set("${projectDir}/frontend/public/favicon.ico")
-    setJarTask(tasks.shadowJar.get())
+    setJarTask(windowsX64ShadowJar.get())
     jvmOptions = listOf("-Djava.net.preferIPv4Stack=true")
 }
 
@@ -328,7 +381,7 @@ tasks.register<Zip>("windowsDistZip") {
         into(project.name)
         include("portfolio-helper.exe")
     }
-    from(tasks.shadowJar) {
+    from(windowsX64ShadowJar) {
         into("${project.name}/lib")
     }
     includeRuntimeReadme(project.name)
@@ -417,7 +470,9 @@ fun releaseBody(config: GithubReleaseConfig): String =
     """## Portfolio Helper ${config.tagName}
 
 ### Downloads
-- **Self-contained app** (no Java required): `portfolio-helper-jpackage-${config.version}.zip`"""
+- **Self-contained app** (no Java required): `portfolio-helper-jpackage-${config.version}.zip`
+- **Windows x64 updater JAR**: `portfolio-helper-windows-x64-${config.version}.jar`
+- **Legacy updater JAR**: `portfolio-helper-jpackage-${config.version}.jar`"""
 
 fun HttpURLConnection.githubApiDefaults(config: GithubReleaseConfig, contentType: String) {
     setRequestProperty("Authorization", "Bearer ${config.token}")
@@ -455,6 +510,7 @@ fun uploadBaseUrlFromRelease(responseText: String): String =
 fun githubReleaseArtifacts(config: GithubReleaseConfig): List<GithubReleaseArtifact> {
     val distDir = layout.buildDirectory.dir("distributions").get().asFile
     val shadowJarFile = tasks.shadowJar.get().archiveFile.get().asFile
+    val windowsX64ShadowJarFile = windowsX64ShadowJar.get().archiveFile.get().asFile
     return listOf(
         GithubReleaseArtifact(
             File(distDir, "${project.name}-jpackage-${config.version}.zip"),
@@ -465,6 +521,11 @@ fun githubReleaseArtifacts(config: GithubReleaseConfig): List<GithubReleaseArtif
             shadowJarFile,
             "application/java-archive",
             "${project.name}-jpackage-${config.version}.jar"
+        ),
+        GithubReleaseArtifact(
+            windowsX64ShadowJarFile,
+            "application/java-archive",
+            "${project.name}-windows-x64-${config.version}.jar"
         )
     )
 }
@@ -497,7 +558,7 @@ fun uploadGithubReleaseArtifact(
 tasks.register("githubRelease") {
     group = "distribution"
     description = "Creates a GitHub release and uploads distribution artifacts. Requires GITHUB_TOKEN env var and a pre-existing git tag matching v{version}."
-    dependsOn(tasks.named("jpackageDistZip"), tasks.shadowJar)
+    dependsOn(tasks.named("jpackageDistZip"), tasks.shadowJar, windowsX64ShadowJar)
     doLast {
         val config = githubReleaseConfig()
         println("Creating GitHub release ${config.tagName} on ${config.repo}...")
