@@ -45,6 +45,8 @@ export interface AppConfig {
   hasUpdate: boolean
   latestVersion: string | null
   downloadPhase: string
+  downloadBytesReceived: number
+  downloadTotalBytes: number
   isJpackageInstall: boolean
   autoUpdate: boolean
   privacyScalePct: string

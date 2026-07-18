@@ -11,7 +11,11 @@ interface UpdateInfoResponse {
   hasUpdate: boolean
   latestVersion: string | null
   autoUpdate: boolean
-  download: { phase: string }
+  download: {
+    phase: string
+    bytesReceived?: number
+    totalBytes?: number
+  }
 }
 
 const POLL_NORMAL_MS  = 60_000  // 1 min — server checks GitHub periodically
@@ -31,6 +35,8 @@ export function useUpdateChecker() {
         hasUpdate:     info.hasUpdate,
         latestVersion: info.latestVersion ?? null,
         downloadPhase: info.download?.phase ?? 'IDLE',
+        downloadBytesReceived: info.download?.bytesReceived ?? 0,
+        downloadTotalBytes: info.download?.totalBytes ?? 0,
         autoUpdate:    info.autoUpdate,
       })
     } catch { /* network error — ignore, will retry */ }

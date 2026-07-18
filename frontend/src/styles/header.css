@@ -408,6 +408,12 @@ h1 {
     display: inline-block; margin-right: 5px; vertical-align: middle;
     box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 30%, transparent);
 }
+.v4-version-progress {
+    margin-left: 6px;
+    padding-left: 6px;
+    border-left: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+    font-variant-numeric: tabular-nums;
+}
 .v4-version-btn { position: relative; }
 .v4-upd-pop {
     position: absolute; top: calc(100% + 6px); right: 0; z-index: 200;
@@ -424,6 +430,19 @@ h1 {
 .v4-upd-body {
     font-size: 12px; line-height: 1.5; color: var(--color-muted); margin-bottom: 12px;
     overflow-wrap: anywhere;
+}
+.v4-upd-progress-track {
+    width: 100%;
+    height: 6px;
+    margin: -4px 0 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--color-border-subtle);
+}
+.v4-upd-progress-bar {
+    height: 100%;
+    background: var(--color-accent-primary);
+    transition: width 0.3s ease;
 }
 .v4-upd-foot { display: flex; justify-content: flex-end; gap: 6px; }
 

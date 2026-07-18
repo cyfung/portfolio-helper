@@ -413,6 +413,11 @@ interface HeaderRightProps {
   children: ReactNode
 }
 
+function formatDownloadSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB'
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 export function HeaderRight({ children }: HeaderRightProps) {
   const appConfig = usePortfolioStore(s => s.appConfig)
   const updateAppConfig = usePortfolioStore(s => s.updateAppConfig)
@@ -444,10 +449,29 @@ export function HeaderRight({ children }: HeaderRightProps) {
     )
   }
 
-  const { version, hasUpdate, latestVersion, downloadPhase, isJpackageInstall, autoUpdate } = appConfig
+  const {
+    version,
+    hasUpdate,
+    latestVersion,
+    downloadPhase,
+    downloadBytesReceived,
+    downloadTotalBytes,
+    isJpackageInstall,
+    autoUpdate,
+  } = appConfig
   const autoDownloads = isJpackageInstall && autoUpdate
   const isDownloading = downloadPhase === 'DOWNLOADING'
   const isReady = downloadPhase === 'READY' || downloadPhase === 'APPLYING'
+  const hasDownloadTotal = downloadTotalBytes > 0
+  const downloadPercent = hasDownloadTotal
+    ? Math.max(0, Math.min(100, Math.round(downloadBytesReceived / downloadTotalBytes * 100)))
+    : null
+  const downloadProgressText = downloadPercent != null
+    ? `${downloadPercent}%`
+    : formatDownloadSize(downloadBytesReceived)
+  const downloadDetailText = hasDownloadTotal
+    ? `${formatDownloadSize(downloadBytesReceived)} / ${formatDownloadSize(downloadTotalBytes)}`
+    : `${formatDownloadSize(downloadBytesReceived)} downloaded`
 
   const showUpdateTag      = hasUpdate && !autoDownloads && !isDownloading && !isReady
   const showUpdateDot      = hasUpdate && autoDownloads && !isDownloading && !isReady
@@ -474,6 +498,8 @@ export function HeaderRight({ children }: HeaderRightProps) {
         hasUpdate:     !!info.hasUpdate,
         latestVersion: info.latestVersion ?? null,
         downloadPhase: info.download?.phase ?? 'IDLE',
+        downloadBytesReceived: info.download?.bytesReceived ?? 0,
+        downloadTotalBytes: info.download?.totalBytes ?? 0,
         autoUpdate:    info.autoUpdate ?? autoUpdate,
       })
       if (info.lastCheckError) {
@@ -514,6 +540,8 @@ export function HeaderRight({ children }: HeaderRightProps) {
           hasUpdate:     !!info.hasUpdate,
           latestVersion: info.latestVersion ?? null,
           downloadPhase: phase,
+          downloadBytesReceived: info.download?.bytesReceived ?? 0,
+          downloadTotalBytes: info.download?.totalBytes ?? 0,
           autoUpdate:    info.autoUpdate ?? autoUpdate,
         })
         if (phase !== 'DOWNLOADING') {
@@ -539,7 +567,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
         const body = await r.json().catch(() => ({}))
         if (body.status === 'already-downloading') {
           showUpdateToast('Update download already in progress.', 'warn')
-          updateAppConfig({ downloadPhase: 'DOWNLOADING' })
+          updateAppConfig({ downloadPhase: 'DOWNLOADING', downloadBytesReceived: 0, downloadTotalBytes: 0 })
           pollDownloadState()
           return
         }
@@ -547,7 +575,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
         return
       }
       if (!r.ok && r.status !== 202) throw new Error(r.statusText || `HTTP ${r.status}`)
-      updateAppConfig({ downloadPhase: 'DOWNLOADING' })
+      updateAppConfig({ downloadPhase: 'DOWNLOADING', downloadBytesReceived: 0, downloadTotalBytes: 0 })
       pollDownloadState()
     } catch (err: any) {
       showUpdateToast(`Update download failed: ${err?.message || 'Unable to start download.'}`, 'error')
@@ -591,7 +619,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
   }
 
   function updPopBody() {
-    if (showDownloadingTag) return `Downloading v${latestVersion}…`
+    if (showDownloadingTag) return `Downloading v${latestVersion}: ${downloadDetailText}`
     if (showReadyTag)       return `Version ${latestVersion} is ready. Click to apply.`
     return `Version ${latestVersion ?? ''} is available.`
   }
@@ -604,7 +632,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
 
   function versionTitle() {
     if (isCheckingUpdate)    return 'Checking for updates...'
-    if (showDownloadingTag) return 'Downloading update in background'
+    if (showDownloadingTag) return `Downloading update in background - ${downloadDetailText}`
     if (hasUpdate && isJpackageInstall && !isReady) return 'Update available - click to start update'
     if (hasAnyUpdate)     return 'Update available - click for details'
     return 'Check for updates'
@@ -624,6 +652,7 @@ export function HeaderRight({ children }: HeaderRightProps) {
         >
           {(hasAnyUpdate || showBlueVersionState) && <span className="dot" />}
           v{version}
+          {showDownloadingTag && <span className="v4-version-progress">{downloadProgressText}</span>}
           {updOpen && hasAnyUpdate && (
             <div className="v4-upd-pop" onClick={e => e.stopPropagation()} onMouseLeave={() => setUpdOpen(false)}>
               <div className="v4-upd-head">
@@ -631,6 +660,11 @@ export function HeaderRight({ children }: HeaderRightProps) {
                 <span>{updPopTitle()}</span>
               </div>
               <div className="v4-upd-body">{updPopBody()}</div>
+              {showDownloadingTag && downloadPercent != null && (
+                <div className="v4-upd-progress-track" aria-hidden="true">
+                  <div className="v4-upd-progress-bar" style={{ width: `${downloadPercent}%` }} />
+                </div>
+              )}
               <div className="v4-upd-foot">
                 <button className="h-btn subtle" onClick={() => setUpdOpen(false)}>Later</button>
                 {renderUpdateAction()}
