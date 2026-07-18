@@ -167,6 +167,7 @@ export default function MonteCarloPage() {
   const [configError, setConfigError] = useState('')
   const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [cashflowCacheLoaded, setCashflowCacheLoaded] = useState(false)
   const [pendingImport, setPendingImport] = useState<{ config: any; preview: ImportDependencyPreview } | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -208,9 +209,9 @@ export default function MonteCarloPage() {
   }), [])
 
   useEffect(() => {
-    if (!settingsLoaded) return
+    if (!cashflowCacheLoaded) return
     writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency })
-  }, [cashflowAmount, cashflowFrequency, settingsLoaded, startingBalance])
+  }, [cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
 
   useEffect(() => {
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
@@ -263,7 +264,10 @@ export default function MonteCarloPage() {
         }
       })
       .catch(() => {})
-      .finally(() => setSettingsLoaded(true))
+      .finally(() => {
+        setSettingsLoaded(true)
+        setCashflowCacheLoaded(true)
+      })
   }, [])
 
   // ── Computed chart data ───────────────────────────────────────────────────
@@ -290,7 +294,6 @@ export default function MonteCarloPage() {
         datasets.push({
           label: key,
           color: PERCENTILE_COLORS[idx],
-          strokeDasharray: p !== 50 && idx < 3 ? '4 2' : undefined,
           strokeWidth: p === 50 ? 2.5 : 1.5,
         })
       })
