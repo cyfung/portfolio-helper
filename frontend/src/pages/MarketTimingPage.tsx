@@ -184,29 +184,45 @@ export default function MarketTimingPage() {
   useSettingsAutosave('/api/market-timing/settings', settingsPayload, settingsLoaded)
 
   useEffect(() => {
-    fetch('/api/backtest/settings')
-      .then(r => r.json())
-      .then((req: MarketTimingImportConfig) => {
-        if (req.fromDate) setFromDate(String(req.fromDate))
-        if (req.toDate) setToDate(String(req.toDate))
-        if (req.drawdownConfigs != null) {
-          setDrawdownConfigs(drawdownConfigsToInput(req.drawdownConfigs))
-        }
-        if (req.referenceSource != null) {
-          setReferenceSource(req.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
-        }
-        if (req.referenceTicker != null) setReferenceTicker(String(req.referenceTicker || 'VT'))
-        if (req.interestMode != null) setInterestMode(req.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
-        if (req.annualSpread != null) {
-          setAnnualSpread(percentLikeToInput(req.annualSpread, '1.5'))
-          setAnnualSpreadTouched(false)
-        }
-        if (req.fixedAnnualRate != null) setFixedAnnualRate(percentLikeToInput(req.fixedAnnualRate, '5'))
-        const cachedPortfolio = req.portfolios?.[0] ?? req.portfolio
-        if (cachedPortfolio) setPortfolio(configToBlockState(cachedPortfolio, configToBlockInputLabel(cachedPortfolio, 0)))
-      })
-      .catch(() => {})
-      .finally(() => setSettingsLoaded(true))
+    let active = true
+    let retryTimer: number | null = null
+    const loadSettings = () => {
+      fetch('/api/backtest/settings')
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        })
+        .then((req: MarketTimingImportConfig) => {
+          if (!active) return
+          if (req.fromDate) setFromDate(String(req.fromDate))
+          if (req.toDate) setToDate(String(req.toDate))
+          if (req.drawdownConfigs != null) {
+            setDrawdownConfigs(drawdownConfigsToInput(req.drawdownConfigs))
+          }
+          if (req.referenceSource != null) {
+            setReferenceSource(req.referenceSource === 'TICKER' ? 'TICKER' : 'PORTFOLIO')
+          }
+          if (req.referenceTicker != null) setReferenceTicker(String(req.referenceTicker || 'VT'))
+          if (req.interestMode != null) setInterestMode(req.interestMode === 'FIXED' ? 'FIXED' : 'SPREAD')
+          if (req.annualSpread != null) {
+            setAnnualSpread(percentLikeToInput(req.annualSpread, '1.5'))
+            setAnnualSpreadTouched(false)
+          }
+          if (req.fixedAnnualRate != null) setFixedAnnualRate(percentLikeToInput(req.fixedAnnualRate, '5'))
+          const cachedPortfolio = req.portfolios?.[0] ?? req.portfolio
+          if (cachedPortfolio) setPortfolio(configToBlockState(cachedPortfolio, configToBlockInputLabel(cachedPortfolio, 0)))
+          setSettingsLoaded(true)
+        })
+        .catch(() => {
+          if (!active) return
+          retryTimer = window.setTimeout(loadSettings, 1500)
+        })
+    }
+    loadSettings()
+    return () => {
+      active = false
+      if (retryTimer != null) window.clearTimeout(retryTimer)
+    }
   }, [])
 
   useEffect(() => {

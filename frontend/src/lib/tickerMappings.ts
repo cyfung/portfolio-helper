@@ -68,6 +68,8 @@ let cachedTickerMappingSettings = DEFAULT_TICKER_MAPPING_SETTINGS
 let cachedLegacyLocalTickerMappingSettings = DEFAULT_TICKER_MAPPING_SETTINGS
 let hydrateTickerMappingSettingsPromise: Promise<TickerMappingSettings> | null = null
 let localTickerMappingMutationVersion = 0
+let tickerMappingSettingsHydrated = false
+let hydrateRetryTimer: number | null = null
 
 function newMappingId() {
   return `mapping-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -206,13 +208,13 @@ function readLegacyTickerMappingSettings(): TickerMappingSettings | null {
   }
 }
 
-async function fetchTickerMappingSettingsFromServer(): Promise<TickerMappingSettings> {
+async function fetchTickerMappingSettingsFromServer(): Promise<TickerMappingSettings | null> {
   try {
     const res = await fetch(SERVER_SETTINGS_ENDPOINT)
-    if (!res.ok) return DEFAULT_TICKER_MAPPING_SETTINGS
+    if (!res.ok) return null
     return sourceSettings(normalizeTickerMappingSettings(await res.json()), 'server')
   } catch {
-    return DEFAULT_TICKER_MAPPING_SETTINGS
+    return null
   }
 }
 
@@ -283,6 +285,14 @@ async function saveTickerMappingSettingsToServer(settings: TickerMappingSettings
   if (!res.ok) throw new Error(`Failed to save ticker mapping settings: HTTP ${res.status}`)
 }
 
+function scheduleTickerMappingHydrateRetry() {
+  if (hydrateRetryTimer != null) return
+  hydrateRetryTimer = window.setTimeout(() => {
+    hydrateRetryTimer = null
+    void hydrateTickerMappingSettings()
+  }, 1500)
+}
+
 export async function hydrateTickerMappingSettings(): Promise<TickerMappingSettings> {
   if (hydrateTickerMappingSettingsPromise) return hydrateTickerMappingSettingsPromise
   const mutationVersionAtStart = localTickerMappingMutationVersion
@@ -292,8 +302,22 @@ export async function hydrateTickerMappingSettings(): Promise<TickerMappingSetti
       fetchTickerMappingSettingsFromServer(),
       Promise.resolve(readLegacyTickerMappingSettings()),
     ])
-    if (localTickerMappingMutationVersion !== mutationVersionAtStart) return cachedTickerMappingSettings
+    if (!serverSettings) {
+      cachedLegacyLocalTickerMappingSettings = legacySettings ?? cachedLegacyLocalTickerMappingSettings
+      cachedTickerMappingSettings = combineServerAndLocalSettings(
+        cachedTickerMappingSettings,
+        cachedLegacyLocalTickerMappingSettings,
+      )
+      scheduleTickerMappingHydrateRetry()
+      notifyTickerMappingsChanged()
+      return cachedTickerMappingSettings
+    }
+    tickerMappingSettingsHydrated = true
     cachedLegacyLocalTickerMappingSettings = legacySettings ?? DEFAULT_TICKER_MAPPING_SETTINGS
+    if (localTickerMappingMutationVersion !== mutationVersionAtStart) {
+      notifyTickerMappingsChanged()
+      return cachedTickerMappingSettings
+    }
     cachedTickerMappingSettings = combineServerAndLocalSettings(serverSettings, cachedLegacyLocalTickerMappingSettings)
     notifyTickerMappingsChanged()
     return cachedTickerMappingSettings
@@ -304,12 +328,20 @@ export async function hydrateTickerMappingSettings(): Promise<TickerMappingSetti
   return hydrateTickerMappingSettingsPromise
 }
 
+export function isTickerMappingSettingsHydrated() {
+  return tickerMappingSettingsHydrated
+}
+
 export function saveTickerMappingSettings(settings: TickerMappingSettings) {
   const normalized = normalizeTickerMappingSettings(settings)
   localTickerMappingMutationVersion += 1
   cachedTickerMappingSettings = normalized
 
   cleanupLegacyLocalTickerMappings(normalized)
+  if (!tickerMappingSettingsHydrated && normalized.savedSets.length === 0 && !normalized.selectedSetId) {
+    void hydrateTickerMappingSettings()
+    return
+  }
   void saveTickerMappingSettingsToServer(normalized).catch(() => {})
 }
 

@@ -2,7 +2,8 @@ import { SAVED_PORTFOLIOS_CHANGED_EVENT, fetchSavedPortfolios, resolveSavedPortf
 import type { SavedPortfolio } from '@/types/backtest'
 import {
   exportableSavedTickerMappings,
-  loadTickerMappingSettings,
+  hydrateTickerMappingSettings,
+  isTickerMappingSettingsHydrated,
   mergeSavedTickerMappings,
   notifyTickerMappingsChanged,
   normalizeTickerMappingSets,
@@ -332,7 +333,10 @@ export async function withPortfolioExportDependencies<T extends ConfigPayload>(
 export async function buildSavedTickerMappingsExportPayload(): Promise<{
   savedTickerMappings: SavedTickerMappingExport[]
 }> {
-  const savedTickerMappings = exportableSavedTickerMappings(loadTickerMappingSettings())
+  const settings = await hydrateTickerMappingSettings()
+  const savedTickerMappings = isTickerMappingSettingsHydrated()
+    ? exportableSavedTickerMappings(settings)
+    : []
   return { savedTickerMappings }
 }
 
@@ -396,7 +400,7 @@ export async function buildImportDependencyPreview(payload: ConfigPayload): Prom
     })
   })
   const currentMappingByName = new Map(
-    normalizeTickerMappingSets(loadTickerMappingSettings().savedSets)
+    normalizeTickerMappingSets((await hydrateTickerMappingSettings()).savedSets)
       .map(set => [set.name.trim().toLowerCase(), set]),
   )
 
@@ -567,7 +571,10 @@ export async function applyImportDependencyPreview(preview: ImportDependencyPrev
   )
 
   if (enabledSavedTickerMappings.length > 0) {
-    const currentSettings = loadTickerMappingSettings()
+    const currentSettings = await hydrateTickerMappingSettings()
+    if (!isTickerMappingSettingsHydrated()) {
+      throw new Error('Ticker mappings are still loading. Try again after the server reconnects.')
+    }
     saveTickerMappingSettings(mergeSavedTickerMappings(currentSettings, enabledSavedTickerMappings.map(set => ({
       id: '',
       name: set.name.trim(),

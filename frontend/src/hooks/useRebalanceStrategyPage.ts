@@ -17,6 +17,7 @@ import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockState
 import { makeUniqueStrategyLabels } from '@/lib/rebalanceStrategyConfig'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
+  hydrateTickerMappingSettings,
   loadTickerMappingSettings,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
   TICKER_MAPPINGS_CHANGED_EVENT,
@@ -174,29 +175,51 @@ export function useRebalanceStrategyPage() {
   }, [cashflowAmount, cashflowFrequency, settingsLoaded, startingBalance])
 
   useEffect(() => {
+    let active = true
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
     window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
-    return () => window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    void hydrateTickerMappingSettings().then(settings => {
+      if (active) setTickerMappingSettings(settings)
+    })
+    return () => {
+      active = false
+      window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    }
   }, [])
 
   useEffect(() => {
-    fetch('/api/backtest/settings')
-      .then(r => r.json())
-      .then((req: PageConfigLike) => {
-        const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
-        setStartingBalance(cashflowState.startingBalance)
-        setCashflowAmount(cashflowState.cashflowAmount)
-        setCashflowFrequency(cashflowState.cashflowFrequency)
-        if (!req.portfolios) return
-        if (req.fromDate) setFromDate(req.fromDate)
-        if (req.toDate) setToDate(req.toDate)
-        if (typeof req.includeActionDiagnostics === 'boolean') setIncludeActionDiagnostics(req.includeActionDiagnostics)
-        if (req.portfolios[0]) setPortfolio(configToBlockState(req.portfolios[0], configToBlockInputLabel(req.portfolios[0], 0)))
-        const restoredStrategies = restoreStrategyStates(req)
-        if (restoredStrategies) setStrategies(restoredStrategies)
-      })
-      .catch(() => {})
-      .finally(() => setSettingsLoaded(true))
+    let active = true
+    let retryTimer: number | null = null
+    const loadSettings = () => {
+      fetch('/api/backtest/settings')
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        })
+        .then((req: PageConfigLike) => {
+          if (!active) return
+          const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
+          setStartingBalance(cashflowState.startingBalance)
+          setCashflowAmount(cashflowState.cashflowAmount)
+          setCashflowFrequency(cashflowState.cashflowFrequency)
+          if (req.fromDate) setFromDate(req.fromDate)
+          if (req.toDate) setToDate(req.toDate)
+          if (typeof req.includeActionDiagnostics === 'boolean') setIncludeActionDiagnostics(req.includeActionDiagnostics)
+          if (req.portfolios?.[0]) setPortfolio(configToBlockState(req.portfolios[0], configToBlockInputLabel(req.portfolios[0], 0)))
+          const restoredStrategies = restoreStrategyStates(req)
+          if (restoredStrategies) setStrategies(restoredStrategies)
+          setSettingsLoaded(true)
+        })
+        .catch(() => {
+          if (!active) return
+          retryTimer = window.setTimeout(loadSettings, 1500)
+        })
+    }
+    loadSettings()
+    return () => {
+      active = false
+      if (retryTimer != null) window.clearTimeout(retryTimer)
+    }
   }, [])
 
   const currentNormalizedStrategies = useCallback(() => {

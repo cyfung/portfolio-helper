@@ -143,22 +143,44 @@ export default function PortfolioBuilderPage() {
   }
 
   useEffect(() => {
-    loadSaved()
-    fetch('/api/backtest/settings')
-      .then(res => res.ok ? res.json() : null)
-      .then((settings: any) => {
-        if (!settings?.portfolios) return
-        setBlocks(prev => {
-          const next = [...prev]
-          settings.portfolios.forEach((portfolio: any, i: number) => {
-            if (i < next.length) next[i] = configToBlockState(portfolio, configToBlockInputLabel(portfolio, i))
-          })
-          lastSavedPortfoliosRef.current = JSON.stringify(next.map((block, i) => blockStateToSettingsPortfolio(block, i)))
-          return next
+    let active = true
+    let retryTimer: number | null = null
+    const loadSettings = () => {
+      fetch('/api/backtest/settings')
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
         })
-      })
-      .catch(() => {})
-      .finally(() => { settingsLoadedRef.current = true })
+        .then((settings: any) => {
+          if (!active) return
+          if (settings?.portfolios) {
+            setBlocks(prev => {
+              const next = [...prev]
+              settings.portfolios.forEach((portfolio: any, i: number) => {
+                if (i < next.length) next[i] = configToBlockState(portfolio, configToBlockInputLabel(portfolio, i))
+              })
+              lastSavedPortfoliosRef.current = JSON.stringify(next.map((block, i) => blockStateToSettingsPortfolio(block, i)))
+              return next
+            })
+          } else {
+            setBlocks(prev => {
+              lastSavedPortfoliosRef.current = JSON.stringify(prev.map((block, i) => blockStateToSettingsPortfolio(block, i)))
+              return prev
+            })
+          }
+          settingsLoadedRef.current = true
+        })
+        .catch(() => {
+          if (!active) return
+          retryTimer = window.setTimeout(loadSettings, 1500)
+        })
+    }
+    loadSaved()
+    loadSettings()
+    return () => {
+      active = false
+      if (retryTimer != null) window.clearTimeout(retryTimer)
+    }
   }, [])
 
   useEffect(() => {

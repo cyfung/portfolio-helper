@@ -3,6 +3,8 @@ import { Download, GripVertical, Save, Settings, Trash2, X } from 'lucide-react'
 import { compressToCode } from '@/lib/compress'
 import { buildSavedTickerMappingsExportPayload } from '@/lib/configImportExport'
 import {
+  hydrateTickerMappingSettings,
+  isTickerMappingSettingsHydrated,
   loadTickerMappingSettings,
   mappingSetSummary,
   saveTickerMappingSettings,
@@ -85,12 +87,15 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     mappingId: string
     position: MappingDropPosition
   } | null>(null)
+  const [hydrated, setHydrated] = useState(() => isTickerMappingSettingsHydrated())
 
   useEffect(() => {
     setDraft(value)
+    setHydrated(isTickerMappingSettingsHydrated())
   }, [value])
 
   function persist(next: TickerMappingSettings) {
+    if (!hydrated) return
     saveTickerMappingSettings(next)
     onChange(next)
   }
@@ -101,17 +106,24 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
   }
 
   function selectSet(selectedSetId: string) {
+    if (!hydrated) return
     persist({ ...value, selectedSetId })
   }
 
-  function openEditor() {
-    setDraft(loadTickerMappingSettings())
+  async function openEditor() {
+    const settings = isTickerMappingSettingsHydrated()
+      ? loadTickerMappingSettings()
+      : await hydrateTickerMappingSettings()
+    setHydrated(isTickerMappingSettingsHydrated())
+    if (!isTickerMappingSettingsHydrated()) return
+    setDraft(settings)
     setError('')
     setExportStatus('')
     setEditorOpen(true)
   }
 
   async function exportSavedMappings() {
+    if (!hydrated) return
     setExportStatus('')
     const payload = await buildSavedTickerMappingsExportPayload()
     if (payload.savedTickerMappings.length === 0) {
@@ -371,6 +383,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             id={`${idPrefix}-ticker-mapping-set`}
             value={value.selectedSetId}
             onChange={e => selectSet(e.target.value)}
+            disabled={!hydrated}
           >
             <option value="">None</option>
             {hasLocalSavedSets ? (
@@ -392,10 +405,10 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
               <option key={set.id} value={set.id}>{set.name} ({mappingSetSummary(set)})</option>
             ))}
           </select>
-          <button type="button" className="ticker-config-btn ticker-mapping-config-btn" onClick={openEditor} title="Configure ticker mappings" aria-label="Configure ticker mappings">
+          <button type="button" className="ticker-config-btn ticker-mapping-config-btn" onClick={openEditor} disabled={!hydrated} title="Configure ticker mappings" aria-label="Configure ticker mappings">
             <Settings size={15} />
           </button>
-          <button type="button" className="backtest-config-btn ticker-mapping-export-btn" onClick={exportSavedMappings} title="Export saved ticker mappings" aria-label="Export saved ticker mappings">
+          <button type="button" className="backtest-config-btn ticker-mapping-export-btn" onClick={exportSavedMappings} disabled={!hydrated} title="Export saved ticker mappings" aria-label="Export saved ticker mappings">
             <Download size={15} />
             <span>Export Mappings</span>
           </button>

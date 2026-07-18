@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ConfigButton, HeaderRight, PageNavTabs, PrivacyToggleButton, ThemeToggle } from '@/components/Layout'
 import {
-  loadTickerMappingSettings,
+  hydrateTickerMappingSettings,
+  isTickerMappingSettingsHydrated,
   notifyTickerMappingsChanged,
   saveTickerMappingSettings,
   type TickerMappingSet,
@@ -205,7 +206,7 @@ export default function TaxDragPage() {
     }
   }
 
-  function createTickerMapping() {
+  async function createTickerMapping() {
     setMappingStatus('')
     const ignoredCommonPeriodRows = results.filter(result => result.commonPeriod).length
     const mappingRows = results
@@ -236,7 +237,11 @@ export default function TaxDragPage() {
       return
     }
 
-    const settings = loadTickerMappingSettings()
+    const settings = await hydrateTickerMappingSettings()
+    if (!isTickerMappingSettingsHydrated()) {
+      setMappingStatus('Ticker mappings are still loading. Try again after the server reconnects.')
+      return
+    }
     const name = `Tax Drag E=${taxPct.trim() || 'custom'}%`
     const existing = settings.savedSets.find(set => set.name.trim().toLowerCase() === name.toLowerCase())
     const savedSet: TickerMappingSet = {

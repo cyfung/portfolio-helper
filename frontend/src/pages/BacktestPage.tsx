@@ -43,6 +43,7 @@ import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockState
 import { validateDateRange } from '@/lib/dateRange'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
+  hydrateTickerMappingSettings,
   loadTickerMappingSettings,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
   TICKER_MAPPINGS_CHANGED_EVENT,
@@ -434,9 +435,16 @@ export default function BacktestPage() {
   }, [cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
 
   useEffect(() => {
+    let active = true
     const refreshTickerMappings = () => setTickerMappingSettings(loadTickerMappingSettings())
     window.addEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
-    return () => window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    void hydrateTickerMappingSettings().then(settings => {
+      if (active) setTickerMappingSettings(settings)
+    })
+    return () => {
+      active = false
+      window.removeEventListener(TICKER_MAPPINGS_CHANGED_EVENT, refreshTickerMappings)
+    }
   }, [])
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
@@ -453,7 +461,6 @@ export default function BacktestPage() {
         })))
       })
       .catch(() => {})
-      .finally(() => setSettingsLoaded(true))
   }, [])
 
   const fetchRealPortfolioData = useCallback(async (slug: string, signal?: AbortSignal) => {
@@ -533,27 +540,44 @@ export default function BacktestPage() {
 
   // Restore settings on mount
   useEffect(() => {
-    fetch('/api/backtest/settings')
-      .then(r => r.json())
-      .then((req: StoredBacktestConfig) => {
-        if (req.fromDate) setFromDate(req.fromDate)
-        if (req.toDate)   setToDate(req.toDate)
-        const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
-        setStartingBalance(cashflowState.startingBalance)
-        setCashflowAmount(cashflowState.cashflowAmount)
-        setCashflowFrequency(cashflowState.cashflowFrequency)
-        if (req.portfolios) {
-          setBlocks(prev => {
-            const next = [...prev]
-            req.portfolios?.forEach((p, i) => {
-              if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
+    let active = true
+    let retryTimer: number | null = null
+    const loadSettings = () => {
+      fetch('/api/backtest/settings')
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        })
+        .then((req: StoredBacktestConfig) => {
+          if (!active) return
+          if (req.fromDate) setFromDate(req.fromDate)
+          if (req.toDate)   setToDate(req.toDate)
+          const cashflowState = cashflowStateFromSettingsWithSharedCache(req)
+          setStartingBalance(cashflowState.startingBalance)
+          setCashflowAmount(cashflowState.cashflowAmount)
+          setCashflowFrequency(cashflowState.cashflowFrequency)
+          if (req.portfolios) {
+            setBlocks(prev => {
+              const next = [...prev]
+              req.portfolios?.forEach((p, i) => {
+                if (i < 3) next[i] = configToBlockState(p, configToBlockInputLabel(p, i))
+              })
+              return next
             })
-            return next
-          })
-        }
-      })
-      .catch(() => {})
-      .finally(() => setCashflowCacheLoaded(true))
+          }
+          setSettingsLoaded(true)
+          setCashflowCacheLoaded(true)
+        })
+        .catch(() => {
+          if (!active) return
+          retryTimer = window.setTimeout(loadSettings, 1500)
+        })
+    }
+    loadSettings()
+    return () => {
+      active = false
+      if (retryTimer != null) window.clearTimeout(retryTimer)
+    }
   }, [])
 
   // ── Curve keys (for toggle / master checkbox) ────────────────────────────
