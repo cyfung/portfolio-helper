@@ -42,6 +42,7 @@ import {
 } from '@/types/backtest'
 import {
   RebalStrategyState,
+  PersistedRebalStrategyConfig,
   drawdownMarginTriggerIssues,
   emptyStrategy,
   normalizeStrategySpreadInput,
@@ -95,7 +96,7 @@ function restoreStrategyStates(req: PageConfigLike) {
   const savedStrategies = Array.isArray(req.strategyStates) ? req.strategyStates : req.strategies
   if (!Array.isArray(savedStrategies)) return null
   return savedStrategies.slice(0, 2).map((s, i) => (
-    savedConfigToStrategyState(s, s.label || `Strategy ${i + 1}`)
+    savedConfigToStrategyState(s, s.label || `Strategy ${i + 1}`, { preserveEnabled: true })
   ))
 }
 
@@ -343,7 +344,7 @@ export function useRebalanceStrategyPage() {
     }
     const savedStrategies = currentStrategies
       .map(strategy => ({ name: strategy.label.trim(), config: strategyStateToSavedConfig(strategy) }))
-      .filter((strategy): strategy is { name: string; config: RebalStrategyState } => !!strategy.name)
+      .filter((strategy): strategy is { name: string; config: PersistedRebalStrategyConfig } => !!strategy.name)
     const code = await compressToCode(await withPortfolioExportDependencies({
       fromDate: fromDate || null,
       toDate: toDate || null,

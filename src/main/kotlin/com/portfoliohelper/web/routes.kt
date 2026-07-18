@@ -127,7 +127,6 @@ private val marketTimingSettingsKeys = setOf(
 private val rebalanceStrategySettingsKeys = setOf(
     "startingBalance",
     "cashflow",
-    "strategies",
     "strategyStates",
     "includeActionDiagnostics",
 )
@@ -348,7 +347,7 @@ private fun parseSinglePortfolioConfig(
             )
         } ?: emptyList(),
         rebalanceStrategies = (pObj["rebalanceStrategies"] as? JsonArray)?.map { el ->
-            parseRebalStrategyConfig(el.jsonObject)
+            parseRebalStrategyConfig(el.jsonObject, forceEnabled = true)
         } ?: emptyList(),
         includeNoMargin = pObj["includeNoMargin"]?.jsonPrimitive?.booleanOrNull ?: true
     )
@@ -622,7 +621,10 @@ private fun parseDerivedSubStrategies(el: JsonElement?): List<DerivedSubStrategy
         }
         ?: emptyList()
 
-private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = RebalStrategyConfig(
+private fun parseRebalStrategyConfig(
+    obj: JsonObject,
+    forceEnabled: Boolean = false,
+): RebalStrategyConfig = RebalStrategyConfig(
     label                      = obj["label"]?.jsonPrimitive?.contentOrNull ?: "Strategy",
     marginRatio                = obj["marginRatio"]?.jsonPrimitive?.doubleOrNull ?: 0.5,
     marginSpread               = obj["marginSpread"]?.jsonPrimitive?.doubleOrNull ?: 0.015,
@@ -664,10 +666,8 @@ private fun parseRebalStrategyConfig(obj: JsonObject): RebalStrategyConfig = Reb
     comfortZoneHigh             = obj["comfortZoneHigh"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
     buyCooldownAfterSellHighDays = obj["buyCooldownAfterSellHighDays"]?.jsonPrimitive?.intOrNull ?: 10,
     sellCooldownAfterBuyLowDays = obj["sellCooldownAfterBuyLowDays"]?.jsonPrimitive?.intOrNull ?: 10,
-    enabled                    = obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true,
-    baseEnabled                = obj["baseEnabled"]?.jsonPrimitive?.booleanOrNull
-        ?: obj["enabled"]?.jsonPrimitive?.booleanOrNull
-        ?: true,
+    enabled                    = if (forceEnabled) true else obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true,
+    baseEnabled                = obj["baseEnabled"]?.jsonPrimitive?.booleanOrNull ?: true,
     derivedSubStrategies        = parseDerivedSubStrategies(obj["derivedSubStrategies"]),
 )
 
@@ -1410,7 +1410,10 @@ fun Application.configureRouting() {
             val body = call.receiveText()
             val entry = Json.parseToJsonElement(body).jsonObject
             val name = entry["name"]?.jsonPrimitive?.contentOrNull ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val config = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val config = when (val rawConfig = entry["config"] ?: return@post call.respond(HttpStatusCode.BadRequest)) {
+                is JsonObject -> JsonObject(rawConfig.filterKeys { it != "enabled" })
+                else -> rawConfig
+            }
             val saved = createSavedJsonConfig(
                 SavedRebalanceStrategiesTable,
                 SavedRebalanceStrategiesTable.name,

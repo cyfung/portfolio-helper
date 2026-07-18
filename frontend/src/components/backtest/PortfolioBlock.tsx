@@ -7,7 +7,7 @@ import {
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
   REBALANCE_OPTIONS,
 } from '@/types/backtest'
-import { savedConfigToStrategyState } from '@/types/rebalanceStrategy'
+import { savedConfigToStrategyState, strategyStateToSavedConfig } from '@/types/rebalanceStrategy'
 import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 import {
@@ -351,16 +351,14 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
         if (row.id !== id) return row
         const strategy = savedConfigToStrategyState(row.config, row.name)
         const nextStrategy = updater(strategy)
-        const baseEnabled = nextStrategy.baseEnabled ?? nextStrategy.enabled ?? true
-        const anyDerivedEnabled = (nextStrategy.derivedSubStrategies ?? []).some(d => d.enabled)
-        return { ...row, config: { ...nextStrategy, enabled: baseEnabled || anyDerivedEnabled } }
+        return { ...row, config: strategyStateToSavedConfig(nextStrategy) }
       }),
     })
   }
 
   function toggleRebalanceBase(row: RebalanceStrategyRow) {
     updateRebalanceStrategyConfig(row.id, strategy => {
-      const nextBaseEnabled = !(strategy.baseEnabled ?? strategy.enabled ?? true)
+      const nextBaseEnabled = !(strategy.baseEnabled ?? true)
       return { ...strategy, baseEnabled: nextBaseEnabled }
     })
   }
@@ -450,7 +448,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       row,
       key: row.id,
       strategy,
-      baseEnabled: strategy.baseEnabled ?? strategy.enabled ?? true,
+      baseEnabled: strategy.baseEnabled ?? true,
       derived: strategy.derivedSubStrategies ?? [],
     }
   }

@@ -2,7 +2,7 @@
 
 // ── Row state ─────────────────────────────────────────────────────────────────
 
-import { savedConfigToStrategyState, strategyStateToAPI } from './rebalanceStrategy'
+import { omitStrategyEnabledFlag, savedConfigToStrategyState, strategyStateToAPI, strategyStateToSavedConfig } from './rebalanceStrategy'
 import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 import { allocOptionsFromHybridStrategies, DEFAULT_HYBRID_ALLOC_STRATEGIES } from '@/lib/allocStrategies'
 import { parseSwapExpression } from '@/lib/tickerExpressions'
@@ -190,7 +190,6 @@ export function normalizeBlockSpreadInputs(state: BlockState): BlockState {
 
 export function hasActiveRebalanceStrategyRows(strategies: any[] | null | undefined): boolean {
   return (strategies ?? []).some(strategy => {
-    if (strategy?.enabled === false) return false
     const baseEnabled = strategy?.baseEnabled !== false
     const derivedEnabled = Array.isArray(strategy?.derivedSubStrategies) &&
       strategy.derivedSubStrategies.some((derived: any) => derived?.enabled !== false)
@@ -287,7 +286,11 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number, options
     })),
     rebalanceStrategies: (state.rebalanceStrategies ?? []).map(s => {
       const strategy = savedConfigToStrategyState(s.config, s.name)
-      return { name: s.name, config: s.config, ...strategyStateToAPI(strategy) }
+      return {
+        name: s.name,
+        config: strategyStateToSavedConfig(strategy),
+        ...omitStrategyEnabledFlag(strategyStateToAPI(strategy)),
+      }
     }),
     includeNoMargin: state.includeNoMargin,
   }
@@ -311,11 +314,14 @@ export function blockStateToSavedConfig(state: BlockState) {
       upperRebalanceMode: m.modeUpper,
       lowerRebalanceMode: m.modeLower,
     })),
-    rebalanceStrategies: (state.rebalanceStrategies ?? []).map(s => ({
-      name: s.name,
-      config: s.config,
-      ...strategyStateToAPI(savedConfigToStrategyState(s.config, s.name)),
-    })),
+    rebalanceStrategies: (state.rebalanceStrategies ?? []).map(s => {
+      const strategy = savedConfigToStrategyState(s.config, s.name)
+      return {
+        name: s.name,
+        config: strategyStateToSavedConfig(strategy),
+        ...omitStrategyEnabledFlag(strategyStateToAPI(strategy)),
+      }
+    }),
     includeNoMargin: state.includeNoMargin,
   }
 }

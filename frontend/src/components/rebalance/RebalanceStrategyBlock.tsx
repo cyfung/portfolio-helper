@@ -166,6 +166,12 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
     updateLocal({ ...localRef.current, ...patch })
   }, [updateLocal])
 
+  const setAndCommit = useCallback((patch: Partial<RebalStrategyState>) => {
+    const next = { ...localRef.current, ...patch }
+    updateLocal(next)
+    commit(next, true)
+  }, [commit, updateLocal])
+
   useEffect(() => {
     if (lastValuePropRef.current === value) return
 
@@ -330,7 +336,7 @@ const RebalanceStrategyBlock = React.memo(React.forwardRef<RebalanceStrategyBloc
           enabled={s.enabled ?? true}
           saveMsg={saveMsg}
           onLabelChange={label => set({ label })}
-          onEnabledChange={enabled => set({ enabled })}
+          onEnabledChange={enabled => setAndCommit({ enabled })}
           onCommit={() => commit(undefined, true)}
           onSave={handleSave}
         />
