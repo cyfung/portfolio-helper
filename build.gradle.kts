@@ -29,6 +29,8 @@ repositories {
     mavenCentral()
 }
 
+val proguardTool by configurations.creating
+
 node {
     version.set("22.11.0")
     download.set(true)
@@ -36,18 +38,16 @@ node {
 }
 
 dependencies {
+    proguardTool("com.guardsquare:proguard-base:7.9.1")
+
     // Ktor Server
     implementation("io.ktor:ktor-server-core:3.4.0")
     implementation("io.ktor:ktor-server-netty:3.4.0")
-    implementation("io.ktor:ktor-server-html-builder:3.4.0")
     implementation("io.ktor:ktor-server-sse:3.4.0")
 
     // Ktor HTTP Client for Yahoo Finance API
     implementation("io.ktor:ktor-client-core:3.4.0")
     implementation("io.ktor:ktor-client-cio:3.4.0")
-
-    // kotlinx.html for HTML DSL
-    implementation("org.jetbrains.kotlinx:kotlinx-html-jvm:0.11.0")
 
     // Apache Commons CSV for parsing
     implementation("org.apache.commons:commons-csv:1.10.0")
@@ -139,6 +139,11 @@ fun ShadowJar.configurePortfolioHelperShadowJar(classifier: String) {
 
 fun ShadowJar.keepWindowsX64NativeLibrariesOnly() {
     exclude(
+        // Bouncy Castle is used only for RSA localhost certificate generation.
+        // Its post-quantum algorithms and large parameter tables are not needed.
+        "org/bouncycastle/pqc/**",
+        "META-INF/versions/*/org/bouncycastle/pqc/**",
+
         // sqlite-jdbc bundles native libraries for many OS/CPU combinations.
         "org/sqlite/native/Mac/**",
         "org/sqlite/native/Linux/**",
@@ -223,6 +228,202 @@ val windowsX64ShadowJar = tasks.register<ShadowJar>("windowsX64ShadowJar") {
 
     from(sourceSets.main.get().output)
     configurations = listOf(project.configurations.runtimeClasspath.get())
+}
+
+fun File.proguardPath(): String = absolutePath.replace(File.separatorChar, '/')
+
+val proguardWindowsX64Config = tasks.register("generateProguardWindowsX64Config") {
+    group = "distribution"
+    description = "Generates the ProGuard configuration for the experimental Windows x64 shrunk JAR"
+
+    dependsOn(windowsX64ShadowJar)
+
+    val inputJar = windowsX64ShadowJar.flatMap { it.archiveFile }
+    val outputJar = layout.buildDirectory.file("libs/portfolio-helper-windows-x64-proguard.jar")
+    val configFile = layout.buildDirectory.file("tmp/proguard/windows-x64.pro")
+    val usageFile = layout.buildDirectory.file("reports/proguard/windows-x64-usage.txt")
+    val javaHome = providers.systemProperty("java.home")
+
+    inputs.file(inputJar)
+    inputs.property("javaHome", javaHome)
+    outputs.file(configFile)
+
+    doLast {
+        val jmodsDir = File(javaHome.get(), "jmods")
+        val libraryJars = jmodsDir.listFiles { file -> file.extension == "jmod" }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+
+        val libraryJarLines = libraryJars.joinToString(System.lineSeparator()) { jmod ->
+            "-libraryjars '${jmod.proguardPath()}'(!**.jar;!module-info.class)"
+        }
+
+        val serializerClassPattern = "**${'$'}${'$'}serializer"
+        val configText = """
+            -injars '${inputJar.get().asFile.proguardPath()}'
+            -outjars '${outputJar.get().asFile.proguardPath()}'
+            $libraryJarLines
+
+            -printusage '${usageFile.get().asFile.proguardPath()}'
+            -dontoptimize
+            -dontobfuscate
+            -ignorewarnings
+            -dontnote
+            -dontwarn jakarta.servlet.**
+            -dontwarn jakarta.mail.**
+            -dontwarn org.conscrypt.**
+            -dontwarn reactor.blockhound.**
+            -dontwarn org.apache.logging.log4j.**
+            -dontwarn org.jboss.vfs.**
+            -dontwarn org.codehaus.janino.**
+            -dontwarn org.codehaus.commons.compiler.**
+            -dontwarn org.graalvm.nativeimage.**
+            -dontwarn org.bouncycastle.**
+            -dontwarn org.tukaani.xz.**
+            -dontwarn com.aayushatharva.brotli4j.**
+            -dontwarn com.jcraft.jzlib.**
+            -dontwarn com.ning.compress.**
+            -dontwarn lzma.sdk.**
+            -dontwarn net.jpountz.**
+            -dontwarn com.github.luben.zstd.**
+            -dontwarn io.netty.**
+            -dontwarn org.flywaydb.**
+            -dontwarn tools.jackson.**
+            -dontwarn kotlinx.coroutines.**
+            -dontwarn okhttp3.**
+            -dontwarn nl.adaptivity.xmlutil.**
+            -dontwarn lombok.**
+            -dontwarn org.osgi.framework.**
+            -dontwarn org.codehaus.mojo.animal_sniffer.**
+            -dontwarn android.**
+            -dontwarn org.openjsse.**
+            -dontwarn org.jspecify.annotations.**
+
+            -keepattributes Exceptions,InnerClasses,Signature,Deprecated,SourceFile,LineNumberTable,*Annotation*,EnclosingMethod,MethodParameters
+            -keepdirectories META-INF/services,META-INF/native,org/sqlite/native,org/fusesource/jansi/internal/native,db/migration
+
+            -keep class com.portfoliohelper.** { *; }
+            -keep class db.migration.** { *; }
+            -keep class com.portfoliohelper.ApplicationKt {
+                public static void main(java.lang.String[]);
+            }
+
+            -keep class io.ktor.** { *; }
+            -keep class io.netty.** { *; }
+            -keep class kotlinx.coroutines.** { *; }
+            -keep class kotlinx.serialization.** { *; }
+            -keep class $serializerClassPattern { *; }
+            -keep @kotlinx.serialization.Serializable class ** { *; }
+            -keepclassmembers class ** {
+                *** Companion;
+                kotlinx.serialization.KSerializer serializer(...);
+            }
+
+            -keep class org.jetbrains.exposed.** { *; }
+            -keep class org.flywaydb.** { *; }
+            -keep class tools.jackson.** { *; }
+            -keep class org.sqlite.** { *; }
+            -keep class ch.qos.logback.** { *; }
+            -keep class org.slf4j.** { *; }
+            -keep class org.bouncycastle.** { *; }
+
+            -keepclassmembers class * {
+                native <methods>;
+            }
+        """.trimIndent()
+
+        val out = configFile.get().asFile
+        out.parentFile.mkdirs()
+        usageFile.get().asFile.parentFile.mkdirs()
+        out.writeText(configText)
+    }
+}
+
+val proguardWindowsX64Jar = tasks.register<JavaExec>("proguardWindowsX64Jar") {
+    group = "distribution"
+    description = "Creates an experimental ProGuard-shrunk Windows x64 shadow JAR"
+
+    dependsOn(proguardWindowsX64Config)
+
+    val outputJar = layout.buildDirectory.file("libs/portfolio-helper-windows-x64-proguard.jar")
+    val configFile = layout.buildDirectory.file("tmp/proguard/windows-x64.pro")
+
+    classpath(proguardTool)
+    mainClass.set("proguard.ProGuard")
+    args("@${configFile.get().asFile.absolutePath}")
+
+    inputs.file(configFile)
+    outputs.file(outputJar)
+}
+
+val proguardWindowsX64OptimizedConfig = tasks.register("generateProguardWindowsX64OptimizedConfig") {
+    group = "distribution"
+    description = "Generates the ProGuard configuration for the experimental optimized Windows x64 JAR"
+
+    dependsOn(proguardWindowsX64Config)
+
+    val baseConfig = layout.buildDirectory.file("tmp/proguard/windows-x64.pro")
+    val optimizedConfig = layout.buildDirectory.file("tmp/proguard/windows-x64-optimized.pro")
+    val optimizedJar = layout.buildDirectory.file("libs/portfolio-helper-windows-x64-proguard-optimized.jar")
+    val usageFile = layout.buildDirectory.file("reports/proguard/windows-x64-optimized-usage.txt")
+
+    inputs.file(baseConfig)
+    outputs.file(optimizedConfig)
+
+    doLast {
+        val optimizedText = baseConfig.get().asFile.readText()
+            .lineSequence()
+            .map { line ->
+                when {
+                    line.trimStart().startsWith("-outjars ") ->
+                        "            -outjars '${optimizedJar.get().asFile.proguardPath()}'"
+                    line.trimStart().startsWith("-printusage ") ->
+                        "            -printusage '${usageFile.get().asFile.proguardPath()}'"
+                    else -> line
+                }
+            }
+            .filterNot { it.trim() == "-dontoptimize" }
+            .map { line ->
+                if (line.trimStart().startsWith("-keepattributes ")) {
+                    "            -keepattributes Exceptions,InnerClasses,Signature,*Annotation*,EnclosingMethod"
+                } else {
+                    line
+                }
+            }
+            .joinToString(System.lineSeparator()) + System.lineSeparator() +
+            "-optimizationpasses 3" + System.lineSeparator() +
+            "-allowaccessmodification" + System.lineSeparator() +
+            "-keep class okhttp3.** { *; }" + System.lineSeparator() +
+            "-keep interface okhttp3.** { *; }" + System.lineSeparator() +
+            "-keep class okio.** { *; }" + System.lineSeparator() +
+            "-keep interface okio.** { *; }" + System.lineSeparator() +
+            "-keep class javax.jmdns.** { *; }" + System.lineSeparator() +
+            "-keep interface javax.jmdns.** { *; }" + System.lineSeparator() +
+            "-keep class org.jsoup.** { *; }" + System.lineSeparator() +
+            "-keep interface org.jsoup.** { *; }" + System.lineSeparator()
+
+        val out = optimizedConfig.get().asFile
+        out.parentFile.mkdirs()
+        usageFile.get().asFile.parentFile.mkdirs()
+        out.writeText(optimizedText)
+    }
+}
+
+val proguardWindowsX64OptimizedJar = tasks.register<JavaExec>("proguardWindowsX64OptimizedJar") {
+    group = "distribution"
+    description = "Creates an experimental optimized ProGuard-shrunk Windows x64 shadow JAR"
+
+    dependsOn(proguardWindowsX64OptimizedConfig)
+
+    val outputJar = layout.buildDirectory.file("libs/portfolio-helper-windows-x64-proguard-optimized.jar")
+    val configFile = layout.buildDirectory.file("tmp/proguard/windows-x64-optimized.pro")
+
+    classpath(proguardTool)
+    mainClass.set("proguard.ProGuard")
+    args("@${configFile.get().asFile.absolutePath}")
+
+    inputs.file(configFile)
+    outputs.file(outputJar)
 }
 
 val packagedShadowJar: TaskProvider<out Jar> =
