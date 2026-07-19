@@ -1687,7 +1687,9 @@ object RebalanceStrategyService {
                   CashflowScaling.SCALED_BY_CURRENT_MARGIN -> 1.0 + currentMarginRatio
                   CashflowScaling.NO_SCALING -> 1.0
                 }
-        val totalInvest = rawCashflow * strategy.cashflowImmediateInvestPct * scaleFactor
+        val totalInvest =
+            if (derivedSubStrategy == null) rawCashflow * strategy.cashflowImmediateInvestPct * scaleFactor
+            else 0.0
         account.deposit(rawCashflow)
         for (ticker in tickers) account.buy(ticker, totalInvest * (targetWeights[ticker] ?: 0.0))
       }

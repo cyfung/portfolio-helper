@@ -1763,6 +1763,46 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun derivedStrategy_cashflowDepositsWithoutImmediateInvesting() {
+        val start = LocalDate.of(2024, 1, 2)
+        val dates = days(start, 45)
+        val series = mapOf("SPY" to flatCurve(dates))
+        val cashflow = CashflowConfig(amount = 1_000.0, frequency = CashflowFrequency.MONTHLY)
+        val derived = DerivedSubStrategyConfig(
+            label = "derived",
+            scale = DerivedTargetScaleConfig(
+                function = DerivedTargetScaleFunction.LINEAR,
+                referenceLower = 0.2,
+                referenceUpper = 0.2,
+                targetLower = 0.2,
+                targetUpper = 0.2,
+            ),
+            absoluteDeviationPct = 0.05,
+        )
+
+        val result = RebalanceStrategyService.runDerivedStrategyResultForTest(
+            singleStockPortfolio(),
+            strategy(
+                marginRatio = 0.2,
+                rebalancePeriod = RebalancePeriodOverride.NONE,
+                cashflowImmediateInvestPct = 1.0,
+                cashflowScaling = CashflowScaling.SCALED_BY_TARGET_MARGIN,
+            ),
+            derived,
+            baseMarginSeries = dates.map { 0.2 },
+            cashflow = cashflow,
+            seriesMap = series,
+            dates = dates,
+            effrx = emptyMap(),
+        )
+
+        val feb1Index = dates.indexOfFirst { it.monthValue == 2 && it.dayOfMonth == 1 }
+        assertTrue(feb1Index == 30, "Expected Feb 1 at index 30, got $feb1Index")
+        assertApprox(11_000.0, result.points[feb1Index].value, label = "equity after deposit")
+        assertApprox(1_000.0 / 11_000.0, requireNotNull(result.marginPoints)[feb1Index].value, label = "margin after deposit")
+    }
+
+    @Test
     fun vShape_sellOnHighMargin() {
         val dates = days(LocalDate.of(2024, 1, 2), 21)
         val prices = vShapeCurve(dates)
