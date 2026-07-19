@@ -5,6 +5,7 @@ import type { SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategi
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
+import { curveSelectionKey } from '@/lib/curveNaming'
 import { validateDateRange } from '@/lib/dateRange'
 import {
   applyImportDependencyPreview,
@@ -306,7 +307,7 @@ export function useRebalanceStrategyPage() {
       lastRunPayloadRef.current = payload
       setZeroMarginInterestResults(null)
       setResults(data)
-      setSelected(new Set(data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))))
+      setSelected(new Set(data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci)))))
     } catch (e: unknown) {
       setError('Request failed: ' + errorMessage(e, 'Unknown error'))
     } finally {

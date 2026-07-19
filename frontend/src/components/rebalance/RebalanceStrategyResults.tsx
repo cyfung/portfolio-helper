@@ -11,6 +11,7 @@ import {
 } from '@/components/rebalance/RebalanceCharts'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { useChartTheme } from '@/lib/chartTheme'
+import { curveDataKey, curveSelectionKey } from '@/lib/curveNaming'
 import {
   ACTION_MARKERS,
   DEFAULT_ACTION_POINT_CHART_VISIBILITY,
@@ -136,7 +137,7 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
   )
 
   const allKeys = useMemo(
-    () => results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`)),
+    () => results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci))),
     [results],
   )
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
@@ -174,7 +175,7 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
     if (!Number.isFinite(pi) || !Number.isFinite(ci)) return null
     const curve = results.portfolios[pi]?.curves[ci]
     if (!curve?.actionPoints?.length) return null
-    return { dataKey: `p${pi}-c${ci}`, curve }
+    return { dataKey: curveDataKey(pi, ci), curve }
   }, [results, selected])
 
   const selectedActionPointGroups = useMemo(() => (

@@ -2,6 +2,7 @@
 
 import { BacktestResults, BacktestCurve, PALETTE } from '@/types/backtest'
 import { getGroupStrokeWidths } from '@/lib/colorScheme'
+import { curveDataKey, curveDisplayLabel, curveSelectionKey } from '@/lib/curveNaming'
 
 export interface RechartsDataset {
   dataKey: string
@@ -42,11 +43,11 @@ export function buildRechartsData(
     const palette = PALETTE[pi % PALETTE.length]
     const widths  = getGroupStrokeWidths(portfolio.curves.length)
     portfolio.curves.forEach((curve, ci) => {
-      if (selected.size > 0 && !selected.has(`${pi}-${ci}`)) return
+      if (selected.size > 0 && !selected.has(curveSelectionKey(pi, ci))) return
       const pts = pointsSelector ? pointsSelector(curve) : curve.points
       if (!pts) return
-      const key = `p${pi}-c${ci}`
-      const label = `${portfolio.label} \u2013 ${curve.label}`
+      const key = curveDataKey(pi, ci)
+      const label = curveDisplayLabel(portfolio.label, curve.label)
       const vals = valueFn(pts)
       const byDate = new Map(pts.map((p, i) => [p.date, vals[i]]))
       labels.forEach((d, i) => { rows[i][key] = byDate.get(d) ?? undefined })

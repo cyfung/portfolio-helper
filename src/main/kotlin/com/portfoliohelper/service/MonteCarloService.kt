@@ -240,7 +240,6 @@ object MonteCarloService {
             val allLabels: List<String> = simpleCurves.map { it.label } + strategyLabels
         }
 
-        fun modeAbbr(m: String) = HybridAllocStrategyRegistry.modeLabel(m)
         fun strategyLabels(pConfig: PortfolioConfig): List<String> =
             pConfig.rebalanceStrategies
                 .filter { it.enabled }
@@ -254,13 +253,9 @@ object MonteCarloService {
         val portfolioCurveConfigs: List<PortfolioCurveConfig> =
             portfolios.map { pConfig ->
                 val curves = mutableListOf<CurveConfig>()
-                if (pConfig.includeNoMargin) curves.add(CurveConfig("No Margin", null))
+                if (pConfig.includeNoMargin) curves.add(CurveConfig(CurveNaming.NO_MARGIN, null))
                 pConfig.marginStrategies.forEachIndexed { mIdx, mc ->
-                    val uAbbr = modeAbbr(mc.upperRebalanceMode)
-                    val lAbbr = modeAbbr(mc.lowerRebalanceMode)
-                    val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
-                    else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
-                    curves.add(CurveConfig(label, mc))
+                    curves.add(CurveConfig(CurveNaming.margin(mIdx, mc), mc))
                 }
                 PortfolioCurveConfig(pConfig, curves, strategyLabels(pConfig))
             }

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR } from '@/lib/chartData'
+import { curveDisplayLabel, curveMetricDataKey, curveMetricLabel, curveSelectionKey } from '@/lib/curveNaming'
 import { BacktestCurve, BacktestResults, PALETTE } from '@/types/backtest'
 
 export type ActionMarker = {
@@ -111,8 +112,8 @@ export function buildStatsRows(results: BacktestResults): RebalanceStatsRow[] {
         actionCounts[point.type] = (actionCounts[point.type] ?? 0) + 1
       })
       return {
-        key: `${pi}-${ci}`,
-        label: `${portfolio.label} - ${curve.label}`,
+        key: curveSelectionKey(pi, ci),
+        label: curveDisplayLabel(portfolio.label, curve.label),
         color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length],
         stats: curve.stats,
         avgMargin: averageMarginUtilization(curve.marginPoints),
@@ -167,13 +168,13 @@ export function useVmTimingChartData(
     results.portfolios.forEach((portfolio, pi) => {
       const palette = PALETTE[pi % PALETTE.length]
       portfolio.curves.forEach((curve, ci) => {
-        const key = `${pi}-${ci}`
+        const key = curveSelectionKey(pi, ci)
         if (selected.size > 0 && !selected.has(key)) return
         if (!curve.vmTimingPoints?.length) return
 
         const baseColor = palette[ci % palette.length]
-        const capeKey = `vmCape${pi}-${ci}`
-        const factorKey = `vmFactor${pi}-${ci}`
+        const capeKey = curveMetricDataKey('vmCape', pi, ci)
+        const factorKey = curveMetricDataKey('vmFactor', pi, ci)
         const byDate = new Map(curve.vmTimingPoints.map(point => [point.date, point]))
         labels.forEach((date, i) => {
           const point = byDate.get(date)
@@ -182,11 +183,10 @@ export function useVmTimingChartData(
           rows[i][factorKey] = point.valueFactor
         })
 
-        const label = `${portfolio.label} - ${curve.label}`
-        datasets.push({ dataKey: capeKey, label: `${label} CAPE`, color: baseColor, yAxisId: 'cape' })
+        datasets.push({ dataKey: capeKey, label: curveMetricLabel(portfolio.label, curve.label, 'CAPE'), color: baseColor, yAxisId: 'cape' })
         datasets.push({
           dataKey: factorKey,
-          label: `${label} Value factor`,
+          label: curveMetricLabel(portfolio.label, curve.label, 'Value factor'),
           color: baseColor,
           yAxisId: 'factor',
           strokeDasharray: '5 4',

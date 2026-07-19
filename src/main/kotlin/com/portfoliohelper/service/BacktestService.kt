@@ -121,15 +121,13 @@ object BacktestService {
                     scheduledPortfolioRebalanceActionPoints(globalDates, pConfig.rebalanceStrategy)
                 curves.add(
                     CurveResult(
-                        "No Margin",
+                        CurveNaming.NO_MARGIN,
                         noMarginPoints,
                         noMarginStats,
                         actionPoints = noMarginActionPoints.takeIf { it.isNotEmpty() },
                     )
                 )
             }
-
-            fun modeAbbr(m: String) = HybridAllocStrategyRegistry.modeLabel(m)
 
             val marginCurves = pConfig.marginStrategies.indices.toList().parallelStream().map { mIdx ->
                 val mc = pConfig.marginStrategies[mIdx]
@@ -162,12 +160,8 @@ object BacktestService {
                     marginResult.upperTriggers, marginResult.lowerTriggers,
                     cashflows = externalCashflows,
                 )
-                val uAbbr = modeAbbr(mc.upperRebalanceMode)
-                val lAbbr = modeAbbr(mc.lowerRebalanceMode)
-                val label = if (uAbbr == lAbbr) "Margin ${mIdx + 1} ($uAbbr)"
-                else "Margin ${mIdx + 1} ($uAbbr↑/$lAbbr↓)"
                 CurveResult(
-                    label,
+                    CurveNaming.margin(mIdx, mc),
                     marginValuePoints,
                     marginStats,
                     marginUtilPoints,

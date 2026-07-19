@@ -7,6 +7,37 @@ import kotlin.test.assertTrue
 
 class BacktestModelsTest {
     @Test
+    fun curveNamingIncludesMarginPercentAndModes() {
+        assertEquals(CurveNaming.NO_MARGIN, "No Margin")
+        assertEquals(
+            "Margin 1 50% (Tgt Wt)",
+            CurveNaming.margin(
+                0,
+                MarginConfig(
+                    marginRatio = 0.5,
+                    marginSpread = 0.015,
+                    marginDeviationUpper = 0.05,
+                    marginDeviationLower = 0.05,
+                ),
+            ),
+        )
+        assertEquals(
+            "Margin 2 37.5% (Full\u2191/Cur Wt\u2193)",
+            CurveNaming.margin(
+                1,
+                MarginConfig(
+                    marginRatio = 0.375,
+                    marginSpread = 0.015,
+                    marginDeviationUpper = 0.05,
+                    marginDeviationLower = 0.05,
+                    upperRebalanceMode = MarginRebalanceMode.FULL_REBALANCE.name,
+                    lowerRebalanceMode = MarginRebalanceMode.CURRENT_WEIGHT.name,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun mergeWeightsKeepsNormalizedWeightsSumExactAfterDuplicateMerging() {
         val portfolio = PortfolioConfig(
             label = "test",

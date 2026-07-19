@@ -18,6 +18,7 @@ import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { getChartTheme } from '@/lib/chartTheme'
 import { scaleDash } from '@/lib/colorScheme'
+import { curveDisplayLabel, curveSelectionKey, percentileCurveLabel } from '@/lib/curveNaming'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import {
@@ -64,7 +65,7 @@ function getEffectiveCurves(data: MonteCarloResults, selected: Set<string>) {
   const result: { portfolio: { label: string; curves: McCurve[] }; pi: number; curve: McCurve; ci: number }[] = []
   data.portfolios.forEach((portfolio, pi) => {
     portfolio.curves.forEach((curve, ci) => {
-      if (selected.size === 0 || selected.has(`${pi}-${ci}`)) {
+      if (selected.size === 0 || selected.has(curveSelectionKey(pi, ci))) {
         result.push({ portfolio, pi, curve, ci })
       }
     })
@@ -312,7 +313,7 @@ export default function MonteCarloPage() {
       PERCENTILE_LIST.forEach((p, idx) => {
         const pp = curve.percentilePaths.find(x => x.percentile === p)
         if (!pp) return
-        const key = `P${p}`
+        const key = percentileCurveLabel(p)
         pp.points.forEach((val, i) => { rows[i][key] = val })
         datasets.push({
           label: key,
@@ -325,7 +326,7 @@ export default function MonteCarloPage() {
         const palette = PALETTE[pi % PALETTE.length]
         const pp = curve.percentilePaths.find(x => x.percentile === percentile)
         if (!pp) return
-        const key = `${portfolio.label} \u2013 ${curve.label}`
+        const key = curveDisplayLabel(portfolio.label, curve.label)
         pp.points.forEach((val, i) => { rows[i][key] = val })
         datasets.push({
           label: key,
@@ -657,7 +658,7 @@ export default function MonteCarloPage() {
 
   const allKeys = useMemo(
     () => results
-      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
+      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci)))
       : [],
     [results],
   )
@@ -846,14 +847,14 @@ export default function MonteCarloPage() {
               <tbody>
                 {results.portfolios.flatMap((portfolio, pi) =>
                   portfolio.curves.map((curve, ci) => {
-                    const key = `${pi}-${ci}`
+                    const key = curveSelectionKey(pi, ci)
                     const pctIdx = PERCENTILE_LIST.indexOf(percentile)
                     const pp = curve.percentilePaths.find(p => p.percentile === percentile)
                     if (!pp) return null
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
-                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>{portfolio.label} – {curve.label}</td>
+                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>{curveDisplayLabel(portfolio.label, curve.label)}</td>
                         {MC_COLS.map(c => <td key={c.metric}>{cellValue(curve, pctIdx, c.metric, pp)}</td>)}
                       </tr>
                     )
@@ -866,7 +867,7 @@ export default function MonteCarloPage() {
                   return (
                     <>
                       <tr className="mc-pct-separator">
-                        <td colSpan={totalCols}>All percentiles – <strong>{portfolio.label} – {curve.label}</strong></td>
+                        <td colSpan={totalCols}>All percentiles – <strong>{curveDisplayLabel(portfolio.label, curve.label)}</strong></td>
                       </tr>
                       {PERCENTILE_LIST.map((p, idx) => {
                         const pp = curve.percentilePaths.find(x => x.percentile === p)
@@ -874,7 +875,7 @@ export default function MonteCarloPage() {
                         return (
                           <tr key={p} className={p === percentile ? 'mc-active-pct' : ''}>
                             <td />
-                            <td style={{ color: PERCENTILE_COLORS[idx], fontWeight: p === 50 ? 'bold' : 'normal' }}>P{p}</td>
+                            <td style={{ color: PERCENTILE_COLORS[idx], fontWeight: p === 50 ? 'bold' : 'normal' }}>{percentileCurveLabel(p)}</td>
                             {MC_COLS.map(c => <td key={c.metric}>{cellValue(curve, idx, c.metric, pp)}</td>)}
                           </tr>
                         )

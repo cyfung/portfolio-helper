@@ -36,6 +36,14 @@ import {
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
 import {
+  REAL_CURVE_KEY_BY_LABEL,
+  REAL_CURVE_KEYS,
+  REAL_CURVE_LABELS,
+  curveDataKey,
+  curveDisplayLabel,
+  curveSelectionKey,
+} from '@/lib/curveNaming'
+import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
@@ -254,12 +262,6 @@ interface BacktestViewState {
   results: BacktestResults | null
   realData: RealPortfolioData | null
   selected: Set<string>
-  submittedPortfolios: SubmittedBacktestPortfolio[]
-}
-
-interface SubmittedBacktestPortfolio {
-  includeNoMargin?: boolean
-  marginStrategies?: { marginRatio?: number | null }[]
 }
 
 function realPortfolioDataFromResponse(d: Partial<RealPortfolioData>, navScaleFactor: number): RealPortfolioData {
@@ -380,9 +382,8 @@ export default function BacktestPage() {
     results: null,
     realData: null,
     selected: new Set(),
-    submittedPortfolios: [],
   })
-  const { results, realData, selected, submittedPortfolios } = viewState
+  const { results, realData, selected } = viewState
   const [logScale, setLogScale]       = useState(false)
   const [scaleToNav, setScaleToNav]   = useState(true)
   const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
@@ -584,16 +585,16 @@ export default function BacktestPage() {
 
   const backtestKeys = useMemo(
     () => results
-      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
+      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci)))
       : [],
     [results],
   )
   const realKeys: string[] = useMemo(
     () => realSlug && realData ? [
-      ...(realData.navSeries.length      ? ['real-nav'] : []),
-      ...(realData.twrSeries.length      ? ['real-twr'] : []),
-      ...(realData.mwrSeries    != null  ? ['real-mwr'] : []),
-      ...(realData.positionSeries != null ? ['real-pos'] : []),
+      ...(realData.navSeries.length      ? [REAL_CURVE_KEYS.nav] : []),
+      ...(realData.twrSeries.length      ? [REAL_CURVE_KEYS.twr] : []),
+      ...(realData.mwrSeries    != null  ? [REAL_CURVE_KEYS.mwr] : []),
+      ...(realData.positionSeries != null ? [REAL_CURVE_KEYS.position] : []),
     ] : [],
     [realData, realSlug],
   )
@@ -613,46 +614,13 @@ export default function BacktestPage() {
     if (!Number.isFinite(pi) || !Number.isFinite(ci)) return null
     const curve = results.portfolios[pi]?.curves[ci]
     if (!curve?.actionPoints?.length) return null
-    return { dataKey: `p${pi}-c${ci}`, curve }
+    return { dataKey: curveDataKey(pi, ci), curve }
   }, [results, selected])
-
-  const REAL_LABEL_KEY: Record<string, string> = {
-    'Real - NAV':      'real-nav',
-    'Real - TWR':      'real-twr',
-    'Real - MWR':      'real-mwr',
-    'Real - Position': 'real-pos',
-  }
 
   const theme  = useChartTheme()
   const { isDark, gridColor, textColor } = theme
 
-  const displayCurveLabel = useCallback((portfolioIndex: number, curveIndex: number, label: string) => {
-    const submitted = submittedPortfolios[portfolioIndex]
-    const noMarginOffset = submitted?.includeNoMargin === false ? 0 : 1
-    const marginIndex = curveIndex - noMarginOffset
-    const marginRatio = submitted?.marginStrategies?.[marginIndex]?.marginRatio
-    if (marginIndex < 0 || marginRatio == null || !Number.isFinite(marginRatio) || /\d+(?:\.\d+)?%/.test(label)) {
-      return label
-    }
-
-    const marginPct = marginRatio * 100
-    const formattedMargin = `${Number.isInteger(marginPct) ? marginPct.toFixed(0) : marginPct.toFixed(2).replace(/\.?0+$/, '')}%`
-    return label.replace(/^(Margin\s+\d+)/, `$1 ${formattedMargin}`)
-  }, [submittedPortfolios])
-
-  const displayResults = useMemo(() => {
-    if (!results) return null
-    return {
-      ...results,
-      portfolios: results.portfolios.map((portfolio, pi) => ({
-        ...portfolio,
-        curves: portfolio.curves.map((curve, ci) => ({
-          ...curve,
-          label: displayCurveLabel(pi, ci, curve.label),
-        })),
-      })),
-    }
-  }, [displayCurveLabel, results])
+  const displayResults = results
 
   // ── Computed chart data ───────────────────────────────────────────────────
 
@@ -688,7 +656,7 @@ export default function BacktestPage() {
     displayResults.portfolios.forEach((portfolio, pi) => {
       portfolio.curves.forEach((curve, ci) => {
         const factor = shouldScaleToNav ? navStart / (curve.points[0]?.value ?? 1) : 1
-        curveScaleFactors.set(`${pi}-${ci}`, factor)
+        curveScaleFactors.set(curveSelectionKey(pi, ci), factor)
       })
     })
 
@@ -727,16 +695,16 @@ export default function BacktestPage() {
         if (ri == null) continue
 
         const nav = realNavSeries[ri]
-        if (nav != null) row['Real - NAV'] = +nav.toFixed(4)
+        if (nav != null) row[REAL_CURVE_LABELS[REAL_CURVE_KEYS.nav]] = +nav.toFixed(4)
 
         const twr = realData.twrSeries[ri]
-        if (twr != null) row['Real - TWR'] = +(refStart * (1 + twr) / (1 + twrBase)).toFixed(4)
+        if (twr != null) row[REAL_CURVE_LABELS[REAL_CURVE_KEYS.twr]] = +(refStart * (1 + twr) / (1 + twrBase)).toFixed(4)
 
         const mwr = realData.mwrSeries?.[ri]
-        if (mwr != null) row['Real - MWR'] = +(refStart * (1 + mwr) / (1 + mwrBase)).toFixed(4)
+        if (mwr != null) row[REAL_CURVE_LABELS[REAL_CURVE_KEYS.mwr]] = +(refStart * (1 + mwr) / (1 + mwrBase)).toFixed(4)
 
         const pos = realData.positionSeries?.[ri]
-        if (pos != null) row['Real - Position'] = +(refStart * (1 + pos) / (1 + posBase)).toFixed(4)
+        if (pos != null) row[REAL_CURVE_LABELS[REAL_CURVE_KEYS.position]] = +(refStart * (1 + pos) / (1 + posBase)).toFixed(4)
       }
     }
 
@@ -791,21 +759,21 @@ export default function BacktestPage() {
       }
 
       if (realNavSeries.length)
-        injectDDRTR(realNavSeries, 0, 'Real - NAV', ac[0])
+        injectDDRTR(realNavSeries, 0, REAL_CURVE_LABELS[REAL_CURVE_KEYS.nav], ac[0])
       if (firstOverlapRealIdx >= 0 && realData.twrSeries.length)
         injectDDRTR(
           realData.twrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + twrBase)),
-          firstOverlapRealIdx, 'Real - TWR', ac[1], '8 4',
+          firstOverlapRealIdx, REAL_CURVE_LABELS[REAL_CURVE_KEYS.twr], ac[1], '8 4',
         )
       if (firstOverlapRealIdx >= 0 && realData.mwrSeries != null)
         injectDDRTR(
           realData.mwrSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + mwrBase)),
-          firstOverlapRealIdx, 'Real - MWR', ac[2], '4 3',
+          firstOverlapRealIdx, REAL_CURVE_LABELS[REAL_CURVE_KEYS.mwr], ac[2], '4 3',
         )
       if (firstOverlapRealIdx >= 0 && realData.positionSeries != null)
         injectDDRTR(
           realData.positionSeries.slice(firstOverlapRealIdx).map(v => refStart * (1 + v) / (1 + posBase)),
-          firstOverlapRealIdx, 'Real - Position', ac[3],
+          firstOverlapRealIdx, REAL_CURVE_LABELS[REAL_CURVE_KEYS.position], ac[3],
         )
     }
 
@@ -892,13 +860,12 @@ export default function BacktestPage() {
         } catch { newRealData = null }
       }
 
-      const defaultKeys = data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => `${pi}-${ci}`))
-      if (newRealData?.twrSeries?.length) defaultKeys.push('real-twr')
+      const defaultKeys = data.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci)))
+      if (newRealData?.twrSeries?.length) defaultKeys.push(REAL_CURVE_KEYS.twr)
       setViewState({
         results: data,
         realData: newRealData,
         selected: new Set(defaultKeys),
-        submittedPortfolios: portfolios,
       })
     } catch (e: unknown) {
       setError('Request failed: ' + errorMessage(e))
@@ -1144,7 +1111,7 @@ export default function BacktestPage() {
 
   const shouldScaleToNav = chartData?.shouldScaleToNav ?? false
   const showNavScaleBtn  = !!realSlug && (chartData?.navStart ?? 0) > 0
-  const showNavLine      = !!realSlug && !!(realData?.navSeries.length) && showLine('real-nav')
+  const showNavLine      = !!realSlug && !!(realData?.navSeries.length) && showLine(REAL_CURVE_KEYS.nav)
   // NAV uses a secondary right axis only when not scaling (values are in different dollar range)
   const navSecondAxis    = showNavLine && !shouldScaleToNav
   const chartRightMargin = navSecondAxis ? 80 : 16
@@ -1156,10 +1123,10 @@ export default function BacktestPage() {
       .forEach(ds => { if (!map.has(ds.label)) map.set(ds.label, { color: ds.color, strokeWidth: ds.strokeWidth ?? 2, strokeDasharray: ds.strokeDasharray || undefined }) })
     // Standalone real series rendered separately — include their exact dash/width
     const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
-    map.set('Real - NAV',      { color: ac[0], strokeWidth: 2 })
-    map.set('Real - TWR',      { color: ac[1], strokeWidth: 2, strokeDasharray: '8 4' })
-    map.set('Real - MWR',      { color: ac[2], strokeWidth: 2, strokeDasharray: '4 3' })
-    map.set('Real - Position', { color: ac[3], strokeWidth: 2 })
+    map.set(REAL_CURVE_LABELS[REAL_CURVE_KEYS.nav],      { color: ac[0], strokeWidth: 2 })
+    map.set(REAL_CURVE_LABELS[REAL_CURVE_KEYS.twr],      { color: ac[1], strokeWidth: 2, strokeDasharray: '8 4' })
+    map.set(REAL_CURVE_LABELS[REAL_CURVE_KEYS.mwr],      { color: ac[2], strokeWidth: 2, strokeDasharray: '4 3' })
+    map.set(REAL_CURVE_LABELS[REAL_CURVE_KEYS.position], { color: ac[3], strokeWidth: 2 })
     return map
   }, [chartData, isDark])
 
@@ -1368,7 +1335,7 @@ export default function BacktestPage() {
               <tbody>
                 {displayResults.portfolios.flatMap((portfolio, pi) =>
                   portfolio.curves.map((curve, ci) => {
-                    const key    = `${pi}-${ci}`
+                    const key    = curveSelectionKey(pi, ci)
                     const s      = curve.stats
                     const factor = chartData.curveScaleFactors.get(key) ?? 1
                     const avgMargin = averageMarginUtilization(curve.marginPoints)
@@ -1378,7 +1345,7 @@ export default function BacktestPage() {
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
-                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>{portfolio.label} – {curve.label}</td>
+                        <td style={{ color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length] }}>{curveDisplayLabel(portfolio.label, curve.label)}</td>
                         <td>{money(s.endingValue * factor)}</td>
                         <td>{pct(s.cagr)}</td>
                         <td>{pct(s.maxDrawdown)}</td>
@@ -1402,10 +1369,10 @@ export default function BacktestPage() {
                   const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
                   return (
                     <>
-                      {realStatRow('real-nav', 'Real - NAV',      rs.nav, ac[0], rs.navAvgMargin)}
-                      {realStatRow('real-twr', 'Real - TWR',      rs.twr, ac[1])}
-                      {rs.mwr && realStatRow('real-mwr', 'Real - MWR',      rs.mwr, ac[2])}
-                      {rs.pos && realStatRow('real-pos', 'Real - Position', rs.pos, ac[3])}
+                      {realStatRow(REAL_CURVE_KEYS.nav, REAL_CURVE_LABELS[REAL_CURVE_KEYS.nav], rs.nav, ac[0], rs.navAvgMargin)}
+                      {realStatRow(REAL_CURVE_KEYS.twr, REAL_CURVE_LABELS[REAL_CURVE_KEYS.twr], rs.twr, ac[1])}
+                      {rs.mwr && realStatRow(REAL_CURVE_KEYS.mwr, REAL_CURVE_LABELS[REAL_CURVE_KEYS.mwr], rs.mwr, ac[2])}
+                      {rs.pos && realStatRow(REAL_CURVE_KEYS.position, REAL_CURVE_LABELS[REAL_CURVE_KEYS.position], rs.pos, ac[3])}
                     </>
                   )
                 })()}
@@ -1502,10 +1469,10 @@ export default function BacktestPage() {
                   const ac = isDark ? ACCENT_DARK : ACCENT_LIGHT
                   return (
                     <>
-                      {showLine('real-nav') && (
+                      {showLine(REAL_CURVE_KEYS.nav) && (
                         <Line
                           yAxisId={shouldScaleToNav ? 'main' : 'nav-right'}
-                          dataKey="Real - NAV"
+                          dataKey={REAL_CURVE_LABELS[REAL_CURVE_KEYS.nav]}
                           stroke={ac[0]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1516,10 +1483,10 @@ export default function BacktestPage() {
                           type="monotone"
                         />
                       )}
-                      {showLine('real-twr') && (
+                      {showLine(REAL_CURVE_KEYS.twr) && (
                         <Line
                           yAxisId="main"
-                          dataKey="Real - TWR"
+                          dataKey={REAL_CURVE_LABELS[REAL_CURVE_KEYS.twr]}
                           stroke={ac[1]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1530,10 +1497,10 @@ export default function BacktestPage() {
                           type="monotone"
                         />
                       )}
-                      {realData.mwrSeries != null && showLine('real-mwr') && (
+                      {realData.mwrSeries != null && showLine(REAL_CURVE_KEYS.mwr) && (
                         <Line
                           yAxisId="main"
-                          dataKey="Real - MWR"
+                          dataKey={REAL_CURVE_LABELS[REAL_CURVE_KEYS.mwr]}
                           stroke={ac[2]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1544,10 +1511,10 @@ export default function BacktestPage() {
                           type="monotone"
                         />
                       )}
-                      {realData.positionSeries != null && showLine('real-pos') && (
+                      {realData.positionSeries != null && showLine(REAL_CURVE_KEYS.position) && (
                         <Line
                           yAxisId="main"
-                          dataKey="Real - Position"
+                          dataKey={REAL_CURVE_LABELS[REAL_CURVE_KEYS.position]}
                           stroke={ac[3]}
                           strokeWidth={2}
                           strokeDasharray={scaleDash('4 2', pixelsPerPoint)}
@@ -1598,7 +1565,7 @@ export default function BacktestPage() {
                 <Tooltip content={makeTooltip(v => (v * 100).toFixed(2) + '%')} />
                 <Legend content={renderLegend} />
                 {chartData.ddData.datasets
-                  .filter(ds => { const k = REAL_LABEL_KEY[ds.label]; return !k || showLine(k) })
+                  .filter(ds => { const k = REAL_CURVE_KEY_BY_LABEL[ds.label]; return !k || showLine(k) })
                   .map(ds => (
                     <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
@@ -1631,7 +1598,7 @@ export default function BacktestPage() {
                 <Tooltip content={makeTooltip(v => v.toFixed(2) + 'x')} />
                 <Legend content={renderLegend} />
                 {chartData.rtrData.datasets
-                  .filter(ds => { const k = REAL_LABEL_KEY[ds.label]; return !k || showLine(k) })
+                  .filter(ds => { const k = REAL_CURVE_KEY_BY_LABEL[ds.label]; return !k || showLine(k) })
                   .map(ds => (
                     <Line key={ds.dataKey} {...commonLineProps} dataKey={ds.dataKey} name={ds.label} stroke={ds.color} strokeWidth={ds.strokeWidth ?? 2} strokeDasharray={ds.strokeDasharray} />
                   ))}
