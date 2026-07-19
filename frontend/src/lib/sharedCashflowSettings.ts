@@ -28,8 +28,8 @@ export function readSharedCashflowSettings(): CashflowFormState | null {
 export function cashflowStateFromSettingsWithSharedCache(settings: unknown): CashflowFormState {
   const pageSettings = settings && typeof settings === 'object' ? settings : {}
   return normalizeCashflowState({
-    ...cashflowStateFromSettings(pageSettings),
     ...(readSharedCashflowSettings() ?? {}),
+    ...cashflowStateFromSettings(pageSettings),
   })
 }
 

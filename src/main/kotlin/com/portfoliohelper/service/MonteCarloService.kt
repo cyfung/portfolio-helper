@@ -18,6 +18,17 @@ object MonteCarloService {
     private val lastResultState = AtomicReference<MonteCarloResult?>(null)
     private val lastErrorState = AtomicReference<String?>(null)
 
+    private fun BacktestStats.toPortfolioStats(): PortfolioStats =
+        PortfolioStats(
+            cagr,
+            maxDrawdown,
+            sharpe,
+            ulcerIndex,
+            upi,
+            annualVolatility,
+            longestDrawdownDays,
+        )
+
     fun getProgress(): MonteCarloProgress = progressState.get()
     fun getRunState(): MonteCarloRunState =
         MonteCarloRunState(progressState.get(), lastResultState.get(), lastErrorState.get())
@@ -334,7 +345,12 @@ object MonteCarloService {
                         request.startingBalance,
                         request.cashflow,
                     )
-                    val stats = MonteCarloIndexedSimulation.computeStats(values, years, rfAnnualized)
+                    val stats = MonteCarloIndexedSimulation.computeStats(
+                        values,
+                        years,
+                        rfAnnualized,
+                        MonteCarloIndexedSimulation.cashflowAmounts(indexedPath, request.cashflow),
+                    )
                     allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                     ci++
                 }
@@ -347,8 +363,7 @@ object MonteCarloService {
                     )
                     val strategyCurves = simulateAttachedStrategies(config.portfolio, path, request.startingBalance, request.cashflow)
                     strategyCurves.forEach { curve ->
-                        val values = curve.points.map { it.value }
-                        val stats = computeStats(values, years, rfAnnualized)
+                        val stats = curve.stats.toPortfolioStats()
                         allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                         ci++
                     }
@@ -491,10 +506,15 @@ object MonteCarloService {
                             request.cashflow,
                         )
                         values = valueArray.toList()
-                        stats = MonteCarloIndexedSimulation.computeStats(valueArray, years, rfAnnualized)
+                        stats = MonteCarloIndexedSimulation.computeStats(
+                            valueArray,
+                            years,
+                            rfAnnualized,
+                            MonteCarloIndexedSimulation.cashflowAmounts(path, request.cashflow),
+                        )
                     } else {
                         val strategyIndex = ci - config.simpleCurves.size
-                        values = simulateAttachedStrategies(
+                        val curve = simulateAttachedStrategies(
                             config.portfolio,
                             MonteCarloIndexedSimulation.toAssembledPath(
                                 path,
@@ -504,8 +524,9 @@ object MonteCarloService {
                             ),
                             request.startingBalance,
                             request.cashflow,
-                        )[strategyIndex].points.map { it.value }
-                        stats = computeStats(values, years, rfAnnualized)
+                        )[strategyIndex]
+                        values = curve.points.map { it.value }
+                        stats = curve.stats.toPortfolioStats()
                     }
                     val endValue = values.last()
                     val done = resultPathsCompleted.incrementAndGet()

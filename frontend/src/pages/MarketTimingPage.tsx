@@ -187,7 +187,7 @@ export default function MarketTimingPage() {
     let active = true
     let retryTimer: number | null = null
     const loadSettings = () => {
-      fetch('/api/backtest/settings')
+      fetch('/api/market-timing/settings')
         .then(r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           return r.json()

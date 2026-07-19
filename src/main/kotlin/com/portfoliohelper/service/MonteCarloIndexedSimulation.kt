@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -95,11 +96,32 @@ internal object MonteCarloIndexedSimulation {
             simulateWithMargin(runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflow)
         }
 
-    fun computeStats(values: DoubleArray, years: Double, rfAnnualized: Double): PortfolioStats {
+    fun cashflowAmounts(path: MonteCarloIndexedPath, cashflow: CashflowConfig?): DoubleArray {
+        val amounts = DoubleArray(path.returnIndexes.size + 1)
+        if (cashflow == null) return amounts
+
+        var tradingDayCount = 0
+        for (dayIndex in path.returnIndexes.indices) {
+            val returnIndex = path.returnIndexes[dayIndex]
+            if (returnIndex >= 0) {
+                tradingDayCount++
+                if (isCashflowDay(cashflow.frequency, tradingDayCount)) {
+                    amounts[dayIndex + 1] = cashflow.amount
+                }
+            }
+        }
+        return amounts
+    }
+
+    fun computeStats(
+        values: DoubleArray,
+        years: Double,
+        rfAnnualized: Double,
+        cashflows: DoubleArray = DoubleArray(0)
+    ): PortfolioStats {
         if (values.size < 2) return PortfolioStats(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
 
-        val cagr = if (years > 0 && values.last() > 0)
-            (values.last() / values.first()).pow(1.0 / years) - 1.0 else 0.0
+        val cagr = cashflowAdjustedCagr(values, years, cashflows)
 
         var peak = values[0]
         var maxDD = 0.0
@@ -114,7 +136,7 @@ internal object MonteCarloIndexedSimulation {
         for (i in 1 until values.size) {
             val prev = values[i - 1]
             if (prev <= 0.0) continue
-            val r = values[i] / prev - 1.0
+            val r = (values[i] - cashflows.getOrElse(i) { 0.0 }) / prev - 1.0
             n++
             val delta = r - mean
             mean += delta / n
@@ -153,6 +175,60 @@ internal object MonteCarloIndexedSimulation {
         longestDD = max(longestDD, ddLen)
 
         return PortfolioStats(cagr, maxDD, sharpe, ulcerIndex, upi, annualVolatility, longestDD)
+    }
+
+    private fun cashflowAdjustedCagr(values: DoubleArray, years: Double, cashflows: DoubleArray): Double {
+        if (years <= 0.0 || values.first() <= 0.0) return 0.0
+        val hasCashflows = cashflows.any { it.isFinite() && abs(it) > 1e-9 }
+        if (!hasCashflows) {
+            return if (values.last() > 0.0) (values.last() / values.first()).pow(1.0 / years) - 1.0 else 0.0
+        }
+
+        val signedFlows = mutableListOf<Pair<Double, Double>>()
+        signedFlows += 0.0 to -values.first()
+        val lastIndex = values.lastIndex.coerceAtLeast(1)
+        for (i in 1 until values.size) {
+            val amount = cashflows.getOrElse(i) { 0.0 }
+            if (amount.isFinite() && abs(amount) > 1e-9) {
+                signedFlows += (years * i / lastIndex) to -amount
+            }
+        }
+        signedFlows += years to values.last()
+
+        fun npv(rate: Double): Double {
+            val base = 1.0 + rate
+            if (base <= 0.0) return Double.NaN
+            return signedFlows.sumOf { (t, amount) -> amount / base.pow(t) }
+        }
+
+        var low = -0.999999999
+        var high = 1.0
+        var lowValue = npv(low)
+        var highValue = npv(high)
+        var bracketed = lowValue.isFinite() && highValue.isFinite() && lowValue * highValue <= 0.0
+        repeat(80) {
+            if (bracketed) return@repeat
+            high = (high + 1.0) * 2.0 - 1.0
+            highValue = npv(high)
+            bracketed = lowValue.isFinite() && highValue.isFinite() && lowValue * highValue <= 0.0
+        }
+        if (!bracketed) return 0.0
+
+        repeat(120) {
+            val mid = (low + high) / 2.0
+            val midValue = npv(mid)
+            if (!midValue.isFinite()) {
+                low = mid
+                lowValue = midValue
+            } else if (lowValue * midValue <= 0.0) {
+                high = mid
+                highValue = midValue
+            } else {
+                low = mid
+                lowValue = midValue
+            }
+        }
+        return (low + high) / 2.0
     }
 
     private fun simulateNoMargin(

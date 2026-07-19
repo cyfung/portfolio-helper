@@ -35,33 +35,108 @@ import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.milliseconds
 
+private const val commonBacktestSettingsKey = "backtest.common-settings"
+private const val backtestSettingsKey = "backtest.settings"
+private const val monteCarloSettingsKey = "backtest.mc-settings"
+private const val marketTimingSettingsKey = "backtest.market-timing-settings"
+private const val rebalanceStrategySettingsKey = "backtest.rebalance-strategy-settings"
+
+private val commonScenarioSettingsKeys = setOf(
+    "fromDate",
+    "toDate",
+    "startingBalance",
+    "cashflow",
+)
+
+private fun parseSettingsObject(raw: String?): JsonObject =
+    raw?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
+        ?: JsonObject(emptyMap())
+
+private fun commonScenarioSettingsFrom(vararg sources: JsonObject): JsonObject =
+    buildJsonObject {
+        sources.forEach { source ->
+            source.forEach { (k, v) ->
+                if (k in commonScenarioSettingsKeys) put(k, v)
+            }
+        }
+    }
+
+private fun legacyPageSettings(settingsKey: String, legacyBacktestSettings: JsonObject): JsonObject {
+    val keys = when (settingsKey) {
+        marketTimingSettingsKey -> marketTimingSettingsKeys
+        rebalanceStrategySettingsKey -> rebalanceStrategySettingsKeys
+        else -> emptySet()
+    }
+    return buildJsonObject {
+        legacyBacktestSettings.forEach { (k, v) ->
+            if (k in keys) put(k, v)
+        }
+    }
+}
+
+internal fun mergedCommonScenarioSettings(
+    existingCommon: JsonObject,
+    json: JsonObject,
+): JsonObject =
+    buildJsonObject {
+        existingCommon.forEach { (k, v) ->
+            if (k in commonScenarioSettingsKeys) put(k, v)
+        }
+        json.forEach { (k, v) ->
+            if (k in commonScenarioSettingsKeys) put(k, v)
+        }
+    }
+
 private fun loadBacktestSettings(settingsKey: String): String = transaction {
     fun get(k: String) = GlobalSettingsTable.selectAll()
         .where { GlobalSettingsTable.key eq k }
         .firstOrNull()?.get(GlobalSettingsTable.value)
 
+    val legacyBacktestSettings = parseSettingsObject(get(backtestSettingsKey))
+    val storedSettings = parseSettingsObject(get(settingsKey))
     val settings =
-        get(settingsKey)?.let { Json.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap())
+        if (storedSettings.isNotEmpty()) storedSettings
+        else legacyPageSettings(settingsKey, legacyBacktestSettings)
+    val storedCommonSettings = parseSettingsObject(get(commonBacktestSettingsKey))
+    val commonSettings =
+        if (storedCommonSettings.isNotEmpty()) storedCommonSettings
+        else commonScenarioSettingsFrom(legacyBacktestSettings, settings)
     val portfolios =
         get("backtest.portfolios")?.let { Json.parseToJsonElement(it) } ?: JsonArray(emptyList())
     buildJsonObject {
-        settings.forEach { (k, v) -> put(k, v) }; put(
-        "portfolios",
-        portfolios
-    )
+        settings.forEach { (k, v) ->
+            if (k !in commonScenarioSettingsKeys) put(k, v)
+        }
+        commonSettings.forEach { (k, v) -> put(k, v) }
+        put("portfolios", portfolios)
     }.toString()
 }
 
 private fun saveBacktestSettings(json: JsonObject, settingsKey: String) = transaction {
+    fun get(k: String) = GlobalSettingsTable.selectAll()
+        .where { GlobalSettingsTable.key eq k }
+        .firstOrNull()?.get(GlobalSettingsTable.value)
     fun upsert(k: String, v: String) = GlobalSettingsTable.upsert {
         it[GlobalSettingsTable.key] = k; it[GlobalSettingsTable.value] = v
     }
     upsert("backtest.portfolios", settingsPortfoliosForSave(json).toString())
     upsert(
+        commonBacktestSettingsKey,
+        mergedCommonScenarioSettings(
+            parseSettingsObject(get(commonBacktestSettingsKey))
+                .takeIf { it.isNotEmpty() }
+                ?: commonScenarioSettingsFrom(parseSettingsObject(get(backtestSettingsKey))),
+            json,
+        ).toString()
+    )
+    upsert(
         settingsKey,
         buildJsonObject {
+            parseSettingsObject(get(settingsKey)).forEach { (k, v) ->
+                if (k !in commonScenarioSettingsKeys && k != "portfolios" && k !in settingsOnlyPortfolioKeys) put(k, v)
+            }
             json.forEach { (k, v) ->
-                if (k != "portfolios" && k !in settingsOnlyPortfolioKeys) put(k, v)
+                if (k !in commonScenarioSettingsKeys && k != "portfolios" && k !in settingsOnlyPortfolioKeys) put(k, v)
             }
         }.toString()
     )
@@ -108,12 +183,7 @@ private val defaultTaxDragInputsJson = buildJsonObject {
     put("commonPeriodTickers", "")
 }
 
-private val firstPortfolioCommonSettingsKeys = setOf("fromDate", "toDate")
-
-private val backtestSettingsKeys = setOf(
-    "startingBalance",
-    "cashflow",
-)
+private val backtestSettingsKeys = emptySet<String>()
 
 private val marketTimingSettingsKeys = setOf(
     "drawdownConfigs",
@@ -125,8 +195,6 @@ private val marketTimingSettingsKeys = setOf(
 )
 
 private val rebalanceStrategySettingsKeys = setOf(
-    "startingBalance",
-    "cashflow",
     "strategyStates",
     "includeActionDiagnostics",
 )
@@ -147,15 +215,14 @@ internal fun mergedFirstPortfolioSettings(
     json: JsonObject,
     pageSettingsKeys: Set<String>,
 ): JsonObject {
-    val replacedKeys = firstPortfolioCommonSettingsKeys + pageSettingsKeys
     return buildJsonObject {
         existingSettings.forEach { (k, v) ->
-            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings" && k !in settingsOnlyPortfolioKeys) {
+            if (k !in commonScenarioSettingsKeys && k !in pageSettingsKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings" && k !in settingsOnlyPortfolioKeys) {
                 put(k, v)
             }
         }
         json.forEach { (k, v) ->
-            if (k in replacedKeys) put(k, v)
+            if (k in pageSettingsKeys && k !in commonScenarioSettingsKeys) put(k, v)
         }
     }
 }
@@ -164,15 +231,14 @@ internal fun mergedBacktestSettings(
     existingSettings: JsonObject,
     json: JsonObject,
 ): JsonObject {
-    val replacedKeys = firstPortfolioCommonSettingsKeys + backtestSettingsKeys
     return buildJsonObject {
         existingSettings.forEach { (k, v) ->
-            if (k !in replacedKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings" && k !in settingsOnlyPortfolioKeys) {
+            if (k !in commonScenarioSettingsKeys && k !in backtestSettingsKeys && k != "portfolio" && k != "portfolios" && k != "saveSettings" && k !in settingsOnlyPortfolioKeys) {
                 put(k, v)
             }
         }
         json.forEach { (k, v) ->
-            if (k in replacedKeys) put(k, v)
+            if (k in backtestSettingsKeys && k !in commonScenarioSettingsKeys) put(k, v)
         }
     }
 }
@@ -187,10 +253,18 @@ private fun saveMergedBacktestSettings(json: JsonObject, settingsKey: String) = 
 
     upsert("backtest.portfolios", settingsPortfoliosForSave(json).toString())
     upsert(
+        commonBacktestSettingsKey,
+        mergedCommonScenarioSettings(
+            parseSettingsObject(get(commonBacktestSettingsKey))
+                .takeIf { it.isNotEmpty() }
+                ?: commonScenarioSettingsFrom(parseSettingsObject(get(backtestSettingsKey))),
+            json,
+        ).toString()
+    )
+    upsert(
         settingsKey,
         mergedBacktestSettings(
-            get(settingsKey)?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
-                ?: JsonObject(emptyMap()),
+            parseSettingsObject(get(settingsKey)),
             json,
         ).toString()
     )
@@ -223,10 +297,18 @@ private fun saveBacktestSettingsFirstPortfolio(
         )
     }
     upsert(
+        commonBacktestSettingsKey,
+        mergedCommonScenarioSettings(
+            parseSettingsObject(get(commonBacktestSettingsKey))
+                .takeIf { it.isNotEmpty() }
+                ?: commonScenarioSettingsFrom(parseSettingsObject(get(backtestSettingsKey))),
+            json,
+        ).toString()
+    )
+    upsert(
         settingsKey,
         mergedFirstPortfolioSettings(
-            get(settingsKey)?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
-                ?: JsonObject(emptyMap()),
+            parseSettingsObject(get(settingsKey)),
             json,
             pageSettingsKeys,
         ).toString()
@@ -1222,7 +1304,7 @@ fun Application.configureRouting() {
 
         get("/api/backtest/settings") {
             call.respondText(
-                loadBacktestSettings("backtest.settings"),
+                loadBacktestSettings(backtestSettingsKey),
                 ContentType.Application.Json
             )
         }
@@ -1230,7 +1312,7 @@ fun Application.configureRouting() {
         post("/api/backtest/settings") {
             val body = call.receiveText()
             val json = Json.parseToJsonElement(body).jsonObject
-            saveMergedBacktestSettings(json, "backtest.settings")
+            saveMergedBacktestSettings(json, backtestSettingsKey)
             call.respondOk()
         }
 
@@ -1243,7 +1325,7 @@ fun Application.configureRouting() {
 
         get("/api/montecarlo/settings") {
             call.respondText(
-                loadBacktestSettings("backtest.mc-settings"),
+                loadBacktestSettings(monteCarloSettingsKey),
                 ContentType.Application.Json
             )
         }
@@ -1251,7 +1333,7 @@ fun Application.configureRouting() {
         post("/api/montecarlo/settings") {
             val body = call.receiveText()
             val json = Json.parseToJsonElement(body).jsonObject
-            saveBacktestSettings(json, "backtest.mc-settings")
+            saveBacktestSettings(json, monteCarloSettingsKey)
             call.respondOk()
         }
 
@@ -1296,7 +1378,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveMergedBacktestSettings(json, "backtest.settings") }
+                    runCatching { saveMergedBacktestSettings(json, backtestSettingsKey) }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -1326,7 +1408,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings", marketTimingSettingsKeys) }
+                    runCatching { saveBacktestSettingsFirstPortfolio(json, marketTimingSettingsKey, marketTimingSettingsKeys) }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -1383,10 +1465,17 @@ fun Application.configureRouting() {
             }
         }
 
+        get("/api/market-timing/settings") {
+            call.respondText(
+                loadBacktestSettings(marketTimingSettingsKey),
+                ContentType.Application.Json
+            )
+        }
+
         post("/api/market-timing/settings") {
             val body = call.receiveText()
             val json = Json.parseToJsonElement(body).jsonObject
-            saveBacktestSettingsFirstPortfolio(json, "backtest.settings", marketTimingSettingsKeys)
+            saveBacktestSettingsFirstPortfolio(json, marketTimingSettingsKey, marketTimingSettingsKeys)
             call.respondOk()
         }
 
@@ -1430,7 +1519,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveBacktestSettingsFirstPortfolio(json, "backtest.settings", rebalanceStrategySettingsKeys) }
+                    runCatching { saveBacktestSettingsFirstPortfolio(json, rebalanceStrategySettingsKey, rebalanceStrategySettingsKeys) }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -1469,10 +1558,17 @@ fun Application.configureRouting() {
             }
         }
 
+        get("/api/rebalance-strategy/settings") {
+            call.respondText(
+                loadBacktestSettings(rebalanceStrategySettingsKey),
+                ContentType.Application.Json
+            )
+        }
+
         post("/api/rebalance-strategy/settings") {
             val body = call.receiveText()
             val json = Json.parseToJsonElement(body).jsonObject
-            saveBacktestSettingsFirstPortfolio(json, "backtest.settings", rebalanceStrategySettingsKeys)
+            saveBacktestSettingsFirstPortfolio(json, rebalanceStrategySettingsKey, rebalanceStrategySettingsKeys)
             call.respondOk()
         }
 
@@ -1557,7 +1653,7 @@ fun Application.configureRouting() {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
 
-                runCatching { saveBacktestSettings(json, "backtest.mc-settings") }
+                runCatching { saveBacktestSettings(json, monteCarloSettingsKey) }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }

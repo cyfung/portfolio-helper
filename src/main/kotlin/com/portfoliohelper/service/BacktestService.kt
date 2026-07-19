@@ -103,11 +103,20 @@ object BacktestService {
             val noMarginValues = computeNoMargin(
                 pConfig, seriesMap, globalDates, request.startingBalance, request.cashflow
             )
+            val noMarginMarketValues =
+                if (request.cashflow == null) noMarginValues
+                else computeNoMargin(pConfig, seriesMap, globalDates, request.startingBalance, null)
+            val externalCashflows = cashflowAmounts(globalDates, request.cashflow)
             val curves = mutableListOf<CurveResult>()
             if (pConfig.includeNoMargin) {
                 val noMarginPoints =
                     globalDates.mapIndexed { i, d -> DataPoint(d.toString(), noMarginValues[i]) }
-                val noMarginStats = computeBacktestStats(noMarginValues, globalDates, effrxSeries)
+                val noMarginStats = computeBacktestStats(
+                    noMarginValues,
+                    globalDates,
+                    effrxSeries,
+                    cashflows = externalCashflows,
+                )
                 val noMarginActionPoints =
                     scheduledPortfolioRebalanceActionPoints(globalDates, pConfig.rebalanceStrategy)
                 curves.add(
@@ -134,11 +143,12 @@ object BacktestService {
                         )
                     else
                         applyMargin(
-                            noMarginValues,
+                            noMarginMarketValues,
                             globalDates,
                             effrxSeries,
                             mc,
                             pConfig.rebalanceStrategy,
+                            request.cashflow,
                             request.zeroMarginInterest,
                         )
                 val marginValuePoints = globalDates.mapIndexed { i, d ->
@@ -149,7 +159,8 @@ object BacktestService {
                 }
                 val marginStats = computeBacktestStats(
                     marginResult.values, globalDates, effrxSeries,
-                    marginResult.upperTriggers, marginResult.lowerTriggers
+                    marginResult.upperTriggers, marginResult.lowerTriggers,
+                    cashflows = externalCashflows,
                 )
                 val uAbbr = modeAbbr(mc.upperRebalanceMode)
                 val lAbbr = modeAbbr(mc.lowerRebalanceMode)
@@ -1555,9 +1566,10 @@ object BacktestService {
 
             applyDailyReturns(tickers, holdings, returnRatios, i)
 
-            if (cashflow != null && isCashflowDate(cashflow.frequency, curDate)) {
+            val cashflowAmount = cashflowAmountOnDate(cashflow, prevDate, curDate)
+            if (cashflowAmount != 0.0) {
                 for (ticker in tickers) {
-                    holdings[ticker] = (holdings[ticker] ?: 0.0) + cashflow.amount * (targetWeights[ticker] ?: 0.0)
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) + cashflowAmount * (targetWeights[ticker] ?: 0.0)
                 }
             }
 
@@ -1670,12 +1682,25 @@ object BacktestService {
 
     // ── Margin computation ────────────────────────────────────────────────────
 
-    private fun isCashflowDate(frequency: CashflowFrequency, date: LocalDate): Boolean =
+    internal fun cashflowAmounts(dates: List<LocalDate>, cashflow: CashflowConfig?): List<Double> =
+        dates.mapIndexed { i, date ->
+            if (i == 0) 0.0 else cashflowAmountOnDate(cashflow, dates[i - 1], date)
+        }
+
+    internal fun cashflowAmountOnDate(
+        cashflow: CashflowConfig?,
+        prevDate: LocalDate,
+        curDate: LocalDate
+    ): Double =
+        if (cashflow != null && isCashflowDate(cashflow.frequency, prevDate, curDate)) cashflow.amount else 0.0
+
+    internal fun isCashflowDate(frequency: CashflowFrequency, prevDate: LocalDate, curDate: LocalDate): Boolean =
         when (frequency) {
             CashflowFrequency.NONE -> false
-            CashflowFrequency.MONTHLY -> date.dayOfMonth == 1
-            CashflowFrequency.QUARTERLY -> date.dayOfMonth == 1 && date.monthValue in listOf(1, 4, 7, 10)
-            CashflowFrequency.YEARLY -> date.dayOfMonth == 1 && date.monthValue == 1
+            CashflowFrequency.MONTHLY -> curDate.year != prevDate.year || curDate.month != prevDate.month
+            CashflowFrequency.QUARTERLY ->
+                curDate.year != prevDate.year || (curDate.monthValue - 1) / 3 != (prevDate.monthValue - 1) / 3
+            CashflowFrequency.YEARLY -> curDate.year != prevDate.year
         }
 
     private data class MarginApplyResult(
@@ -1692,6 +1717,7 @@ object BacktestService {
         effrx: Map<LocalDate, Double>,
         marginConfig: MarginConfig,
         rebalanceStrategy: RebalanceStrategy,
+        cashflow: CashflowConfig? = null,
         zeroMarginInterest: Boolean = false,
     ): MarginApplyResult {
         val marginTarget = marginConfig.marginRatio
@@ -1721,6 +1747,12 @@ object BacktestService {
             // Portfolio return
             val portfolioReturn = if (noMargin[i - 1] != 0.0) noMargin[i] / noMargin[i - 1] else 1.0
             totalExposure *= portfolioReturn
+
+            val cashflowAmount = cashflowAmountOnDate(cashflow, prevDate, curDate)
+            if (cashflowAmount != 0.0) {
+                totalExposure += cashflowAmount * (1.0 + marginTarget)
+                borrowed += cashflowAmount * marginTarget
+            }
 
             borrowed *= (1.0 + dailyLoanRates[i])
             equity = totalExposure - borrowed
@@ -1962,9 +1994,10 @@ object BacktestService {
 
             applyDailyReturns(tickers, holdings, returnRatios, i)
 
-            if (cashflow != null && isCashflowDate(cashflow.frequency, curDate)) {
-                val contributionExposure = cashflow.amount * (1.0 + targetRatio)
-                borrowed += cashflow.amount * targetRatio
+            val cashflowAmount = cashflowAmountOnDate(cashflow, prevDate, curDate)
+            if (cashflowAmount != 0.0) {
+                val contributionExposure = cashflowAmount * (1.0 + targetRatio)
+                borrowed += cashflowAmount * targetRatio
                 for (ticker in tickers) {
                     holdings[ticker] =
                         (holdings[ticker] ?: 0.0) + contributionExposure * (targetWeights[ticker] ?: 0.0)
@@ -2064,14 +2097,15 @@ object BacktestService {
         dates: List<LocalDate>,
         effrx: Map<LocalDate, Double>,
         marginUpperTriggers: Int? = null,
-        marginLowerTriggers: Int? = null
+        marginLowerTriggers: Int? = null,
+        cashflows: List<Double> = emptyList()
     ): BacktestStats {
         if (values.size < 2) return BacktestStats(
             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
             values.lastOrNull() ?: 0.0
         )
         val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
-        val stats = computeStats(values, years, computeRfAnnualized(effrx))
+        val stats = computeStats(values, years, computeRfAnnualized(effrx), cashflows)
         return BacktestStats(
             stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi,
             stats.annualVolatility, stats.longestDrawdownDays,

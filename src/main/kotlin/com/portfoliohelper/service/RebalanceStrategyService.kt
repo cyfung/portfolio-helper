@@ -430,7 +430,7 @@ object RebalanceStrategyService {
               startingBalance,
           )
         }
-    return mergedSegmentStats(curves, context.effrx, startingBalance)
+    return mergedSegmentStats(curves, context.effrx, startingBalance, cashflow)
   }
 
   private fun splitDateBlocks(dates: List<LocalDate>, requestedBlocks: Int): List<List<LocalDate>> {
@@ -449,8 +449,10 @@ object RebalanceStrategyService {
       curves: List<CurveResult>,
       effrx: Map<LocalDate, Double>,
       startingBalance: Double,
+      cashflow: CashflowConfig?,
   ): BacktestStats? {
     val values = mutableListOf<Double>()
+    val cashflows = mutableListOf<Double>()
     var activeYears = 0.0
     for (curve in curves) {
       if (curve.points.size < 2) continue
@@ -466,11 +468,18 @@ object RebalanceStrategyService {
           if (values.isEmpty()) 1.0
           else values.last() / segmentBase
       val scaled = segmentValues.map { it * scale }
-      if (values.isEmpty()) values.addAll(scaled) else values.addAll(scaled.drop(1))
+      val scaledCashflows = BacktestService.cashflowAmounts(segmentDates, cashflow).map { it * scale }
+      if (values.isEmpty()) {
+        values.addAll(scaled)
+        cashflows.addAll(scaledCashflows)
+      } else {
+        values.addAll(scaled.drop(1))
+        cashflows.addAll(scaledCashflows.drop(1))
+      }
       activeYears += (segmentDates.last().toEpochDay() - segmentDates.first().toEpochDay()) / 365.25
     }
     if (values.size < 2) return null
-    val stats = computeStats(values, activeYears, BacktestService.computeRfAnnualized(effrx))
+    val stats = computeStats(values, activeYears, BacktestService.computeRfAnnualized(effrx), cashflows)
     return BacktestStats(
         stats.cagr,
         stats.maxDrawdown,
@@ -1666,8 +1675,8 @@ object RebalanceStrategyService {
       }
 
       // Step 6: Cashflow injection (if due)
-      if (cashflow != null && isCashflowDate(cashflow.frequency, curDate)) {
-        val raw = cashflow.amount
+      val rawCashflow = BacktestService.cashflowAmountOnDate(cashflow, prevDate, curDate)
+      if (rawCashflow != 0.0) {
         val currentMarginRatio =
             if (account.equity() > 0) account.currentMarginRatio() else marginTarget
         val scaleFactor =
@@ -1678,8 +1687,8 @@ object RebalanceStrategyService {
                   CashflowScaling.SCALED_BY_CURRENT_MARGIN -> 1.0 + currentMarginRatio
                   CashflowScaling.NO_SCALING -> 1.0
                 }
-        val totalInvest = raw * strategy.cashflowImmediateInvestPct * scaleFactor
-        account.deposit(raw)
+        val totalInvest = rawCashflow * strategy.cashflowImmediateInvestPct * scaleFactor
+        account.deposit(rawCashflow)
         for (ticker in tickers) account.buy(ticker, totalInvest * (targetWeights[ticker] ?: 0.0))
       }
 
@@ -1718,7 +1727,12 @@ object RebalanceStrategyService {
     val marginPoints =
         if (marginTarget > 0.0) dates.mapIndexed { i, d -> DataPoint(d.toString(), marginUtils[i]) }
         else null
-    val stats = BacktestService.computeBacktestStats(values, dates, effrx)
+    val stats = BacktestService.computeBacktestStats(
+        values,
+        dates,
+        effrx,
+        cashflows = BacktestService.cashflowAmounts(dates, cashflow),
+    )
     return StrategyRunResult(
         CurveResult(
             strategy.label,
@@ -1826,16 +1840,6 @@ object RebalanceStrategyService {
       account.applyTradeDelta(ticker, diff)
     }
   }
-
-  private fun isCashflowDate(frequency: CashflowFrequency, date: LocalDate): Boolean =
-      when (frequency) {
-        CashflowFrequency.NONE -> false
-        CashflowFrequency.MONTHLY -> date.dayOfMonth == 1
-        CashflowFrequency.QUARTERLY ->
-            date.dayOfMonth == 1 && date.monthValue in listOf(1, 4, 7, 10)
-
-        CashflowFrequency.YEARLY -> date.dayOfMonth == 1 && date.monthValue == 1
-      }
 
   private fun shouldRebalance(
       strategy: RebalanceStrategy,

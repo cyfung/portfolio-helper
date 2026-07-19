@@ -340,12 +340,16 @@ class RebalanceStrategyRoutesTest {
             setOf("startingBalance", "cashflow", "strategies", "strategyStates", "includeActionDiagnostics"),
         )
 
-        assertEquals("2010-01-01", merged["fromDate"]?.jsonPrimitive?.content)
+        val common = mergedCommonScenarioSettings(existing, incoming)
+
+        assertEquals("2010-01-01", common["fromDate"]?.jsonPrimitive?.content)
+        assertEquals(25000, common["startingBalance"]?.jsonPrimitive?.int)
         assertEquals("5-1, 10-1", merged["drawdownConfigs"]?.jsonPrimitive?.content)
         assertEquals("TICKER", merged["referenceSource"]?.jsonPrimitive?.content)
         assertEquals("SPY", merged["referenceTicker"]?.jsonPrimitive?.content)
         assertEquals("new-rebalance", merged["strategies"]?.jsonPrimitive?.content)
-        assertEquals(25000, merged["startingBalance"]?.jsonPrimitive?.int)
+        assertNull(merged["fromDate"])
+        assertNull(merged["startingBalance"])
         assertNull(merged["portfolio"])
         assertNull(merged["saveSettings"])
     }
@@ -379,8 +383,12 @@ class RebalanceStrategyRoutesTest {
             ),
         )
 
-        assertEquals("2024-12-31", merged["toDate"]?.jsonPrimitive?.content)
-        assertEquals(10000, merged["startingBalance"]?.jsonPrimitive?.int)
+        val common = mergedCommonScenarioSettings(existing, incoming)
+
+        assertEquals("2024-12-31", common["toDate"]?.jsonPrimitive?.content)
+        assertEquals(10000, common["startingBalance"]?.jsonPrimitive?.int)
+        assertNull(merged["toDate"])
+        assertNull(merged["startingBalance"])
         assertEquals("rebalance", merged["strategies"]?.jsonPrimitive?.content)
         assertEquals("rebalance-state", merged["strategyStates"]?.jsonPrimitive?.content)
         assertEquals("15-0, 20-1", merged["drawdownConfigs"]?.jsonPrimitive?.content)
@@ -408,10 +416,16 @@ class RebalanceStrategyRoutesTest {
 
         val merged = mergedBacktestSettings(existing, incoming)
 
-        assertEquals("2010-01-01", merged["fromDate"]?.jsonPrimitive?.content)
-        assertEquals("2024-12-31", merged["toDate"]?.jsonPrimitive?.content)
-        assertEquals(25000, merged["startingBalance"]?.jsonPrimitive?.int)
-        assertEquals("new-cashflow", merged["cashflow"]?.jsonPrimitive?.content)
+        val common = mergedCommonScenarioSettings(existing, incoming)
+
+        assertEquals("2010-01-01", common["fromDate"]?.jsonPrimitive?.content)
+        assertEquals("2024-12-31", common["toDate"]?.jsonPrimitive?.content)
+        assertEquals(25000, common["startingBalance"]?.jsonPrimitive?.int)
+        assertEquals("new-cashflow", common["cashflow"]?.jsonPrimitive?.content)
+        assertNull(merged["fromDate"])
+        assertNull(merged["toDate"])
+        assertNull(merged["startingBalance"])
+        assertNull(merged["cashflow"])
         assertEquals("rebalance", merged["strategies"]?.jsonPrimitive?.content)
         assertEquals("rebalance-state", merged["strategyStates"]?.jsonPrimitive?.content)
         assertEquals(true, merged["includeActionDiagnostics"]?.jsonPrimitive?.boolean)
