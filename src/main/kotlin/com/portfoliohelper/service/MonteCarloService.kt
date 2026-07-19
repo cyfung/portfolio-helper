@@ -18,15 +18,16 @@ object MonteCarloService {
     private val lastResultState = AtomicReference<MonteCarloResult?>(null)
     private val lastErrorState = AtomicReference<String?>(null)
 
-    private fun BacktestStats.toPortfolioStats(): PortfolioStats =
-        PortfolioStats(
-            cagr,
-            maxDrawdown,
-            sharpe,
-            ulcerIndex,
-            upi,
-            annualVolatility,
-            longestDrawdownDays,
+    private fun CurveResult.toMonteCarloStats(
+        years: Double,
+        rfAnnualized: Double,
+        cashflows: DoubleArray,
+    ): PortfolioStats =
+        MonteCarloIndexedSimulation.computeStats(
+            points.map { it.value }.toDoubleArray(),
+            years,
+            rfAnnualized,
+            cashflows,
         )
 
     fun getProgress(): MonteCarloProgress = progressState.get()
@@ -269,6 +270,8 @@ object MonteCarloService {
 
         val syntheticDates = MonteCarloSyntheticSeries.tradingDates(targetDays + 1)
         val syntheticCashflows = BacktestService.cashflowAmounts(syntheticDates, request.cashflow).toDoubleArray()
+        val syntheticRebalanceFlagsByPortfolio =
+            portfolios.map { BacktestService.rebalanceFlags(syntheticDates, it.rebalanceStrategy) }
 
         fun simulateAttachedStrategies(
             pConfig: PortfolioConfig,
@@ -345,6 +348,7 @@ object MonteCarloService {
                         effrxDailyRates,
                         request.startingBalance,
                         syntheticCashflows,
+                        syntheticRebalanceFlagsByPortfolio[pi],
                     )
                     val stats = MonteCarloIndexedSimulation.computeStats(
                         values,
@@ -364,7 +368,7 @@ object MonteCarloService {
                     )
                     val strategyCurves = simulateAttachedStrategies(config.portfolio, path, request.startingBalance, request.cashflow)
                     strategyCurves.forEach { curve ->
-                        val stats = curve.stats.toPortfolioStats()
+                        val stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows)
                         allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                         ci++
                     }
@@ -505,6 +509,7 @@ object MonteCarloService {
                             effrxDailyRates,
                             request.startingBalance,
                             syntheticCashflows,
+                            syntheticRebalanceFlagsByPortfolio[pi],
                         )
                         values = valueArray.toList()
                         stats = MonteCarloIndexedSimulation.computeStats(
@@ -527,7 +532,7 @@ object MonteCarloService {
                             request.cashflow,
                         )[strategyIndex]
                         values = curve.points.map { it.value }
-                        stats = curve.stats.toPortfolioStats()
+                        stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows)
                     }
                     val endValue = values.last()
                     val done = resultPathsCompleted.incrementAndGet()

@@ -1666,21 +1666,21 @@ object BacktestService {
             java.time.temporal.ChronoUnit.WEEKS.between(LocalDate.of(1970, 1, 5), curDate) / 2 !=
                     java.time.temporal.ChronoUnit.WEEKS.between(LocalDate.of(1970, 1, 5), prevDate) / 2
 
-        RebalanceStrategy.MONTHLY -> curDate.month != prevDate.month
-        RebalanceStrategy.BI_MONTHLY -> curDate.year * 12 + (curDate.monthValue - 1) / 2 !=
-                prevDate.year * 12 + (prevDate.monthValue - 1) / 2
+        RebalanceStrategy.MONTHLY -> monthBucket(curDate, 1) != monthBucket(prevDate, 1)
+        RebalanceStrategy.BI_MONTHLY -> monthBucket(curDate, 2) != monthBucket(prevDate, 2)
 
-        RebalanceStrategy.QUARTERLY -> ((curDate.monthValue - 1) / 3) != ((prevDate.monthValue - 1) / 3)
-        RebalanceStrategy.EVERY_4_MONTHS -> curDate.year * 12 + (curDate.monthValue - 1) / 4 !=
-                prevDate.year * 12 + (prevDate.monthValue - 1) / 4
+        RebalanceStrategy.QUARTERLY -> monthBucket(curDate, 3) != monthBucket(prevDate, 3)
+        RebalanceStrategy.EVERY_4_MONTHS -> monthBucket(curDate, 4) != monthBucket(prevDate, 4)
 
-        RebalanceStrategy.HALF_YEARLY -> curDate.year * 12 + (curDate.monthValue - 1) / 6 !=
-                prevDate.year * 12 + (prevDate.monthValue - 1) / 6
+        RebalanceStrategy.HALF_YEARLY -> monthBucket(curDate, 6) != monthBucket(prevDate, 6)
 
         RebalanceStrategy.YEARLY -> curDate.year != prevDate.year
     }
 
     // ── Margin computation ────────────────────────────────────────────────────
+
+    internal fun rebalanceFlags(dates: List<LocalDate>, strategy: RebalanceStrategy): BooleanArray =
+        BooleanArray(dates.size) { i -> i > 0 && shouldRebalance(strategy, dates[i - 1], dates[i]) }
 
     internal fun cashflowAmounts(dates: List<LocalDate>, cashflow: CashflowConfig?): List<Double> =
         dates.mapIndexed { i, date ->
@@ -1697,9 +1697,8 @@ object BacktestService {
     internal fun isCashflowDate(frequency: CashflowFrequency, prevDate: LocalDate, curDate: LocalDate): Boolean =
         when (frequency) {
             CashflowFrequency.NONE -> false
-            CashflowFrequency.MONTHLY -> curDate.year != prevDate.year || curDate.month != prevDate.month
-            CashflowFrequency.QUARTERLY ->
-                curDate.year != prevDate.year || (curDate.monthValue - 1) / 3 != (prevDate.monthValue - 1) / 3
+            CashflowFrequency.MONTHLY -> monthBucket(curDate, 1) != monthBucket(prevDate, 1)
+            CashflowFrequency.QUARTERLY -> monthBucket(curDate, 3) != monthBucket(prevDate, 3)
             CashflowFrequency.YEARLY -> curDate.year != prevDate.year
         }
 

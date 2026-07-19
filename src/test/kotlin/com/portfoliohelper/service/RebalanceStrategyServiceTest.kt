@@ -1112,8 +1112,11 @@ class RebalanceStrategyServiceTest {
     @Test
     fun drawdownMarginOverride_runsBaseMrOnExitWhenBaseIntervalIsAlreadyDue() {
         val entryDate = LocalDate.of(2024, 1, 1)
-        val exitDate = entryDate.plusDays(42)
-        val dates = listOf(LocalDate.of(2023, 12, 31)) + (0..42).map { entryDate.plusDays(it.toLong()) }
+        val exitDate = LocalDate.of(2024, 3, 1)
+        val dates =
+            generateSequence(LocalDate.of(2023, 12, 31)) { it.plusDays(1) }
+                .takeWhile { !it.isAfter(exitDate) }
+                .toList()
         val series = mapOf(
             "SPY" to flatCurve(dates),
             "REF" to dates.associateWith { date ->

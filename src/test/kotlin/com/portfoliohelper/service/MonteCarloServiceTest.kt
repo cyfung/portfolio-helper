@@ -157,6 +157,63 @@ class MonteCarloServiceTest {
     }
 
     @Test
+    fun monteCarloAttachedStrategyStatsUseSimulatedYearBasis() = runBlocking {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-mc-year-basis-test")
+        AppDirs.dataDir = tempDataDir
+        try {
+            val historyDates = tradingDays(LocalDate.of(2020, 1, 1), LocalDate.of(2022, 12, 31))
+            writeFullTicker(tempDataDir, "SPY", risingSeries(historyDates))
+
+            val request = MonteCarloRequest(
+                fromDate = "2020-01-01",
+                toDate = "2022-12-31",
+                minChunkYears = 0.1,
+                maxChunkYears = 0.25,
+                simulatedYears = 1,
+                numSimulations = 4,
+                portfolios = listOf(
+                    PortfolioConfig(
+                        label = "SPY",
+                        tickers = listOf(TickerWeight("SPY", 1.0)),
+                        rebalanceStrategy = RebalanceStrategy.NONE,
+                        marginStrategies = emptyList(),
+                        includeNoMargin = true,
+                        rebalanceStrategies = listOf(
+                            RebalStrategyConfig(
+                                label = "attached",
+                                marginRatio = 0.0,
+                                marginSpread = 0.0,
+                                marginRebalanceEnabled = false,
+                                rebalancePeriod = RebalancePeriodOverride.NONE,
+                                cashflowImmediateInvestPct = 1.0,
+                                cashflowScaling = CashflowScaling.NO_SCALING,
+                                deviationMode = DeviationMode.ABSOLUTE,
+                                sellOnHighMargin = null,
+                                buyOnLowMargin = null,
+                                buyTheDip = null,
+                                sellOnSurge = null,
+                            )
+                        ),
+                    )
+                ),
+                seed = 43L,
+            )
+
+            val result = MonteCarloService.runMonteCarlo(request)
+            val curves = result.portfolios.single().curves
+            val noMargin = curves.single { it.label == "No Margin" }.percentilePaths.single { it.percentile == 50 }
+            val attached = curves.single { it.label == "attached" }.percentilePaths.single { it.percentile == 50 }
+
+            assertEquals(noMargin.endValue, attached.endValue)
+            assertEquals(noMargin.cagr, attached.cagr)
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun monteCarloBootstrapPoolIncludesStandaloneDerivedReferenceTicker() = runBlocking {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-mc-derived-reference-test")

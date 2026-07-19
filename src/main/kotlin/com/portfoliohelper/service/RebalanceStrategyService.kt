@@ -1316,7 +1316,18 @@ object RebalanceStrategyService {
       val regularDrawdownRebalanceDay =
           activeDrawdownOverride
               ?.takeIf { it.rebalanceOnEnter }
-              ?.let { drawdownOverrideAnchorIndex?.let { anchor -> shouldRebalanceFromAnchor(effectiveMarginRebalance, anchor, i) } }
+              ?.let {
+                val anchorIndex = drawdownOverrideAnchorIndex
+                val lastIndex = drawdownOverrideLastRebalanceIndex ?: anchorIndex
+                val lastDate = drawdownOverrideLastRebalanceDate ?: anchorIndex?.let { anchor -> dates.getOrNull(anchor) }
+                when {
+                  anchorIndex == i -> true
+                  effectiveMarginRebalance == RebalanceStrategy.WEEKLY ||
+                      effectiveMarginRebalance == RebalanceStrategy.BI_WEEKLY ->
+                      lastIndex?.let { shouldRebalanceFromTradingDayAnchor(effectiveMarginRebalance, it, i) }
+                  else -> lastDate?.let { shouldRebalance(effectiveMarginRebalance, it, curDate) }
+                }
+              }
               ?: shouldRebalance(effectiveMarginRebalance, prevDate, curDate)
       val deferredDrawdownRebalanceDue =
           deferredDrawdownOverrideRebalanceIndex?.let { i >= it } == true
@@ -1856,34 +1867,28 @@ object RebalanceStrategyService {
                 prev.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR) || cur.year != prev.year
 
         RebalanceStrategy.BI_WEEKLY -> biWeeklyBucket(cur) != biWeeklyBucket(prev)
-        RebalanceStrategy.MONTHLY -> cur.month != prev.month
+        RebalanceStrategy.MONTHLY -> monthBucket(cur, 1) != monthBucket(prev, 1)
         RebalanceStrategy.BI_MONTHLY -> monthBucket(cur, 2) != monthBucket(prev, 2)
-        RebalanceStrategy.QUARTERLY -> (cur.monthValue - 1) / 3 != (prev.monthValue - 1) / 3
+        RebalanceStrategy.QUARTERLY -> monthBucket(cur, 3) != monthBucket(prev, 3)
         RebalanceStrategy.EVERY_4_MONTHS -> monthBucket(cur, 4) != monthBucket(prev, 4)
         RebalanceStrategy.HALF_YEARLY -> monthBucket(cur, 6) != monthBucket(prev, 6)
 
         RebalanceStrategy.YEARLY -> cur.year != prev.year
       }
 
-  private fun shouldRebalanceFromAnchor(
+  private fun shouldRebalanceFromTradingDayAnchor(
       strategy: RebalanceStrategy,
       anchorIndex: Int,
       curIndex: Int,
   ): Boolean {
     val elapsed = curIndex - anchorIndex
-    if (elapsed < 0) return false
+    if (elapsed <= 0) return false
     return when (strategy) {
-      RebalanceStrategy.NONE -> false
-      RebalanceStrategy.DAILY -> true
       RebalanceStrategy.WEEKLY -> elapsed % 5 == 0
       RebalanceStrategy.BI_WEEKLY -> elapsed % 10 == 0
-      RebalanceStrategy.MONTHLY -> elapsed % 21 == 0
-      RebalanceStrategy.BI_MONTHLY -> elapsed % 42 == 0
-      RebalanceStrategy.QUARTERLY -> elapsed % 63 == 0
-      RebalanceStrategy.EVERY_4_MONTHS -> elapsed % 84 == 0
-      RebalanceStrategy.HALF_YEARLY -> elapsed % 126 == 0
-      RebalanceStrategy.YEARLY -> elapsed % 252 == 0
+      else -> false
     }
   }
+
 }
 

@@ -88,12 +88,13 @@ internal object MonteCarloIndexedSimulation {
         tickerReturnsByDay: Array<DoubleArray>,
         effrxDailyRates: DoubleArray,
         startingBalance: Double,
-        cashflows: DoubleArray = DoubleArray(0)
+        cashflows: DoubleArray = DoubleArray(0),
+        rebalanceFlags: BooleanArray = BooleanArray(0)
     ): DoubleArray =
         if (mc == null) {
-            simulateNoMargin(runtime, path, tickerReturnsByDay, startingBalance, cashflows)
+            simulateNoMargin(runtime, path, tickerReturnsByDay, startingBalance, cashflows, rebalanceFlags)
         } else {
-            simulateWithMargin(runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflows)
+            simulateWithMargin(runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflows, rebalanceFlags)
         }
 
     fun computeStats(
@@ -219,19 +220,18 @@ internal object MonteCarloIndexedSimulation {
         path: MonteCarloIndexedPath,
         tickerReturnsByDay: Array<DoubleArray>,
         startingBalance: Double,
-        cashflows: DoubleArray
+        cashflows: DoubleArray,
+        rebalanceFlags: BooleanArray
     ): DoubleArray {
         val holdings = DoubleArray(runtime.tickers.size) { startingBalance * runtime.weights[it] }
         val values = DoubleArray(path.returnIndexes.size + 1)
         values[0] = startingBalance
         var totalHoldings = startingBalance
-        var tradingDayCount = 0
 
         for (dayIndex in path.returnIndexes.indices) {
             val returnIndex = path.returnIndexes[dayIndex]
             if (returnIndex >= 0) {
-                tradingDayCount++
-                if (shouldRebalanceByCount(runtime.rebalanceStrategy, tradingDayCount)) {
+                if (rebalanceFlags.getOrElse(dayIndex + 1) { false }) {
                     for (i in holdings.indices) holdings[i] = totalHoldings * runtime.weights[i]
                 }
             }
@@ -269,22 +269,21 @@ internal object MonteCarloIndexedSimulation {
         tickerReturnsByDay: Array<DoubleArray>,
         effrxDailyRates: DoubleArray,
         startingBalance: Double,
-        cashflows: DoubleArray
+        cashflows: DoubleArray,
+        rebalanceFlags: BooleanArray
     ): DoubleArray {
         var borrowed = startingBalance * mc.marginRatio
         val holdings = DoubleArray(runtime.tickers.size) { (startingBalance + borrowed) * runtime.weights[it] }
         var totalHoldings = startingBalance + borrowed
         val values = DoubleArray(path.returnIndexes.size + 1)
         values[0] = startingBalance
-        var tradingDayCount = 0
         val dailySpread = mc.marginSpread / 252.0
         val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
 
         for (dayIndex in path.returnIndexes.indices) {
             val returnIndex = path.returnIndexes[dayIndex]
             if (returnIndex >= 0) {
-                tradingDayCount++
-                if (shouldRebalanceByCount(runtime.rebalanceStrategy, tradingDayCount)) {
+                if (rebalanceFlags.getOrElse(dayIndex + 1) { false }) {
                     val currentEquity = totalHoldings - borrowed
                     borrowed = currentEquity * mc.marginRatio
                     totalHoldings = currentEquity + borrowed
@@ -394,19 +393,5 @@ internal object MonteCarloIndexedSimulation {
         BacktestService.applyAllocationMode(runtime.tickers, holdingMap, runtime.targetWeightMap, delta, mode)
         for (i in runtime.tickers.indices) holdings[i] = holdingMap[runtime.tickers[i]] ?: 0.0
     }
-
-    private fun shouldRebalanceByCount(strategy: RebalanceStrategy, count: Int): Boolean =
-        when (strategy) {
-            RebalanceStrategy.NONE -> false
-            RebalanceStrategy.DAILY -> true
-            RebalanceStrategy.WEEKLY -> count % 5 == 0
-            RebalanceStrategy.BI_WEEKLY -> count % 10 == 0
-            RebalanceStrategy.MONTHLY -> count % 21 == 0
-            RebalanceStrategy.BI_MONTHLY -> count % 42 == 0
-            RebalanceStrategy.QUARTERLY -> count % 63 == 0
-            RebalanceStrategy.EVERY_4_MONTHS -> count % 84 == 0
-            RebalanceStrategy.HALF_YEARLY -> count % 126 == 0
-            RebalanceStrategy.YEARLY -> count % 252 == 0
-        }
 
 }

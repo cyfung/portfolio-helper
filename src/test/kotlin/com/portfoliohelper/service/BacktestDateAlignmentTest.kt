@@ -3,6 +3,8 @@ package com.portfoliohelper.service
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class BacktestDateAlignmentTest {
     @Test
@@ -88,5 +90,43 @@ class BacktestDateAlignmentTest {
         assertEquals(1.0, ratios.getValue("BBB")[0])
         assertEquals(1.0, ratios.getValue("BBB")[1])
         assertEquals(1.15, ratios.getValue("BBB")[2])
+    }
+
+    @Test
+    fun rebalanceFlags_useFirstAvailableDateAfterPeriodChange() {
+        val dates = listOf(
+            LocalDate.of(2023, 12, 29),
+            LocalDate.of(2024, 1, 2),
+            LocalDate.of(2024, 1, 31),
+            LocalDate.of(2024, 2, 2),
+            LocalDate.of(2024, 3, 1),
+        )
+
+        val monthly = BacktestService.rebalanceFlags(dates, RebalanceStrategy.MONTHLY)
+        val quarterly = BacktestService.rebalanceFlags(dates, RebalanceStrategy.QUARTERLY)
+        val yearly = BacktestService.rebalanceFlags(dates, RebalanceStrategy.YEARLY)
+
+        assertFalse(monthly[0])
+        assertTrue(monthly[1], "Monthly rebalance should use Jan 2 when Jan 1 has no data")
+        assertFalse(monthly[2])
+        assertTrue(monthly[3], "Monthly rebalance should use Feb 2 when Feb 1 has no data")
+        assertTrue(monthly[4])
+
+        assertTrue(quarterly[1], "Quarterly rebalance should use first available Q1 date")
+        assertFalse(quarterly[3])
+        assertTrue(yearly[1], "Yearly rebalance should use first available new-year date")
+    }
+
+    @Test
+    fun rebalanceFlags_areYearAwareForSparseSameMonthOrQuarterData() {
+        val dates = listOf(
+            LocalDate.of(2024, 2, 1),
+            LocalDate.of(2025, 2, 3),
+        )
+
+        assertTrue(BacktestService.rebalanceFlags(dates, RebalanceStrategy.MONTHLY)[1])
+        assertTrue(BacktestService.rebalanceFlags(dates, RebalanceStrategy.QUARTERLY)[1])
+        assertTrue(BacktestService.rebalanceFlags(dates, RebalanceStrategy.HALF_YEARLY)[1])
+        assertTrue(BacktestService.rebalanceFlags(dates, RebalanceStrategy.YEARLY)[1])
     }
 }
