@@ -88,30 +88,13 @@ internal object MonteCarloIndexedSimulation {
         tickerReturnsByDay: Array<DoubleArray>,
         effrxDailyRates: DoubleArray,
         startingBalance: Double,
-        cashflow: CashflowConfig?
+        cashflows: DoubleArray = DoubleArray(0)
     ): DoubleArray =
         if (mc == null) {
-            simulateNoMargin(runtime, path, tickerReturnsByDay, startingBalance, cashflow)
+            simulateNoMargin(runtime, path, tickerReturnsByDay, startingBalance, cashflows)
         } else {
-            simulateWithMargin(runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflow)
+            simulateWithMargin(runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflows)
         }
-
-    fun cashflowAmounts(path: MonteCarloIndexedPath, cashflow: CashflowConfig?): DoubleArray {
-        val amounts = DoubleArray(path.returnIndexes.size + 1)
-        if (cashflow == null) return amounts
-
-        var tradingDayCount = 0
-        for (dayIndex in path.returnIndexes.indices) {
-            val returnIndex = path.returnIndexes[dayIndex]
-            if (returnIndex >= 0) {
-                tradingDayCount++
-                if (isCashflowDay(cashflow.frequency, tradingDayCount)) {
-                    amounts[dayIndex + 1] = cashflow.amount
-                }
-            }
-        }
-        return amounts
-    }
 
     fun computeStats(
         values: DoubleArray,
@@ -236,7 +219,7 @@ internal object MonteCarloIndexedSimulation {
         path: MonteCarloIndexedPath,
         tickerReturnsByDay: Array<DoubleArray>,
         startingBalance: Double,
-        cashflow: CashflowConfig?
+        cashflows: DoubleArray
     ): DoubleArray {
         val holdings = DoubleArray(runtime.tickers.size) { startingBalance * runtime.weights[it] }
         val values = DoubleArray(path.returnIndexes.size + 1)
@@ -265,9 +248,10 @@ internal object MonteCarloIndexedSimulation {
                 for (holding in holdings) nextTotal += holding
             }
 
-            if (returnIndex >= 0 && cashflow != null && isCashflowDay(cashflow.frequency, tradingDayCount)) {
+            val cashflowAmount = cashflows.getOrElse(dayIndex + 1) { 0.0 }
+            if (cashflowAmount != 0.0) {
                 for (i in holdings.indices) {
-                    val addition = cashflow.amount * runtime.weights[i]
+                    val addition = cashflowAmount * runtime.weights[i]
                     holdings[i] += addition
                     nextTotal += addition
                 }
@@ -285,7 +269,7 @@ internal object MonteCarloIndexedSimulation {
         tickerReturnsByDay: Array<DoubleArray>,
         effrxDailyRates: DoubleArray,
         startingBalance: Double,
-        cashflow: CashflowConfig?
+        cashflows: DoubleArray
     ): DoubleArray {
         var borrowed = startingBalance * mc.marginRatio
         val holdings = DoubleArray(runtime.tickers.size) { (startingBalance + borrowed) * runtime.weights[it] }
@@ -321,9 +305,10 @@ internal object MonteCarloIndexedSimulation {
             }
             totalHoldings = nextTotal
 
-            if (returnIndex >= 0 && cashflow != null && isCashflowDay(cashflow.frequency, tradingDayCount)) {
-                val contributionExposure = cashflow.amount * (1.0 + mc.marginRatio)
-                borrowed += cashflow.amount * mc.marginRatio
+            val cashflowAmount = cashflows.getOrElse(dayIndex + 1) { 0.0 }
+            if (cashflowAmount != 0.0) {
+                val contributionExposure = cashflowAmount * (1.0 + mc.marginRatio)
+                borrowed += cashflowAmount * mc.marginRatio
                 for (i in holdings.indices) {
                     val addition = contributionExposure * runtime.weights[i]
                     holdings[i] += addition
@@ -424,11 +409,4 @@ internal object MonteCarloIndexedSimulation {
             RebalanceStrategy.YEARLY -> count % 252 == 0
         }
 
-    private fun isCashflowDay(frequency: CashflowFrequency, tradingDayCount: Int): Boolean =
-        tradingDayCount > 0 && when (frequency) {
-            CashflowFrequency.NONE -> false
-            CashflowFrequency.MONTHLY -> tradingDayCount % 21 == 0
-            CashflowFrequency.QUARTERLY -> tradingDayCount % 63 == 0
-            CashflowFrequency.YEARLY -> tradingDayCount % 252 == 0
-        }
 }

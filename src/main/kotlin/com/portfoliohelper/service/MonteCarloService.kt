@@ -268,6 +268,7 @@ object MonteCarloService {
         }
 
         val syntheticDates = MonteCarloSyntheticSeries.tradingDates(targetDays + 1)
+        val syntheticCashflows = BacktestService.cashflowAmounts(syntheticDates, request.cashflow).toDoubleArray()
 
         fun simulateAttachedStrategies(
             pConfig: PortfolioConfig,
@@ -343,13 +344,13 @@ object MonteCarloService {
                         tickerReturnsByDay,
                         effrxDailyRates,
                         request.startingBalance,
-                        request.cashflow,
+                        syntheticCashflows,
                     )
                     val stats = MonteCarloIndexedSimulation.computeStats(
                         values,
                         years,
                         rfAnnualized,
-                        MonteCarloIndexedSimulation.cashflowAmounts(indexedPath, request.cashflow),
+                        syntheticCashflows,
                     )
                     allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
                     ci++
@@ -503,14 +504,14 @@ object MonteCarloService {
                             tickerReturnsByDay,
                             effrxDailyRates,
                             request.startingBalance,
-                            request.cashflow,
+                            syntheticCashflows,
                         )
                         values = valueArray.toList()
                         stats = MonteCarloIndexedSimulation.computeStats(
                             valueArray,
                             years,
                             rfAnnualized,
-                            MonteCarloIndexedSimulation.cashflowAmounts(path, request.cashflow),
+                            syntheticCashflows,
                         )
                     } else {
                         val strategyIndex = ci - config.simpleCurves.size
