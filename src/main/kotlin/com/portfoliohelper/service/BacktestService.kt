@@ -28,6 +28,7 @@ import kotlin.time.Duration.Companion.minutes
 object BacktestService {
     private val logger = LoggerFactory.getLogger(BacktestService::class.java)
     const val DATE_RANGE_ERROR_MESSAGE = "From date must be on or before to date."
+    private const val DEFAULT_BETA_REFERENCE_TICKER = "SPY"
     private val tickerDir get() = AppDirs.dataDir.resolve(".ticker").toFile()
     private val fullTickerDir get() = AppDirs.dataDir.resolve(".ticker-full").toFile()
     private val tickerCacheMaxAge = 15.minutes
@@ -42,6 +43,9 @@ object BacktestService {
             throw IllegalArgumentException(DATE_RANGE_ERROR_MESSAGE)
         }
     }
+
+    internal fun normalizeBetaReferenceTicker(ticker: String?): String =
+        ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() } ?: DEFAULT_BETA_REFERENCE_TICKER
 
     fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
@@ -59,13 +63,14 @@ object BacktestService {
 
         // Step 1: Collect all unique ticker dependencies. Attached rebalance strategies can
         // reference their own tickers, so load them here once and reuse the same series below.
+        val betaReferenceTicker = normalizeBetaReferenceTicker(request.betaReferenceTicker)
         val strategyReferenceTickers = portfolios
             .flatMap { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) }
             .distinct()
         val referenceTickerSet = strategyReferenceTickers.toSet()
         val requestedTickers = (portfolios
             .flatMap { it.tickers }
-            .map { it.ticker } + strategyReferenceTickers)
+            .map { it.ticker } + strategyReferenceTickers + betaReferenceTicker)
             .distinct()
         val seriesCache = resolveTickerSeries(
             requestedTickers,
@@ -90,6 +95,8 @@ object BacktestService {
         val strategySeriesMap = requestedTickers.associateWith { ticker ->
             seriesCache[ticker] ?: error("Series for '$ticker' not found in cache")
         }
+        val betaReferenceSeries = seriesCache[betaReferenceTicker]
+            ?: error("Series for '$betaReferenceTicker' not found in cache")
         val globalDates = intersectDates(allSeriesMaps.flatMap { it.values }, fromDate, toDate)
         if (globalDates.size < 2) {
             throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
@@ -116,6 +123,7 @@ object BacktestService {
                     globalDates,
                     effrxSeries,
                     cashflows = externalCashflows,
+                    benchmarkValues = betaReferenceValues(globalDates, betaReferenceSeries),
                 )
                 val noMarginActionPoints =
                     scheduledPortfolioRebalanceActionPoints(globalDates, pConfig.rebalanceStrategy)
@@ -159,6 +167,7 @@ object BacktestService {
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers,
                     cashflows = externalCashflows,
+                    benchmarkValues = betaReferenceValues(globalDates, betaReferenceSeries),
                 )
                 CurveResult(
                     CurveNaming.margin(mIdx, mc),
@@ -180,6 +189,7 @@ object BacktestService {
                     effrx = effrxSeries,
                     startingBalance = request.startingBalance,
                     zeroMarginInterest = request.zeroMarginInterest,
+                    betaReferenceTicker = betaReferenceTicker,
                 )
             )
             PortfolioResult(pConfig.label, curves)
@@ -2091,20 +2101,45 @@ object BacktestService {
         effrx: Map<LocalDate, Double>,
         marginUpperTriggers: Int? = null,
         marginLowerTriggers: Int? = null,
-        cashflows: List<Double> = emptyList()
+        cashflows: List<Double> = emptyList(),
+        benchmarkValues: List<Double> = emptyList()
     ): BacktestStats {
         if (values.size < 2) return BacktestStats(
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
-            values.lastOrNull() ?: 0.0
+            cagr = 0.0,
+            maxDrawdown = 0.0,
+            sharpe = 0.0,
+            ulcerIndex = 0.0,
+            upi = 0.0,
+            annualVolatility = 0.0,
+            longestDrawdownDays = 0,
+            endingValue = values.lastOrNull() ?: 0.0,
         )
         val years = (dates.last().toEpochDay() - dates.first().toEpochDay()) / 365.25
-        val stats = computeStats(values, years, computeRfAnnualized(effrx), cashflows)
+        val stats = computeStats(values, years, computeRfAnnualized(effrx), cashflows, benchmarkValues)
         return BacktestStats(
-            stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi,
-            stats.annualVolatility, stats.longestDrawdownDays,
-            values.last(), marginUpperTriggers, marginLowerTriggers
+            cagr = stats.cagr,
+            maxDrawdown = stats.maxDrawdown,
+            sharpe = stats.sharpe,
+            ulcerIndex = stats.ulcerIndex,
+            upi = stats.upi,
+            annualVolatility = stats.annualVolatility,
+            longestDrawdownDays = stats.longestDrawdownDays,
+            endingValue = values.last(),
+            sortino = stats.sortino,
+            averageDrawdown = stats.averageDrawdown,
+            calmar = stats.calmar,
+            beta = stats.beta,
+            marginUpperTriggers = marginUpperTriggers,
+            marginLowerTriggers = marginLowerTriggers,
         )
     }
+
+    internal fun betaReferenceValues(
+        dates: List<LocalDate>,
+        referenceSeries: Map<LocalDate, Double>?
+    ): List<Double> =
+        if (referenceSeries == null) emptyList()
+        else dates.map { referenceSeries[it] ?: Double.NaN }
 
     internal fun computeRfAnnualized(effrx: Map<LocalDate, Double>): Double {
         if (effrx.size < 2) return 0.0

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR } from '@/lib/chartData'
 import { curveDisplayLabel, curveMetricDataKey, curveMetricLabel, curveSelectionKey } from '@/lib/curveNaming'
+import { actionCountsFromCurve, averageMarginUtilization, type CommonStatsRow } from '@/lib/backtestStats'
 import { BacktestCurve, BacktestResults, PALETTE } from '@/types/backtest'
 
 export type ActionMarker = {
@@ -21,14 +22,7 @@ export type DenseActionPointGroup = {
   points: VisibleActionPoint[]
 }
 
-export type RebalanceStatsRow = {
-  key: string
-  label: string
-  color: string
-  stats: BacktestCurve['stats']
-  avgMargin: number | null
-  actionCounts: Record<string, number>
-}
+export type RebalanceStatsRow = CommonStatsRow
 
 export const ACTION_MARKERS: Record<string, ActionMarker> = {
   SELL_HIGH: { label: 'Sell high', short: 'SH', color: '#d94841' },
@@ -99,25 +93,16 @@ export function visibleActionPointGroups(
   return { markers, denseGroups }
 }
 
-export function averageMarginUtilization(points: { value: number }[] | undefined) {
-  const values = points?.map(p => p.value).filter(Number.isFinite) ?? []
-  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
-}
-
 export function buildStatsRows(results: BacktestResults): RebalanceStatsRow[] {
   return results.portfolios.flatMap((portfolio, pi) =>
     portfolio.curves.map((curve, ci) => {
-      const actionCounts: Record<string, number> = {}
-      curve.actionPoints?.forEach(point => {
-        actionCounts[point.type] = (actionCounts[point.type] ?? 0) + 1
-      })
       return {
         key: curveSelectionKey(pi, ci),
         label: curveDisplayLabel(portfolio.label, curve.label),
         color: PALETTE[pi % PALETTE.length][ci % PALETTE[pi % PALETTE.length].length],
         stats: curve.stats,
         avgMargin: averageMarginUtilization(curve.marginPoints),
-        actionCounts,
+        actionCounts: actionCountsFromCurve(curve),
       }
     })
   )

@@ -5,6 +5,7 @@ interface Props extends CashflowFormState {
   onStartingBalanceChange: (value: string) => void
   onCashflowAmountChange: (value: string) => void
   onCashflowFrequencyChange: (value: string) => void
+  onBetaReferenceTickerChange: (value: string) => void
 }
 
 export default function CashflowControls({
@@ -12,13 +13,16 @@ export default function CashflowControls({
   startingBalance,
   cashflowAmount,
   cashflowFrequency,
+  betaReferenceTicker,
   onStartingBalanceChange,
   onCashflowAmountChange,
   onCashflowFrequencyChange,
+  onBetaReferenceTickerChange,
 }: Props) {
   const startingBalanceId = `${idPrefix}-starting-balance`
   const cashflowAmountId = `${idPrefix}-cashflow-amount`
   const cashflowFrequencyId = `${idPrefix}-cashflow-frequency`
+  const betaReferenceTickerId = `${idPrefix}-beta-reference-ticker`
 
   return (
     <div className="backtest-section backtest-cashflow-row">
@@ -54,6 +58,18 @@ export default function CashflowControls({
         >
           {CASHFLOW_FREQUENCY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+      </div>
+      <div>
+        <label htmlFor={betaReferenceTickerId}>Beta Reference</label>
+        <input
+          type="text"
+          id={betaReferenceTickerId}
+          placeholder="SPY"
+          spellCheck={false}
+          value={betaReferenceTicker}
+          onChange={e => onBetaReferenceTickerChange(e.target.value)}
+          onBlur={e => onBetaReferenceTickerChange(e.target.value.trim().toUpperCase() || 'SPY')}
+        />
       </div>
     </div>
   )

@@ -37,6 +37,7 @@ export default function RebalanceStrategyPage() {
           startingBalance={page.startingBalance}
           cashflowAmount={page.cashflowAmount}
           cashflowFrequency={page.cashflowFrequency}
+          betaReferenceTicker={page.betaReferenceTicker}
           onFromDateChange={page.setFromDate}
           onToDateChange={page.setToDate}
           onImportCodeChange={page.setImportCode}
@@ -45,6 +46,7 @@ export default function RebalanceStrategyPage() {
           onStartingBalanceChange={page.setStartingBalance}
           onCashflowAmountChange={page.setCashflowAmount}
           onCashflowFrequencyChange={page.setCashflowFrequency}
+          onBetaReferenceTickerChange={page.setBetaReferenceTicker}
         />
 
         <TickerMappingControl

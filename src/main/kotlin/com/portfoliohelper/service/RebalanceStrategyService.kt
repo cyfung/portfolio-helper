@@ -12,6 +12,7 @@ object RebalanceStrategyService {
     val referenceTickers = enabledStrategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =
         enabledStrategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+    val betaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(request.betaReferenceTicker)
     val warnings = linkedSetOf<String>()
     val warningCollector = { _: String, tickerWarnings: List<String> ->
       warnings.addAll(tickerWarnings)
@@ -23,7 +24,7 @@ object RebalanceStrategyService {
             request.toDate,
             request.portfolio,
             referenceTickers,
-            extraTickers = standaloneMarginTickers,
+            extraTickers = standaloneMarginTickers + betaReferenceTicker,
             warningCollector = warningCollector,
         )
     val baseResult = runBasePortfolio(request)
@@ -94,6 +95,7 @@ object RebalanceStrategyService {
       globalDates: List<LocalDate>? = null,
       includeActionDiagnostics: Boolean = false,
       zeroMarginInterest: Boolean = false,
+      betaReferenceTicker: String? = "SPY",
       warningCollector: ((String, List<String>) -> Unit)? = null,
   ): List<CurveResult> {
     val enabledStrategies = strategies.filter { it.enabled }
@@ -101,13 +103,14 @@ object RebalanceStrategyService {
     val referenceTickers = enabledStrategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =
         enabledStrategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
+    val normalizedBetaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(betaReferenceTicker)
     val context =
         prepareRunContext(
             fromDate,
             toDate,
             portfolio,
             referenceTickers,
-            extraTickers = standaloneMarginTickers,
+            extraTickers = standaloneMarginTickers + normalizedBetaReferenceTicker,
             overrideDates = globalDates,
             warningCollector = warningCollector,
         )
@@ -122,6 +125,7 @@ object RebalanceStrategyService {
           startingBalance,
           includeActionDiagnostics,
           zeroMarginInterest = zeroMarginInterest,
+          betaReferenceTicker = normalizedBetaReferenceTicker,
       )
     }
   }
@@ -143,8 +147,10 @@ object RebalanceStrategyService {
       startingBalance: Double = 10_000.0,
       includeActionDiagnostics: Boolean = false,
       zeroMarginInterest: Boolean = false,
+      betaReferenceTicker: String? = "SPY",
   ): List<CurveResult> {
     val context = RunContext(seriesMap, dates, effrx)
+    val normalizedBetaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(betaReferenceTicker)
     val standaloneBaseCache = ConcurrentHashMap<StandaloneDerivedReferenceCacheKey, DerivedReferenceSeries>()
     return strategies
         .filter { it.enabled }
@@ -161,6 +167,7 @@ object RebalanceStrategyService {
                   startingBalance,
                   includeActionDiagnostics,
                   zeroMarginInterest = zeroMarginInterest,
+                  betaReferenceTicker = normalizedBetaReferenceTicker,
               )
           val request =
               RebalanceStrategyRequest(
@@ -172,6 +179,7 @@ object RebalanceStrategyService {
                   startingBalance = startingBalance,
                   includeActionDiagnostics = includeActionDiagnostics,
                   zeroMarginInterest = zeroMarginInterest,
+                  betaReferenceTicker = normalizedBetaReferenceTicker,
               )
           val derivedCurves =
               runDerivedSubStrategies(
@@ -214,12 +222,13 @@ object RebalanceStrategyService {
   private fun runBasePortfolio(request: RebalanceStrategyRequest): MultiBacktestResult =
       BacktestService.runMulti(
           MultiBacktestRequest(
-              request.fromDate,
-              request.toDate,
-              listOf(request.portfolio.copy(rebalanceStrategies = emptyList())),
-              request.cashflow,
-              request.startingBalance,
-              request.zeroMarginInterest,
+              fromDate = request.fromDate,
+              toDate = request.toDate,
+              portfolios = listOf(request.portfolio.copy(rebalanceStrategies = emptyList())),
+              cashflow = request.cashflow,
+              startingBalance = request.startingBalance,
+              zeroMarginInterest = request.zeroMarginInterest,
+              betaReferenceTicker = request.betaReferenceTicker,
           )
       )
 
@@ -241,6 +250,7 @@ object RebalanceStrategyService {
             request.startingBalance,
             request.includeActionDiagnostics,
             zeroMarginInterest = request.zeroMarginInterest,
+            betaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(request.betaReferenceTicker),
         )
     val curve = baseRun.curve
     val derivedCurves =
@@ -292,6 +302,7 @@ object RebalanceStrategyService {
               referenceSeries.margins,
               baseMarginIntentionSeries = referenceSeries.marginIntentions,
               zeroMarginInterest = request.zeroMarginInterest,
+              betaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(request.betaReferenceTicker),
           )
         }
   }
@@ -334,6 +345,7 @@ object RebalanceStrategyService {
               request.startingBalance,
               includeActionDiagnostics = false,
               zeroMarginInterest = request.zeroMarginInterest,
+              betaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(request.betaReferenceTicker),
           )
       DerivedReferenceSeries(
           standaloneRun.marginHistory,
@@ -481,14 +493,18 @@ object RebalanceStrategyService {
     if (values.size < 2) return null
     val stats = computeStats(values, activeYears, BacktestService.computeRfAnnualized(effrx), cashflows)
     return BacktestStats(
-        stats.cagr,
-        stats.maxDrawdown,
-        stats.sharpe,
-        stats.ulcerIndex,
-        stats.upi,
-        stats.annualVolatility,
-        stats.longestDrawdownDays,
-        values.last(),
+        cagr = stats.cagr,
+        maxDrawdown = stats.maxDrawdown,
+        sharpe = stats.sharpe,
+        ulcerIndex = stats.ulcerIndex,
+        upi = stats.upi,
+        annualVolatility = stats.annualVolatility,
+        longestDrawdownDays = stats.longestDrawdownDays,
+        endingValue = values.last(),
+        sortino = stats.sortino,
+        averageDrawdown = stats.averageDrawdown,
+        calmar = stats.calmar,
+        beta = stats.beta,
     )
   }
 
@@ -674,6 +690,7 @@ object RebalanceStrategyService {
       baseBuyLowEventSeries: List<Boolean>? = null,
       baseMarginIntentionSeries: List<List<MarginIntention>>? = null,
       zeroMarginInterest: Boolean = false,
+      betaReferenceTicker: String? = "SPY",
   ): CurveResult =
       runStrategyWithIntentions(
           portfolio,
@@ -689,6 +706,7 @@ object RebalanceStrategyService {
           baseBuyLowEventSeries,
           baseMarginIntentionSeries,
           zeroMarginInterest,
+          betaReferenceTicker,
       ).curve
 
   private fun runStrategyWithIntentions(
@@ -705,6 +723,7 @@ object RebalanceStrategyService {
       baseBuyLowEventSeries: List<Boolean>? = null,
       baseMarginIntentionSeries: List<List<MarginIntention>>? = null,
       zeroMarginInterest: Boolean = false,
+      betaReferenceTicker: String? = "SPY",
   ): StrategyRunResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
@@ -1745,6 +1764,10 @@ object RebalanceStrategyService {
         dates,
         effrx,
         cashflows = BacktestService.cashflowAmounts(dates, cashflow),
+        benchmarkValues = BacktestService.betaReferenceValues(
+            dates,
+            seriesMap[BacktestService.normalizeBetaReferenceTicker(betaReferenceTicker)],
+        ),
     )
     return StrategyRunResult(
         CurveResult(

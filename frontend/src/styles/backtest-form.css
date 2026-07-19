@@ -83,7 +83,7 @@
 
 .backtest-cashflow-row {
     display: grid;
-    grid-template-columns: repeat(3, auto);
+    grid-template-columns: repeat(4, auto);
     gap: 0.75rem;
     width: fit-content;
     align-items: stretch;
@@ -801,8 +801,21 @@
 }
 
 /* Stats table */
+.stats-container {
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+    justify-self: center;
+    align-self: center;
+    width: max-content;
+    max-width: calc(100vw - 2rem);
+    overflow-x: auto;
+    margin: 0 0 1rem;
+}
+
 .backtest-stats-table {
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
     margin-bottom: 1rem;
     border-collapse: separate;
     border-spacing: 0;

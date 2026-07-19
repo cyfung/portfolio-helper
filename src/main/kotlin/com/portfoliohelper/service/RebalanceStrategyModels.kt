@@ -287,6 +287,7 @@ data class RebalanceStrategyRequest(
     val startingBalance: Double = 10_000.0,
     val includeActionDiagnostics: Boolean = false,
     val zeroMarginInterest: Boolean = false,
+    val betaReferenceTicker: String? = "SPY",
 )
 
 enum class RebalanceOptimizationMetric { CAGR, SHARPE, UPI }

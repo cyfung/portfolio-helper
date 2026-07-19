@@ -1,4 +1,5 @@
-import { fmt2, dur, money, pct } from '@/lib/statsFormatters'
+import BacktestStatsTable from '@/components/backtest/BacktestStatsTable'
+import { fmt2, money, pct } from '@/lib/statsFormatters'
 import type { RebalanceStatsRow } from '@/lib/rebalanceStrategyResults'
 import type { BacktestCurve } from '@/types/backtest'
 
@@ -18,65 +19,21 @@ export function ResultsStatsTable({
   onToggleCurve: (key: string, checked: boolean) => void
 }) {
   return (
-    <div className="stats-container">
-      <table className="backtest-stats-table">
-        <thead>
-          <tr>
-            <th>
-              <input
-                type="checkbox"
-                checked={allChecked}
-                ref={el => { if (el) el.indeterminate = anyChecked && !allChecked }}
-                onChange={e => onToggleAll(e.target.checked)}
-              />
-            </th>
-            <th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th>
-            <th title="Peak-to-recovery duration of the worst drawdown">Longest DD</th>
-            <th title="Annualised volatility of daily returns">Volatility</th>
-            <th>Sharpe</th>
-            <th title="Ulcer Index">Ulcer</th>
-            <th title="Ulcer Performance Index">UPI</th>
-            <th title="Average margin utilization">Avg Margin</th>
-            <th title="# buy-low action points">BL</th>
-            <th title="# sell-high action points">SH</th>
-            <th title="# buy-dip action points">BD</th>
-            <th title="# sell-surge action points">SS</th>
-            <th title="# VM timing margin rebalance action points">VM</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => {
-            const s = row.stats
-            return (
-              <tr key={row.key}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(row.key)}
-                    onChange={e => onToggleCurve(row.key, e.target.checked)}
-                  />
-                </td>
-                <td style={{ color: row.color }}>{row.label}</td>
-                <td>{money(s.endingValue)}</td>
-                <td>{pct(s.cagr)}</td>
-                <td>{pct(s.maxDrawdown)}</td>
-                <td>{dur(s.longestDrawdownDays)}</td>
-                <td>{pct(s.annualVolatility)}</td>
-                <td>{fmt2(s.sharpe)}</td>
-                <td>{pct(s.ulcerIndex)}</td>
-                <td>{fmt2(s.upi)}</td>
-                <td>{row.avgMargin == null ? '-' : pct(row.avgMargin)}</td>
-                <td>{row.actionCounts.BUY_LOW ?? 0}</td>
-                <td>{row.actionCounts.SELL_HIGH ?? 0}</td>
-                <td>{row.actionCounts.BUY_DIP ?? 0}</td>
-                <td>{row.actionCounts.SELL_SURGE ?? 0}</td>
-                <td>{row.actionCounts.VM_TIMING_MR ?? 0}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+    <BacktestStatsTable
+      allChecked={allChecked}
+      anyChecked={anyChecked}
+      rows={rows}
+      selected={selected}
+      actionColumns={[
+        { key: 'BUY_LOW', label: 'BL', title: '# buy-low action points' },
+        { key: 'SELL_HIGH', label: 'SH', title: '# sell-high action points' },
+        { key: 'BUY_DIP', label: 'BD', title: '# buy-dip action points' },
+        { key: 'SELL_SURGE', label: 'SS', title: '# sell-surge action points' },
+        { key: 'VM_TIMING_MR', label: 'VM', title: '# VM timing margin rebalance action points' },
+      ]}
+      onToggleAll={onToggleAll}
+      onToggleCurve={onToggleCurve}
+    />
   )
 }
 

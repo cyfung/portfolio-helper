@@ -1,4 +1,9 @@
-import { DEFAULT_CASHFLOW_FREQUENCY, type CashflowFormState, cashflowStateFromSettings } from '@/types/backtest'
+import {
+  DEFAULT_BETA_REFERENCE_TICKER,
+  DEFAULT_CASHFLOW_FREQUENCY,
+  type CashflowFormState,
+  cashflowStateFromSettings,
+} from '@/types/backtest'
 
 const SHARED_CASHFLOW_SETTINGS_KEY = 'ib-viewer-shared-cashflow-settings'
 const SHARED_CASHFLOW_SETTINGS_CHANGED = 'ib-viewer-shared-cashflow-settings-changed'
@@ -11,7 +16,8 @@ function normalizeCashflowState(state: Partial<CashflowFormState>): CashflowForm
   const startingBalance = String(state.startingBalance ?? '').trim() || '10000'
   const cashflowAmount = String(state.cashflowAmount ?? '').trim() || '0'
   const cashflowFrequency = String(state.cashflowFrequency ?? '').trim() || DEFAULT_CASHFLOW_FREQUENCY
-  return { startingBalance, cashflowAmount, cashflowFrequency }
+  const betaReferenceTicker = String(state.betaReferenceTicker ?? '').trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER
+  return { startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker }
 }
 
 export function readSharedCashflowSettings(): CashflowFormState | null {

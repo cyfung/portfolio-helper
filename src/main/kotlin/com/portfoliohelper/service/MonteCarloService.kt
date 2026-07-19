@@ -22,12 +22,29 @@ object MonteCarloService {
         years: Double,
         rfAnnualized: Double,
         cashflows: DoubleArray,
+        benchmarkValues: DoubleArray,
     ): PortfolioStats =
         MonteCarloIndexedSimulation.computeStats(
             points.map { it.value }.toDoubleArray(),
             years,
             rfAnnualized,
             cashflows,
+            benchmarkValues,
+        )
+
+    private fun PortfolioStats.toSimPassMetrics(): SimPassMetrics =
+        SimPassMetrics(
+            cagr,
+            maxDrawdown,
+            sharpe,
+            ulcerIndex,
+            upi,
+            annualVolatility,
+            longestDrawdownDays,
+            sortino,
+            averageDrawdown,
+            calmar,
+            beta,
         )
 
     fun getProgress(): MonteCarloProgress = progressState.get()
@@ -109,13 +126,14 @@ object MonteCarloService {
         )
         val effrxSeries = withContext(Dispatchers.IO) { BacktestService.loadEffrxSeries() }
         val portfolios = request.portfolios.map { it.withoutPlaceholderTickers() }
+        val betaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(request.betaReferenceTicker)
         val referenceTickersByPortfolio =
             portfolios.map { RebalanceStrategyService.requiredReferenceTickers(it.rebalanceStrategies) }
 
         // ── Step 1: Parse LETF definitions ───────────────────────────────────
         val requestedTickers = portfolios.indices
             .flatMap { index ->
-                portfolios[index].tickers.map { it.ticker } + referenceTickersByPortfolio[index]
+                portfolios[index].tickers.map { it.ticker } + referenceTickersByPortfolio[index] + betaReferenceTicker
             }
             .distinct()
         val hasPrependedChain = requestedTickers.any { BacktestService.parseTickerChain(it) != null }
@@ -148,7 +166,7 @@ object MonteCarloService {
         // ── Step 6: Build pool date list ──────────────────────────────────────
         val allSeriesMaps = portfolios.mapIndexed { index, pConfig ->
             val tickersForPool =
-                (pConfig.tickers.map { it.ticker } + referenceTickersByPortfolio[index])
+                (pConfig.tickers.map { it.ticker } + referenceTickersByPortfolio[index] + betaReferenceTicker)
                     .distinct()
             tickersForPool.associate { ticker ->
                 ticker to (seriesCache[ticker]
@@ -194,10 +212,21 @@ object MonteCarloService {
 
         val allTickerList =
             (portfolios.flatMap { it.tickers.map { tw -> tw.ticker } } +
-                referenceTickersByPortfolio.flatten())
+                referenceTickersByPortfolio.flatten() +
+                betaReferenceTicker)
                 .distinct()
         val allTickerIndex = allTickerList.withIndex().associate { it.value to it.index }
         val allTickers = allTickerList.toSet()
+        val betaReferenceRuntime = MonteCarloIndexedSimulation.simpleRuntimeForPortfolio(
+            PortfolioConfig(
+                label = betaReferenceTicker,
+                tickers = listOf(TickerWeight(betaReferenceTicker, 1.0)),
+                rebalanceStrategy = RebalanceStrategy.NONE,
+                marginStrategies = emptyList(),
+                includeNoMargin = true,
+            ),
+            allTickerIndex,
+        )
 
         // tickerReturnsByDay[i] = returns for day i (transition poolDates[i] → poolDates[i+1])
         // indexed 0..poolSize-2
@@ -285,6 +314,7 @@ object MonteCarloService {
                     syntheticDates,
                     syntheticEffrx,
                     startingBalance,
+                    betaReferenceTicker = betaReferenceTicker,
                 )
             val expected = strategyLabels(pConfig).size
             require(curves.size == expected) {
@@ -317,7 +347,7 @@ object MonteCarloService {
         val simulationProgressPublishedAt = AtomicLong(System.nanoTime())
 
         // allMetrics[pi][ci][simIdx]
-        val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0)
+        val zero = SimPassMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0)
         val allMetrics = Array(portfolioCurveConfigs.size) { pi ->
             Array(portfolioCurveConfigs[pi].allLabels.size) { Array(numSims) { zero } }
         }
@@ -330,6 +360,14 @@ object MonteCarloService {
                 minChunkDays,
                 maxChunkDays,
                 poolSize,
+            )
+            val benchmarkValues = MonteCarloIndexedSimulation.simulate(
+                betaReferenceRuntime,
+                null,
+                indexedPath,
+                tickerReturnsByDay,
+                effrxDailyRates,
+                request.startingBalance,
             )
 
             portfolioCurveConfigs.forEachIndexed { pi, config ->
@@ -350,8 +388,9 @@ object MonteCarloService {
                         years,
                         rfAnnualized,
                         syntheticCashflows,
+                        benchmarkValues,
                     )
-                    allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
+                    allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
                     ci++
                 }
                 if (config.strategyLabels.isNotEmpty()) {
@@ -363,8 +402,8 @@ object MonteCarloService {
                     )
                     val strategyCurves = simulateAttachedStrategies(config.portfolio, path, request.startingBalance, request.cashflow)
                     strategyCurves.forEach { curve ->
-                        val stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows)
-                        allMetrics[pi][ci][simIdx] = SimPassMetrics(stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
+                        val stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
+                        allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
                         ci++
                     }
                 }
@@ -415,8 +454,12 @@ object MonteCarloService {
         // ── Per-metric independent percentile values ───────────────────────────
         val maxDdPctValues   = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.maxDD }
         val sharpePctValues  = metricPercentiles(allMetrics, numSims, pctIdxList) { it.sharpe }
+        val sortinoPctValues = metricPercentiles(allMetrics, numSims, pctIdxList) { it.sortino }
         val ulcerPctValues   = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.ulcerIndex }
         val upiPctValues     = metricPercentiles(allMetrics, numSims, pctIdxList) { it.upi }
+        val avgDdPctValues   = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true) { it.averageDrawdown }
+        val calmarPctValues  = metricPercentiles(allMetrics, numSims, pctIdxList) { it.calmar }
+        val betaPctValues    = metricPercentiles(allMetrics, numSims, pctIdxList) { it.beta }
         val volPctValues     = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.volatility }
         val longestDdPctValues = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true) { it.longestDrawdownDays.toDouble() }
 
@@ -493,6 +536,14 @@ object MonteCarloService {
                 val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
                     val simIdx = pctSimIndices[pi][ci][pctIdx]
                     val path = fullPaths[simIdx]!!
+                    val benchmarkValues = MonteCarloIndexedSimulation.simulate(
+                        betaReferenceRuntime,
+                        null,
+                        path,
+                        tickerReturnsByDay,
+                        effrxDailyRates,
+                        request.startingBalance,
+                    )
                     val values: List<Double>
                     val stats: PortfolioStats
                     if (ci < config.simpleCurves.size) {
@@ -512,6 +563,7 @@ object MonteCarloService {
                             years,
                             rfAnnualized,
                             syntheticCashflows,
+                            benchmarkValues,
                         )
                     } else {
                         val strategyIndex = ci - config.simpleCurves.size
@@ -527,7 +579,7 @@ object MonteCarloService {
                             request.cashflow,
                         )[strategyIndex]
                         values = curve.points.map { it.value }
-                        stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows)
+                        stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
                     }
                     val endValue = values.last()
                     val done = resultPathsCompleted.incrementAndGet()
@@ -547,15 +599,34 @@ object MonteCarloService {
                             )
                         )
                     }
-                    MonteCarloPercentilePath(pct, values, endValue, stats.cagr, stats.maxDrawdown, stats.sharpe, stats.ulcerIndex, stats.upi, stats.annualVolatility, stats.longestDrawdownDays)
+                    MonteCarloPercentilePath(
+                        pct,
+                        values,
+                        endValue,
+                        stats.cagr,
+                        stats.maxDrawdown,
+                        stats.sharpe,
+                        stats.ulcerIndex,
+                        stats.upi,
+                        stats.annualVolatility,
+                        stats.longestDrawdownDays,
+                        stats.sortino,
+                        stats.averageDrawdown,
+                        stats.calmar,
+                        stats.beta,
+                    )
                 }
                 MonteCarloCurveResult(
                     label,
                     percentilePaths,
                     maxDdPctValues[pi][ci],
                     sharpePctValues[pi][ci],
+                    sortinoPctValues[pi][ci],
                     ulcerPctValues[pi][ci],
                     upiPctValues[pi][ci],
+                    avgDdPctValues[pi][ci],
+                    calmarPctValues[pi][ci],
+                    betaPctValues[pi][ci],
                     volPctValues[pi][ci],
                     longestDdPctValues[pi][ci]
                 )

@@ -46,6 +46,7 @@ private val commonScenarioSettingsKeys = setOf(
     "toDate",
     "startingBalance",
     "cashflow",
+    "betaReferenceTicker",
 )
 
 private fun parseSettingsObject(raw: String?): JsonObject =
@@ -1385,13 +1386,23 @@ fun Application.configureRouting() {
                 val toDate =
                     json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
+                val betaReferenceTicker = json["betaReferenceTicker"]?.jsonPrimitive?.contentOrNull
 
                 val portfolios = parsePortfolioConfigs(json)
 
                 val cashflow = json.parseCashflowConfig()
 
                 val result =
-                    BacktestService.runMulti(MultiBacktestRequest(fromDate, toDate, portfolios, cashflow, startingBalance))
+                    BacktestService.runMulti(
+                        MultiBacktestRequest(
+                            fromDate = fromDate,
+                            toDate = toDate,
+                            portfolios = portfolios,
+                            cashflow = cashflow,
+                            startingBalance = startingBalance,
+                            betaReferenceTicker = betaReferenceTicker,
+                        )
+                    )
 
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
             } catch (e: Exception) {
@@ -1526,6 +1537,7 @@ fun Application.configureRouting() {
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
                 val includeActionDiagnostics = json["includeActionDiagnostics"]?.jsonPrimitive?.booleanOrNull ?: false
                 val zeroMarginInterest = json["zeroMarginInterest"]?.jsonPrimitive?.booleanOrNull ?: false
+                val betaReferenceTicker = json["betaReferenceTicker"]?.jsonPrimitive?.contentOrNull
 
                 val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
                     ?: throw IllegalArgumentException("Missing portfolio")
@@ -1546,6 +1558,7 @@ fun Application.configureRouting() {
                         startingBalance,
                         includeActionDiagnostics,
                         zeroMarginInterest,
+                        betaReferenceTicker,
                     )
                 )
                 call.respondText(appJson.encodeToString(result), ContentType.Application.Json)
@@ -1664,21 +1677,23 @@ fun Application.configureRouting() {
                 val simulatedYears = json["simulatedYears"]?.jsonPrimitive?.intOrNull ?: 20
                 val numSimulations = json["numSimulations"]?.jsonPrimitive?.intOrNull ?: 500
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
+                val betaReferenceTicker = json["betaReferenceTicker"]?.jsonPrimitive?.contentOrNull
                 val cashflow = json.parseCashflowConfig()
 
                 val portfolios = parsePortfolioConfigs(json)
 
                 val request = MonteCarloRequest(
-                    fromDate,
-                    toDate,
-                    minChunkYears,
-                    maxChunkYears,
-                    simulatedYears,
-                    numSimulations,
-                    portfolios,
-                    cashflow,
-                    startingBalance,
-                    json["seed"]?.jsonPrimitive?.longOrNull
+                    fromDate = fromDate,
+                    toDate = toDate,
+                    minChunkYears = minChunkYears,
+                    maxChunkYears = maxChunkYears,
+                    simulatedYears = simulatedYears,
+                    numSimulations = numSimulations,
+                    portfolios = portfolios,
+                    cashflow = cashflow,
+                    startingBalance = startingBalance,
+                    seed = json["seed"]?.jsonPrimitive?.longOrNull,
+                    betaReferenceTicker = betaReferenceTicker,
                 )
                 val result = MonteCarloService.runMonteCarlo(request)
 

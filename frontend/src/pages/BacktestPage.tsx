@@ -29,9 +29,16 @@ import {
 } from '@/lib/configImportExport'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import {
+  actionPointCount,
+  averageFinite,
+  averageMarginUtilization,
+  computeSeriesStats,
+  type SeriesStats,
+} from '@/lib/backtestStats'
+import {
   BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
   configToBlockState, PALETTE, cashflowStateFromSettings,
-  cashflowToPayload, configToBlockInputLabel, DEFAULT_CASHFLOW_FREQUENCY,
+  cashflowToPayload, configToBlockInputLabel, DEFAULT_BETA_REFERENCE_TICKER, DEFAULT_CASHFLOW_FREQUENCY,
   hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { ACCENT_LIGHT, ACCENT_DARK, scaleDash } from '@/lib/colorScheme'
@@ -65,18 +72,6 @@ import {
 
 // ── Stats helper ──────────────────────────────────────────────────────────────
 
-interface SeriesStats {
-  endingValue: number
-  cagr: number
-  maxDrawdown: number
-  longestDrawdownDays: number
-  annualVolatility: number
-  sharpe: number
-  sortino: number
-  ulcerIndex: number
-  upi: number
-}
-
 type ChartRow = Record<string, unknown>
 
 interface RealPortfolioSummary {
@@ -91,6 +86,7 @@ interface PortfolioDataResponse {
 interface StoredBacktestConfig {
   fromDate?: string | null
   toDate?: string | null
+  betaReferenceTicker?: string | null
   portfolios?: Record<string, unknown>[]
 }
 
@@ -159,91 +155,12 @@ function visibleActionPointGroups(
   return { markers, denseGroups }
 }
 
-function actionPointCount(actionPoints: { type: string }[] | undefined, type: string) {
-  return actionPoints?.filter(point => point.type === type).length ?? 0
-}
-
-function averageMarginUtilization(points: { value: number }[] | undefined) {
-  const values = points?.map(p => p.value).filter(Number.isFinite) ?? []
-  return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
-}
-
-function averageFinite(values: (number | null | undefined)[] | undefined) {
-  const finiteValues = values?.filter((value): value is number => Number.isFinite(value)) ?? []
-  return finiteValues.length > 0 ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length : null
-}
-
-function computeSortinoFromValues(values: number[], cagr: number) {
-  const logReturns: number[] = []
-  for (let i = 1; i < values.length; i++) {
-    if (values[i - 1] > 0 && values[i] > 0) logReturns.push(Math.log(values[i] / values[i - 1]))
-  }
-  const downsideReturns = logReturns.filter(r => r < 0)
-  const downsideVariance = downsideReturns.reduce((a, b) => a + b ** 2, 0) / Math.max(downsideReturns.length, 1)
-  const downsideDeviation = Math.sqrt(downsideVariance * 252)
-  return downsideDeviation > 0 ? cagr / downsideDeviation : 0
-}
-
 function addResultWarnings(results: BacktestResults, warnings: string[]) {
   if (warnings.length === 0) return results
   return {
     ...results,
     warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
   }
-}
-
-function computeSeriesStats(dates: string[], values: number[]): SeriesStats | null {
-  if (values.length < 2) return null
-  const n = values.length
-  const start = values[0], end = values[n - 1]
-  if (start <= 0) return null
-
-  const years = (new Date(dates[n - 1]).getTime() - new Date(dates[0]).getTime()) / (365.25 * 86400000)
-  if (years <= 0) return null
-  const cagr = Math.pow(end / start, 1 / years) - 1
-
-  const logReturns: number[] = []
-  for (let i = 1; i < n; i++) {
-    if (values[i - 1] > 0 && values[i] > 0) logReturns.push(Math.log(values[i] / values[i - 1]))
-  }
-  const mean = logReturns.reduce((a, b) => a + b, 0) / logReturns.length
-  const variance = logReturns.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(logReturns.length - 1, 1)
-  const annualVolatility = Math.sqrt(variance * 252)
-  const sharpe = annualVolatility > 0 ? cagr / annualVolatility : 0
-  const sortino = computeSortinoFromValues(values, cagr)
-
-  let peak = start, maxDrawdown = 0, longestDrawdownDays = 0
-  let ddStart: Date | null = null
-  for (let i = 0; i < n; i++) {
-    if (values[i] >= peak) {
-      if (ddStart) {
-        const days = (new Date(dates[i]).getTime() - ddStart.getTime()) / 86400000
-        if (days > longestDrawdownDays) longestDrawdownDays = days
-      }
-      peak = values[i]
-      ddStart = null
-    } else {
-      if (!ddStart) ddStart = new Date(i > 0 ? dates[i - 1] : dates[0])
-      const dd = values[i] / peak - 1
-      if (dd < maxDrawdown) maxDrawdown = dd
-    }
-  }
-  if (ddStart) {
-    const days = (new Date(dates[n - 1]).getTime() - ddStart.getTime()) / 86400000
-    if (days > longestDrawdownDays) longestDrawdownDays = days
-  }
-
-  peak = start
-  let sumSq = 0
-  for (const v of values) {
-    if (v > peak) peak = v
-    const dd = (v / peak - 1) * 100
-    sumSq += dd * dd
-  }
-  const ulcerIndex = Math.sqrt(sumSq / n) / 100
-  const upi = ulcerIndex > 0 ? cagr / ulcerIndex : 0
-
-  return { endingValue: end, cagr, maxDrawdown, longestDrawdownDays, annualVolatility, sharpe, sortino, ulcerIndex, upi }
 }
 
 // ── Real portfolio data type ───────────────────────────────────────────────────
@@ -368,6 +285,7 @@ export default function BacktestPage() {
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('0')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
+  const [betaReferenceTicker, setBetaReferenceTicker] = useState(DEFAULT_BETA_REFERENCE_TICKER)
   const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
   const [importCode, setImportCode]               = useState('')
   const [configError, setConfigError] = useState('')
@@ -419,8 +337,9 @@ export default function BacktestPage() {
     toDate: toDate || null,
     startingBalance: startingBalanceToPayload(startingBalance),
     cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+    betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
     settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
-  }), [blocks, cashflowAmount, cashflowFrequency, fromDate, startingBalance, toDate])
+  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, startingBalance, toDate])
 
   useSettingsAutosave('/api/backtest/settings', settingsPayload, settingsLoaded)
 
@@ -428,12 +347,13 @@ export default function BacktestPage() {
     setStartingBalance(shared.startingBalance)
     setCashflowAmount(shared.cashflowAmount)
     setCashflowFrequency(shared.cashflowFrequency)
+    setBetaReferenceTicker(shared.betaReferenceTicker)
   }), [])
 
   useEffect(() => {
     if (!cashflowCacheLoaded) return
-    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency })
-  }, [cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker })
+  }, [betaReferenceTicker, cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
 
   useEffect(() => {
     let active = true
@@ -557,6 +477,7 @@ export default function BacktestPage() {
           setStartingBalance(cashflowState.startingBalance)
           setCashflowAmount(cashflowState.cashflowAmount)
           setCashflowFrequency(cashflowState.cashflowFrequency)
+          setBetaReferenceTicker(cashflowState.betaReferenceTicker)
           if (req.portfolios) {
             setBlocks(prev => {
               const next = [...prev]
@@ -843,6 +764,7 @@ export default function BacktestPage() {
             portfolios,
             settingsPortfolios,
             cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+            betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
           }),
         }),
         realSlug
@@ -895,6 +817,7 @@ export default function BacktestPage() {
       startingBalance: exportStartingBalance,
       portfolios,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
     }, portfolios))
     setImportCode(code)
     try {
@@ -912,6 +835,7 @@ export default function BacktestPage() {
     if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
     if (req.portfolios) {
       const portfolios = req.portfolios
       setBlocks(prev => {
@@ -1152,7 +1076,7 @@ export default function BacktestPage() {
     )
   }
 
-  // Stats table stat row renderer helper
+  // Stats table row helper for real portfolio overlays.
   const realStatRow = (
     key: string,
     label: string,
@@ -1167,11 +1091,14 @@ export default function BacktestPage() {
         <td style={{ color }}>{label}</td>
         <td>{money(stats.endingValue)}</td>
         <td>{pct(stats.cagr)}</td>
-        <td>{pct(-stats.maxDrawdown)}</td>
+        <td>{pct(stats.maxDrawdown)}</td>
+        <td>{stats.averageDrawdown == null ? '-' : pct(stats.averageDrawdown)}</td>
         <td>{dur(stats.longestDrawdownDays)}</td>
         <td>{pct(stats.annualVolatility)}</td>
         <td>{fmt2(stats.sharpe)}</td>
-        <td>{fmt2(stats.sortino)}</td>
+        <td>{stats.sortino == null ? '-' : fmt2(stats.sortino)}</td>
+        <td>{stats.calmar == null ? '-' : fmt2(stats.calmar)}</td>
+        <td>{stats.beta == null ? '-' : fmt2(stats.beta)}</td>
         <td>{pct(stats.ulcerIndex)}</td>
         <td>{fmt2(stats.upi)}</td>
         <td>{avgMargin == null ? '-' : pct(avgMargin)}</td>
@@ -1204,6 +1131,7 @@ export default function BacktestPage() {
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
+          betaReferenceTicker={betaReferenceTicker}
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           onImportCodeChange={setImportCode}
@@ -1212,6 +1140,7 @@ export default function BacktestPage() {
           onStartingBalanceChange={setStartingBalance}
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
+          onBetaReferenceTickerChange={setBetaReferenceTicker}
         />
 
         <TickerMappingControl
@@ -1319,10 +1248,13 @@ export default function BacktestPage() {
                     />
                   </th>
                   <th>Curve</th><th>End Value</th><th>CAGR</th><th>Max DD</th>
+                  <th title="Average drawdown from running peak">Avg DD</th>
                   <th title="Peak-to-recovery duration of the worst drawdown">Longest DD</th>
                   <th title="Annualised volatility of daily returns">Volatility</th>
                   <th>Sharpe</th>
                   <th>Sortino</th>
+                  <th title="CAGR divided by max drawdown">Calmar</th>
+                  <th title="Daily-return beta versus the configured reference ticker">Beta</th>
                   <th title="Ulcer Index: RMS of drawdowns from peak">Ulcer</th>
                   <th title="Ulcer Performance Index (Martin Ratio)">UPI</th>
                   <th title="Average margin utilization">Avg Margin</th>
@@ -1339,9 +1271,7 @@ export default function BacktestPage() {
                     const s      = curve.stats
                     const factor = chartData.curveScaleFactors.get(key) ?? 1
                     const avgMargin = averageMarginUtilization(curve.marginPoints)
-                    const sortino = Number.isFinite(s.sortino)
-                      ? s.sortino!
-                      : computeSortinoFromValues(curve.points.map(p => p.value), s.cagr)
+                    const sortino = Number.isFinite(s.sortino) ? s.sortino : null
                     return (
                       <tr key={key}>
                         <td><input type="checkbox" checked={selected.has(key)} onChange={e => toggleCurve(key, e.target.checked)} /></td>
@@ -1349,10 +1279,13 @@ export default function BacktestPage() {
                         <td>{money(s.endingValue * factor)}</td>
                         <td>{pct(s.cagr)}</td>
                         <td>{pct(s.maxDrawdown)}</td>
+                        <td>{s.averageDrawdown == null ? '-' : pct(s.averageDrawdown)}</td>
                         <td>{dur(s.longestDrawdownDays)}</td>
                         <td>{pct(s.annualVolatility)}</td>
                         <td>{fmt2(s.sharpe)}</td>
-                        <td>{fmt2(sortino)}</td>
+                        <td>{sortino == null ? '-' : fmt2(sortino)}</td>
+                        <td>{s.calmar == null ? '-' : fmt2(s.calmar)}</td>
+                        <td>{s.beta == null ? '-' : fmt2(s.beta)}</td>
                         <td>{pct(s.ulcerIndex)}</td>
                         <td>{fmt2(s.upi)}</td>
                         <td>{avgMargin == null ? '–' : pct(avgMargin)}</td>

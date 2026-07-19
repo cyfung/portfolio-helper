@@ -112,6 +112,7 @@ data class MultiBacktestRequest(
     val cashflow: CashflowConfig? = null,
     val startingBalance: Double = 10_000.0,
     val zeroMarginInterest: Boolean = false,
+    val betaReferenceTicker: String? = "SPY",
 )
 
 data class MarketTimingRequest(
@@ -211,6 +212,10 @@ data class BacktestStats(
     val annualVolatility: Double,
     val longestDrawdownDays: Int,
     val endingValue: Double,
+    val sortino: Double = 0.0,
+    val averageDrawdown: Double = 0.0,
+    val calmar: Double = 0.0,
+    val beta: Double = 0.0,
     val marginUpperTriggers: Int? = null,   // deviation breach above target (market fell, leverage too high)
     val marginLowerTriggers: Int? = null    // deviation breach below target (market rose, leverage too low)
 )

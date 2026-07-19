@@ -14,7 +14,8 @@ data class MonteCarloRequest(
     val portfolios: List<PortfolioConfig>,
     val cashflow: CashflowConfig? = null,
     val startingBalance: Double = 10_000.0,
-    val seed: Long? = null            // null = generate fresh random seed
+    val seed: Long? = null,
+    val betaReferenceTicker: String? = "SPY",
 )
 
 @Serializable
@@ -63,7 +64,11 @@ data class MonteCarloPercentilePath(
     val ulcerIndex: Double,
     val upi: Double,
     val annualVolatility: Double,
-    val longestDrawdownDays: Int
+    val longestDrawdownDays: Int,
+    val sortino: Double,
+    val averageDrawdown: Double,
+    val calmar: Double,
+    val beta: Double
 )
 
 @Serializable
@@ -72,8 +77,12 @@ data class MonteCarloCurveResult(
     val percentilePaths: List<MonteCarloPercentilePath>,  // CAGR-sorted, full paths
     val maxDdPercentiles: List<Double>,           // MaxDD-sorted, raw drawdown values
     val sharpePercentiles: List<Double>,          // Sharpe-sorted
+    val sortinoPercentiles: List<Double>,
     val ulcerPercentiles: List<Double>,           // UlcerIndex-sorted (lower=better → inverted sort)
     val upiPercentiles: List<Double>,             // UPI-sorted
+    val averageDrawdownPercentiles: List<Double>,
+    val calmarPercentiles: List<Double>,
+    val betaPercentiles: List<Double>,
     val volatilityPercentiles: List<Double>,      // Volatility-sorted (lower=better → inverted sort)
     val longestDrawdownPercentiles: List<Double>  // Longest drawdown (trading days), lower=better → inverted sort
 )
@@ -101,7 +110,11 @@ internal data class SimPassMetrics(
     val ulcerIndex: Double,
     val upi: Double,
     val volatility: Double,
-    val longestDrawdownDays: Int
+    val longestDrawdownDays: Int,
+    val sortino: Double,
+    val averageDrawdown: Double,
+    val calmar: Double,
+    val beta: Double
 )
 
 internal data class AssembledDay(

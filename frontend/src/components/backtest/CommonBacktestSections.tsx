@@ -42,6 +42,7 @@ interface ScenarioSetupControlsProps extends CashflowFormState {
   onStartingBalanceChange: StringSetter
   onCashflowAmountChange: StringSetter
   onCashflowFrequencyChange: StringSetter
+  onBetaReferenceTickerChange: StringSetter
 }
 
 export function ScenarioSetupControls({
@@ -59,6 +60,7 @@ export function ScenarioSetupControls({
   startingBalance,
   cashflowAmount,
   cashflowFrequency,
+  betaReferenceTicker,
   onFromDateChange,
   onToDateChange,
   onImportCodeChange,
@@ -67,6 +69,7 @@ export function ScenarioSetupControls({
   onStartingBalanceChange,
   onCashflowAmountChange,
   onCashflowFrequencyChange,
+  onBetaReferenceTickerChange,
 }: ScenarioSetupControlsProps) {
   return (
     <>
@@ -104,9 +107,11 @@ export function ScenarioSetupControls({
         startingBalance={startingBalance}
         cashflowAmount={cashflowAmount}
         cashflowFrequency={cashflowFrequency}
+        betaReferenceTicker={betaReferenceTicker}
         onStartingBalanceChange={onStartingBalanceChange}
         onCashflowAmountChange={onCashflowAmountChange}
         onCashflowFrequencyChange={onCashflowFrequencyChange}
+        onBetaReferenceTickerChange={onBetaReferenceTickerChange}
       />
     </>
   )

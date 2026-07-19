@@ -55,7 +55,7 @@ import {
   blockStateToAPIPortfolio, configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
   cashflowStateFromSettings, cashflowToPayload, configToBlockInputLabel,
-  DEFAULT_CASHFLOW_FREQUENCY, hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
+  DEFAULT_BETA_REFERENCE_TICKER, DEFAULT_CASHFLOW_FREQUENCY, hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
 } from '@/types/backtest'
 import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -75,9 +75,11 @@ function getEffectiveCurves(data: MonteCarloResults, selected: Set<string>) {
 
 const MC_COLS = [
   { metric: 'END_VALUE', label: 'End Value' }, { metric: 'CAGR', label: 'CAGR' },
-  { metric: 'MAX_DD', label: 'Max DD' }, { metric: 'LONGEST_DD', label: 'Longest DD' },
+  { metric: 'MAX_DD', label: 'Max DD' }, { metric: 'AVG_DD', label: 'Avg DD' },
+  { metric: 'LONGEST_DD', label: 'Longest DD' },
   { metric: 'ANN_VOL', label: 'Volatility' }, { metric: 'SHARPE', label: 'Sharpe' },
-  { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
+  { metric: 'SORTINO', label: 'Sortino' }, { metric: 'CALMAR', label: 'Calmar' },
+  { metric: 'BETA', label: 'Beta' }, { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
 ]
 
 function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
@@ -161,6 +163,7 @@ export default function MonteCarloPage() {
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('0')
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
+  const [betaReferenceTicker, setBetaReferenceTicker] = useState(DEFAULT_BETA_REFERENCE_TICKER)
   const [minChunk, setMinChunk]       = useState('3')
   const [maxChunk, setMaxChunk]       = useState('8')
   const [simYears, setSimYears]       = useState('20')
@@ -199,8 +202,9 @@ export default function MonteCarloPage() {
     numSimulations: settingsMcInteger(numSims, 500),
     startingBalance: startingBalanceToPayload(startingBalance),
     cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+    betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
     settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
-  }), [blocks, cashflowAmount, cashflowFrequency, fromDate, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
+  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
 
   useSettingsAutosave('/api/montecarlo/settings', settingsPayload, settingsLoaded)
 
@@ -208,12 +212,13 @@ export default function MonteCarloPage() {
     setStartingBalance(shared.startingBalance)
     setCashflowAmount(shared.cashflowAmount)
     setCashflowFrequency(shared.cashflowFrequency)
+    setBetaReferenceTicker(shared.betaReferenceTicker)
   }), [])
 
   useEffect(() => {
     if (!cashflowCacheLoaded) return
-    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency })
-  }, [cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker })
+  }, [betaReferenceTicker, cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
 
   useEffect(() => {
     let active = true
@@ -262,6 +267,7 @@ export default function MonteCarloPage() {
           setStartingBalance(cashflowState.startingBalance)
           setCashflowAmount(cashflowState.cashflowAmount)
           setCashflowFrequency(cashflowState.cashflowFrequency)
+          setBetaReferenceTicker(cashflowState.betaReferenceTicker)
           if (req && Object.keys(req).length) {
             if (req.fromDate) setFromDate(req.fromDate)
             if (req.toDate)   setToDate(req.toDate)
@@ -500,6 +506,7 @@ export default function MonteCarloPage() {
       numSimulations: ns,
       startingBalance: runStartingBalance,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       portfolios,
       settingsPortfolios,
     }
@@ -581,6 +588,7 @@ export default function MonteCarloPage() {
       simulatedYears, numSimulations,
       startingBalance: exportStartingBalance,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       portfolios,
     }, portfolios))
     setImportCode(code)
@@ -599,6 +607,7 @@ export default function MonteCarloPage() {
     if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
     if (req.minChunkYears  != null) setMinChunk(String(req.minChunkYears))
     if (req.maxChunkYears  != null) setMaxChunk(String(req.maxChunkYears))
     if (req.simulatedYears != null) setSimYears(String(req.simulatedYears))
@@ -680,16 +689,24 @@ export default function MonteCarloPage() {
 
   // ── Stats helpers ─────────────────────────────────────────────────────────
 
+  const fmtPctValue = (value: number | undefined) => Number.isFinite(value) ? pct(value!) : '-'
+  const fmt2Value = (value: number | undefined) => Number.isFinite(value) ? fmt2(value!) : '-'
+  const durValue = (value: number | undefined) => Number.isFinite(value) ? dur(value!) : '-'
+
   function cellValue(curve: McCurve, pctIdx: number, metric: string, pp: any): string {
     switch (metric) {
       case 'END_VALUE':   return money(pp.endValue)
       case 'CAGR':        return pct(pp.cagr)
-      case 'MAX_DD':      return pct(curve.maxDdPercentiles[pctIdx])
-      case 'LONGEST_DD':  return dur(curve.longestDrawdownPercentiles[pctIdx])
-      case 'ANN_VOL':     return pct(curve.volatilityPercentiles[pctIdx])
-      case 'SHARPE':      return fmt2(curve.sharpePercentiles[pctIdx])
-      case 'ULCER_INDEX': return pct(curve.ulcerPercentiles[pctIdx])
-      case 'UPI':         return fmt2(curve.upiPercentiles[pctIdx])
+      case 'MAX_DD':      return fmtPctValue(curve.maxDdPercentiles[pctIdx])
+      case 'AVG_DD':      return fmtPctValue(curve.averageDrawdownPercentiles?.[pctIdx])
+      case 'LONGEST_DD':  return durValue(curve.longestDrawdownPercentiles[pctIdx])
+      case 'ANN_VOL':     return fmtPctValue(curve.volatilityPercentiles[pctIdx])
+      case 'SHARPE':      return fmt2Value(curve.sharpePercentiles[pctIdx])
+      case 'SORTINO':     return fmt2Value(curve.sortinoPercentiles?.[pctIdx])
+      case 'CALMAR':      return fmt2Value(curve.calmarPercentiles?.[pctIdx])
+      case 'BETA':        return fmt2Value(curve.betaPercentiles?.[pctIdx])
+      case 'ULCER_INDEX': return fmtPctValue(curve.ulcerPercentiles[pctIdx])
+      case 'UPI':         return fmt2Value(curve.upiPercentiles[pctIdx])
       default:            return '–'
     }
   }
@@ -721,6 +738,7 @@ export default function MonteCarloPage() {
           startingBalance={startingBalance}
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
+          betaReferenceTicker={betaReferenceTicker}
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           onImportCodeChange={setImportCode}
@@ -729,6 +747,7 @@ export default function MonteCarloPage() {
           onStartingBalanceChange={setStartingBalance}
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
+          onBetaReferenceTickerChange={setBetaReferenceTicker}
         />
 
         <TickerMappingControl

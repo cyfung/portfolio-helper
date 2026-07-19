@@ -51,6 +51,7 @@ export const PERCENTILE_COLORS = ['#e05c5c', '#e0955c', '#d4c84a', '#4caf50', '#
 export const PERCENTILE_LIST = [5, 10, 25, 50, 75, 90, 95]
 
 export const DEFAULT_CASHFLOW_FREQUENCY = 'MONTHLY'
+export const DEFAULT_BETA_REFERENCE_TICKER = 'SPY'
 
 export const CASHFLOW_FREQUENCY_OPTIONS = [
   { value: 'MONTHLY',   label: 'Monthly' },
@@ -86,6 +87,7 @@ export interface CashflowFormState {
   startingBalance: string
   cashflowAmount: string
   cashflowFrequency: string
+  betaReferenceTicker: string
 }
 
 export type BlockConversionOptions = { strict?: boolean }
@@ -114,6 +116,9 @@ export function cashflowStateFromSettings(req: any): Partial<CashflowFormState> 
     ...(req.startingBalance != null ? { startingBalance: String(req.startingBalance) } : {}),
     cashflowAmount: req.cashflow?.amount != null ? String(req.cashflow.amount) : '0',
     ...(frequency ? { cashflowFrequency: frequency } : {}),
+    betaReferenceTicker: typeof req.betaReferenceTicker === 'string'
+      ? req.betaReferenceTicker
+      : DEFAULT_BETA_REFERENCE_TICKER,
   }
 }
 
@@ -336,6 +341,9 @@ export interface BacktestCurveStats {
   annualVolatility: number
   sharpe: number
   sortino?: number
+  averageDrawdown?: number
+  calmar?: number
+  beta?: number
   ulcerIndex: number
   upi: number
   marginUpperTriggers?: number | null
@@ -386,6 +394,16 @@ export interface McPercentilePath {
   points: number[]
   endValue: number
   cagr: number
+  maxDrawdown?: number
+  sharpe?: number
+  ulcerIndex?: number
+  upi?: number
+  annualVolatility?: number
+  longestDrawdownDays?: number
+  sortino?: number
+  averageDrawdown?: number
+  calmar?: number
+  beta?: number
 }
 
 export interface McCurve {
@@ -395,8 +413,12 @@ export interface McCurve {
   longestDrawdownPercentiles: number[]
   volatilityPercentiles: number[]
   sharpePercentiles: number[]
+  sortinoPercentiles: number[]
   ulcerPercentiles: number[]
   upiPercentiles: number[]
+  averageDrawdownPercentiles: number[]
+  calmarPercentiles: number[]
+  betaPercentiles: number[]
 }
 
 export interface McPortfolioResult {
