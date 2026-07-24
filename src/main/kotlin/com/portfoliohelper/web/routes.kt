@@ -329,92 +329,60 @@ private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNul
     )
 }
 
-private fun savedBacktestPortfolioConfigs(): Map<String, JsonObject> = transaction {
-    SavedBacktestPortfoliosTable.selectAll().associate {
-        it[SavedBacktestPortfoliosTable.name] to
-            Json.parseToJsonElement(it[SavedBacktestPortfoliosTable.config]).jsonObject
-    }
+internal const val RESOLVED_PORTFOLIO_NET_TOLERANCE = 1e-6
+
+internal enum class PortfolioRunBoundary {
+    BACKTEST,
+    MARKET_TIMING,
+    REBALANCE_STRATEGY,
+    REBALANCE_SCORE_BATCH,
+    MONTE_CARLO,
 }
 
-private fun isPortfolioRef(obj: JsonObject): Boolean =
-    obj["isPortfolioRef"]?.jsonPrimitive?.booleanOrNull == true ||
-        obj["type"]?.jsonPrimitive?.contentOrNull == "PORTFOLIO_REF" ||
-        obj["portfolioRef"]?.jsonPrimitive?.contentOrNull != null
+private fun parseResolvedHoldingAllocations(rows: JsonArray?): List<TickerWeight> {
+    require(rows != null && rows.isNotEmpty()) { "Resolved portfolio must contain holding allocations." }
+    val holdings = rows.mapIndexed { index, element ->
+        val row = element as? JsonObject
+            ?: throw IllegalArgumentException("Resolved holding row ${index + 1} must be an object.")
+        val rowType = row["type"]?.jsonPrimitive?.contentOrNull
+        require(row["isPortfolioRef"] == null && row["portfolioRef"] == null &&
+            (rowType == null || rowType == "HOLDING")
+        ) { "Only resolved holding rows are accepted by run APIs." }
 
-internal fun resolveTickerWeights(
-    rows: JsonArray?,
-    savedConfigs: Map<String, JsonObject>,
-    stack: List<String>
-): List<TickerWeight> {
-    val merged = linkedMapOf<String, Double>()
-
-    fun add(ticker: String, weight: Double) {
-        val key = normalizeTickerWeightExpression(ticker)
-        if (key.isNotBlank() && weight != 0.0) {
-            merged[key] = (merged[key] ?: 0.0) + weight
+        val instrumentExpression = row["ticker"]?.jsonPrimitive?.contentOrNull
+            ?: throw IllegalArgumentException("Resolved holding row ${index + 1} is missing an instrument expression.")
+        require(instrumentExpression.isNotBlank() &&
+            instrumentExpression == normalizeTickerWeightExpression(instrumentExpression)
+        ) {
+            "Instrument expressions must be non-blank and canonical."
         }
+        require(!instrumentExpression.contains(">") &&
+            !instrumentExpression.startsWith("SWAP(") &&
+            !isPlaceholderTicker(instrumentExpression)
+        ) {
+            "Swaps and placeholder instruments are not accepted by run APIs."
+        }
+
+        val allocationPrimitive = row["weight"] as? JsonPrimitive
+        val holdingAllocation = allocationPrimitive?.takeUnless { it.isString }?.doubleOrNull
+            ?: throw IllegalArgumentException("Resolved holding row ${index + 1} has an invalid allocation.")
+        require(holdingAllocation.isFinite() && holdingAllocation != 0.0) {
+            "Resolved holding allocations must be finite and non-zero."
+        }
+        TickerWeight(instrumentExpression, holdingAllocation)
     }
-
-    fun scaledChildTickers(parentWeight: Double, childTickers: List<TickerWeight>): List<TickerWeight> {
-        val childTotal = childTickers.sumOf { it.weight }
-        if (childTotal == 0.0) {
-            throw IllegalArgumentException("Portfolio reference net weight cannot be zero after merging signed rows.")
-        }
-        val denominator = kotlin.math.abs(childTotal)
-        val targetTotal = parentWeight * if (childTotal < 0.0) -1.0 else 1.0
-        var allocated = 0.0
-        return childTickers.mapIndexed { index, tickerWeight ->
-            val scaledWeight =
-                if (index == childTickers.lastIndex) {
-                    targetTotal - allocated
-                } else {
-                    parentWeight * tickerWeight.weight / denominator
-                }
-            allocated += scaledWeight
-            tickerWeight.copy(weight = scaledWeight)
-        }
+    val signedNet = holdings.sumOf { it.weight }
+    require(signedNet.isFinite() && kotlin.math.abs(signedNet - 100.0) <= RESOLVED_PORTFOLIO_NET_TOLERANCE) {
+        "Resolved portfolio signed net must equal 100 within $RESOLVED_PORTFOLIO_NET_TOLERANCE; received $signedNet."
     }
-
-    rows?.forEach { el ->
-        val obj = el.jsonObject
-        val weight = obj["weight"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-        val portfolioRef = isPortfolioRef(obj)
-        val rawTicker = obj["ticker"]?.jsonPrimitive?.content ?: ""
-        if (weight == 0.0) return@forEach
-
-        if (portfolioRef) {
-            val refName = obj["portfolioRef"]?.jsonPrimitive?.contentOrNull
-                ?: rawTicker.takeIf { it.isNotBlank() }
-                ?: throw IllegalArgumentException("Portfolio reference row is missing a name")
-            val child = savedConfigs[refName]
-                ?: throw IllegalArgumentException("Missing portfolio reference: $refName")
-            if (refName in stack) {
-                throw IllegalArgumentException("Circular portfolio reference: ${(stack + refName).joinToString(" -> ")}")
-            }
-            val childTickers = resolveTickerWeights(child["tickers"] as? JsonArray, savedConfigs, stack + refName)
-            scaledChildTickers(weight, childTickers).forEach { add(it.ticker, it.weight) }
-        } else {
-            add(rawTicker, weight)
-        }
-    }
-
-    return merged
-        .filterValues { it != 0.0 }
-        .map { (ticker, weight) -> TickerWeight(ticker, weight) }
+    return holdings
 }
 
-private fun parseSinglePortfolioConfig(
-    pObj: JsonObject,
-    savedConfigs: Map<String, JsonObject> = savedBacktestPortfolioConfigs()
-): PortfolioConfig {
+private fun parseSinglePortfolioConfig(pObj: JsonObject): PortfolioConfig {
     val label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: "Portfolio"
     return PortfolioConfig(
         label = label,
-        tickers = resolveTickerWeights(
-            pObj["tickers"] as? JsonArray,
-            savedConfigs,
-            listOf(label).filter { it.isNotBlank() }
-        ),
+        tickers = parseResolvedHoldingAllocations(pObj["tickers"] as? JsonArray),
         rebalanceStrategy = runCatching {
             RebalanceStrategy.valueOf(pObj["rebalanceStrategy"]!!.jsonPrimitive.content)
         }.getOrDefault(RebalanceStrategy.YEARLY),
@@ -436,12 +404,22 @@ private fun parseSinglePortfolioConfig(
     )
 }
 
-private fun parsePortfolioConfigs(json: JsonObject): List<PortfolioConfig> {
-    val savedConfigs = savedBacktestPortfolioConfigs()
-    return (json["portfolios"] as? JsonArray)?.map { pel ->
-        parseSinglePortfolioConfig(pel.jsonObject, savedConfigs)
-    } ?: emptyList()
-}
+internal fun parseResolvedRunPortfolios(
+    json: JsonObject,
+    boundary: PortfolioRunBoundary,
+): List<PortfolioConfig> =
+    when (boundary) {
+        PortfolioRunBoundary.BACKTEST,
+        PortfolioRunBoundary.MONTE_CARLO ->
+            (json["portfolios"] as? JsonArray)?.map { parseSinglePortfolioConfig(it.jsonObject) }
+                ?: emptyList()
+        PortfolioRunBoundary.REBALANCE_SCORE_BATCH ->
+            (json["portfolios"] as? JsonArray)?.map { parseSinglePortfolioConfig(it.jsonObject) }
+                ?: listOfNotNull((json["portfolio"] as? JsonObject)?.let(::parseSinglePortfolioConfig))
+        PortfolioRunBoundary.MARKET_TIMING,
+        PortfolioRunBoundary.REBALANCE_STRATEGY ->
+            listOfNotNull((json["portfolio"] as? JsonObject)?.let(::parseSinglePortfolioConfig))
+    }
 
 private fun parsePriceMoveTrigger(obj: JsonObject): PriceMoveTrigger {
     val pct = obj["pct"]?.jsonPrimitive?.double ?: 0.0
@@ -1388,7 +1366,7 @@ fun Application.configureRouting() {
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
                 val betaReferenceTicker = json["betaReferenceTicker"]?.jsonPrimitive?.contentOrNull
 
-                val portfolios = parsePortfolioConfigs(json)
+                val portfolios = parseResolvedRunPortfolios(json, PortfolioRunBoundary.BACKTEST)
 
                 val cashflow = json.parseCashflowConfig()
 
@@ -1424,7 +1402,7 @@ fun Application.configureRouting() {
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
-                val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
+                val portfolio = parseResolvedRunPortfolios(json, PortfolioRunBoundary.MARKET_TIMING).singleOrNull()
                     ?: throw IllegalArgumentException("Missing portfolio")
 
                 val drawdownConfigs = when (val el = json["drawdownConfigs"]) {
@@ -1539,7 +1517,7 @@ fun Application.configureRouting() {
                 val zeroMarginInterest = json["zeroMarginInterest"]?.jsonPrimitive?.booleanOrNull ?: false
                 val betaReferenceTicker = json["betaReferenceTicker"]?.jsonPrimitive?.contentOrNull
 
-                val portfolio = (json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it) }
+                val portfolio = parseResolvedRunPortfolios(json, PortfolioRunBoundary.REBALANCE_STRATEGY).singleOrNull()
                     ?: throw IllegalArgumentException("Missing portfolio")
 
                 val cashflow = json.parseCashflowConfig()
@@ -1594,11 +1572,7 @@ fun Application.configureRouting() {
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val startingBalance = json["startingBalance"]?.jsonPrimitive?.doubleOrNull ?: 10_000.0
 
-                val savedConfigs = savedBacktestPortfolioConfigs()
-                val portfolios = when (val portfolioElement = json["portfolios"]) {
-                    is JsonArray -> portfolioElement.map { parseSinglePortfolioConfig(it.jsonObject, savedConfigs) }
-                    else -> listOfNotNull((json["portfolio"] as? JsonObject)?.let { parseSinglePortfolioConfig(it, savedConfigs) })
-                }
+                val portfolios = parseResolvedRunPortfolios(json, PortfolioRunBoundary.REBALANCE_SCORE_BATCH)
                 if (portfolios.isEmpty()) throw IllegalArgumentException("Missing portfolios")
 
                 val cashflow = json.parseCashflowConfig()
@@ -1680,7 +1654,7 @@ fun Application.configureRouting() {
                 val betaReferenceTicker = json["betaReferenceTicker"]?.jsonPrimitive?.contentOrNull
                 val cashflow = json.parseCashflowConfig()
 
-                val portfolios = parsePortfolioConfigs(json)
+                val portfolios = parseResolvedRunPortfolios(json, PortfolioRunBoundary.MONTE_CARLO)
 
                 val request = MonteCarloRequest(
                     fromDate = fromDate,
