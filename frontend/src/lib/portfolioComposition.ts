@@ -440,14 +440,12 @@ function resolveRows(
         )
         issues.push(...childResult.issues)
         if (row.normalizationMode === 'NET_100' && childResult.net <= EPSILON) {
-          if (childResult.issues.length === 0) {
-            issues.push({
-              code: 'INVALID_NORMALIZED_CHILD',
-              rowId: row.id,
-              referencePath: childPath,
-              message: `Normalized portfolio reference ${row.portfolioName} requires positive signed net exposure.`,
-            })
-          }
+          issues.push({
+            code: 'INVALID_NORMALIZED_CHILD',
+            rowId: row.id,
+            referencePath: childPath,
+            message: `Normalized portfolio reference ${row.portfolioName} requires positive signed net exposure.`,
+          })
           return
         }
         const scale = row.normalizationMode === 'NET_100'

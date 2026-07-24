@@ -334,10 +334,22 @@ describe('canonical portfolio composition', () => {
         message: 'Saved portfolio Gone was not found.',
       },
       {
+        code: 'INVALID_NORMALIZED_CHILD',
+        rowId: 'broken-ref',
+        referencePath: ['Root', 'Broken'],
+        message: 'Normalized portfolio reference Broken requires positive signed net exposure.',
+      },
+      {
         code: 'CIRCULAR_REFERENCE',
         rowId: 'to-a',
         referencePath: ['Root', 'CycleA', 'CycleB', 'CycleA'],
         message: 'Circular portfolio reference: Root -> CycleA -> CycleB -> CycleA.',
+      },
+      {
+        code: 'INVALID_NORMALIZED_CHILD',
+        rowId: 'to-b',
+        referencePath: ['Root', 'CycleA', 'CycleB'],
+        message: 'Normalized portfolio reference CycleB requires positive signed net exposure.',
       },
       {
         code: 'INVALID_NORMALIZED_CHILD',
@@ -373,5 +385,72 @@ describe('canonical portfolio composition', () => {
     expect(result.composition).toEqual([{ instrument: 'SPY', exposure: 100 }])
     expect(result.net).toBe(100)
     expect(result.issues[0]?.code).toBe('LEGACY_DUMMY')
+  })
+
+  it('preserves signed child exposure against its fixed local capital basis', () => {
+    const savedPortfolios = new Map([
+      ['Leveraged', { rows: [
+        { id: 'leveraged', type: 'HOLDING', instrument: 'SPY', allocation: 200 },
+      ] }],
+    ])
+
+    expect(resolveRootPortfolioComposition([
+      { id: 'cash', type: 'HOLDING', instrument: 'CASH', allocation: 300 },
+      {
+        id: 'short-child',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Leveraged',
+        allocation: -100,
+        normalizationMode: 'PRESERVE',
+      },
+    ], savedPortfolios)).toEqual({
+      composition: [
+        { instrument: 'CASH', exposure: 300 },
+        { instrument: 'SPY', exposure: -200 },
+      ],
+      net: 100,
+      issues: [],
+    })
+  })
+
+  it('keeps sibling exposure outside a child swap boundary', () => {
+    const savedPortfolios = new Map([
+      ['Swapper', { rows: [{
+        id: 'child-swap',
+        type: 'SWAP',
+        source: 'SPY',
+        transfer: { mode: 'ALL_REMAINING' },
+        legs: [{ instrument: 'TLT', multiplier: 1 }],
+      }] }],
+      ['Source', { rows: [
+        { id: 'sibling-spy', type: 'HOLDING', instrument: 'SPY', allocation: 100 },
+      ] }],
+    ])
+
+    expect(resolveRootPortfolioComposition([
+      {
+        id: 'source-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Source',
+        allocation: 100,
+        normalizationMode: 'PRESERVE',
+      },
+      {
+        id: 'swapper-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Swapper',
+        allocation: 100,
+        normalizationMode: 'PRESERVE',
+      },
+    ], savedPortfolios, { rootName: 'Root' })).toEqual({
+      composition: [{ instrument: 'SPY', exposure: 100 }],
+      net: 100,
+      issues: [{
+        code: 'SOURCE_UNAVAILABLE',
+        rowId: 'child-swap',
+        referencePath: ['Root', 'Swapper'],
+        message: 'No positive SPY exposure is available to swap.',
+      }],
+    })
   })
 })
