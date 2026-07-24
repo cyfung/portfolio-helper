@@ -6,7 +6,11 @@ build/
 .kotlin/
 
 # Distribution files
-docs/
+docs/*
+!docs/agents/
+!docs/agents/**
+!docs/adr/
+!docs/adr/**
 
 # Shadow JAR and Launch4j
 *.exe
