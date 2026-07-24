@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { portfolioRowDropPosition, reorderPortfolioRows } from './portfolioRowDrag'
+import {
+  portfolioListDropTarget,
+  portfolioRowDropPosition,
+  reorderPortfolioRows,
+} from './portfolioRowDrag'
 
 describe('portfolio row dragging', () => {
   it('targets before or after the hovered row from the mouse position against its center', () => {
     expect(portfolioRowDropPosition(119, { top: 100, height: 40 })).toBe('before')
     expect(portfolioRowDropPosition(120, { top: 100, height: 40 })).toBe('after')
     expect(portfolioRowDropPosition(139, { top: 100, height: 40 })).toBe('after')
+  })
+
+  it('keeps list edges and gaps available as portfolio row drop targets', () => {
+    const rows = [
+      { rowId: 'first', top: 100, height: 30 },
+      { rowId: 'second', top: 140, height: 30 },
+    ]
+
+    expect(portfolioListDropTarget(90, rows)).toEqual({ rowId: 'first', position: 'before' })
+    expect(portfolioListDropTarget(135, rows)).toEqual({ rowId: 'second', position: 'before' })
+    expect(portfolioListDropTarget(180, rows)).toEqual({ rowId: 'second', position: 'after' })
   })
 
   it('moves a row before or after the hovered row', () => {

@@ -23,6 +23,7 @@ import {
 } from '@/lib/savedPortfolioCache'
 import { formatSwapRow, parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
 import {
+  portfolioListDropTarget,
   portfolioRowDropPosition,
   reorderPortfolioRows,
 } from '@/lib/portfolioRowDrag'
@@ -486,6 +487,37 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     return `Drag ${row.instrument || 'unnamed'} row`
   }
 
+  function listPortfolioRowDropTarget(list: HTMLDivElement, pointerY: number) {
+    return portfolioListDropTarget(pointerY, Array.from(
+      list.querySelectorAll<HTMLElement>('[data-portfolio-row-id]'),
+      row => {
+        const bounds = row.getBoundingClientRect()
+        return {
+          rowId: row.dataset.portfolioRowId!,
+          top: bounds.top,
+          height: bounds.height,
+        }
+      },
+    ))
+  }
+
+  function dropPortfolioRow(sourceId: string, target: {
+    rowId: string
+    position: PortfolioRowDropPosition
+  } | null) {
+    clearPortfolioRowDrag()
+    if (!target) return
+    const nextRows = reorderPortfolioRows(
+      localRef.current.tickers,
+      sourceId,
+      target.rowId,
+      target.position,
+    )
+    if (nextRows !== localRef.current.tickers) {
+      commit({ ...localRef.current, tickers: nextRows })
+    }
+  }
+
   function handleDragOver(e: React.DragEvent) {
     const types = e.dataTransfer.types
     if (types.includes('application/x-margin-config') || types.includes('application/x-strategy-chip') || types.includes('application/x-portfolio-chip')) {
@@ -627,7 +659,27 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
             ))}
           </ul>
         )}
-        <div className="ticker-rows">
+        <div
+          className="ticker-rows"
+          onDragOver={e => {
+            const sourceId = draggedPortfolioRowIdRef.current
+            if (!sourceId || !e.dataTransfer.types.includes(PORTFOLIO_ROW_DRAG_TYPE)) return
+            e.preventDefault()
+            e.stopPropagation()
+            e.dataTransfer.dropEffect = 'move'
+            setPortfolioRowDropTarget(listPortfolioRowDropTarget(e.currentTarget, e.clientY))
+          }}
+          onDrop={e => {
+            const sourceId = draggedPortfolioRowIdRef.current
+            if (!sourceId || !e.dataTransfer.types.includes(PORTFOLIO_ROW_DRAG_TYPE)) return
+            e.preventDefault()
+            e.stopPropagation()
+            dropPortfolioRow(
+              sourceId,
+              portfolioRowDropTarget ?? listPortfolioRowDropTarget(e.currentTarget, e.clientY),
+            )
+          }}
+        >
           {local.tickers.map(t => {
             const refName = t.type === 'PORTFOLIO_REFERENCE' ? t.portfolioName.trim() : ''
             const portfolioRefExists = t.type === 'PORTFOLIO_REFERENCE' && refName.length > 0 && savedPortfolioNames.has(refName)
@@ -653,6 +705,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <div
                 key={t.id}
                 className={rowClassName}
+                data-portfolio-row-id={t.id}
                 onDragOver={e => {
                   const sourceId = draggedPortfolioRowIdRef.current
                   if (!sourceId || !e.dataTransfer.types.includes(PORTFOLIO_ROW_DRAG_TYPE)) return
@@ -672,11 +725,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                   const position = portfolioRowDropTarget?.rowId === t.id
                     ? portfolioRowDropTarget.position
                     : portfolioRowDropPosition(e.clientY, e.currentTarget.getBoundingClientRect())
-                  const nextRows = reorderPortfolioRows(localRef.current.tickers, sourceId, t.id, position)
-                  clearPortfolioRowDrag()
-                  if (nextRows !== localRef.current.tickers) {
-                    commit({ ...localRef.current, tickers: nextRows })
-                  }
+                  dropPortfolioRow(sourceId, { rowId: t.id, position })
                 }}
               >
                 <button
