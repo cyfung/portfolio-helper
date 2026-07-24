@@ -56,6 +56,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [loading, setLoading]             = useState(false)
   const [ingesting, setIngesting]         = useState(false)
   const [error, setError]                 = useState('')
+  const [benchmarkError, setBenchmarkError] = useState('')
   const { toast, showToast: showInlineToast, clearToast } = useTransientToast()
   const [gaps, setGaps]                   = useState<{ from: string; to: string; days: number }[]>([])
   const xmlInputRef                       = useRef<HTMLInputElement>(null)
@@ -131,6 +132,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
 
   // ── Pre-fetch all margin options when benchmark or date range changes ─────
   useEffect(() => {
+    setBenchmarkError('')
     if (!selectedBenchmark || !benchmarkBlock) { setBenchmarkCache({}); setBenchmarkLoading(false); return }
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
@@ -141,7 +143,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     } catch (resolutionError) {
       setBenchmarkCache({})
       setBenchmarkLoading(false)
-      setError(resolutionError instanceof Error ? resolutionError.message : 'Unable to resolve benchmark portfolio.')
+      setBenchmarkError(resolutionError instanceof Error ? resolutionError.message : 'Unable to resolve benchmark portfolio.')
       return
     }
     if (!portfolio.tickers.length) return
@@ -524,6 +526,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
       )}
       {loading && <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.5 }}>Loading…<span className="btn-spinner" /></div>}
       {error && <div style={{ color: '#e05c5c', padding: '0.5rem' }}>{error}</div>}
+      {benchmarkError && <div style={{ color: '#e05c5c', padding: '0.5rem' }}>{benchmarkError}</div>}
 
       {mode === 'mwr' && mwrDisabled && hasData && !loading && (
         <div style={{ textAlign: 'center', padding: '3rem', opacity: 0.5, fontSize: '0.9rem' }}>
