@@ -13,6 +13,10 @@ import {
   type TickerMappingSet,
 } from '@/lib/tickerMappings'
 import { parseLetfComponents } from '@/lib/tickerExpressions'
+import {
+  canonicalPortfolioConfiguration,
+  type PortfolioRow,
+} from '@/lib/portfolioComposition'
 
 export interface TickerConfigExport {
   symbol: string
@@ -86,15 +90,11 @@ export interface ImportDependencyPreview {
 type ConfigPayload = Record<string, unknown>
 
 function isPortfolioRef(row: any) {
-  return row?.isPortfolioRef === true || row?.type === 'PORTFOLIO_REF' || !!row?.portfolioRef
+  return row?.type === 'PORTFOLIO_REFERENCE'
 }
 
 function refName(row: any) {
-  return String(row?.portfolioRef || row?.ticker || '').trim()
-}
-
-function stockName(row: any) {
-  return String(row?.ticker || '').trim().toUpperCase()
+  return String(row?.portfolioName || '').trim()
 }
 
 function sortedByName<T extends { name: string }>(items: T[]) {
@@ -174,9 +174,9 @@ function collectPortfolioRefNames(configs: any[], savedPortfolios: SavedPortfoli
   const names = new Set<string>()
 
   function visitConfig(config: any, stack: string[]) {
-    for (const row of config?.tickers ?? []) {
-      if (!isPortfolioRef(row)) continue
-      const name = refName(row)
+    for (const row of currentPortfolioRows(config)) {
+      if (row.type !== 'PORTFOLIO_REFERENCE') continue
+      const name = row.portfolioName
       if (!name || names.has(name)) continue
       names.add(name)
       if (stack.includes(name)) continue
@@ -192,9 +192,9 @@ function collectPortfolioRefNames(configs: any[], savedPortfolios: SavedPortfoli
 function collectDirectPortfolioRefNames(configs: any[]) {
   const names = new Set<string>()
   configs.forEach(config => {
-    for (const row of config?.tickers ?? []) {
-      if (!isPortfolioRef(row)) continue
-      const name = refName(row)
+    for (const row of currentPortfolioRows(config)) {
+      if (row.type !== 'PORTFOLIO_REFERENCE') continue
+      const name = row.portfolioName
       if (name) names.add(name)
     }
   })
@@ -211,9 +211,9 @@ function extractPayloadPortfolioConfigs(payload: ConfigPayload) {
 
 function collectPortfolioChildNames(config: any, importedNames: Set<string>) {
   const names = new Set<string>()
-  for (const row of config?.tickers ?? []) {
-    if (!isPortfolioRef(row)) continue
-    const name = refName(row)
+  for (const row of currentPortfolioRows(config)) {
+    if (row.type !== 'PORTFOLIO_REFERENCE') continue
+    const name = row.portfolioName
     if (name && importedNames.has(name)) names.add(name)
   }
   return [...names].sort((a, b) => a.localeCompare(b))
@@ -230,11 +230,15 @@ function collectTickerMappingChildNames(set: TickerMappingSet, importedNames: Se
 }
 
 function collectDirectStockSymbols(config: any, symbols: Set<string>) {
-  for (const row of config?.tickers ?? []) {
-    if (isPortfolioRef(row)) continue
-    const symbol = stockName(row)
-    if (symbol) symbols.add(symbol)
+  for (const row of currentPortfolioRows(config)) {
+    if (row.type !== 'HOLDING') continue
+    parseLetfComponents(row.instrument).forEach(component => symbols.add(component.ticker.toUpperCase()))
   }
+}
+
+function currentPortfolioRows(config: any): PortfolioRow[] {
+  if (!Array.isArray(config?.rows)) return []
+  return canonicalPortfolioConfiguration({ rows: config.rows })?.rows ?? []
 }
 
 function collectRelatedTickerSymbols(configs: any[], savedPortfolios: SavedPortfolio[]) {
@@ -488,10 +492,7 @@ export function renamePortfolioRefsInConfig<T>(config: T, renameMap: Map<string,
     if (isPortfolioRef(value)) {
       const currentName = refName(value)
       const nextName = renameMap.get(currentName)
-      if (nextName) {
-        if ('portfolioRef' in value || value.isPortfolioRef === true || value.type === 'PORTFOLIO_REF') next.portfolioRef = nextName
-        if ('ticker' in value || value.isPortfolioRef === true || value.type === 'PORTFOLIO_REF') next.ticker = nextName
-      }
+      if (nextName) next.portfolioName = nextName
     }
 
     return next

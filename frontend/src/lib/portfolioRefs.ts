@@ -1,4 +1,4 @@
-import { blockStateToAPIPortfolio } from '@/types/backtest'
+import { blockStateToAPIPortfolio, blockStateToSavedConfig } from '@/types/backtest'
 import type { BlockConversionOptions, BlockState, SavedPortfolio } from '@/types/backtest'
 import {
   expandSwapTickerRows,
@@ -113,14 +113,10 @@ export function resolveSavedPortfolioConfig(
   stack: string[] = [],
 ): ResolvedStockWeight[] {
   let resolvedRows: ResolvedStockWeight[] = []
-  const hasCanonicalRows = Array.isArray(config?.rows)
-  const canonicalRows = hasCanonicalRows
-    ? canonicalPortfolioConfiguration({ rows: config.rows })?.rows
-    : undefined
-  if (hasCanonicalRows && !canonicalRows) throw new Error('Saved portfolio contains invalid tagged rows.')
-  const inputRows = hasCanonicalRows
-    ? canonicalRows!.map(convertPortfolioRowToLegacyTickerRow)
-    : config?.tickers ?? []
+  if (!Array.isArray(config?.rows)) throw new Error('Saved portfolio is missing tagged rows.')
+  const canonicalRows = canonicalPortfolioConfiguration({ rows: config.rows })?.rows
+  if (!canonicalRows) throw new Error('Saved portfolio contains invalid tagged rows.')
+  const inputRows = canonicalRows.map(convertPortfolioRowToLegacyTickerRow)
 
   function applyRows(rows: WeightedOrWildcardTickerExpression[]) {
     if (rows.length === 0) return
@@ -162,12 +158,7 @@ export function resolveBlockStateRows(
   options: { normalize?: boolean } = {},
 ): ResolvedStockWeight[] {
   const savedByName = savedPortfolioConfigMap(savedPortfolios)
-  const config = {
-    tickers: block.tickers.map(row => row.isPortfolioRef
-      ? { ticker: row.ticker, portfolioRef: row.ticker, isPortfolioRef: true, weight: row.weight }
-      : { ticker: row.ticker, weight: row.weight }
-    ),
-  }
+  const config = blockStateToSavedConfig(block)
   const rows = resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : [])
   return options.normalize === false
     ? stripPlaceholderResolvedRows(rows)
@@ -175,20 +166,8 @@ export function resolveBlockStateRows(
 }
 
 export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
-  const apiPortfolio = blockStateToAPIPortfolio(block, idx)
-  const tickers = block.tickers
-    .map(row => {
-      const isRef = row.isPortfolioRef === true
-      const ticker = isRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
-      return { ticker, weight: rowResolveWeight(row), isRef }
-    })
-    .filter(row => row.ticker && (row.weight === '*' || row.weight !== 0))
-    .map(row => row.isRef
-      ? { ticker: row.ticker, weight: row.weight, isPortfolioRef: true, portfolioRef: row.ticker }
-      : { ticker: row.ticker, weight: row.weight }
-    )
-
-  return { ...apiPortfolio, tickers }
+  const { tickers: _, ...settings } = blockStateToAPIPortfolio(block, idx)
+  return { ...settings, rows: blockStateToSavedConfig(block).rows }
 }
 
 export function resolvedBlockStateToAPIPortfolio(

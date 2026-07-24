@@ -16,6 +16,7 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("ch.qos.logback:logback-classic:1.5.32")
     implementation("org.flywaydb:flyway-core:12.1.1")
+    testImplementation(kotlin("test"))
 }
 
 kotlin {

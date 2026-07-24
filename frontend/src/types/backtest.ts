@@ -153,18 +153,14 @@ export function emptyBlock(idx: number): BlockState {
 /** Convert an API saved-portfolio config into BlockState (ratio → percentage). */
 export function configToBlockState(config: any, name: string): BlockState {
   const r = (v: number) => String(Math.round(v * 10000) / 100)
-  const hasPersistedRows = Array.isArray(config?.rows)
-  const persistedRows = hasPersistedRows
-    ? canonicalPortfolioConfiguration({ rows: config.rows })?.rows
-    : undefined
-  if (hasPersistedRows && !persistedRows) throw new Error('Saved portfolio contains invalid tagged rows.')
-  const legacyRows = hasPersistedRows
-    ? persistedRows!.map(convertPortfolioRowToLegacyTickerRow)
-    : config.tickers ?? []
+  if (!Array.isArray(config?.rows)) throw new Error('Saved portfolio is missing tagged rows.')
+  const persistedRows = canonicalPortfolioConfiguration({ rows: config.rows })?.rows
+  if (!persistedRows) throw new Error('Saved portfolio contains invalid tagged rows.')
+  const legacyRows = persistedRows.map(convertPortfolioRowToLegacyTickerRow)
   return {
     label: name,
     tickers: legacyRows.map((t: any, index: number) => ({
-      id: persistedRows?.[index]?.id ?? newId(),
+      id: persistedRows[index]?.id ?? newId(),
       ticker: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef
         ? String(t.portfolioRef || t.ticker || '')
         : String(t.ticker || '').toUpperCase(),

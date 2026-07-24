@@ -43,4 +43,10 @@ describe('saved portfolio persistence', () => {
       tickers: [{ ticker: 'SWAP(SPY, TLT)', weight: 10 }],
     }, 'Invalid')).toThrow('invalid tagged rows')
   })
+
+  it('rejects legacy persisted ticker rows after the database migration', () => {
+    expect(() => configToBlockState({
+      tickers: [{ ticker: 'SPY', weight: 100 }],
+    }, 'Legacy')).toThrow('missing tagged rows')
+  })
 })
