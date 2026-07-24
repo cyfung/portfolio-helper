@@ -41,6 +41,32 @@ export interface PortfolioConfiguration {
   rows: PortfolioRow[]
 }
 
+export interface ResolvedInstrumentExposure {
+  instrument: InstrumentExpression
+  exposure: number
+}
+
+export type PortfolioResolutionIssueCode =
+  | 'INVALID_ROW'
+  | 'INVALID_INSTRUMENT'
+  | 'INVALID_TRANSFER'
+  | 'INVALID_LEGS'
+  | 'UNSUPPORTED_REFERENCE'
+  | 'SOURCE_UNAVAILABLE'
+  | 'INSUFFICIENT_SOURCE'
+
+export interface PortfolioResolutionIssue {
+  code: PortfolioResolutionIssueCode
+  rowId: string
+  message: string
+}
+
+export interface ResolvedPortfolioComposition {
+  composition: ResolvedInstrumentExposure[]
+  net: number
+  issues: PortfolioResolutionIssue[]
+}
+
 export interface LegacyTickerPersistenceRow {
   ticker: string
   weight: number | '*'
@@ -301,4 +327,102 @@ export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
 export function canonicalPortfolioConfiguration(configuration: { rows: readonly unknown[] }): PortfolioConfiguration | null {
   const rows = configuration.rows.map(canonicalPortfolioRow)
   return rows.some(row => row == null) ? null : { rows: rows as PortfolioRow[] }
+}
+
+function invalidResolutionIssue(value: unknown, rowId: string): PortfolioResolutionIssue {
+  if (value == null || typeof value !== 'object') {
+    return { code: 'INVALID_ROW', rowId, message: 'The portfolio row is invalid.' }
+  }
+  const row = value as Record<string, unknown>
+  if (row.type === 'HOLDING' && parseInstrumentExpression(String(row.instrument ?? '')) == null) {
+    return { code: 'INVALID_INSTRUMENT', rowId, message: 'The holding instrument expression is invalid.' }
+  }
+  if (row.type === 'SWAP') {
+    if (parseInstrumentExpression(String(row.source ?? '')) == null) {
+      return { code: 'INVALID_INSTRUMENT', rowId, message: 'The swap source instrument expression is invalid.' }
+    }
+    const transfer = row.transfer
+    if (transfer == null || typeof transfer !== 'object') {
+      return { code: 'INVALID_TRANSFER', rowId, message: 'The swap transfer amount must be positive and finite.' }
+    }
+    const rawTransfer = transfer as Record<string, unknown>
+    if (
+      rawTransfer.mode !== 'ALL_REMAINING' &&
+      (
+        rawTransfer.mode !== 'AMOUNT' ||
+        typeof rawTransfer.amount !== 'number' ||
+        !Number.isFinite(rawTransfer.amount) ||
+        rawTransfer.amount <= 0
+      )
+    ) {
+      return { code: 'INVALID_TRANSFER', rowId, message: 'The swap transfer amount must be positive and finite.' }
+    }
+    return { code: 'INVALID_LEGS', rowId, message: 'The swap must have at least one valid non-zero leg.' }
+  }
+  return { code: 'INVALID_ROW', rowId, message: 'The portfolio row is invalid.' }
+}
+
+export function resolvePortfolioComposition(rows: readonly unknown[]): ResolvedPortfolioComposition {
+  const exposures = new Map<InstrumentExpression, number>()
+  const issues: PortfolioResolutionIssue[] = []
+
+  const addExposure = (instrument: InstrumentExpression, allocation: number) => {
+    const next = (exposures.get(instrument) ?? 0) + allocation
+    if (Math.abs(next) <= EPSILON) exposures.delete(instrument)
+    else exposures.set(instrument, next)
+  }
+
+  rows.forEach((value, index) => {
+    const rowId = value != null &&
+      typeof value === 'object' &&
+      typeof (value as Record<string, unknown>).id === 'string'
+      ? (value as Record<string, unknown>).id as string
+      : String(index)
+    const row = canonicalPortfolioRow(value)
+    if (row == null) {
+      issues.push(invalidResolutionIssue(value, rowId))
+      return
+    }
+    if (row.type === 'HOLDING') {
+      addExposure(row.instrument, row.allocation)
+      return
+    }
+    if (row.type === 'PORTFOLIO_REFERENCE') {
+      issues.push({
+        code: 'UNSUPPORTED_REFERENCE',
+        rowId: row.id,
+        message: `Portfolio reference ${row.portfolioName} cannot be resolved here.`,
+      })
+      return
+    }
+
+    const available = Math.max(exposures.get(row.source) ?? 0, 0)
+    const amount = row.transfer.mode === 'ALL_REMAINING' ? available : row.transfer.amount
+    if (available <= EPSILON) {
+      issues.push({
+        code: 'SOURCE_UNAVAILABLE',
+        rowId: row.id,
+        message: `No positive ${row.source} exposure is available to swap.`,
+      })
+      return
+    }
+    if (amount - available > EPSILON) {
+      issues.push({
+        code: 'INSUFFICIENT_SOURCE',
+        rowId: row.id,
+        message: `Only ${available} of positive ${row.source} exposure is available to swap ${amount}.`,
+      })
+      return
+    }
+
+    addExposure(row.source, -amount)
+    row.legs.forEach(leg => addExposure(leg.instrument, amount * leg.multiplier))
+  })
+
+  const composition = [...exposures.entries()].map(([instrument, exposure]) => ({ instrument, exposure }))
+  return {
+    composition,
+    net: composition.reduce((sum, position) => sum + position.exposure, 0),
+    issues,
+  }
 }
