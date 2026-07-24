@@ -211,18 +211,18 @@
 
 .backtest-ticker-row {
     display: grid;
-    grid-template-columns: 22px 1fr 80px auto;
+    grid-template-columns: 16px 1fr 80px 18px;
     gap: 0.5rem;
     align-items: center;
     position: relative;
 }
 
 .backtest-ticker-row.has-ticker-config {
-    grid-template-columns: 22px 1fr 80px 28px auto;
+    grid-template-columns: 16px 1fr 80px 28px 18px;
 }
 
 .portfolio-row-drag-handle {
-    width: 22px;
+    width: 16px;
     height: var(--block-control-height, 1.875rem);
     padding: 0;
     border: 0;
@@ -312,7 +312,9 @@
 
 /* remove-ticker-btn - base from .btn-remove */
 .backtest-ticker-row .remove-ticker-btn {
+    width: 18px;
     height: var(--block-control-height, 1.875rem);
+    padding: 0 2px 0 2px;
 }
 
 .portfolio-row-invalid {
