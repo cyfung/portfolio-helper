@@ -22,6 +22,37 @@ function renderPortfolioBlock(tickers: BlockState['tickers']) {
 }
 
 describe('portfolio row editor', () => {
+  it('renders a dedicated drag handle for every portfolio row type', () => {
+    const markup = renderPortfolioBlock([
+      {
+        id: 'holding',
+        type: 'HOLDING',
+        instrument: 'SPY',
+        allocation: '50',
+      },
+      {
+        id: 'reference',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Child',
+        allocation: '40',
+        normalizationMode: 'NET_100',
+      },
+      {
+        id: 'swap',
+        type: 'SWAP',
+        source: 'SPY',
+        transferMode: 'AMOUNT',
+        transferAmount: '10',
+        legs: [{ id: 'leg', instrument: 'TLT', multiplier: '1' }],
+      },
+    ])
+
+    expect(markup.match(/class="portfolio-row-drag-handle"/g)).toHaveLength(3)
+    expect(markup).toContain('aria-label="Drag SPY row"')
+    expect(markup).toContain('aria-label="Drag Child portfolio reference row"')
+    expect(markup).toContain('aria-label="Drag SPY swap row"')
+  })
+
   it('renders compact explicit row actions and reference controls', () => {
     const markup = renderPortfolioBlock([{
       id: 'reference',

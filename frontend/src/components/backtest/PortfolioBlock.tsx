@@ -22,6 +22,11 @@ import {
   useSavedPortfolios,
 } from '@/lib/savedPortfolioCache'
 import { formatSwapRow, parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
+import {
+  portfolioRowDropPosition,
+  reorderPortfolioRows,
+} from '@/lib/portfolioRowDrag'
+import type { PortfolioRowDropPosition } from '@/lib/portfolioRowDrag'
 
 interface Props {
   idx: number
@@ -30,6 +35,8 @@ interface Props {
   onSavedRefresh: () => void
   showTickerConfig?: boolean
 }
+
+const PORTFOLIO_ROW_DRAG_TYPE = 'application/x-portfolio-row'
 
 function validateSwapDraft(row: SwapEditorRow) {
   const sourceInvalid = parseInstrumentExpression(row.source) == null
@@ -68,10 +75,16 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   const [spreadTouched, setSpreadTouched] = useState<Record<string, boolean>>({})
   const [swapTextDrafts, setSwapTextDrafts] = useState<Record<string, string>>({})
   const [invalidSwapTextIds, setInvalidSwapTextIds] = useState<Set<string>>(new Set())
+  const [draggedPortfolioRowId, setDraggedPortfolioRowId] = useState<string | null>(null)
+  const [portfolioRowDropTarget, setPortfolioRowDropTarget] = useState<{
+    rowId: string
+    position: PortfolioRowDropPosition
+  } | null>(null)
   const [swapDialog, setSwapDialog] = useState<{ draft: SwapEditorRow; isNew: boolean; submitted: boolean } | null>(null)
   const localRef = useRef<BlockState>(local)
   const prevValueRef = useRef<BlockState>(value)
   const swapDialogRef = useRef<HTMLDivElement>(null)
+  const draggedPortfolioRowIdRef = useRef<string | null>(null)
 
   // Sync from parent when value changes externally (import, drag-drop, clear, load)
   useEffect(() => {
@@ -459,6 +472,20 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
 
+  function clearPortfolioRowDrag() {
+    draggedPortfolioRowIdRef.current = null
+    setDraggedPortfolioRowId(null)
+    setPortfolioRowDropTarget(null)
+  }
+
+  function portfolioRowDragLabel(row: BlockState['tickers'][number]) {
+    if (row.type === 'PORTFOLIO_REFERENCE') {
+      return `Drag ${row.portfolioName || 'unnamed'} portfolio reference row`
+    }
+    if (row.type === 'SWAP') return `Drag ${row.source || 'unnamed'} swap row`
+    return `Drag ${row.instrument || 'unnamed'} row`
+  }
+
   function handleDragOver(e: React.DragEvent) {
     const types = e.dataTransfer.types
     if (types.includes('application/x-margin-config') || types.includes('application/x-strategy-chip') || types.includes('application/x-portfolio-chip')) {
@@ -612,15 +639,63 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               : portfolioRefExists
                 ? 'Saved portfolio reference exists'
                 : 'Saved portfolio reference not found'
+            const dragLabel = portfolioRowDragLabel(t)
             const rowClassName = [
               'backtest-ticker-row has-ticker-config',
               t.type === 'PORTFOLIO_REFERENCE' ? 'portfolio-ref-row' : '',
               invalidRowIds.has(t.id) ? 'portfolio-row-invalid' : '',
               portfolioRefExists ? 'portfolio-ref-row-exists' : '',
               portfolioRefMissing ? 'portfolio-ref-row-missing' : '',
+              draggedPortfolioRowId === t.id ? 'dragging' : '',
+              portfolioRowDropTarget?.rowId === t.id ? `drop-${portfolioRowDropTarget.position}` : '',
             ].filter(Boolean).join(' ')
             return (
-              <div key={t.id} className={rowClassName}>
+              <div
+                key={t.id}
+                className={rowClassName}
+                onDragOver={e => {
+                  const sourceId = draggedPortfolioRowIdRef.current
+                  if (!sourceId || !e.dataTransfer.types.includes(PORTFOLIO_ROW_DRAG_TYPE)) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  e.dataTransfer.dropEffect = 'move'
+                  setPortfolioRowDropTarget({
+                    rowId: t.id,
+                    position: portfolioRowDropPosition(e.clientY, e.currentTarget.getBoundingClientRect()),
+                  })
+                }}
+                onDrop={e => {
+                  const sourceId = draggedPortfolioRowIdRef.current
+                  if (!sourceId || !e.dataTransfer.types.includes(PORTFOLIO_ROW_DRAG_TYPE)) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const position = portfolioRowDropTarget?.rowId === t.id
+                    ? portfolioRowDropTarget.position
+                    : portfolioRowDropPosition(e.clientY, e.currentTarget.getBoundingClientRect())
+                  const nextRows = reorderPortfolioRows(localRef.current.tickers, sourceId, t.id, position)
+                  clearPortfolioRowDrag()
+                  if (nextRows !== localRef.current.tickers) {
+                    commit({ ...localRef.current, tickers: nextRows })
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  className="portfolio-row-drag-handle"
+                  draggable
+                  aria-label={dragLabel}
+                  title={dragLabel}
+                  onDragStart={e => {
+                    draggedPortfolioRowIdRef.current = t.id
+                    setDraggedPortfolioRowId(t.id)
+                    e.dataTransfer.setData(PORTFOLIO_ROW_DRAG_TYPE, t.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.stopPropagation()
+                  }}
+                  onDragEnd={clearPortfolioRowDrag}
+                >
+                  ⠿
+                </button>
                 {t.type === 'PORTFOLIO_REFERENCE' ? (
                   <label className="ticker-input portfolio-ref-name" title={portfolioRefStatusTitle}>
                     <label className="portfolio-ref-mode" title="Choose how the referenced portfolio exposure is scaled">
