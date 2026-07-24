@@ -7,6 +7,7 @@ import { computeDisplay } from '@/lib/rebalance'
 import { TWS_CASH_LABEL, isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 import TransientToast from '@/components/TransientToast'
 import { durationForToastType, useTransientToast, type ToastType } from '@/hooks/useTransientToast'
+import { announceSavedPortfoliosChanged } from '@/lib/savedPortfolioCache'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
 function parseCashKey(key: string, value: string): CashData | null {
@@ -416,7 +417,10 @@ export default function PortfolioViewer() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, config }),
     })
-    if (res.ok) showSyncToast('Saved to backtest!', 'ok')
+    if (res.ok) {
+      announceSavedPortfoliosChanged()
+      showSyncToast('Saved to backtest!', 'ok')
+    }
   }, [store, portfolioId, allPortfolios, showSyncToast])
 
   // ── After save callback ────────────────────────────────────────────────────

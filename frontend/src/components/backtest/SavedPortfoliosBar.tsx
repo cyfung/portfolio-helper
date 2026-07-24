@@ -1,8 +1,11 @@
 // ── SavedPortfoliosBar.tsx — Draggable chips for saved portfolios ─────────────
 
-import { useEffect, useState, useImperativeHandle, forwardRef } from 'react'
-import type { SavedPortfolio } from '@/types/backtest'
-import { SAVED_PORTFOLIOS_CHANGED_EVENT } from '@/lib/portfolioRefs'
+import { useEffect, useImperativeHandle, forwardRef } from 'react'
+import {
+  announceSavedPortfoliosChanged,
+  refreshSavedPortfolios,
+  useSavedPortfolios,
+} from '@/lib/savedPortfolioCache'
 
 export interface SavedPortfoliosBarRef {
   refresh: () => void
@@ -14,15 +17,10 @@ interface Props {
 
 const SavedPortfoliosBar = forwardRef<SavedPortfoliosBarRef, Props>(
   function SavedPortfoliosBar({ apiPath = '/api/backtest/savedPortfolios' }, ref) {
-    const [list, setList] = useState<SavedPortfolio[]>([])
+    const { savedPortfolios: list } = useSavedPortfolios()
 
     async function refresh() {
-      try {
-        const res = await fetch(apiPath)
-        if (!res.ok) return
-        setList(await res.json())
-        window.dispatchEvent(new Event(SAVED_PORTFOLIOS_CHANGED_EVENT))
-      } catch (_) {}
+      await refreshSavedPortfolios()
     }
 
     useEffect(() => { refresh() }, [])
@@ -31,7 +29,7 @@ const SavedPortfoliosBar = forwardRef<SavedPortfoliosBarRef, Props>(
 
     async function handleDelete(name: string) {
       await fetch(`${apiPath}?name=${encodeURIComponent(name)}`, { method: 'DELETE' })
-      refresh()
+      announceSavedPortfoliosChanged()
     }
 
     if (list.length === 0) return null

@@ -365,8 +365,12 @@ function invalidResolutionIssue(value: unknown, rowId: string): PortfolioResolut
   return { code: 'INVALID_ROW', rowId, message: 'The portfolio row is invalid.' }
 }
 
-export function resolvePortfolioComposition(rows: readonly unknown[]): ResolvedPortfolioComposition {
-  return resolveRows(rows)
+export function resolvePortfolioComposition(
+  rows: readonly unknown[],
+  savedPortfolios?: ReadonlyMap<string, SavedPortfolioConfiguration>,
+  options: { referencePath?: string[]; stack?: string[] } = {},
+): ResolvedPortfolioComposition {
+  return resolveRows(rows, savedPortfolios, options.referencePath, options.stack)
 }
 
 function resolveRows(
@@ -499,7 +503,7 @@ export function resolveRootPortfolioComposition(
   options: { rootName?: string } = {},
 ): ResolvedPortfolioComposition {
   const referencePath = options.rootName == null ? [] : [options.rootName]
-  const resolved = resolveRows(rows, savedPortfolios, referencePath)
+  const resolved = resolvePortfolioComposition(rows, savedPortfolios, { referencePath })
   if (resolved.net <= EPSILON) {
     return {
       ...resolved,

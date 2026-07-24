@@ -13,13 +13,17 @@ import { savedConfigToStrategyState, strategyStateToSavedConfig } from '@/types/
 import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 import {
+  blockStateResolution,
   isPlaceholderTicker,
-  SAVED_PORTFOLIOS_CHANGED_EVENT,
-  fetchSavedPortfolios,
   resolveSavedPortfolioConfig,
   savedPortfolioConfigMap,
 } from '@/lib/portfolioRefs'
 import { canonicalPortfolioConfiguration } from '@/lib/portfolioComposition'
+import {
+  announceSavedPortfoliosChanged,
+  refreshSavedPortfolios,
+  useSavedPortfolios,
+} from '@/lib/savedPortfolioCache'
 
 interface Props {
   idx: number
@@ -33,8 +37,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   const marginModeOptions = useAllocStrategyOptions(true)
   const [dragOver, setDragOver] = useState<'chip' | 'portfolio-ref' | 'margin' | null>(null)
   const [saveMsg, setSaveMsg] = useState('')
-  const [savedPortfolioNames, setSavedPortfolioNames] = useState<Set<string>>(() => new Set())
-  const [savedPortfolioNamesLoaded, setSavedPortfolioNamesLoaded] = useState(false)
+  const { savedPortfolios, loaded: savedPortfolioNamesLoaded } = useSavedPortfolios()
+  const savedPortfolioNames = new Set(savedPortfolios.map(portfolio => portfolio.name))
   const [tickerConfig, setTickerConfig] = useState<{
     symbol: string
     letf: string
@@ -85,28 +89,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   async function refreshSavedPortfolioNames() {
-    const saved = await fetchSavedPortfolios()
-    setSavedPortfolioNames(new Set(saved.map(p => p.name)))
-    setSavedPortfolioNamesLoaded(true)
-    return saved
+    return refreshSavedPortfolios()
   }
-
-  useEffect(() => {
-    let cancelled = false
-    function loadSavedPortfolioNames() {
-      fetchSavedPortfolios().then(saved => {
-        if (cancelled) return
-        setSavedPortfolioNames(new Set(saved.map(p => p.name)))
-        setSavedPortfolioNamesLoaded(true)
-      })
-    }
-    loadSavedPortfolioNames()
-    window.addEventListener(SAVED_PORTFOLIOS_CHANGED_EVENT, loadSavedPortfolioNames)
-    return () => {
-      cancelled = true
-      window.removeEventListener(SAVED_PORTFOLIOS_CHANGED_EVENT, loadSavedPortfolioNames)
-    }
-  }, [])
 
   // ── Allocation hint ───────────────────────────────────────────────────────
 
@@ -114,17 +98,18 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     row.type === 'SWAP'
       ? row.transferMode === 'ALL_REMAINING' ? '*' : row.transferAmount
       : row.allocation
-  const totalAllocation = local.tickers.reduce((sum, row) =>
-    row.type === 'SWAP' ? sum : sum + (parseFloat(row.allocation) || 0), 0)
-  const diff = Math.round((totalAllocation - 100) * 100) / 100
+  const resolution = blockStateResolution(local, savedPortfolios)
   let weightHintText = ''
   let weightHintCls = 'backtest-weight-hint'
   if (local.tickers.length > 0) {
-    if (Math.abs(diff) < 0.001) {
-      weightHintText = 'Total: 100% ✓'
+    if (resolution.issues.length > 0) {
+      weightHintText = 'Resolution issues'
+      weightHintCls = 'backtest-weight-hint hint-warn'
+    } else if (Math.abs(resolution.net - 100) < 0.001) {
+      weightHintText = 'Resolved net: 100.00% ✓'
       weightHintCls = 'backtest-weight-hint hint-ok'
     } else {
-      weightHintText = `Total: ${totalAllocation.toFixed(2)}% (${diff > 0 ? '+' : ''}${diff.toFixed(2)}%)`
+      weightHintText = `Resolved net: ${resolution.net.toFixed(2)}%`
       weightHintCls = 'backtest-weight-hint hint-warn'
     }
   }
@@ -427,6 +412,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const normalized = normalizeBlockSpreadInputs(localRef.current)
     if (normalized !== localRef.current) commit(normalized)
     if (invalidPortfolioEditorRowIds(normalized).size > 0) return
+    if (blockStateResolution(normalized, savedPortfolios).issues.length > 0) return
     const name = normalized.label.trim()
     if (!name) return
     if (overwrite) {
@@ -439,7 +425,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     })
     if (res.ok) {
       onSavedRefresh()
-      refreshSavedPortfolioNames()
+      announceSavedPortfoliosChanged()
       setSaveMsg('Saved!')
       setTimeout(() => setSaveMsg(''), 1500)
     }
@@ -493,7 +479,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   const hasLabel = local.label.trim().length > 0
   const invalidRowIds = invalidPortfolioEditorRowIds(local)
-  const canSave = hasLabel && invalidRowIds.size === 0
+  const canSave = hasLabel && invalidRowIds.size === 0 && resolution.issues.length === 0
   const summarizeStrategyRow = (row: RebalanceStrategyRow) => {
     const strategy = savedConfigToStrategyState(row.config, row.name)
     return {
@@ -581,6 +567,16 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
           </div>
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
+        {resolution.issues.length > 0 && (
+          <ul className="portfolio-resolution-issues" aria-label="Portfolio resolution issues">
+            {resolution.issues.map((issue, index) => (
+              <li key={`${issue.rowId}-${issue.code}-${index}`}>
+                {issue.referencePath?.length ? `${issue.referencePath.join(' → ')}: ` : ''}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="ticker-rows">
           {local.tickers.map(t => {
             const refName = t.type === 'PORTFOLIO_REFERENCE' ? t.portfolioName.trim() : ''

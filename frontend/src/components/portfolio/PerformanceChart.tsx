@@ -8,9 +8,9 @@ import { X } from 'lucide-react'
 import { useChartTheme } from '@/lib/chartTheme'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useTransientToast } from '@/hooks/useTransientToast'
-import type { SavedPortfolio } from '@/types/backtest'
 import { configToBlockState } from '@/types/backtest'
 import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { useSavedPortfolios } from '@/lib/savedPortfolioCache'
 
 interface Props {
   portfolioSlug: string
@@ -68,7 +68,7 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
   const [showNav, setShowNav]             = useState(true)
   const [showMargin, setShowMargin]       = useState(false)
 
-  const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
+  const { savedPortfolios } = useSavedPortfolios()
   const [selectedBenchmark, setSelectedBenchmark] = useState<string>('')
   const [benchmarkCache, setBenchmarkCache] = useState<Record<string, Record<string, number>>>({})
   const [benchmarkMarginKey, setBenchmarkMarginKey] = useState<string>('none')
@@ -98,10 +98,6 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     fetch(`/api/performance/snapshots/${portfolioSlug}`)
       .then(r => r.json())
       .then((d: { dates: string[] }) => setSnapshotDates(d.dates ?? []))
-      .catch(() => {})
-    fetch('/api/backtest/savedPortfolios')
-      .then(r => r.json())
-      .then((d: SavedPortfolio[]) => setSavedPortfolios(d ?? []))
       .catch(() => {})
     fetch(`/api/performance/gaps/${portfolioSlug}`)
       .then(r => r.json())

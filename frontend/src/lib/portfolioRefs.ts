@@ -3,15 +3,19 @@ import type { BlockConversionOptions, BlockState, SavedPortfolio } from '@/types
 import {
   expandSwapTickerRows,
   isResolvedNonZeroWeight,
-  resolveSwapTickerRows,
-  type WeightedOrWildcardTickerExpression,
 } from '@/lib/tickerExpressions'
 import {
-  canonicalPortfolioConfiguration,
-  convertPortfolioRowToLegacyTickerRow,
+  resolvePortfolioComposition,
+  resolveRootPortfolioComposition,
+  type PortfolioResolutionIssue,
+  type ResolvedPortfolioComposition,
 } from '@/lib/portfolioComposition'
+import {
+  getSavedPortfolios,
+  SAVED_PORTFOLIOS_CHANGED_EVENT,
+} from '@/lib/savedPortfolioCache'
 
-export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
+export { SAVED_PORTFOLIOS_CHANGED_EVENT }
 
 export interface ResolvedStockWeight {
   ticker: string
@@ -25,28 +29,7 @@ export function isPlaceholderTicker(ticker: string) {
 }
 
 export async function fetchSavedPortfolios(): Promise<SavedPortfolio[]> {
-  try {
-    const res = await fetch('/api/backtest/savedPortfolios')
-    if (!res.ok) return []
-    return await res.json()
-  } catch (_) {
-    return []
-  }
-}
-
-function isPortfolioRef(row: any) {
-  return row?.isPortfolioRef === true || row?.type === 'PORTFOLIO_REF' || !!row?.portfolioRef
-}
-
-function refName(row: any) {
-  return String(row?.portfolioRef || row?.ticker || '').trim()
-}
-
-function rowResolveWeight(row: any): number | '*' {
-  const raw = String(row?.weight ?? '').trim()
-  if (raw === '*') return '*'
-  const weight = Number(raw)
-  return Number.isFinite(weight) ? weight : 0
+  return getSavedPortfolios()
 }
 
 function addWeight(map: Map<string, number>, ticker: string, weight: number) {
@@ -84,21 +67,6 @@ function mergedNonZeroRows(rows: ResolvedStockWeight[]) {
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
-function scaledChildRows(parentWeight: number, childStocks: ResolvedStockWeight[]) {
-  const childTotal = childStocks.reduce((sum, childStock) => sum + childStock.weight, 0)
-  if (childTotal === 0) throw new Error('Portfolio reference net weight cannot be zero after merging signed rows.')
-  const denominator = Math.abs(childTotal)
-  const targetTotal = parentWeight * (childTotal < 0 ? -1 : 1)
-  let allocated = 0
-
-  return childStocks.map((childStock, index) => {
-    const isLast = index === childStocks.length - 1
-    const weight = isLast ? targetTotal - allocated : parentWeight * childStock.weight / denominator
-    allocated += weight
-    return { ...childStock, weight }
-  })
-}
-
 export function savedPortfolioConfig(config: any) {
   return config?.portfolios?.[0] ?? config
 }
@@ -112,37 +80,49 @@ export function resolveSavedPortfolioConfig(
   savedByName: Map<string, any>,
   stack: string[] = [],
 ): ResolvedStockWeight[] {
-  let resolvedRows: ResolvedStockWeight[] = []
   if (!Array.isArray(config?.rows)) throw new Error('Saved portfolio is missing tagged rows.')
-  const canonicalRows = canonicalPortfolioConfiguration({ rows: config.rows })?.rows
-  if (!canonicalRows) throw new Error('Saved portfolio contains invalid tagged rows.')
-  const inputRows = canonicalRows.map(convertPortfolioRowToLegacyTickerRow)
+  const savedConfigurations = new Map(
+    [...savedByName].map(([name, value]) => [name, { rows: value?.rows ?? [] }]),
+  )
+  const resolution = resolvePortfolioComposition(config.rows, savedConfigurations, {
+    referencePath: stack,
+    stack,
+  })
+  assertResolved(resolution)
+  return resolution.composition.map(position => ({
+    ticker: position.instrument,
+    weight: position.exposure,
+  }))
+}
 
-  function applyRows(rows: WeightedOrWildcardTickerExpression[]) {
-    if (rows.length === 0) return
-    resolvedRows = mergedNonZeroRows(resolveSwapTickerRows([...resolvedRows, ...rows]))
+function formatResolutionIssue(issue: PortfolioResolutionIssue) {
+  const path = issue.referencePath?.length ? `${issue.referencePath.join(' → ')}: ` : ''
+  return `${path}${issue.message}`
+}
+
+function assertResolved(resolution: ResolvedPortfolioComposition) {
+  if (resolution.issues.length > 0) {
+    throw new Error(resolution.issues.map(formatResolutionIssue).join('\n'))
   }
+}
 
-  for (const row of inputRows) {
-    const weight = rowResolveWeight(row)
-    const portfolioRef = isPortfolioRef(row)
-    const ticker = portfolioRef ? refName(row) : String(row.ticker || '')
-    if (weight !== '*' && !isResolvedNonZeroWeight(weight)) continue
+function savedConfigurationMap(savedPortfolios: SavedPortfolio[]) {
+  return new Map(savedPortfolios.map(portfolio => [
+    portfolio.name,
+    { rows: savedPortfolioConfig(portfolio.config)?.rows ?? [] },
+  ]))
+}
 
-    if (portfolioRef) {
-      if (weight === '*') throw new Error('Portfolio reference weight cannot be *.')
-      const name = ticker
-      const child = savedByName.get(name)
-      if (!child) throw new Error(`Missing portfolio reference: ${name}`)
-      if (stack.includes(name)) throw new Error(`Circular portfolio reference: ${[...stack, name].join(' -> ')}`)
-
-      applyRows(scaledChildRows(weight, resolveSavedPortfolioConfig(child, savedByName, [...stack, name])))
-    } else {
-      applyRows([{ ticker, weight }])
-    }
-  }
-
-  return resolvedRows
+export function blockStateResolution(
+  block: BlockState,
+  savedPortfolios: SavedPortfolio[],
+): ResolvedPortfolioComposition {
+  const rows = blockStateToSavedConfig(block).rows
+  const rootName = block.label.trim()
+  return resolvePortfolioComposition(rows, savedConfigurationMap(savedPortfolios), {
+    referencePath: rootName ? [rootName] : [],
+    stack: rootName ? [rootName] : [],
+  })
 }
 
 export function resolveBlockState(
@@ -157,12 +137,16 @@ export function resolveBlockStateRows(
   savedPortfolios: SavedPortfolio[],
   options: { normalize?: boolean } = {},
 ): ResolvedStockWeight[] {
-  const savedByName = savedPortfolioConfigMap(savedPortfolios)
-  const config = blockStateToSavedConfig(block)
-  const rows = resolveSavedPortfolioConfig(config, savedByName, block.label.trim() ? [block.label.trim()] : [])
-  return options.normalize === false
-    ? stripPlaceholderResolvedRows(rows)
-    : stripPlaceholderAndNormalizeResolvedRows(rows)
+  const rows = blockStateToSavedConfig(block).rows
+  const resolution = options.normalize === false
+    ? blockStateResolution(block, savedPortfolios)
+    : resolveRootPortfolioComposition(rows, savedConfigurationMap(savedPortfolios), {
+      rootName: block.label.trim() || undefined,
+    })
+  assertResolved(resolution)
+  return resolution.composition
+    .map(position => ({ ticker: position.instrument, weight: position.exposure }))
+    .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
 export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
@@ -177,7 +161,7 @@ export function resolvedBlockStateToAPIPortfolio(
   options: BlockConversionOptions = {},
 ) {
   const apiPortfolio = blockStateToAPIPortfolio(block, idx, options)
-  const tickers = mergedNonZeroRows(resolveBlockState(block, savedPortfolios))
+  const tickers = resolveBlockState(block, savedPortfolios)
 
   return { ...apiPortfolio, tickers }
 }

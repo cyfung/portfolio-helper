@@ -84,4 +84,16 @@ describe('portfolio row editor', () => {
     expect(markup).not.toContain('swap-editor-row-complex')
     expect(markup.match(/aria-label="Swap destination"/g)).toHaveLength(1)
   })
+
+  it('shows the live pre-root resolved net instead of the input allocation total', () => {
+    const markup = renderPortfolioBlock([{
+      id: 'holding',
+      type: 'HOLDING',
+      instrument: 'SPY',
+      allocation: '80',
+    }])
+
+    expect(markup).toContain('Resolved net: 80.00%')
+    expect(markup).not.toContain('Total: 80.00%')
+  })
 })

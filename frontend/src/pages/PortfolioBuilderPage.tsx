@@ -4,11 +4,11 @@ import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButto
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar, { type SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { BlockState } from '@/types/backtest'
-import type { SavedPortfolio } from '@/types/backtest'
 import { configToBlockInputLabel, configToBlockState } from '@/types/backtest'
 import { blockStateToSettingsPortfolio, isPlaceholderTicker, resolveBlockStateRows, type ResolvedStockWeight } from '@/lib/portfolioRefs'
 import { parseGroupsAttr } from '@/lib/portfolio-utils'
 import { expandLetfRows, normalizeTickerExpression, parseLetfComponents } from '@/lib/tickerExpressions'
+import { useSavedPortfolios } from '@/lib/savedPortfolioCache'
 
 interface TickerConfig {
   letf: string
@@ -102,7 +102,7 @@ function buildGroupRows(rows: ResolvedStockWeight[], tickerConfigs: Record<strin
 
 export default function PortfolioBuilderPage() {
   const [blocks, setBlocks] = useState<BlockState[]>([blankBlock(), blankBlock(), blankBlock()])
-  const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
+  const { savedPortfolios } = useSavedPortfolios()
   const [results, setResults] = useState<ResolvedStockWeight[][] | null>(null)
   const [tickerConfigs, setTickerConfigs] = useState<Record<string, TickerConfig>>({})
   const [showLetfExpandedByBlock, setShowLetfExpandedByBlock] = useState<Record<number, boolean>>({})
@@ -132,14 +132,6 @@ export default function PortfolioBuilderPage() {
       Math.max(margin, window.innerHeight - estimatedHeight - margin),
     )
     setGroupOverlayPos({ x, y })
-  }
-
-  async function loadSaved() {
-    try {
-      const res = await fetch('/api/backtest/savedPortfolios')
-      if (!res.ok) return
-      setSavedPortfolios(await res.json())
-    } catch (_) {}
   }
 
   useEffect(() => {
@@ -175,7 +167,6 @@ export default function PortfolioBuilderPage() {
           retryTimer = window.setTimeout(loadSettings, 1500)
         })
     }
-    loadSaved()
     loadSettings()
     return () => {
       active = false
@@ -204,7 +195,6 @@ export default function PortfolioBuilderPage() {
 
   const refreshSaved = useCallback(() => {
     savedBarRef.current?.refresh()
-    loadSaved()
   }, [])
 
   async function loadTickerConfigs(rowsByBlock: ResolvedStockWeight[][]) {

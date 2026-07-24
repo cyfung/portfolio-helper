@@ -20,8 +20,8 @@ import {
   type FlexibleWeightMapping,
 } from '@/lib/flexibleWeights'
 import { useTransientToast } from '@/hooks/useTransientToast'
-import type { SavedPortfolio } from '@/types/backtest'
 import type { StockData } from '@/types/portfolio'
+import { useSavedPortfolios } from '@/lib/savedPortfolioCache'
 
 interface Props {
   saveKey: number   // incrementing triggers save
@@ -170,7 +170,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
   const { toast, showToast, clearToast } = useTransientToast()
   const dividendDate = pendingDividendDate ?? config.dividendStartDate ?? ''
-  const [savedPortfolios, setSavedPortfolios] = useState<SavedPortfolio[]>([])
+  const { savedPortfolios } = useSavedPortfolios()
   const [selectedImportName, setSelectedImportName] = useState('')
   const [importStatus, setImportStatus] = useState('')
   const [focusedQtyRows, setFocusedQtyRows] = useState<Set<number>>(() => new Set())
@@ -196,20 +196,8 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
-    fetch('/api/backtest/savedPortfolios')
-      .then(res => res.ok ? res.json() : [])
-      .then((data: SavedPortfolio[]) => {
-        if (cancelled) return
-        const list = data ?? []
-        setSavedPortfolios(list)
-        setSelectedImportName(current => current || list[list.length - 1]?.name || '')
-      })
-      .catch(() => {
-        if (!cancelled) setSavedPortfolios([])
-      })
-    return () => { cancelled = true }
-  }, [])
+    setSelectedImportName(current => current || savedPortfolios[savedPortfolios.length - 1]?.name || '')
+  }, [savedPortfolios])
 
   const totalWeight = stockRows
     .filter(r => !r.deleted && !isPlaceholderTicker(r.symbol))
