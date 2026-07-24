@@ -32,7 +32,6 @@ import {
 } from '@/lib/configImportExport'
 import { validateDateRange } from '@/lib/dateRange'
 import {
-  blockStateToAPIPortfolio,
   configToBlockInputLabel,
   configToBlockState,
   emptyBlock,
@@ -251,7 +250,7 @@ export default function MarketTimingPage() {
     setConfigError('')
     let exportPortfolio
     try {
-      exportPortfolio = blockStateToAPIPortfolio(portfolio, 0, { strict: true })
+      exportPortfolio = blockStateToSettingsPortfolio(portfolio, 0, { strict: true })
     } catch (e: unknown) {
       setConfigError(errorMessage(e, 'Invalid portfolio config'))
       return

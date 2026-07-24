@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { resolvePortfolioComposition } from '@/lib/portfolioComposition'
 import {
   blockStateToSavedConfig,
   configToBlockState,
   convertHoldingEditorRowToSwap,
   invalidPortfolioEditorRowIds,
   portfolioEditorRowMergeKey,
+  sortAndMergePortfolioEditorRows,
   type BlockState,
 } from './backtest'
 
@@ -148,5 +150,50 @@ describe('saved portfolio persistence', () => {
 
     expect(portfolioEditorRowMergeKey(normalized, 0))
       .not.toBe(portfolioEditorRowMergeKey(preserving, 1))
+  })
+})
+
+describe('ordered portfolio editing operations', () => {
+  it('merges and sorts only within segments separated by swaps', () => {
+    const rows: BlockState['tickers'] = [
+      { id: 'z-before', type: 'HOLDING', instrument: 'ZZZ', allocation: '10' },
+      { id: 'a-before', type: 'HOLDING', instrument: 'AAA', allocation: '20' },
+      {
+        id: 'swap',
+        type: 'SWAP',
+        source: 'AAA',
+        transferMode: 'AMOUNT',
+        transferAmount: '5',
+        legs: [{ id: 'leg', instrument: 'BBB', multiplier: '1' }],
+      },
+      { id: 'a-after-1', type: 'HOLDING', instrument: 'AAA', allocation: '30' },
+      { id: 'a-after-2', type: 'HOLDING', instrument: 'AAA', allocation: '40' },
+    ]
+
+    expect(sortAndMergePortfolioEditorRows(rows)).toEqual([
+      { id: 'a-before', type: 'HOLDING', instrument: 'AAA', allocation: '20' },
+      { id: 'z-before', type: 'HOLDING', instrument: 'ZZZ', allocation: '10' },
+      rows[2],
+      { id: 'a-after-1', type: 'HOLDING', instrument: 'AAA', allocation: '70' },
+    ])
+
+    const resolve = (tickers: BlockState['tickers']) => {
+      const result = resolvePortfolioComposition(blockStateToSavedConfig({
+        label: '',
+        tickers,
+        rebalance: 'YEARLY',
+        margins: [],
+        rebalanceStrategies: [],
+        includeNoMargin: true,
+      }).rows)
+      return {
+        net: result.net,
+        issues: result.issues,
+        exposures: Object.fromEntries(result.composition
+          .map(position => [position.instrument, position.exposure] as const)
+          .sort(([a], [b]) => a.localeCompare(b))),
+      }
+    }
+    expect(resolve(sortAndMergePortfolioEditorRows(rows))).toEqual(resolve(rows))
   })
 })

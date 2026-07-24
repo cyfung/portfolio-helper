@@ -373,6 +373,36 @@ export function resolvePortfolioComposition(
   return resolveRows(rows, savedPortfolios, options.referencePath, options.stack)
 }
 
+export function resolvePortfolioReferenceComposition(
+  reference: PortfolioReferenceAllocationRow,
+  savedPortfolios: ReadonlyMap<string, SavedPortfolioConfiguration>,
+): ResolvedPortfolioComposition {
+  return resolveRows([reference], savedPortfolios)
+}
+
+export function transformRowsBetweenSwapBarriers<T extends { type: string }>(
+  rows: readonly T[],
+  transform: (rowsBetweenSwaps: T[]) => T[],
+): T[] {
+  const result: T[] = []
+  let rowsBetweenSwaps: T[] = []
+  const flushRowsBetweenSwaps = () => {
+    result.push(...transform(rowsBetweenSwaps))
+    rowsBetweenSwaps = []
+  }
+
+  rows.forEach(row => {
+    if (row.type !== 'SWAP') {
+      rowsBetweenSwaps.push(row)
+      return
+    }
+    flushRowsBetweenSwaps()
+    result.push(row)
+  })
+  flushRowsBetweenSwaps()
+  return result
+}
+
 function resolveRows(
   rows: readonly unknown[],
   savedPortfolios?: ReadonlyMap<string, SavedPortfolioConfiguration>,

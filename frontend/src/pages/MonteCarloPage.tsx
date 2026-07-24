@@ -52,7 +52,7 @@ import {
 } from '@/lib/sharedCashflowSettings'
 import {
   BlockState, MonteCarloResults, McCurve, emptyBlock,
-  blockStateToAPIPortfolio, configToBlockState,
+  configToBlockState,
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
   cashflowStateFromSettings, cashflowToPayload, configToBlockInputLabel,
   DEFAULT_BETA_REFERENCE_TICKER, DEFAULT_CASHFLOW_FREQUENCY, hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
@@ -576,7 +576,7 @@ export default function MonteCarloPage() {
     if (exportBlocks.some((block, i) => block !== blocks[i])) setBlocks(exportBlocks)
     let portfolios
     try {
-      portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i, { strict: true }))
+      portfolios = exportBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i, { strict: true }))
     } catch (e: any) {
       setConfigError(e.message || 'Invalid portfolio config.')
       setTimeout(() => setConfigError(''), 3000)

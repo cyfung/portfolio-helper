@@ -34,7 +34,6 @@ import {
   BlockState,
   DEFAULT_BETA_REFERENCE_TICKER,
   DEFAULT_CASHFLOW_FREQUENCY,
-  blockStateToAPIPortfolio,
   cashflowStateFromSettings,
   cashflowToPayload,
   configToBlockInputLabel,
@@ -64,7 +63,6 @@ type PageConfigLike = Record<string, unknown> & {
   includeActionDiagnostics?: boolean
   portfolios?: (Record<string, unknown> & { label?: string })[]
   portfolio?: Record<string, unknown> & { label?: string }
-  portfolioState?: BlockState
   strategies?: StrategyConfigLike[]
   strategyStates?: StrategyConfigLike[]
 }
@@ -368,7 +366,7 @@ export function useRebalanceStrategyPage() {
     let portfolioConfig
     let exportStartingBalance
     try {
-      portfolioConfig = blockStateToAPIPortfolio(exportPortfolio, 0, { strict: true })
+      portfolioConfig = blockStateToSettingsPortfolio(exportPortfolio, 0, { strict: true })
       exportStartingBalance = startingBalanceToPayload(startingBalance, { strict: true })
     } catch (e: unknown) {
       setConfigError(errorMessage(e, 'Invalid portfolio config.'))
@@ -383,7 +381,6 @@ export function useRebalanceStrategyPage() {
       toDate: toDate || null,
       startingBalance: exportStartingBalance,
       portfolio: portfolioConfig,
-      portfolioState: exportPortfolio,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       strategies: currentStrategies,
@@ -405,8 +402,7 @@ export function useRebalanceStrategyPage() {
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
     if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
-    if (req.portfolioState) setPortfolio(req.portfolioState)
-    else if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
+    if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
     const restoredStrategies = restoreStrategyStates(req)
     if (restoredStrategies) setStrategies(restoredStrategies)
   }, [])

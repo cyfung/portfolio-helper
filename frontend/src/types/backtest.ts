@@ -11,6 +11,7 @@ import {
   convertPortfolioRowToLegacyTickerRow,
   parseInstrumentExpression,
   parseSwapInput,
+  transformRowsBetweenSwapBarriers,
   type PortfolioRow,
   type ReferenceNormalizationMode,
 } from '@/lib/portfolioComposition'
@@ -332,6 +333,43 @@ export function portfolioEditorRowMergeKey(row: PortfolioEditorRow, index: numbe
   return row.type === 'PORTFOLIO_REFERENCE'
     ? `${row.type}:${label}:${row.normalizationMode}`
     : `${row.type}:${label}`
+}
+
+function mergeAndSortRowsBetweenSwaps(rows: PortfolioEditorRow[]): PortfolioEditorRow[] {
+  type MergeGroup = {
+    row: HoldingEditorRow | PortfolioReferenceEditorRow
+    allocation: number
+    label: string
+    firstIndex: number
+  }
+  const groups = new Map<string, MergeGroup>()
+
+  rows.forEach((row, index) => {
+    if (row.type === 'SWAP') return
+    const key = portfolioEditorRowMergeKey(row, index)
+    const label = row.type === 'HOLDING'
+      ? row.instrument.trim().toUpperCase()
+      : row.portfolioName.trim()
+    const allocation = Number(row.allocation) || 0
+    const existing = groups.get(key)
+    if (existing) existing.allocation += allocation
+    else groups.set(key, { row, allocation, label, firstIndex: index })
+  })
+
+  const formatAllocation = (allocation: number) =>
+    String(Math.round(allocation * 10000000000) / 10000000000)
+  return [...groups.values()]
+    .sort((a, b) =>
+      Number(a.row.type === 'PORTFOLIO_REFERENCE') - Number(b.row.type === 'PORTFOLIO_REFERENCE') ||
+      a.label.localeCompare(b.label) ||
+      a.firstIndex - b.firstIndex)
+    .map(({ row, allocation, label }) => row.type === 'HOLDING'
+      ? { ...row, instrument: label, allocation: formatAllocation(allocation) }
+      : { ...row, portfolioName: label, allocation: formatAllocation(allocation) })
+}
+
+export function sortAndMergePortfolioEditorRows(rows: PortfolioEditorRow[]): PortfolioEditorRow[] {
+  return transformRowsBetweenSwapBarriers(rows, mergeAndSortRowsBetweenSwaps)
 }
 
 function parseInputNumber(

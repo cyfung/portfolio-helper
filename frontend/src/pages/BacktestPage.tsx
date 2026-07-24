@@ -36,7 +36,7 @@ import {
   type SeriesStats,
 } from '@/lib/backtestStats'
 import {
-  BlockState, BacktestResults, emptyBlock, blockStateToAPIPortfolio,
+  BlockState, BacktestResults, emptyBlock,
   configToBlockState, PALETTE, cashflowStateFromSettings,
   cashflowToPayload, configToBlockInputLabel, DEFAULT_BETA_REFERENCE_TICKER, DEFAULT_CASHFLOW_FREQUENCY,
   hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
@@ -804,7 +804,7 @@ export default function BacktestPage() {
     let portfolios
     let exportStartingBalance
     try {
-      portfolios = exportBlocks.map((b, i) => blockStateToAPIPortfolio(b, i, { strict: true }))
+      portfolios = exportBlocks.map((b, i) => blockStateToSettingsPortfolio(b, i, { strict: true }))
       exportStartingBalance = startingBalanceToPayload(startingBalance, { strict: true })
     } catch (e: unknown) {
       setConfigError(errorMessage(e) || 'Invalid portfolio config.')

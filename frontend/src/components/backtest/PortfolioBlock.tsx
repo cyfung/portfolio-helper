@@ -6,7 +6,7 @@ import {
   BlockState, MarginRow, RebalanceStrategyRow, newId,
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
   convertHoldingEditorRowToSwap, invalidPortfolioEditorRowIds,
-  portfolioEditorRowMergeKey,
+  sortAndMergePortfolioEditorRows,
   REBALANCE_OPTIONS,
 } from '@/types/backtest'
 import { savedConfigToStrategyState, strategyStateToSavedConfig } from '@/types/rebalanceStrategy'
@@ -14,11 +14,8 @@ import { isValidNumberInput, parseStrictNumberInput } from '@/lib/numberInputs'
 import { useAllocStrategyOptions } from '@/hooks/useAllocStrategyOptions'
 import {
   blockStateResolution,
-  isPlaceholderTicker,
-  resolveSavedPortfolioConfig,
-  savedPortfolioConfigMap,
+  resolvePortfolioReferenceExposures,
 } from '@/lib/portfolioRefs'
-import { canonicalPortfolioConfiguration } from '@/lib/portfolioComposition'
 import {
   announceSavedPortfoliosChanged,
   refreshSavedPortfolios,
@@ -94,10 +91,6 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   // ── Allocation hint ───────────────────────────────────────────────────────
 
-  const allocationText = (row: BlockState['tickers'][number]) =>
-    row.type === 'SWAP'
-      ? row.transferMode === 'ALL_REMAINING' ? '*' : row.transferAmount
-      : row.allocation
   const resolution = blockStateResolution(local, savedPortfolios)
   let weightHintText = ''
   let weightHintCls = 'backtest-weight-hint'
@@ -144,76 +137,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   function sortAndMergeTickers() {
-    type EditorRowState = BlockState['tickers'][number]
-    type EditorRowGroup = {
-      key: string
-      label: string
-      type: EditorRowState['type']
-      rows: EditorRowState[]
-      allocation: number
-      firstIndex: number
-      sortRank: number
-    }
-
-    const groups = new Map<string, EditorRowGroup>()
-    const rowSortRank = (label: string, type: EditorRowState['type']) => {
-      if (type === 'PORTFOLIO_REFERENCE') return 1
-      if (type === 'SWAP') return 2
-      if (isPlaceholderTicker(label)) return 3
-      return 0
-    }
-
-    localRef.current.tickers.forEach((row, index) => {
-      const label = row.type === 'HOLDING'
-        ? row.instrument.trim().toUpperCase()
-        : row.type === 'PORTFOLIO_REFERENCE'
-          ? row.portfolioName.trim()
-          : row.source.trim().toUpperCase()
-      const key = portfolioEditorRowMergeKey(row, index)
-      const allocation = parseStrictNumberInput(allocationText(row)) ?? 0
-      const group = groups.get(key)
-      if (group) {
-        group.rows.push(row)
-        group.allocation += allocation
-        return
-      }
-      groups.set(key, {
-        key,
-        label,
-        type: row.type,
-        rows: [row],
-        allocation,
-        firstIndex: index,
-        sortRank: rowSortRank(label, row.type),
-      })
-    })
-
-    const formatAllocation = (allocation: number) => String(Math.round(allocation * 10000000000) / 10000000000)
-    const sorted = [...groups.values()]
-      .sort((a, b) => {
-        if (!a.label && b.label) return 1
-        if (a.label && !b.label) return -1
-        if (a.type === 'SWAP' && b.type === 'SWAP') {
-          return a.firstIndex - b.firstIndex
-        }
-        return a.sortRank - b.sortRank ||
-          a.label.localeCompare(b.label) ||
-          a.type.localeCompare(b.type) ||
-          a.firstIndex - b.firstIndex
-      })
-      .map(group => {
-        const first = group.rows[0]
-        if (group.rows.length === 1) {
-          return first.type === 'HOLDING' && group.label ? { ...first, instrument: group.label } : first
-        }
-        if (first.type === 'HOLDING') return { ...first, instrument: group.label, allocation: formatAllocation(group.allocation) }
-        if (first.type === 'PORTFOLIO_REFERENCE') {
-          return { ...first, portfolioName: group.label, allocation: formatAllocation(group.allocation) }
-        }
-        return first
-      })
-
-    commit({ ...localRef.current, tickers: sorted })
+    commit({ ...localRef.current, tickers: sortAndMergePortfolioEditorRows(localRef.current.tickers) })
   }
 
   function updateHoldingInstrument(id: string, instrument: string) {
@@ -257,43 +181,19 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
     const refName = row.portfolioName.trim()
     const saved = await refreshSavedPortfolioNames()
-    const savedByName = savedPortfolioConfigMap(saved)
-    const savedConfig = savedByName.get(refName)
-    if (!savedConfig) return
-    const resolvedChildRows = resolveSavedPortfolioConfig(savedConfig, savedByName, [refName])
-    const resolvedChildTotal = resolvedChildRows.reduce((sum, child) => sum + child.weight, 0)
-    if (resolvedChildTotal === 0) return
-    const referenceScale = row.normalizationMode === 'NET_100'
-      ? referenceAllocation / Math.abs(resolvedChildTotal)
-      : referenceAllocation / 100
-    const childRows = (canonicalPortfolioConfiguration({ rows: savedConfig?.rows ?? [] })?.rows ?? [])
-      .map(child => {
-        const id = newId()
-        if (child.type === 'HOLDING') {
-          return { id, type: 'HOLDING' as const, instrument: child.instrument, allocation: String(child.allocation * referenceScale) }
-        }
-        if (child.type === 'PORTFOLIO_REFERENCE') {
-          return {
-            id,
-            type: 'PORTFOLIO_REFERENCE' as const,
-            portfolioName: child.portfolioName,
-            allocation: String(child.allocation * referenceScale),
-            normalizationMode: child.normalizationMode,
-          }
-        }
-        return {
-          id,
-          type: 'SWAP' as const,
-          source: child.source,
-          transferMode: child.transfer.mode,
-          transferAmount: child.transfer.mode === 'AMOUNT' ? String(child.transfer.amount * referenceScale) : '',
-          legs: child.legs.map((leg, index) => ({
-            id: `${id}-leg-${index}`,
-            instrument: leg.instrument,
-            multiplier: String(leg.multiplier),
-          })),
-        }
-      })
+    const resolvedChildExposures = resolvePortfolioReferenceExposures({
+      id: row.id,
+      type: 'PORTFOLIO_REFERENCE',
+      portfolioName: refName,
+      allocation: referenceAllocation,
+      normalizationMode: row.normalizationMode,
+    }, saved)
+    const childRows = resolvedChildExposures.map(child => ({
+      id: newId(),
+      type: 'HOLDING' as const,
+      instrument: child.instrument,
+      allocation: String(child.exposure),
+    }))
 
     if (childRows.length === 0) return
     commit({
@@ -779,8 +679,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 <button
                   className="ticker-config-btn portfolio-decompose-btn"
                   type="button"
-                  title={portfolioRefExists ? 'Decompose this portfolio one layer' : portfolioRefStatusTitle}
-                  aria-label={`Decompose ${t.portfolioName || 'portfolio'} one layer`}
+                  title={portfolioRefExists ? 'Decompose this portfolio to resolved holdings' : portfolioRefStatusTitle}
+                  aria-label={`Decompose ${t.portfolioName || 'portfolio'} to resolved holdings`}
                   disabled={!canDecomposePortfolioRef}
                   onClick={() => decomposePortfolioRef(t.id)}
                 >

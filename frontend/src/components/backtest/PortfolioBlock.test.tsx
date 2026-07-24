@@ -35,7 +35,7 @@ describe('portfolio row editor', () => {
     expect(markup).toContain('>+Swap</button>')
     expect(markup).toContain('Ref · 100')
     expect(markup).toContain('Reference mode for Child')
-    expect(markup).toContain('Decompose Child one layer')
+    expect(markup).toContain('Decompose Child to resolved holdings')
   })
 
   it('offers conversion without changing a holding row and disables save for invalid rows', () => {

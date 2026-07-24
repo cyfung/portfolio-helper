@@ -6,9 +6,12 @@ import {
 } from '@/lib/tickerExpressions'
 import {
   resolvePortfolioComposition,
+  resolvePortfolioReferenceComposition,
   resolveRootPortfolioComposition,
+  type PortfolioReferenceAllocationRow,
   type PortfolioResolutionIssue,
   type ResolvedPortfolioComposition,
+  type ResolvedInstrumentExposure,
 } from '@/lib/portfolioComposition'
 import {
   getSavedPortfolios,
@@ -95,6 +98,15 @@ export function resolveSavedPortfolioConfig(
   }))
 }
 
+export function resolvePortfolioReferenceExposures(
+  reference: PortfolioReferenceAllocationRow,
+  savedPortfolios: SavedPortfolio[],
+): ResolvedInstrumentExposure[] {
+  const resolution = resolvePortfolioReferenceComposition(reference, savedConfigurationMap(savedPortfolios))
+  assertResolved(resolution)
+  return resolution.composition
+}
+
 function formatResolutionIssue(issue: PortfolioResolutionIssue) {
   const path = issue.referencePath?.length ? `${issue.referencePath.join(' → ')}: ` : ''
   return `${path}${issue.message}`
@@ -149,8 +161,12 @@ export function resolveBlockStateRows(
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
-export function blockStateToSettingsPortfolio(block: BlockState, idx: number) {
-  const { tickers: _, ...settings } = blockStateToAPIPortfolio(block, idx)
+export function blockStateToSettingsPortfolio(
+  block: BlockState,
+  idx: number,
+  options: BlockConversionOptions = {},
+) {
+  const { tickers: _, ...settings } = blockStateToAPIPortfolio(block, idx, options)
   return { ...settings, rows: blockStateToSavedConfig(block).rows }
 }
 

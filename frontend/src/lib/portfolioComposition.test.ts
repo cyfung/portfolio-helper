@@ -7,11 +7,49 @@ import {
   formatSwapRow,
   parseSwapInput,
   resolvePortfolioComposition,
+  resolvePortfolioReferenceComposition,
   resolveRootPortfolioComposition,
   type PortfolioRow,
 } from './portfolioComposition'
 
 describe('canonical portfolio composition', () => {
+  it('materializes a reference exactly after nested swaps and signed parent scaling', () => {
+    const saved = new Map([
+      ['Grandchild', { rows: [
+        { id: 'grandchild-holding', type: 'HOLDING', instrument: 'SPY', allocation: 100 },
+        {
+          id: 'grandchild-swap',
+          type: 'SWAP',
+          source: 'SPY',
+          transfer: { mode: 'AMOUNT', amount: 25 },
+          legs: [{ instrument: 'TLT', multiplier: 1 }],
+        },
+      ] }],
+      ['Child', { rows: [{
+        id: 'nested',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Grandchild',
+        allocation: 80,
+        normalizationMode: 'PRESERVE',
+      }] }],
+    ])
+
+    expect(resolvePortfolioReferenceComposition({
+      id: 'reference',
+      type: 'PORTFOLIO_REFERENCE',
+      portfolioName: 'Child',
+      allocation: -50,
+      normalizationMode: 'NET_100',
+    }, saved)).toEqual({
+      composition: [
+        { instrument: 'SPY', exposure: -37.5 },
+        { instrument: 'TLT', exposure: -12.5 },
+      ],
+      net: -50,
+      issues: [],
+    })
+  })
+
   it('resolves holding allocations and swaps in visible row order', () => {
     expect(resolvePortfolioComposition([
       { id: 'before', type: 'SWAP', source: 'SPY', transfer: { mode: 'ALL_REMAINING' }, legs: [
