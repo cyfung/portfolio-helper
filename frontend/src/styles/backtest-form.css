@@ -211,13 +211,13 @@
 
 .backtest-ticker-row {
     display: grid;
-    grid-template-columns: 1fr 80px 20px auto;
+    grid-template-columns: 1fr 80px auto;
     gap: 0.5rem;
     align-items: center;
 }
 
 .backtest-ticker-row.has-ticker-config {
-    grid-template-columns: 1fr 80px 20px 28px auto;
+    grid-template-columns: 1fr 80px 28px auto;
 }
 
 .backtest-ticker-row .ticker-input {
@@ -241,11 +241,6 @@
     background: var(--color-bg-primary);
     color: var(--color-text-primary);
     text-align: right;
-}
-
-.backtest-ticker-row .weight-unit {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-tertiary);
 }
 
 .ticker-config-btn {
@@ -314,58 +309,127 @@
     pointer-events: none;
 }
 
-.swap-editor {
+.swap-expression-field {
+    --swap-accent: #f59e0b;
+
     display: flex;
     align-items: center;
-    flex: 1 1 28rem;
-    gap: 0.4rem;
+    gap: 0.5rem;
     min-width: 0;
+    border-style: dashed !important;
+    border-color: color-mix(in srgb, var(--swap-accent) 70%, var(--color-border-medium)) !important;
+    background: color-mix(in srgb, var(--swap-accent) 10%, var(--color-bg-secondary)) !important;
 }
 
-.swap-editor-main,
+.swap-row-badge {
+    flex: none;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--swap-accent) 18%, transparent);
+    color: var(--swap-accent);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+}
+
+.backtest-ticker-row .swap-expression-input {
+    width: 100%;
+    min-width: 0;
+    height: 1.25rem;
+    padding: 0 0.25rem;
+    border: 1px solid color-mix(in srgb, var(--color-border-medium) 65%, transparent);
+    border-radius: 3px;
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    font: inherit;
+    line-height: 1.2;
+    box-sizing: border-box;
+}
+
+.backtest-ticker-row .swap-expression-input:focus {
+    border-color: var(--swap-accent);
+}
+
+.backtest-ticker-row .swap-expression-input.input-error {
+    border-color: var(--color-negative);
+    box-shadow: 0 0 0 1px var(--color-negative);
+}
+
+.allocation-field {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.allocation-unit {
+    position: absolute;
+    right: 0.55rem;
+    color: var(--color-text-tertiary);
+    pointer-events: none;
+}
+
+.allocation-field .weight-input {
+    width: 100%;
+    padding-right: 1.4rem;
+}
+
+.swap-config-dialog {
+    width: min(34rem, calc(100vw - 2rem));
+}
+
+.swap-dialog-transfer,
+.swap-dialog-legs,
+.swap-dialog-legs .swap-leg {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.swap-dialog-transfer {
+    align-items: end;
+}
+
+.swap-dialog-transfer > * {
+    flex: 1;
+}
+
+.swap-dialog-legs {
+    flex-direction: column;
+    margin-top: 0.75rem;
+}
+
+.swap-dialog-legs .swap-leg-field:first-child {
+    flex: 1;
+}
+
+.swap-leg-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.swap-leg-multiplier {
+    width: 9rem;
+}
+
+.swap-leg-field input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.swap-field-error {
+    color: var(--color-negative);
+    font-size: var(--font-size-xs);
+}
+
+.swap-dialog-legs .input-error,
+.swap-config-dialog .input-error {
+    border-color: var(--color-negative);
+    box-shadow: 0 0 0 1px var(--color-negative);
+}
+
 .swap-leg {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-}
-
-.swap-editor-main .ticker-input {
-    flex: 1 1 8rem;
-}
-
-.swap-legs {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-width: 0;
-}
-
-.swap-editor-row-complex .swap-legs {
-    display: grid;
-    padding: 0.5rem;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 6px;
-    background: var(--color-bg-secondary);
-}
-
-.swap-editor-row-complex .swap-editor {
-    display: grid;
-    align-items: stretch;
-}
-
-.swap-leg input:first-child {
-    flex: 1 1 10rem;
-}
-
-.swap-leg input:nth-child(2) {
-    width: 6rem;
-}
-
-.portfolio-row-badge {
-    color: var(--color-text-tertiary);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
 }
 
 .ticker-header-actions {

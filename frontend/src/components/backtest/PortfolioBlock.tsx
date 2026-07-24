@@ -1,9 +1,9 @@
 // ── PortfolioBlock.tsx — Controlled portfolio block for Backtest & MonteCarlo ─
 
 import React, { useState, useEffect, useRef } from 'react'
-import { ArrowDownAZ, ChevronDown, Settings, Ungroup } from 'lucide-react'
+import { ArrowDownAZ, ChevronDown, Pencil, Settings, Ungroup } from 'lucide-react'
 import {
-  BlockState, MarginRow, RebalanceStrategyRow, newId,
+  BlockState, MarginRow, RebalanceStrategyRow, SwapEditorRow, newId,
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
   convertHoldingEditorRowToSwap, invalidPortfolioEditorRowIds,
   sortAndMergePortfolioEditorRows,
@@ -21,6 +21,7 @@ import {
   refreshSavedPortfolios,
   useSavedPortfolios,
 } from '@/lib/savedPortfolioCache'
+import { formatSwapRow, parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
 
 interface Props {
   idx: number
@@ -28,6 +29,23 @@ interface Props {
   onChange: (s: BlockState) => void
   onSavedRefresh: () => void
   showTickerConfig?: boolean
+}
+
+function validateSwapDraft(row: SwapEditorRow) {
+  const sourceInvalid = parseInstrumentExpression(row.source) == null
+  const amountInvalid = row.transferMode === 'AMOUNT' &&
+    (!Number.isFinite(Number(row.transferAmount)) || Number(row.transferAmount) <= 0)
+  const legErrors = row.legs.map(leg => ({
+    instrumentInvalid: parseInstrumentExpression(leg.instrument) == null,
+    multiplierInvalid: !Number.isFinite(Number(leg.multiplier)) || Number(leg.multiplier) === 0,
+  }))
+  return {
+    sourceInvalid,
+    amountInvalid,
+    legErrors,
+    invalid: sourceInvalid || amountInvalid || row.legs.length === 0 ||
+      legErrors.some(error => error.instrumentInvalid || error.multiplierInvalid),
+  }
 }
 
 const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
@@ -48,8 +66,12 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   // Local state — text inputs update this only; parent is notified on blur or structural change
   const [local, setLocal] = useState<BlockState>(value)
   const [spreadTouched, setSpreadTouched] = useState<Record<string, boolean>>({})
+  const [swapTextDrafts, setSwapTextDrafts] = useState<Record<string, string>>({})
+  const [invalidSwapTextIds, setInvalidSwapTextIds] = useState<Set<string>>(new Set())
+  const [swapDialog, setSwapDialog] = useState<{ draft: SwapEditorRow; isNew: boolean; submitted: boolean } | null>(null)
   const localRef = useRef<BlockState>(local)
   const prevValueRef = useRef<BlockState>(value)
+  const swapDialogRef = useRef<HTMLDivElement>(null)
 
   // Sync from parent when value changes externally (import, drag-drop, clear, load)
   useEffect(() => {
@@ -58,8 +80,19 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       localRef.current = value
       setLocal(value)
       setSpreadTouched({})
+      setSwapTextDrafts({})
+      setInvalidSwapTextIds(new Set())
     }
   }, [value])
+
+  useEffect(() => {
+    if (!swapDialog) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSwapDialog(null)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [swapDialog])
 
   function updateLocal(next: BlockState) {
     localRef.current = next
@@ -68,6 +101,11 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   // Structural changes → update local AND notify parent immediately
   function commit(next: BlockState) {
+    const nextRowIds = new Set(next.tickers.map(row => row.id))
+    setSwapTextDrafts(current => Object.fromEntries(
+      Object.entries(current).filter(([id]) => nextRowIds.has(id)),
+    ))
+    setInvalidSwapTextIds(current => new Set([...current].filter(id => nextRowIds.has(id))))
     prevValueRef.current = next  // prevent useEffect from re-syncing back
     localRef.current = next
     setLocal(next)
@@ -123,16 +161,100 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   function addSwap() {
     const id = newId()
-    commit({
-      ...localRef.current,
-      tickers: [...localRef.current.tickers, {
+    setSwapDialog({
+      isNew: true,
+      submitted: false,
+      draft: {
         id,
         type: 'SWAP',
         source: '',
         transferMode: 'AMOUNT',
         transferAmount: '',
         legs: [{ id: `${id}-leg-0`, instrument: '', multiplier: '1' }],
-      }],
+      },
+    })
+  }
+
+  function openSwapDialog(row: SwapEditorRow) {
+    const draft = structuredClone(row)
+    if (draft.legs.length === 0) {
+      draft.legs.push({ id: `${draft.id}-leg-0`, instrument: '', multiplier: '1' })
+    }
+    setSwapDialog({ draft, isNew: false, submitted: false })
+  }
+
+  function saveSwapDialog() {
+    if (!swapDialog) return
+    if (validateSwapDraft(swapDialog.draft).invalid) {
+      setSwapDialog(current => current ? { ...current, submitted: true } : current)
+      setTimeout(() => {
+        swapDialogRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+      }, 0)
+      return
+    }
+    const normalizedDraft: SwapEditorRow = {
+      ...swapDialog.draft,
+      source: parseInstrumentExpression(swapDialog.draft.source)!,
+      transferAmount: swapDialog.draft.transferMode === 'AMOUNT'
+        ? String(Number(swapDialog.draft.transferAmount))
+        : '',
+      legs: swapDialog.draft.legs.map(leg => ({
+        ...leg,
+        instrument: parseInstrumentExpression(leg.instrument)!,
+        multiplier: String(Number(leg.multiplier)),
+      })),
+    }
+    const nextRows = swapDialog.isNew
+      ? [...localRef.current.tickers, normalizedDraft]
+      : localRef.current.tickers.map(row => row.id === normalizedDraft.id ? normalizedDraft : row)
+    commit({ ...localRef.current, tickers: nextRows })
+    setSwapTextDrafts(current => ({ ...current, [normalizedDraft.id]: formatSwapRow({
+      source: normalizedDraft.source,
+      legs: normalizedDraft.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
+    }) }))
+    setInvalidSwapTextIds(current => {
+      const nextIds = new Set(current)
+      nextIds.delete(normalizedDraft.id)
+      return nextIds
+    })
+    setSwapDialog(null)
+  }
+
+  function commitSwapText(row: SwapEditorRow) {
+    const text = swapTextDrafts[row.id] ?? formatSwapRow({
+      source: row.source,
+      legs: row.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
+    })
+    const parsed = parseSwapInput(text)
+    if (!parsed) {
+      setInvalidSwapTextIds(current => new Set(current).add(row.id))
+      return
+    }
+    const next: SwapEditorRow = {
+      ...row,
+      source: parsed.source,
+      legs: parsed.legs.map((leg, index) => ({
+        id: row.legs[index]?.id ?? `${row.id}-leg-${index}`,
+        instrument: leg.instrument,
+        multiplier: String(leg.multiplier),
+      })),
+    }
+    setSwapTextDrafts(current => ({ ...current, [row.id]: parsed.formatted }))
+    setInvalidSwapTextIds(current => {
+      const nextIds = new Set(current)
+      nextIds.delete(row.id)
+      return nextIds
+    })
+    commit({ ...localRef.current, tickers: localRef.current.tickers.map(item => item.id === row.id ? next : item) })
+  }
+
+  function updateSwapAmount(row: SwapEditorRow, value: string) {
+    const allRemaining = value.trim() === '*'
+    updateLocal({
+      ...localRef.current,
+      tickers: localRef.current.tickers.map(item => item.id === row.id && item.type === 'SWAP'
+        ? { ...item, transferMode: allRemaining ? 'ALL_REMAINING' : 'AMOUNT', transferAmount: allRemaining ? '' : value }
+        : item),
     })
   }
 
@@ -379,7 +501,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   const hasLabel = local.label.trim().length > 0
   const invalidRowIds = invalidPortfolioEditorRowIds(local)
-  const canSave = hasLabel && invalidRowIds.size === 0 && resolution.issues.length === 0
+  const canSave = hasLabel && invalidRowIds.size === 0 && invalidSwapTextIds.size === 0 && resolution.issues.length === 0
+  const swapDialogValidation = swapDialog ? validateSwapDraft(swapDialog.draft) : null
   const summarizeStrategyRow = (row: RebalanceStrategyRow) => {
     const strategy = savedConfigToStrategyState(row.config, row.name)
     return {
@@ -492,7 +615,6 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
             const rowClassName = [
               'backtest-ticker-row has-ticker-config',
               t.type === 'PORTFOLIO_REFERENCE' ? 'portfolio-ref-row' : '',
-              t.type === 'SWAP' ? `swap-editor-row${t.legs.length > 1 ? ' swap-editor-row-complex' : ''}` : '',
               invalidRowIds.has(t.id) ? 'portfolio-row-invalid' : '',
               portfolioRefExists ? 'portfolio-ref-row-exists' : '',
               portfolioRefMissing ? 'portfolio-ref-row-missing' : '',
@@ -501,20 +623,6 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               <div key={t.id} className={rowClassName}>
                 {t.type === 'PORTFOLIO_REFERENCE' ? (
                   <label className="ticker-input portfolio-ref-name" title={portfolioRefStatusTitle}>
-                    <span className="portfolio-ref-badge">
-                      {t.normalizationMode === 'NET_100' ? 'Ref · 100' : 'Ref · 1:1'}
-                    </span>
-                    <input
-                      type="text"
-                      className="portfolio-ref-input"
-                      placeholder="Saved portfolio name"
-                      value={t.portfolioName}
-                      onChange={e => updatePortfolioRef(t.id, e.target.value)}
-                      onBlur={() => {
-                        commitBlur()
-                        refreshSavedPortfolioNames()
-                      }}
-                    />
                     <label className="portfolio-ref-mode" title="Choose how the referenced portfolio exposure is scaled">
                       <select
                         aria-label={`Reference mode for ${t.portfolioName || 'portfolio'}`}
@@ -527,11 +635,22 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                               : row),
                         })}
                       >
-                        <option value="NET_100">Ref · 100</option>
-                        <option value="PRESERVE">Ref · 1:1</option>
+                        <option value="NET_100">Ref 100</option>
+                        <option value="PRESERVE">Ref 1:1</option>
                       </select>
                       <ChevronDown size={12} aria-hidden="true" />
                     </label>
+                    <input
+                      type="text"
+                      className="portfolio-ref-input"
+                      placeholder="Saved portfolio name"
+                      value={t.portfolioName}
+                      onChange={e => updatePortfolioRef(t.id, e.target.value)}
+                      onBlur={() => {
+                        commitBlur()
+                        refreshSavedPortfolioNames()
+                      }}
+                    />
                   </label>
                 ) : t.type === 'HOLDING' ? (
                 <>
@@ -560,120 +679,56 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 )}
                 </>
               ) : (
-                <div className="swap-editor">
-                  <div className="swap-editor-main">
-                    <span className="portfolio-row-badge">Swap</span>
+                <label className="ticker-input swap-expression-field">
+                  <span className="swap-row-badge">SWAP</span>
+                  <input
+                    type="text"
+                    className={`swap-expression-input${invalidSwapTextIds.has(t.id) ? ' input-error' : ''}`}
+                    aria-label="Swap structure"
+                    aria-invalid={invalidSwapTextIds.has(t.id)}
+                    value={swapTextDrafts[t.id] ?? formatSwapRow({
+                      source: t.source,
+                      legs: t.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
+                    })}
+                    onChange={e => setSwapTextDrafts(current => ({ ...current, [t.id]: e.target.value }))}
+                    onBlur={() => commitSwapText(t)}
+                  />
+                </label>
+              )}
+              {t.type === 'SWAP' && (
+                <>
+                  <label className="swap-amount-field allocation-field">
                     <input
                       type="text"
-                      className="ticker-input"
-                      aria-label="Swap source"
-                      placeholder="Source"
-                      value={t.source}
-                      onChange={e => updateLocal({
-                        ...localRef.current,
-                        tickers: localRef.current.tickers.map(row =>
-                          row.id === t.id && row.type === 'SWAP' ? { ...row, source: e.target.value.toUpperCase() } : row),
-                      })}
+                      className="weight-input"
+                      aria-label="Swap transfer amount"
+                      value={t.transferMode === 'ALL_REMAINING' ? '*' : t.transferAmount}
+                      onChange={e => updateSwapAmount(t, e.target.value)}
                       onBlur={commitBlur}
                     />
-                    <select
-                      aria-label="Swap transfer mode"
-                      value={t.transferMode}
-                      onChange={e => commit({
-                        ...localRef.current,
-                        tickers: localRef.current.tickers.map(row =>
-                          row.id === t.id && row.type === 'SWAP'
-                            ? { ...row, transferMode: e.target.value as 'AMOUNT' | 'ALL_REMAINING' }
-                            : row),
-                      })}
-                    >
-                      <option value="AMOUNT">Amount</option>
-                      <option value="ALL_REMAINING">All remaining</option>
-                    </select>
-                    {t.transferMode === 'AMOUNT' && (
-                      <input
-                        type="text"
-                        className="weight-input"
-                        aria-label="Swap transfer amount"
-                        placeholder="Transfer %"
-                        value={t.transferAmount}
-                        onChange={e => updateLocal({
-                          ...localRef.current,
-                          tickers: localRef.current.tickers.map(row =>
-                            row.id === t.id && row.type === 'SWAP' ? { ...row, transferAmount: e.target.value } : row),
-                        })}
-                        onBlur={commitBlur}
-                      />
-                    )}
-                  </div>
-                  <div className="swap-legs">
-                    {t.legs.map(leg => (
-                      <div key={leg.id} className="swap-leg">
-                        <input
-                          type="text"
-                          aria-label="Swap destination"
-                          placeholder="Destination"
-                          value={leg.instrument}
-                          onChange={e => updateLocal({
-                            ...localRef.current,
-                            tickers: localRef.current.tickers.map(row =>
-                              row.id === t.id && row.type === 'SWAP'
-                                ? { ...row, legs: row.legs.map(item => item.id === leg.id ? { ...item, instrument: e.target.value.toUpperCase() } : item) }
-                                : row),
-                          })}
-                          onBlur={commitBlur}
-                        />
-                        <input
-                          type="text"
-                          aria-label="Swap destination multiplier"
-                          placeholder="Multiplier"
-                          value={leg.multiplier}
-                          onChange={e => updateLocal({
-                            ...localRef.current,
-                            tickers: localRef.current.tickers.map(row =>
-                              row.id === t.id && row.type === 'SWAP'
-                                ? { ...row, legs: row.legs.map(item => item.id === leg.id ? { ...item, multiplier: e.target.value } : item) }
-                                : row),
-                          })}
-                          onBlur={commitBlur}
-                        />
-                        {t.legs.length > 1 && (
-                          <button type="button" onClick={() => commit({
-                            ...localRef.current,
-                            tickers: localRef.current.tickers.map(row =>
-                              row.id === t.id && row.type === 'SWAP'
-                                ? { ...row, legs: row.legs.filter(item => item.id !== leg.id) }
-                                : row),
-                          })}>−</button>
-                        )}
-                      </div>
-                    ))}
-                    <button type="button" className="add-swap-leg-btn" onClick={() => commit({
-                      ...localRef.current,
-                      tickers: localRef.current.tickers.map(row =>
-                        row.id === t.id && row.type === 'SWAP'
-                          ? { ...row, legs: [...row.legs, { id: newId(), instrument: '', multiplier: '1' }] }
-                          : row),
-                    })}>+ Destination</button>
-                  </div>
-                </div>
+                    {t.transferMode === 'AMOUNT' && <span className="allocation-unit" aria-hidden="true">%</span>}
+                  </label>
+                  <button className="ticker-config-btn" type="button" title="Edit swap" aria-label="Edit swap" onClick={() => openSwapDialog(t)}>
+                    <Pencil size={14} />
+                  </button>
+                </>
               )}
               {t.type !== 'SWAP' && (
-              <>
-              <input
-                type="text"
-                className="weight-input"
-                placeholder="Allocation %"
-                value={t.allocation}
-                onChange={e => updateLocal({
-                  ...localRef.current,
-                  tickers: localRef.current.tickers.map(row =>
-                    row.id === t.id && row.type !== 'SWAP' ? { ...row, allocation: e.target.value } : row),
-                })}
-                onBlur={commitBlur}
-              />
-              <span className="weight-unit">%</span>
-              </>
+                <label className="allocation-field">
+                  <input
+                    type="text"
+                    className="weight-input"
+                    placeholder="Allocation"
+                    value={t.allocation}
+                    onChange={e => updateLocal({
+                      ...localRef.current,
+                      tickers: localRef.current.tickers.map(row =>
+                        row.id === t.id && row.type !== 'SWAP' ? { ...row, allocation: e.target.value } : row),
+                    })}
+                    onBlur={commitBlur}
+                  />
+                  <span className="allocation-unit" aria-hidden="true">%</span>
+                </label>
               )}
               {t.type === 'PORTFOLIO_REFERENCE' ? (
                 <button
@@ -831,6 +886,112 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
           ))}
         </div>
       </div>
+
+      {swapDialog && (
+        <div className="ticker-config-overlay" role="dialog" aria-modal="true" aria-labelledby="swap-dialog-title" onMouseDown={e => {
+          if (e.target === e.currentTarget) setSwapDialog(null)
+        }}>
+          <div ref={swapDialogRef} className="ticker-config-dialog swap-config-dialog">
+            <div className="ticker-config-header">
+              <h2 id="swap-dialog-title">{swapDialog.isNew ? 'Add swap' : 'Edit swap'}</h2>
+              <button type="button" className="ticker-config-close" aria-label="Cancel" onClick={() => setSwapDialog(null)}>x</button>
+            </div>
+            {swapDialog.submitted && swapDialogValidation?.invalid && (
+              <div className="ticker-config-error" role="alert">Correct the highlighted swap fields.</div>
+            )}
+            <label className="ticker-config-field">
+              <span>Source</span>
+              <input
+                autoFocus
+                className={swapDialog.submitted && swapDialogValidation?.sourceInvalid ? 'input-error' : ''}
+                aria-invalid={swapDialog.submitted && swapDialogValidation?.sourceInvalid}
+                value={swapDialog.draft.source}
+                onChange={e => setSwapDialog({ ...swapDialog, draft: { ...swapDialog.draft, source: e.target.value.toUpperCase() } })}
+              />
+              {swapDialog.submitted && swapDialogValidation?.sourceInvalid && (
+                <small className="swap-field-error">Enter a valid source instrument.</small>
+              )}
+            </label>
+            <div className="swap-dialog-transfer">
+              <label className="ticker-config-field">
+                <span>Transfer</span>
+                <select value={swapDialog.draft.transferMode} onChange={e => setSwapDialog({
+                  ...swapDialog,
+                  draft: { ...swapDialog.draft, transferMode: e.target.value as 'AMOUNT' | 'ALL_REMAINING' },
+                })}>
+                  <option value="AMOUNT">Amount</option>
+                  <option value="ALL_REMAINING">All remaining</option>
+                </select>
+              </label>
+              {swapDialog.draft.transferMode === 'AMOUNT' && (
+                <label className="ticker-config-field">
+                  <span>Amount %</span>
+                  <input
+                    className={swapDialog.submitted && swapDialogValidation?.amountInvalid ? 'input-error' : ''}
+                    aria-invalid={swapDialog.submitted && swapDialogValidation?.amountInvalid}
+                    value={swapDialog.draft.transferAmount}
+                    onChange={e => setSwapDialog({ ...swapDialog, draft: { ...swapDialog.draft, transferAmount: e.target.value } })}
+                  />
+                  {swapDialog.submitted && swapDialogValidation?.amountInvalid && (
+                    <small className="swap-field-error">Enter an amount greater than zero.</small>
+                  )}
+                </label>
+              )}
+            </div>
+            <div className="swap-dialog-legs">
+              <span>Destinations</span>
+              {swapDialog.draft.legs.map((leg, index) => (
+                <div className="swap-leg" key={leg.id}>
+                  <label className="swap-leg-field">
+                    <input
+                      aria-label="Swap destination"
+                      className={swapDialog.submitted && swapDialogValidation?.legErrors[index]?.instrumentInvalid ? 'input-error' : ''}
+                      aria-invalid={swapDialog.submitted && swapDialogValidation?.legErrors[index]?.instrumentInvalid}
+                      placeholder="Instrument"
+                      value={leg.instrument}
+                      onChange={e => setSwapDialog({
+                        ...swapDialog,
+                        draft: { ...swapDialog.draft, legs: swapDialog.draft.legs.map(item => item.id === leg.id ? { ...item, instrument: e.target.value.toUpperCase() } : item) },
+                      })}
+                    />
+                    {swapDialog.submitted && swapDialogValidation?.legErrors[index]?.instrumentInvalid && (
+                      <small className="swap-field-error">Enter a valid destination.</small>
+                    )}
+                  </label>
+                  <label className="swap-leg-field swap-leg-multiplier">
+                    <input
+                      aria-label="Swap destination multiplier"
+                      className={swapDialog.submitted && swapDialogValidation?.legErrors[index]?.multiplierInvalid ? 'input-error' : ''}
+                      aria-invalid={swapDialog.submitted && swapDialogValidation?.legErrors[index]?.multiplierInvalid}
+                      placeholder="Multiplier"
+                      value={leg.multiplier}
+                      onChange={e => setSwapDialog({
+                        ...swapDialog,
+                        draft: { ...swapDialog.draft, legs: swapDialog.draft.legs.map(item => item.id === leg.id ? { ...item, multiplier: e.target.value } : item) },
+                      })}
+                    />
+                    {swapDialog.submitted && swapDialogValidation?.legErrors[index]?.multiplierInvalid && (
+                      <small className="swap-field-error">Enter a non-zero multiplier.</small>
+                    )}
+                  </label>
+                  {swapDialog.draft.legs.length > 1 && <button type="button" onClick={() => setSwapDialog({
+                    ...swapDialog,
+                    draft: { ...swapDialog.draft, legs: swapDialog.draft.legs.filter(item => item.id !== leg.id) },
+                  })}>−</button>}
+                </div>
+              ))}
+              <button type="button" onClick={() => setSwapDialog({
+                ...swapDialog,
+                draft: { ...swapDialog.draft, legs: [...swapDialog.draft.legs, { id: newId(), instrument: '', multiplier: '1' }] },
+              })}>+ Destination</button>
+            </div>
+            <div className="ticker-config-actions">
+              <button type="button" onClick={() => setSwapDialog(null)}>Cancel</button>
+              <button type="button" className="ticker-config-save" onClick={saveSwapDialog}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tickerConfig && (
         <div className="ticker-config-overlay" role="dialog" aria-modal="true" onMouseDown={e => {

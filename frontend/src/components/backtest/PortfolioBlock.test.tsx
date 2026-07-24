@@ -33,7 +33,7 @@ describe('portfolio row editor', () => {
 
     expect(markup).toContain('>+Ticker</button>')
     expect(markup).toContain('>+Swap</button>')
-    expect(markup).toContain('Ref · 100')
+    expect(markup).toContain('Ref 100')
     expect(markup).toContain('Reference mode for Child')
     expect(markup).toContain('Decompose Child to resolved holdings')
   })
@@ -52,7 +52,7 @@ describe('portfolio row editor', () => {
     expect(markup).toMatch(/overwrite-portfolio-btn save-portfolio-btn" disabled/)
   })
 
-  it('expands the structured editor for multi-leg swaps', () => {
+  it('renders multi-leg swaps as canonical collapsed text', () => {
     const markup = renderPortfolioBlock([{
       id: 'swap',
       type: 'SWAP',
@@ -65,12 +65,54 @@ describe('portfolio row editor', () => {
       ],
     }])
 
-    expect(markup).toContain('swap-editor-row-complex')
-    expect(markup.match(/aria-label="Swap destination"/g)).toHaveLength(2)
-    expect(markup).toContain('+ Destination')
+    expect(markup).toContain('aria-label="Swap structure"')
+    expect(markup).toContain('value="SPY &gt; TLT + 0.5 KMLM"')
+    expect(markup).toContain('class="ticker-input swap-expression-field"')
+    expect(markup).toContain('class="swap-row-badge">SWAP</span>')
+    expect(markup).toContain('aria-label="Swap transfer amount"')
+    expect(markup).toContain('aria-label="Edit swap"')
   })
 
-  it('keeps a one-leg swap in the compact editor', () => {
+  it('places percentage units inside allocation controls for every numeric row type', () => {
+    const markup = renderPortfolioBlock([
+      {
+        id: 'holding',
+        type: 'HOLDING',
+        instrument: 'SPY',
+        allocation: '25',
+      },
+      {
+        id: 'reference',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Child',
+        allocation: '40',
+        normalizationMode: 'NET_100',
+      },
+      {
+        id: 'swap',
+        type: 'SWAP',
+        source: 'SPY',
+        transferMode: 'AMOUNT',
+        transferAmount: '10',
+        legs: [{ id: 'one', instrument: 'TLT', multiplier: '1' }],
+      },
+      {
+        id: 'all-remaining-swap',
+        type: 'SWAP',
+        source: 'TLT',
+        transferMode: 'ALL_REMAINING',
+        transferAmount: '',
+        legs: [{ id: 'two', instrument: 'SPY', multiplier: '1' }],
+      },
+    ])
+
+    expect(markup.match(/<label class="allocation-field"><input[^>]+value="(?:25|40)"[^>]*\/><span class="allocation-unit"[^>]*>%<\/span><\/label>/g)).toHaveLength(2)
+    expect(markup).toMatch(/<label class="swap-amount-field allocation-field"><input[^>]+value="10"[^>]*\/><span class="allocation-unit"[^>]*>%<\/span><\/label>/)
+    expect(markup).toMatch(/<label class="swap-amount-field allocation-field"><input[^>]+value="\*"[^>]*\/><\/label>/)
+    expect(markup).not.toContain('class="weight-unit"')
+  })
+
+  it('keeps a one-leg swap in the same compact editor', () => {
     const markup = renderPortfolioBlock([{
       id: 'swap',
       type: 'SWAP',
@@ -80,9 +122,8 @@ describe('portfolio row editor', () => {
       legs: [{ id: 'one', instrument: 'TLT', multiplier: '1' }],
     }])
 
-    expect(markup).toContain('swap-editor-row')
-    expect(markup).not.toContain('swap-editor-row-complex')
-    expect(markup.match(/aria-label="Swap destination"/g)).toHaveLength(1)
+    expect(markup).toContain('value="SPY &gt; TLT"')
+    expect(markup).not.toContain('+ Destination')
   })
 
   it('shows the live pre-root resolved net instead of the input allocation total', () => {
