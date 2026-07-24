@@ -55,6 +55,12 @@ describe('canonical portfolio composition', () => {
   it('reports invalid row fields and insufficient source exposure at their rows', () => {
     expect(resolvePortfolioComposition([
       { id: 'bad-instrument', type: 'HOLDING', instrument: '()', allocation: 10 },
+      { id: 'bad-source', type: 'SWAP', source: '()', transfer: { mode: 'AMOUNT', amount: 1 }, legs: [
+        { instrument: 'TLT', multiplier: 1 },
+      ] },
+      { id: 'bad-leg', type: 'SWAP', source: 'SPY', transfer: { mode: 'AMOUNT', amount: 1 }, legs: [
+        { instrument: '()', multiplier: 1 },
+      ] },
       { id: 'bad-amount', type: 'SWAP', source: 'SPY', transfer: { mode: 'AMOUNT', amount: -1 }, legs: [
         { instrument: 'TLT', multiplier: 1 },
       ] },
@@ -71,6 +77,8 @@ describe('canonical portfolio composition', () => {
       net: 5,
       issues: [
         { code: 'INVALID_INSTRUMENT', rowId: 'bad-instrument', message: 'The holding instrument expression is invalid.' },
+        { code: 'INVALID_INSTRUMENT', rowId: 'bad-source', message: 'The swap source instrument expression is invalid.' },
+        { code: 'INVALID_LEGS', rowId: 'bad-leg', message: 'The swap must have at least one valid non-zero leg.' },
         { code: 'INVALID_TRANSFER', rowId: 'bad-amount', message: 'The swap transfer amount must be positive and finite.' },
         { code: 'INVALID_LEGS', rowId: 'empty-legs', message: 'The swap must have at least one valid non-zero leg.' },
         { code: 'INVALID_LEGS', rowId: 'zero-leg', message: 'The swap must have at least one valid non-zero leg.' },

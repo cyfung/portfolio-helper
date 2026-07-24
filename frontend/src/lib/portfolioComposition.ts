@@ -271,6 +271,32 @@ export function convertPortfolioRowToLegacyTickerRow(row: PortfolioRow): LegacyT
   }
 }
 
+function canonicalSwapTransfer(value: unknown): SwapTransfer | null {
+  if (value == null || typeof value !== 'object') return null
+  const transfer = value as Record<string, unknown>
+  if (transfer.mode === 'ALL_REMAINING') return { mode: 'ALL_REMAINING' }
+  return transfer.mode === 'AMOUNT' &&
+    typeof transfer.amount === 'number' &&
+    Number.isFinite(transfer.amount) &&
+    transfer.amount > 0
+    ? { mode: 'AMOUNT', amount: transfer.amount }
+    : null
+}
+
+function canonicalSwapLegs(value: unknown): SwapLeg[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const legs = value.map(item => {
+    if (item == null || typeof item !== 'object') return null
+    const leg = item as Record<string, unknown>
+    const instrument = parseInstrumentExpression(String(leg.instrument ?? ''))
+    const multiplier = leg.multiplier
+    return instrument != null && typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier !== 0
+      ? { instrument, multiplier }
+      : null
+  })
+  return legs.some(leg => leg == null) ? null : legs as SwapLeg[]
+}
+
 export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
   if (value == null || typeof value !== 'object') return null
   const row = value as Record<string, unknown>
@@ -293,35 +319,13 @@ export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
       ? { id: row.id, type: 'PORTFOLIO_REFERENCE', portfolioName, allocation, normalizationMode }
       : null
   }
-  if (row.type !== 'SWAP' || !Array.isArray(row.legs) || row.transfer == null || typeof row.transfer !== 'object') {
-    return null
-  }
+  if (row.type !== 'SWAP') return null
   const source = parseInstrumentExpression(String(row.source ?? ''))
-  const legs = row.legs.map(value => {
-    if (value == null || typeof value !== 'object') return null
-    const leg = value as Record<string, unknown>
-    const instrument = parseInstrumentExpression(String(leg.instrument ?? ''))
-    const multiplier = leg.multiplier
-    return instrument != null && typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier !== 0
-      ? { instrument, multiplier }
-      : null
-  })
-  const transfer = row.transfer as Record<string, unknown>
-  const canonicalTransfer: SwapTransfer | null = transfer.mode === 'ALL_REMAINING'
-    ? { mode: 'ALL_REMAINING' }
-    : transfer.mode === 'AMOUNT' &&
-        typeof transfer.amount === 'number' &&
-        Number.isFinite(transfer.amount) &&
-        transfer.amount > 0
-      ? { mode: 'AMOUNT', amount: transfer.amount }
-      : null
-  if (
-    source == null ||
-    canonicalTransfer == null ||
-    legs.length === 0 ||
-    legs.some(leg => leg == null)
-  ) return null
-  return { id: row.id, type: 'SWAP', source, transfer: canonicalTransfer, legs: legs as SwapLeg[] }
+  const transfer = canonicalSwapTransfer(row.transfer)
+  const legs = canonicalSwapLegs(row.legs)
+  return source != null && transfer != null && legs != null
+    ? { id: row.id, type: 'SWAP', source, transfer, legs }
+    : null
 }
 
 export function canonicalPortfolioConfiguration(configuration: { rows: readonly unknown[] }): PortfolioConfiguration | null {
@@ -341,23 +345,12 @@ function invalidResolutionIssue(value: unknown, rowId: string): PortfolioResolut
     if (parseInstrumentExpression(String(row.source ?? '')) == null) {
       return { code: 'INVALID_INSTRUMENT', rowId, message: 'The swap source instrument expression is invalid.' }
     }
-    const transfer = row.transfer
-    if (transfer == null || typeof transfer !== 'object') {
+    if (canonicalSwapTransfer(row.transfer) == null) {
       return { code: 'INVALID_TRANSFER', rowId, message: 'The swap transfer amount must be positive and finite.' }
     }
-    const rawTransfer = transfer as Record<string, unknown>
-    if (
-      rawTransfer.mode !== 'ALL_REMAINING' &&
-      (
-        rawTransfer.mode !== 'AMOUNT' ||
-        typeof rawTransfer.amount !== 'number' ||
-        !Number.isFinite(rawTransfer.amount) ||
-        rawTransfer.amount <= 0
-      )
-    ) {
-      return { code: 'INVALID_TRANSFER', rowId, message: 'The swap transfer amount must be positive and finite.' }
+    if (canonicalSwapLegs(row.legs) == null) {
+      return { code: 'INVALID_LEGS', rowId, message: 'The swap must have at least one valid non-zero leg.' }
     }
-    return { code: 'INVALID_LEGS', rowId, message: 'The swap must have at least one valid non-zero leg.' }
   }
   return { code: 'INVALID_ROW', rowId, message: 'The portfolio row is invalid.' }
 }
