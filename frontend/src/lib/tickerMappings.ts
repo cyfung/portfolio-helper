@@ -613,7 +613,7 @@ function normalizeMappedTickerSegment(ticker: string) {
 }
 
 function formatSwapLeg(ticker: string, weight: number) {
-  return weight === 1 ? ticker : `${ticker} #${formatMultiplier(weight)}`
+  return weight === 1 ? ticker : `${formatMultiplier(weight)} ${ticker}`
 }
 
 function formatMappedSwapExpression(

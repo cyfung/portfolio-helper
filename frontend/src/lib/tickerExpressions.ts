@@ -1,3 +1,5 @@
+import { parseSwapInput } from './portfolioComposition'
+
 export interface WeightedTickerExpression {
   ticker: string
   weight: number
@@ -106,66 +108,12 @@ function parseLegacySwapExpression(raw: string): SwapExpression | null {
   return { from: args[0], to: args[1], factor }
 }
 
-function splitTopLevelPlus(raw: string) {
-  const parts: string[] = []
-  let depth = 0
-  let start = 0
-
-  for (let i = 0; i < raw.length; i += 1) {
-    const ch = raw[i]
-    if (ch === '(') depth += 1
-    else if (ch === ')') depth = Math.max(0, depth - 1)
-    else if (ch === '+' && depth === 0 && /\s/.test(raw[i - 1] ?? '') && /\s/.test(raw[i + 1] ?? '')) {
-      parts.push(raw.slice(start, i).trim())
-      start = i + 1
-    }
-  }
-
-  parts.push(raw.slice(start).trim())
-  return parts
-}
-
-function parseSwapLeg(raw: string): WeightedTickerExpression | null {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-
-  const prefixMatch = /^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s+(.*?)\s*$/.exec(trimmed)
-  if (prefixMatch) {
-    const weight = parseFloat(prefixMatch[1])
-    const ticker = prefixMatch[2].trim()
-    return ticker && Number.isFinite(weight) ? { ticker, weight } : null
-  }
-
-  const hashMatch = /^(.*?)\s*#\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(trimmed)
-  if (hashMatch) {
-    const ticker = hashMatch[1].trim()
-    const weight = parseFloat(hashMatch[2])
-    return ticker && Number.isFinite(weight) ? { ticker, weight } : null
-  }
-
-  const bareMatch = /^(.*?)\s+([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*$/.exec(trimmed)
-  if (bareMatch) {
-    const ticker = bareMatch[1].trim()
-    const weight = parseFloat(bareMatch[2])
-    return ticker && Number.isFinite(weight) ? { ticker, weight } : null
-  }
-
-  return { ticker: trimmed, weight: 1 }
-}
-
 function parseShorthandSwapExpression(raw: string): SwapExpression | null {
-  const trimmed = raw.trim()
-  if (/^SWAP\s*\(/i.test(trimmed)) return null
-
-  const parts = splitTopLevel(trimmed, '>')
-  if (parts.length !== 2 || parts.some(part => !part)) return null
-
-  const legs = splitTopLevelPlus(parts[1]).map(parseSwapLeg)
-  if (legs.length === 0 || legs.some(leg => !leg)) return null
-
-  const usableLegs = legs as WeightedTickerExpression[]
+  const parsed = parseSwapInput(raw)
+  if (!parsed) return null
+  const usableLegs = parsed.legs.map(leg => ({ ticker: leg.instrument, weight: leg.multiplier }))
   return {
-    from: parts[0],
+    from: parsed.source,
     to: usableLegs[0].ticker,
     factor: usableLegs[0].weight,
     legs: usableLegs,
@@ -179,8 +127,8 @@ export function parseSwapExpression(raw: string): SwapExpression | null {
 export function formatSwapExpression(from: string, to: string, factor = 1) {
   const normalizedFactor = Math.round(factor * 10000000000) / 10000000000
   return normalizedFactor === 1
-    ? `SWAP(${normalizeTickerExpression(from)}, ${normalizeTickerExpression(to)})`
-    : `SWAP(${normalizeTickerExpression(from)}, ${normalizeTickerExpression(to)}, ${normalizedFactor})`
+    ? `${normalizeTickerExpression(from)} > ${normalizeTickerExpression(to)}`
+    : `${normalizeTickerExpression(from)} > ${normalizedFactor} ${normalizeTickerExpression(to)}`
 }
 
 export function parseLetfComponents(raw: string): WeightedTickerExpression[] {

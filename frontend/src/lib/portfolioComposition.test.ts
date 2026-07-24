@@ -3,6 +3,8 @@ import {
   canonicalInstrumentExpression,
   canonicalPortfolioConfiguration,
   convertLegacyTickerRow,
+  convertPortfolioRowToLegacyTickerRow,
+  formatSwapRow,
   parseSwapInput,
   type PortfolioRow,
 } from './portfolioComposition'
@@ -20,6 +22,11 @@ describe('canonical portfolio composition', () => {
       formatted: 'SPY > 1.5 TLT + -2 GLD',
     })
     expect(parseSwapInput('SPY > 0 TLT')).toBeNull()
+    expect(parseSwapInput('SPY > 0.00000000001 TLT')).toEqual({
+      source: 'SPY',
+      legs: [{ instrument: 'TLT', multiplier: 0.00000000001 }],
+      formatted: 'SPY > 1e-11 TLT',
+    })
     expect(parseSwapInput('SPY > 2 ()')).toBeNull()
     expect(parseSwapInput('2 SPY > TLT')).toBeNull()
     expect(parseSwapInput('SPY > 2 QQQ 1 TLT')).toBeNull()
@@ -62,6 +69,11 @@ describe('canonical portfolio composition', () => {
         legs: [{ instrument: 'TLT', multiplier: -2 }],
       },
     ])
+    expect(formatSwapRow(rows[2] as Extract<PortfolioRow, { type: 'SWAP' }>)).toBe('SPY > 1.5 TLT')
+    expect(convertPortfolioRowToLegacyTickerRow(rows[2])).toEqual({
+      ticker: 'SPY > 1.5 TLT',
+      weight: '*',
+    })
     expect(convertLegacyTickerRow({ ticker: 'SPY > 0 TLT', weight: 10 }, 'bad-swap')).toBeNull()
     expect(convertLegacyTickerRow({ ticker: 'SWAP(SPY,)', weight: 10 }, 'bad-legacy-swap')).toBeNull()
 
@@ -97,6 +109,15 @@ describe('canonical portfolio composition', () => {
         type: 'SWAP',
         source: 'SPY',
         transfer: { mode: 'UNKNOWN', amount: 10 },
+        legs: [{ instrument: 'TLT', multiplier: 1 }],
+      }],
+    })).toBeNull()
+    expect(canonicalPortfolioConfiguration({
+      rows: [{
+        id: 'coerced-amount',
+        type: 'SWAP',
+        source: 'SPY',
+        transfer: { mode: 'AMOUNT', amount: true },
         legs: [{ instrument: 'TLT', multiplier: 1 }],
       }],
     })).toBeNull()

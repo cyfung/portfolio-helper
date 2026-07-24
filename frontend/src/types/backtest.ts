@@ -6,6 +6,12 @@ import { omitStrategyEnabledFlag, savedConfigToStrategyState, strategyStateToAPI
 import { DEFAULT_SPREAD_PERCENT, normalizeNumberInput, percentInputToFraction } from '@/lib/numberInputs'
 import { allocOptionsFromHybridStrategies, DEFAULT_HYBRID_ALLOC_STRATEGIES } from '@/lib/allocStrategies'
 import { parseSwapExpression } from '@/lib/tickerExpressions'
+import {
+  canonicalPortfolioConfiguration,
+  convertLegacyTickerRow,
+  convertPortfolioRowToLegacyTickerRow,
+  type PortfolioRow,
+} from '@/lib/portfolioComposition'
 
 export interface TickerRow {
   id: string
@@ -147,10 +153,18 @@ export function emptyBlock(idx: number): BlockState {
 /** Convert an API saved-portfolio config into BlockState (ratio → percentage). */
 export function configToBlockState(config: any, name: string): BlockState {
   const r = (v: number) => String(Math.round(v * 10000) / 100)
+  const hasPersistedRows = Array.isArray(config?.rows)
+  const persistedRows = hasPersistedRows
+    ? canonicalPortfolioConfiguration({ rows: config.rows })?.rows
+    : undefined
+  if (hasPersistedRows && !persistedRows) throw new Error('Saved portfolio contains invalid tagged rows.')
+  const legacyRows = hasPersistedRows
+    ? persistedRows!.map(convertPortfolioRowToLegacyTickerRow)
+    : config.tickers ?? []
   return {
     label: name,
-    tickers: (config.tickers || []).map((t: any) => ({
-      id: newId(),
+    tickers: legacyRows.map((t: any, index: number) => ({
+      id: persistedRows?.[index]?.id ?? newId(),
       ticker: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef
         ? String(t.portfolioRef || t.ticker || '')
         : String(t.ticker || '').toUpperCase(),
@@ -303,13 +317,16 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number, options
 
 /** Convert BlockState to the config format used by /api/backtest/savedPortfolios. */
 export function blockStateToSavedConfig(state: BlockState) {
+  const rows = state.tickers
+    .map(t => convertLegacyTickerRow({
+      id: t.id,
+      ticker: t.ticker,
+      weight: apiTickerWeight(t.weight),
+      isPortfolioRef: t.isPortfolioRef,
+    }, t.id))
+    .filter((row): row is PortfolioRow => row != null)
   return {
-    tickers: state.tickers
-      .map(t => t.isPortfolioRef
-        ? { ticker: t.ticker.trim(), weight: apiTickerWeight(t.weight), isPortfolioRef: true, portfolioRef: t.ticker.trim() }
-        : { ticker: t.ticker.trim().toUpperCase(), weight: apiTickerWeight(t.weight) }
-      )
-      .filter(t => t.ticker && isNonZeroApiWeight(t.weight)),
+    rows,
     rebalanceStrategy: state.rebalance,
     marginStrategies: state.margins.map(m => ({
       marginRatio:          percentInputOrDefault(m.ratio, 0, 'Margin ratio'),

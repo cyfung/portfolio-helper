@@ -6,6 +6,10 @@ import {
   resolveSwapTickerRows,
   type WeightedOrWildcardTickerExpression,
 } from '@/lib/tickerExpressions'
+import {
+  canonicalPortfolioConfiguration,
+  convertPortfolioRowToLegacyTickerRow,
+} from '@/lib/portfolioComposition'
 
 export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
 
@@ -109,13 +113,21 @@ export function resolveSavedPortfolioConfig(
   stack: string[] = [],
 ): ResolvedStockWeight[] {
   let resolvedRows: ResolvedStockWeight[] = []
+  const hasCanonicalRows = Array.isArray(config?.rows)
+  const canonicalRows = hasCanonicalRows
+    ? canonicalPortfolioConfiguration({ rows: config.rows })?.rows
+    : undefined
+  if (hasCanonicalRows && !canonicalRows) throw new Error('Saved portfolio contains invalid tagged rows.')
+  const inputRows = hasCanonicalRows
+    ? canonicalRows!.map(convertPortfolioRowToLegacyTickerRow)
+    : config?.tickers ?? []
 
   function applyRows(rows: WeightedOrWildcardTickerExpression[]) {
     if (rows.length === 0) return
     resolvedRows = mergedNonZeroRows(resolveSwapTickerRows([...resolvedRows, ...rows]))
   }
 
-  for (const row of config?.tickers ?? []) {
+  for (const row of inputRows) {
     const weight = rowResolveWeight(row)
     const portfolioRef = isPortfolioRef(row)
     const ticker = portfolioRef ? refName(row) : String(row.ticker || '')

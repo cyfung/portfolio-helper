@@ -41,6 +41,13 @@ export interface PortfolioConfiguration {
   rows: PortfolioRow[]
 }
 
+export interface LegacyTickerPersistenceRow {
+  ticker: string
+  weight: number | '*'
+  isPortfolioRef?: true
+  portfolioRef?: string
+}
+
 const EPSILON = 1e-10
 const MODIFIER = /^(?:S|R|E|V|VOL)=/i
 const SIGNED_DECIMAL_SOURCE = String.raw`[+-]?(?:\d+(?:\.\d+)?|\.\d+)`
@@ -141,7 +148,7 @@ function parseSwapLeg(value: string): SwapLeg | null {
   const grouped = rawInstrument.startsWith('(') && rawInstrument.endsWith(')')
   if (!grouped && rawInstrument.split(/\s+/).some(token => Number.isFinite(Number(token)))) return null
   const instrument = parseInstrumentExpression(rawInstrument)
-  if (instrument == null || !Number.isFinite(multiplier) || Math.abs(multiplier) <= EPSILON) return null
+  if (instrument == null || !Number.isFinite(multiplier) || multiplier === 0) return null
   return { instrument, multiplier }
 }
 
@@ -164,6 +171,12 @@ export function parseSwapInput(value: string): { source: InstrumentExpression; l
   }
 }
 
+export function formatSwapRow(row: Pick<SwapRow, 'source' | 'legs'>): string {
+  return `${row.source} > ${row.legs.map(leg =>
+    leg.multiplier === 1 ? leg.instrument : `${leg.multiplier} ${leg.instrument}`,
+  ).join(' + ')}`
+}
+
 export interface LegacyTickerRow {
   id?: string
   ticker?: string
@@ -182,7 +195,7 @@ function parseLegacySwapCall(value: string) {
   const multiplier = match[3] == null ? 1 : Number(match[3])
   const source = parseInstrumentExpression(match[1])
   const destination = parseInstrumentExpression(match[2])
-  if (source == null || destination == null || !Number.isFinite(multiplier) || Math.abs(multiplier) <= EPSILON) return null
+  if (source == null || destination == null || !Number.isFinite(multiplier) || multiplier === 0) return null
   return {
     source,
     legs: [{ instrument: destination, multiplier }],
@@ -216,6 +229,22 @@ export function convertLegacyTickerRow(row: LegacyTickerRow, fallbackId: string)
   return { id, type: 'HOLDING', instrument, allocation }
 }
 
+export function convertPortfolioRowToLegacyTickerRow(row: PortfolioRow): LegacyTickerPersistenceRow {
+  if (row.type === 'HOLDING') return { ticker: row.instrument, weight: row.allocation }
+  if (row.type === 'PORTFOLIO_REFERENCE') {
+    return {
+      ticker: row.portfolioName,
+      weight: row.allocation,
+      isPortfolioRef: true,
+      portfolioRef: row.portfolioName,
+    }
+  }
+  return {
+    ticker: formatSwapRow(row),
+    weight: row.transfer.mode === 'ALL_REMAINING' ? '*' : row.transfer.amount,
+  }
+}
+
 export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
   if (value == null || typeof value !== 'object') return null
   const row = value as Record<string, unknown>
@@ -246,16 +275,19 @@ export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
     if (value == null || typeof value !== 'object') return null
     const leg = value as Record<string, unknown>
     const instrument = parseInstrumentExpression(String(leg.instrument ?? ''))
-    const multiplier = Number(leg.multiplier)
-    return instrument != null && Number.isFinite(multiplier) && Math.abs(multiplier) > EPSILON
+    const multiplier = leg.multiplier
+    return instrument != null && typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier !== 0
       ? { instrument, multiplier }
       : null
   })
   const transfer = row.transfer as Record<string, unknown>
   const canonicalTransfer: SwapTransfer | null = transfer.mode === 'ALL_REMAINING'
     ? { mode: 'ALL_REMAINING' }
-    : transfer.mode === 'AMOUNT' && Number.isFinite(Number(transfer.amount)) && Number(transfer.amount) > 0
-      ? { mode: 'AMOUNT', amount: Number(transfer.amount) }
+    : transfer.mode === 'AMOUNT' &&
+        typeof transfer.amount === 'number' &&
+        Number.isFinite(transfer.amount) &&
+        transfer.amount > 0
+      ? { mode: 'AMOUNT', amount: transfer.amount }
       : null
   if (
     source == null ||
