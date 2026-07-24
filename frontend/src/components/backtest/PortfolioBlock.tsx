@@ -1,10 +1,12 @@
 // ── PortfolioBlock.tsx — Controlled portfolio block for Backtest & MonteCarlo ─
 
 import React, { useState, useEffect, useRef } from 'react'
-import { ArrowDownAZ, Settings, Ungroup } from 'lucide-react'
+import { ArrowDownAZ, ChevronDown, Settings, Ungroup } from 'lucide-react'
 import {
   BlockState, MarginRow, RebalanceStrategyRow, newId,
   blockStateToSavedConfig, configToBlockState, normalizeBlockSpreadInputs,
+  convertHoldingEditorRowToSwap, invalidPortfolioEditorRowIds,
+  portfolioEditorRowMergeKey,
   REBALANCE_OPTIONS,
 } from '@/types/backtest'
 import { savedConfigToStrategyState, strategyStateToSavedConfig } from '@/types/rebalanceStrategy'
@@ -17,7 +19,7 @@ import {
   resolveSavedPortfolioConfig,
   savedPortfolioConfigMap,
 } from '@/lib/portfolioRefs'
-import { parseSwapExpression } from '@/lib/tickerExpressions'
+import { canonicalPortfolioConfiguration } from '@/lib/portfolioComposition'
 
 interface Props {
   idx: number
@@ -106,10 +108,15 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     }
   }, [])
 
-  // ── Weight hint ───────────────────────────────────────────────────────────
+  // ── Allocation hint ───────────────────────────────────────────────────────
 
-  const totalWeight = local.tickers.reduce((sum, t) => sum + (parseFloat(t.weight) || 0), 0)
-  const diff = Math.round((totalWeight - 100) * 100) / 100
+  const allocationText = (row: BlockState['tickers'][number]) =>
+    row.type === 'SWAP'
+      ? row.transferMode === 'ALL_REMAINING' ? '*' : row.transferAmount
+      : row.allocation
+  const totalAllocation = local.tickers.reduce((sum, row) =>
+    row.type === 'SWAP' ? sum : sum + (parseFloat(row.allocation) || 0), 0)
+  const diff = Math.round((totalAllocation - 100) * 100) / 100
   let weightHintText = ''
   let weightHintCls = 'backtest-weight-hint'
   if (local.tickers.length > 0) {
@@ -117,111 +124,139 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       weightHintText = 'Total: 100% ✓'
       weightHintCls = 'backtest-weight-hint hint-ok'
     } else {
-      weightHintText = `Total: ${totalWeight.toFixed(2)}% (${diff > 0 ? '+' : ''}${diff.toFixed(2)}%)`
+      weightHintText = `Total: ${totalAllocation.toFixed(2)}% (${diff > 0 ? '+' : ''}${diff.toFixed(2)}%)`
       weightHintCls = 'backtest-weight-hint hint-warn'
     }
   }
 
   // ── Ticker helpers ────────────────────────────────────────────────────────
 
-  function addTicker(ticker = '', weight = '') {
-    commit({ ...localRef.current, tickers: [...localRef.current.tickers, { id: newId(), ticker: ticker.toUpperCase(), weight }] })
+  function addHolding(instrument = '', allocation = '') {
+    commit({
+      ...localRef.current,
+      tickers: [...localRef.current.tickers, {
+        id: newId(),
+        type: 'HOLDING',
+        instrument: instrument.toUpperCase(),
+        allocation,
+      }],
+    })
+  }
+
+  function addSwap() {
+    const id = newId()
+    commit({
+      ...localRef.current,
+      tickers: [...localRef.current.tickers, {
+        id,
+        type: 'SWAP',
+        source: '',
+        transferMode: 'AMOUNT',
+        transferAmount: '',
+        legs: [{ id: `${id}-leg-0`, instrument: '', multiplier: '1' }],
+      }],
+    })
   }
 
   function sortAndMergeTickers() {
-    type TickerRowState = BlockState['tickers'][number]
-    type TickerGroup = {
+    type EditorRowState = BlockState['tickers'][number]
+    type EditorRowGroup = {
       key: string
       label: string
-      isPortfolioRef: boolean
-      isSwap: boolean
-      rows: TickerRowState[]
-      weight: number
+      type: EditorRowState['type']
+      rows: EditorRowState[]
+      allocation: number
       firstIndex: number
       sortRank: number
     }
 
-    const groups = new Map<string, TickerGroup>()
-    const tickerSortRank = (label: string, isPortfolioRef: boolean, isSwap: boolean) => {
-      if (isPortfolioRef) return 1
-      if (isSwap) return 2
+    const groups = new Map<string, EditorRowGroup>()
+    const rowSortRank = (label: string, type: EditorRowState['type']) => {
+      if (type === 'PORTFOLIO_REFERENCE') return 1
+      if (type === 'SWAP') return 2
       if (isPlaceholderTicker(label)) return 3
       return 0
     }
 
     localRef.current.tickers.forEach((row, index) => {
-      const isPortfolioRef = row.isPortfolioRef === true
-      const label = isPortfolioRef ? row.ticker.trim() : row.ticker.trim().toUpperCase()
-      const isSwap = !isPortfolioRef && parseSwapExpression(label) != null
-      const key = isSwap
-        ? `swap:${index}:${row.id}`
-        : label ? `${isPortfolioRef ? 'portfolio' : 'ticker'}:${label}` : `empty:${row.id}`
-      const weight = parseStrictNumberInput(row.weight) ?? 0
+      const label = row.type === 'HOLDING'
+        ? row.instrument.trim().toUpperCase()
+        : row.type === 'PORTFOLIO_REFERENCE'
+          ? row.portfolioName.trim()
+          : row.source.trim().toUpperCase()
+      const key = portfolioEditorRowMergeKey(row, index)
+      const allocation = parseStrictNumberInput(allocationText(row)) ?? 0
       const group = groups.get(key)
       if (group) {
         group.rows.push(row)
-        group.weight += weight
+        group.allocation += allocation
         return
       }
       groups.set(key, {
         key,
         label,
-        isPortfolioRef,
-        isSwap,
+        type: row.type,
         rows: [row],
-        weight,
+        allocation,
         firstIndex: index,
-        sortRank: tickerSortRank(label, isPortfolioRef, isSwap),
+        sortRank: rowSortRank(label, row.type),
       })
     })
 
-    const formatWeight = (weight: number) => String(Math.round(weight * 10000000000) / 10000000000)
+    const formatAllocation = (allocation: number) => String(Math.round(allocation * 10000000000) / 10000000000)
     const sorted = [...groups.values()]
       .sort((a, b) => {
         if (!a.label && b.label) return 1
         if (a.label && !b.label) return -1
-        if (a.isSwap && b.isSwap) {
+        if (a.type === 'SWAP' && b.type === 'SWAP') {
           return a.firstIndex - b.firstIndex
         }
         return a.sortRank - b.sortRank ||
           a.label.localeCompare(b.label) ||
-          Number(a.isPortfolioRef) - Number(b.isPortfolioRef) ||
+          a.type.localeCompare(b.type) ||
           a.firstIndex - b.firstIndex
       })
       .map(group => {
         const first = group.rows[0]
         if (group.rows.length === 1) {
-          return group.label && !group.isPortfolioRef ? { ...first, ticker: group.label } : first
+          return first.type === 'HOLDING' && group.label ? { ...first, instrument: group.label } : first
         }
-        return {
-          id: first.id,
-          ticker: group.label,
-          weight: formatWeight(group.weight),
-          ...(group.isPortfolioRef ? { isPortfolioRef: true } : {}),
+        if (first.type === 'HOLDING') return { ...first, instrument: group.label, allocation: formatAllocation(group.allocation) }
+        if (first.type === 'PORTFOLIO_REFERENCE') {
+          return { ...first, portfolioName: group.label, allocation: formatAllocation(group.allocation) }
         }
+        return first
       })
 
     commit({ ...localRef.current, tickers: sorted })
   }
 
-  function updateTicker(id: string, ticker: string) {
+  function updateHoldingInstrument(id: string, instrument: string) {
     updateLocal({
       ...localRef.current,
-      tickers: localRef.current.tickers.map(x => x.id === id ? { ...x, ticker: ticker.toUpperCase() } : x),
+      tickers: localRef.current.tickers.map(x =>
+        x.id === id && x.type === 'HOLDING' ? { ...x, instrument: instrument.toUpperCase() } : x),
     })
   }
 
   function updatePortfolioRef(id: string, name: string) {
     updateLocal({
       ...localRef.current,
-      tickers: localRef.current.tickers.map(x => x.id === id ? { ...x, ticker: name } : x),
+      tickers: localRef.current.tickers.map(x =>
+        x.id === id && x.type === 'PORTFOLIO_REFERENCE' ? { ...x, portfolioName: name } : x),
     })
   }
 
-  function addPortfolioRef(name: string, weight = '') {
+  function addPortfolioRef(name: string, allocation = '') {
     commit({
       ...localRef.current,
-      tickers: [...localRef.current.tickers, { id: newId(), ticker: name, weight, isPortfolioRef: true }],
+      tickers: [...localRef.current.tickers, {
+        id: newId(),
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: name,
+        allocation,
+        normalizationMode: 'NET_100',
+      }],
     })
   }
 
@@ -231,10 +266,11 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   async function decomposePortfolioRef(rowId: string) {
     const row = localRef.current.tickers.find(t => t.id === rowId)
-    const rowWeight = parseStrictNumberInput(row?.weight)
-    if (!row?.isPortfolioRef || rowWeight == null) return
+    if (row?.type !== 'PORTFOLIO_REFERENCE') return
+    const referenceAllocation = parseStrictNumberInput(row.allocation)
+    if (referenceAllocation == null) return
 
-    const refName = row.ticker.trim()
+    const refName = row.portfolioName.trim()
     const saved = await refreshSavedPortfolioNames()
     const savedByName = savedPortfolioConfigMap(saved)
     const savedConfig = savedByName.get(refName)
@@ -242,24 +278,37 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     const resolvedChildRows = resolveSavedPortfolioConfig(savedConfig, savedByName, [refName])
     const resolvedChildTotal = resolvedChildRows.reduce((sum, child) => sum + child.weight, 0)
     if (resolvedChildTotal === 0) return
-    const childScale = rowWeight / Math.abs(resolvedChildTotal)
-    const childRows = (savedConfig?.tickers ?? [])
-      .map((child: any) => {
-        const childWeight = parseStrictNumberInput(child?.weight)
-        if (childWeight == null) return null
-        const isPortfolioRef = child?.isPortfolioRef === true || child?.type === 'PORTFOLIO_REF' || !!child?.portfolioRef
-        const ticker = isPortfolioRef
-          ? String(child?.portfolioRef || child?.ticker || '').trim()
-          : String(child?.ticker || '').trim().toUpperCase()
-        if (!ticker) return null
+    const referenceScale = row.normalizationMode === 'NET_100'
+      ? referenceAllocation / Math.abs(resolvedChildTotal)
+      : referenceAllocation / 100
+    const childRows = (canonicalPortfolioConfiguration({ rows: savedConfig?.rows ?? [] })?.rows ?? [])
+      .map(child => {
+        const id = newId()
+        if (child.type === 'HOLDING') {
+          return { id, type: 'HOLDING' as const, instrument: child.instrument, allocation: String(child.allocation * referenceScale) }
+        }
+        if (child.type === 'PORTFOLIO_REFERENCE') {
+          return {
+            id,
+            type: 'PORTFOLIO_REFERENCE' as const,
+            portfolioName: child.portfolioName,
+            allocation: String(child.allocation * referenceScale),
+            normalizationMode: child.normalizationMode,
+          }
+        }
         return {
-          id: newId(),
-          ticker,
-          weight: String(childWeight * childScale),
-          ...(isPortfolioRef ? { isPortfolioRef: true } : {}),
+          id,
+          type: 'SWAP' as const,
+          source: child.source,
+          transferMode: child.transfer.mode,
+          transferAmount: child.transfer.mode === 'AMOUNT' ? String(child.transfer.amount * referenceScale) : '',
+          legs: child.legs.map((leg, index) => ({
+            id: `${id}-leg-${index}`,
+            instrument: leg.instrument,
+            multiplier: String(leg.multiplier),
+          })),
         }
       })
-      .filter(Boolean) as BlockState['tickers']
 
     if (childRows.length === 0) return
     commit({
@@ -377,6 +426,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   async function handleSave(overwrite: boolean) {
     const normalized = normalizeBlockSpreadInputs(localRef.current)
     if (normalized !== localRef.current) commit(normalized)
+    if (invalidPortfolioEditorRowIds(normalized).size > 0) return
     const name = normalized.label.trim()
     if (!name) return
     if (overwrite) {
@@ -442,6 +492,8 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   const hasLabel = local.label.trim().length > 0
+  const invalidRowIds = invalidPortfolioEditorRowIds(local)
+  const canSave = hasLabel && invalidRowIds.size === 0
   const summarizeStrategyRow = (row: RebalanceStrategyRow) => {
     const strategy = savedConfigToStrategyState(row.config, row.name)
     return {
@@ -476,12 +528,12 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
           />
           <button
             className="overwrite-portfolio-btn save-portfolio-btn"
-            disabled={!hasLabel}
+            disabled={!canSave}
             onClick={() => handleSave(true)}
           >
             {saveMsg || 'Save'}
           </button>
-          <button className="save-portfolio-btn" disabled={!hasLabel} onClick={() => handleSave(false)}>
+          <button className="save-portfolio-btn" disabled={!canSave} onClick={() => handleSave(false)}>
             Save New
           </button>
           <button className="clear-action-btn" type="button" title="Clear portfolio" onClick={handleClear}>
@@ -494,7 +546,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       <div className="backtest-section">
         <div className="backtest-section-header">
           <span className="ticker-section-title">
-            Tickers &amp; Weights
+            Portfolio rows
             <span
               className="ticker-modifier-hint"
               title={[
@@ -524,16 +576,18 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
             >
               <ArrowDownAZ size={15} strokeWidth={2.2} aria-hidden="true" />
             </button>
-            <button className="add-ticker-btn" type="button" onClick={() => addTicker()}>+ Add Ticker</button>
+            <button className="add-ticker-btn" type="button" onClick={() => addHolding()}>+Ticker</button>
+            <button className="add-ticker-btn" type="button" onClick={addSwap}>+Swap</button>
           </div>
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
         <div className="ticker-rows">
           {local.tickers.map(t => {
-            const refName = t.ticker.trim()
-            const portfolioRefExists = t.isPortfolioRef === true && refName.length > 0 && savedPortfolioNames.has(refName)
-            const portfolioRefMissing = t.isPortfolioRef === true && savedPortfolioNamesLoaded && !portfolioRefExists
-            const canDecomposePortfolioRef = portfolioRefExists && isValidNumberInput(t.weight)
+            const refName = t.type === 'PORTFOLIO_REFERENCE' ? t.portfolioName.trim() : ''
+            const portfolioRefExists = t.type === 'PORTFOLIO_REFERENCE' && refName.length > 0 && savedPortfolioNames.has(refName)
+            const portfolioRefMissing = t.type === 'PORTFOLIO_REFERENCE' && savedPortfolioNamesLoaded && !portfolioRefExists
+            const canDecomposePortfolioRef = portfolioRefExists &&
+              t.type === 'PORTFOLIO_REFERENCE' && isValidNumberInput(t.allocation)
             const portfolioRefStatusTitle = !savedPortfolioNamesLoaded
               ? 'Checking saved portfolio reference'
               : portfolioRefExists
@@ -541,69 +595,213 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                 : 'Saved portfolio reference not found'
             const rowClassName = [
               'backtest-ticker-row has-ticker-config',
-              t.isPortfolioRef ? 'portfolio-ref-row' : '',
+              t.type === 'PORTFOLIO_REFERENCE' ? 'portfolio-ref-row' : '',
+              t.type === 'SWAP' ? `swap-editor-row${t.legs.length > 1 ? ' swap-editor-row-complex' : ''}` : '',
+              invalidRowIds.has(t.id) ? 'portfolio-row-invalid' : '',
               portfolioRefExists ? 'portfolio-ref-row-exists' : '',
               portfolioRefMissing ? 'portfolio-ref-row-missing' : '',
             ].filter(Boolean).join(' ')
             return (
               <div key={t.id} className={rowClassName}>
-                {t.isPortfolioRef ? (
+                {t.type === 'PORTFOLIO_REFERENCE' ? (
                   <label className="ticker-input portfolio-ref-name" title={portfolioRefStatusTitle}>
-                    <span className="portfolio-ref-badge">Portfolio</span>
+                    <span className="portfolio-ref-badge">
+                      {t.normalizationMode === 'NET_100' ? 'Ref · 100' : 'Ref · 1:1'}
+                    </span>
                     <input
                       type="text"
                       className="portfolio-ref-input"
                       placeholder="Saved portfolio name"
-                      value={t.ticker}
+                      value={t.portfolioName}
                       onChange={e => updatePortfolioRef(t.id, e.target.value)}
                       onBlur={() => {
                         commitBlur()
                         refreshSavedPortfolioNames()
                       }}
                     />
+                    <label className="portfolio-ref-mode" title="Choose how the referenced portfolio exposure is scaled">
+                      <select
+                        aria-label={`Reference mode for ${t.portfolioName || 'portfolio'}`}
+                        value={t.normalizationMode}
+                        onChange={e => commit({
+                          ...localRef.current,
+                          tickers: localRef.current.tickers.map(row =>
+                            row.id === t.id && row.type === 'PORTFOLIO_REFERENCE'
+                              ? { ...row, normalizationMode: e.target.value as 'NET_100' | 'PRESERVE' }
+                              : row),
+                        })}
+                      >
+                        <option value="NET_100">Ref · 100</option>
+                        <option value="PRESERVE">Ref · 1:1</option>
+                      </select>
+                      <ChevronDown size={12} aria-hidden="true" />
+                    </label>
                   </label>
-                ) : (
+                ) : t.type === 'HOLDING' ? (
+                <>
                 <input
                   type="text"
                   className="ticker-input"
                   placeholder="e.g. VT, CTAP > SSO #1.5, or: 1 KMLM 1 VT S=1.5 R=Q E=-1.5 V=20"
-                  value={t.ticker}
-                  onChange={e => updateTicker(t.id, e.target.value)}
+                  value={t.instrument}
+                  onChange={e => updateHoldingInstrument(t.id, e.target.value)}
                   onBlur={commitBlur}
                 />
+                {convertHoldingEditorRowToSwap(t) && (
+                  <button
+                    type="button"
+                    className="convert-swap-btn"
+                    onClick={() => {
+                      const converted = convertHoldingEditorRowToSwap(t)
+                      if (converted) commit({
+                        ...localRef.current,
+                        tickers: localRef.current.tickers.map(row => row.id === t.id ? converted : row),
+                      })
+                    }}
+                  >
+                    Convert to swap
+                  </button>
+                )}
+                </>
+              ) : (
+                <div className="swap-editor">
+                  <div className="swap-editor-main">
+                    <span className="portfolio-row-badge">Swap</span>
+                    <input
+                      type="text"
+                      className="ticker-input"
+                      aria-label="Swap source"
+                      placeholder="Source"
+                      value={t.source}
+                      onChange={e => updateLocal({
+                        ...localRef.current,
+                        tickers: localRef.current.tickers.map(row =>
+                          row.id === t.id && row.type === 'SWAP' ? { ...row, source: e.target.value.toUpperCase() } : row),
+                      })}
+                      onBlur={commitBlur}
+                    />
+                    <select
+                      aria-label="Swap transfer mode"
+                      value={t.transferMode}
+                      onChange={e => commit({
+                        ...localRef.current,
+                        tickers: localRef.current.tickers.map(row =>
+                          row.id === t.id && row.type === 'SWAP'
+                            ? { ...row, transferMode: e.target.value as 'AMOUNT' | 'ALL_REMAINING' }
+                            : row),
+                      })}
+                    >
+                      <option value="AMOUNT">Amount</option>
+                      <option value="ALL_REMAINING">All remaining</option>
+                    </select>
+                    {t.transferMode === 'AMOUNT' && (
+                      <input
+                        type="text"
+                        className="weight-input"
+                        aria-label="Swap transfer amount"
+                        placeholder="Transfer %"
+                        value={t.transferAmount}
+                        onChange={e => updateLocal({
+                          ...localRef.current,
+                          tickers: localRef.current.tickers.map(row =>
+                            row.id === t.id && row.type === 'SWAP' ? { ...row, transferAmount: e.target.value } : row),
+                        })}
+                        onBlur={commitBlur}
+                      />
+                    )}
+                  </div>
+                  <div className="swap-legs">
+                    {t.legs.map(leg => (
+                      <div key={leg.id} className="swap-leg">
+                        <input
+                          type="text"
+                          aria-label="Swap destination"
+                          placeholder="Destination"
+                          value={leg.instrument}
+                          onChange={e => updateLocal({
+                            ...localRef.current,
+                            tickers: localRef.current.tickers.map(row =>
+                              row.id === t.id && row.type === 'SWAP'
+                                ? { ...row, legs: row.legs.map(item => item.id === leg.id ? { ...item, instrument: e.target.value.toUpperCase() } : item) }
+                                : row),
+                          })}
+                          onBlur={commitBlur}
+                        />
+                        <input
+                          type="text"
+                          aria-label="Swap destination multiplier"
+                          placeholder="Multiplier"
+                          value={leg.multiplier}
+                          onChange={e => updateLocal({
+                            ...localRef.current,
+                            tickers: localRef.current.tickers.map(row =>
+                              row.id === t.id && row.type === 'SWAP'
+                                ? { ...row, legs: row.legs.map(item => item.id === leg.id ? { ...item, multiplier: e.target.value } : item) }
+                                : row),
+                          })}
+                          onBlur={commitBlur}
+                        />
+                        {t.legs.length > 1 && (
+                          <button type="button" onClick={() => commit({
+                            ...localRef.current,
+                            tickers: localRef.current.tickers.map(row =>
+                              row.id === t.id && row.type === 'SWAP'
+                                ? { ...row, legs: row.legs.filter(item => item.id !== leg.id) }
+                                : row),
+                          })}>−</button>
+                        )}
+                      </div>
+                    ))}
+                    <button type="button" className="add-swap-leg-btn" onClick={() => commit({
+                      ...localRef.current,
+                      tickers: localRef.current.tickers.map(row =>
+                        row.id === t.id && row.type === 'SWAP'
+                          ? { ...row, legs: [...row.legs, { id: newId(), instrument: '', multiplier: '1' }] }
+                          : row),
+                    })}>+ Destination</button>
+                  </div>
+                </div>
               )}
+              {t.type !== 'SWAP' && (
+              <>
               <input
                 type="text"
                 className="weight-input"
-                placeholder="Weight %"
-                value={t.weight}
-                onChange={e => updateLocal({ ...localRef.current, tickers: localRef.current.tickers.map(x => x.id === t.id ? { ...x, weight: e.target.value } : x) })}
+                placeholder="Allocation %"
+                value={t.allocation}
+                onChange={e => updateLocal({
+                  ...localRef.current,
+                  tickers: localRef.current.tickers.map(row =>
+                    row.id === t.id && row.type !== 'SWAP' ? { ...row, allocation: e.target.value } : row),
+                })}
                 onBlur={commitBlur}
               />
               <span className="weight-unit">%</span>
-              {t.isPortfolioRef ? (
+              </>
+              )}
+              {t.type === 'PORTFOLIO_REFERENCE' ? (
                 <button
                   className="ticker-config-btn portfolio-decompose-btn"
                   type="button"
                   title={portfolioRefExists ? 'Decompose this portfolio one layer' : portfolioRefStatusTitle}
-                  aria-label={`Decompose ${t.ticker || 'portfolio'} one layer`}
+                  aria-label={`Decompose ${t.portfolioName || 'portfolio'} one layer`}
                   disabled={!canDecomposePortfolioRef}
                   onClick={() => decomposePortfolioRef(t.id)}
                 >
                   <Ungroup size={14} />
                 </button>
-              ) : (
+              ) : t.type === 'HOLDING' ? (
                 <button
                   className="ticker-config-btn"
                   type="button"
                   title="Ticker config"
-                  aria-label={`Configure ${t.ticker || 'ticker'}`}
-                  disabled={!t.ticker.trim() || t.ticker.includes(' ')}
-                  onClick={() => openTickerConfig(t.ticker)}
+                  aria-label={`Configure ${t.instrument || 'ticker'}`}
+                  disabled={!t.instrument.trim() || t.instrument.includes(' ')}
+                  onClick={() => openTickerConfig(t.instrument)}
                 >
                   <Settings size={14} />
                 </button>
-              )}
+              ) : null}
               <button className="remove-ticker-btn" type="button" title="Remove" onClick={() => removeTicker(t.id)}>
                 ✕
               </button>

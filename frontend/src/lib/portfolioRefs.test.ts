@@ -6,7 +6,7 @@ describe('autosaved portfolio persistence', () => {
   it('writes only current tagged rows', () => {
     const block: BlockState = {
       label: 'Autosaved',
-      tickers: [{ id: 'holding', ticker: 'SPY', weight: '100' }],
+      tickers: [{ id: 'holding', type: 'HOLDING', instrument: 'SPY', allocation: '100' }],
       rebalance: 'YEARLY',
       margins: [],
       rebalanceStrategies: [],
@@ -27,8 +27,14 @@ describe('analysis run payloads', () => {
     const block: BlockState = {
       label: 'Root',
       tickers: [
-        { id: 'holding', ticker: 'SPY', weight: '50' },
-        { id: 'reference', ticker: 'Child', weight: '50', isPortfolioRef: true },
+        { id: 'holding', type: 'HOLDING', instrument: 'SPY', allocation: '50' },
+        {
+          id: 'reference',
+          type: 'PORTFOLIO_REFERENCE',
+          portfolioName: 'Child',
+          allocation: '50',
+          normalizationMode: 'NET_100',
+        },
       ],
       rebalance: 'YEARLY',
       margins: [],

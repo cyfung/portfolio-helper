@@ -8,17 +8,44 @@ import { allocOptionsFromHybridStrategies, DEFAULT_HYBRID_ALLOC_STRATEGIES } fro
 import { parseSwapExpression } from '@/lib/tickerExpressions'
 import {
   canonicalPortfolioConfiguration,
-  convertLegacyTickerRow,
   convertPortfolioRowToLegacyTickerRow,
+  parseInstrumentExpression,
+  parseSwapInput,
   type PortfolioRow,
+  type ReferenceNormalizationMode,
 } from '@/lib/portfolioComposition'
 
-export interface TickerRow {
+export interface HoldingEditorRow {
   id: string
-  ticker: string
-  weight: string
-  isPortfolioRef?: boolean
+  type: 'HOLDING'
+  instrument: string
+  allocation: string
 }
+
+export interface PortfolioReferenceEditorRow {
+  id: string
+  type: 'PORTFOLIO_REFERENCE'
+  portfolioName: string
+  allocation: string
+  normalizationMode: ReferenceNormalizationMode
+}
+
+export interface SwapLegEditorRow {
+  id: string
+  instrument: string
+  multiplier: string
+}
+
+export interface SwapEditorRow {
+  id: string
+  type: 'SWAP'
+  source: string
+  transferMode: 'AMOUNT' | 'ALL_REMAINING'
+  transferAmount: string
+  legs: SwapLegEditorRow[]
+}
+
+export type PortfolioEditorRow = HoldingEditorRow | PortfolioReferenceEditorRow | SwapEditorRow
 
 export interface MarginRow {
   id: string
@@ -38,7 +65,7 @@ export interface RebalanceStrategyRow {
 
 export interface BlockState {
   label: string
-  tickers: TickerRow[]
+  tickers: PortfolioEditorRow[]
   rebalance: string
   margins: MarginRow[]
   rebalanceStrategies: RebalanceStrategyRow[]
@@ -138,8 +165,8 @@ export function emptyBlock(idx: number): BlockState {
     return {
       label: '',
       tickers: [
-        { id: newId(), ticker: 'VT', weight: '60' },
-        { id: newId(), ticker: 'KMLM', weight: '40' },
+        { id: newId(), type: 'HOLDING', instrument: 'VT', allocation: '60' },
+        { id: newId(), type: 'HOLDING', instrument: 'KMLM', allocation: '40' },
       ],
       rebalance: 'YEARLY',
       margins: [],
@@ -156,17 +183,34 @@ export function configToBlockState(config: any, name: string): BlockState {
   if (!Array.isArray(config?.rows)) throw new Error('Saved portfolio is missing tagged rows.')
   const persistedRows = canonicalPortfolioConfiguration({ rows: config.rows })?.rows
   if (!persistedRows) throw new Error('Saved portfolio contains invalid tagged rows.')
-  const legacyRows = persistedRows.map(convertPortfolioRowToLegacyTickerRow)
   return {
     label: name,
-    tickers: legacyRows.map((t: any, index: number) => ({
-      id: persistedRows[index]?.id ?? newId(),
-      ticker: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef
-        ? String(t.portfolioRef || t.ticker || '')
-        : String(t.ticker || '').toUpperCase(),
-      weight: String(t.weight ?? ''),
-      isPortfolioRef: t.isPortfolioRef === true || t.type === 'PORTFOLIO_REF' || !!t.portfolioRef,
-    })),
+    tickers: persistedRows.map(row => {
+      if (row.type === 'HOLDING') {
+        return { id: row.id, type: row.type, instrument: row.instrument, allocation: String(row.allocation) }
+      }
+      if (row.type === 'PORTFOLIO_REFERENCE') {
+        return {
+          id: row.id,
+          type: row.type,
+          portfolioName: row.portfolioName,
+          allocation: String(row.allocation),
+          normalizationMode: row.normalizationMode,
+        }
+      }
+      return {
+        id: row.id,
+        type: row.type,
+        source: row.source,
+        transferMode: row.transfer.mode,
+        transferAmount: row.transfer.mode === 'AMOUNT' ? String(row.transfer.amount) : '',
+        legs: row.legs.map((leg, index) => ({
+          id: `${row.id}-leg-${index}`,
+          instrument: leg.instrument,
+          multiplier: String(leg.multiplier),
+        })),
+      }
+    }),
     rebalance: config.rebalanceStrategy || 'YEARLY',
     margins: (config.marginStrategies || []).map((m: any) => ({
       id: newId(),
@@ -214,6 +258,82 @@ export function hasActiveRebalanceStrategyRows(strategies: any[] | null | undefi
 
 type ApiTickerWeight = number | '*'
 
+export function editorRowToPortfolioRow(row: PortfolioEditorRow): PortfolioRow | null {
+  if (row.type === 'HOLDING') {
+    const instrument = parseInstrumentExpression(row.instrument)
+    const allocation = Number(row.allocation.trim())
+    return instrument != null && Number.isFinite(allocation) && allocation !== 0
+      ? { id: row.id, type: 'HOLDING', instrument, allocation }
+      : null
+  }
+  if (row.type === 'PORTFOLIO_REFERENCE') {
+    const portfolioName = row.portfolioName.trim()
+    const allocation = Number(row.allocation.trim())
+    return portfolioName && Number.isFinite(allocation) && allocation !== 0
+      ? { id: row.id, type: 'PORTFOLIO_REFERENCE', portfolioName, allocation, normalizationMode: row.normalizationMode }
+      : null
+  }
+  const source = parseInstrumentExpression(row.source)
+  const amount = Number(row.transferAmount.trim())
+  const legs = row.legs.map(leg => {
+    const instrument = parseInstrumentExpression(leg.instrument)
+    const multiplier = Number(leg.multiplier.trim())
+    return instrument != null && Number.isFinite(multiplier) && multiplier !== 0
+      ? { instrument, multiplier }
+      : null
+  })
+  if (source == null || legs.length === 0 || legs.some(leg => leg == null)) return null
+  if (row.transferMode === 'AMOUNT' && (!Number.isFinite(amount) || amount <= 0)) return null
+  return {
+    id: row.id,
+    type: 'SWAP',
+    source,
+    transfer: row.transferMode === 'ALL_REMAINING' ? { mode: 'ALL_REMAINING' } : { mode: 'AMOUNT', amount },
+    legs: legs as NonNullable<(typeof legs)[number]>[],
+  }
+}
+
+export function holdingRowSwapCandidate(row: HoldingEditorRow) {
+  return parseSwapInput(row.instrument)
+}
+
+export function convertHoldingEditorRowToSwap(row: HoldingEditorRow): SwapEditorRow | null {
+  const swap = holdingRowSwapCandidate(row)
+  if (!swap) return null
+  return {
+    id: row.id,
+    type: 'SWAP',
+    source: swap.source,
+    transferMode: row.allocation.trim() === '*' ? 'ALL_REMAINING' : 'AMOUNT',
+    transferAmount: row.allocation.trim() === '*' ? '' : row.allocation,
+    legs: swap.legs.map((leg, index) => ({
+      id: `${row.id}-leg-${index}`,
+      instrument: leg.instrument,
+      multiplier: String(leg.multiplier),
+    })),
+  }
+}
+
+export function invalidPortfolioEditorRowIds(state: Pick<BlockState, 'tickers'>): Set<string> {
+  return new Set(state.tickers.filter(row =>
+    editorRowToPortfolioRow(row) == null ||
+    (row.type === 'HOLDING' && row.instrument.trim().toUpperCase() === 'DUMMY'),
+  ).map(row => row.id))
+}
+
+export function portfolioEditorRowMergeKey(row: PortfolioEditorRow, index: number): string {
+  const label = row.type === 'HOLDING'
+    ? row.instrument.trim().toUpperCase()
+    : row.type === 'PORTFOLIO_REFERENCE'
+      ? row.portfolioName.trim()
+      : row.source.trim().toUpperCase()
+  if (row.type === 'SWAP') return `swap:${index}:${row.id}`
+  if (!label) return `empty:${row.id}`
+  return row.type === 'PORTFOLIO_REFERENCE'
+    ? `${row.type}:${label}:${row.normalizationMode}`
+    : `${row.type}:${label}`
+}
+
 function parseInputNumber(
   value: string | number | null | undefined,
   fallback: number,
@@ -235,12 +355,6 @@ function percentInputOrDefault(
   options: BlockConversionOptions = {},
 ) {
   return parseInputNumber(value, fallback, label, options) / 100
-}
-
-function apiTickerWeight(value: string | number | null | undefined, options: BlockConversionOptions = {}): ApiTickerWeight {
-  const raw = String(value ?? '').trim()
-  if (raw === '*') return '*'
-  return parseInputNumber(raw, 0, 'Ticker weight', options)
 }
 
 function isNonZeroApiWeight(weight: ApiTickerWeight) {
@@ -265,12 +379,11 @@ function mergeAPITickerRows<T extends { ticker: string; weight: number; isPortfo
     .sort((a, b) => a.ticker.localeCompare(b.ticker))
 }
 
-function blockStateToAPITickers(state: BlockState, options: BlockConversionOptions = {}) {
+function blockStateToAPITickers(state: BlockState) {
   const rows = state.tickers
-    .map(t => t.isPortfolioRef
-      ? { ticker: t.ticker.trim(), weight: apiTickerWeight(t.weight, options), isPortfolioRef: true, portfolioRef: t.ticker.trim() }
-      : { ticker: t.ticker.trim().toUpperCase(), weight: apiTickerWeight(t.weight, options) }
-    )
+    .map(editorRowToPortfolioRow)
+    .filter((row): row is PortfolioRow => row != null)
+    .map(convertPortfolioRowToLegacyTickerRow)
     .filter(t => t.ticker && isNonZeroApiWeight(t.weight))
 
   if (hasOrderSensitiveTickerRows(rows)) return rows
@@ -285,7 +398,7 @@ function blockStateToAPILabel(state: BlockState, idx: number, tickers: ReturnTyp
 
 /** Convert BlockState to the portfolio object expected by the run API. */
 export function blockStateToAPIPortfolio(state: BlockState, idx: number, options: BlockConversionOptions = {}) {
-  const tickers = blockStateToAPITickers(state, options)
+  const tickers = blockStateToAPITickers(state)
   return {
     label: blockStateToAPILabel(state, idx, tickers),
     inputLabel: state.label.trim(),
@@ -314,12 +427,7 @@ export function blockStateToAPIPortfolio(state: BlockState, idx: number, options
 /** Convert BlockState to the config format used by /api/backtest/savedPortfolios. */
 export function blockStateToSavedConfig(state: BlockState) {
   const rows = state.tickers
-    .map(t => convertLegacyTickerRow({
-      id: t.id,
-      ticker: t.ticker,
-      weight: apiTickerWeight(t.weight),
-      isPortfolioRef: t.isPortfolioRef,
-    }, t.id))
+    .map(editorRowToPortfolioRow)
     .filter((row): row is PortfolioRow => row != null)
   return {
     rows,
