@@ -52,12 +52,18 @@ export type PortfolioResolutionIssueCode =
   | 'INVALID_TRANSFER'
   | 'INVALID_LEGS'
   | 'UNSUPPORTED_REFERENCE'
+  | 'MISSING_REFERENCE'
+  | 'CIRCULAR_REFERENCE'
+  | 'INVALID_NORMALIZED_CHILD'
+  | 'INVALID_ROOT_NET'
+  | 'LEGACY_DUMMY'
   | 'SOURCE_UNAVAILABLE'
   | 'INSUFFICIENT_SOURCE'
 
 export interface PortfolioResolutionIssue {
   code: PortfolioResolutionIssueCode
   rowId: string
+  referencePath?: string[]
   message: string
 }
 
@@ -65,6 +71,10 @@ export interface ResolvedPortfolioComposition {
   composition: ResolvedInstrumentExposure[]
   net: number
   issues: PortfolioResolutionIssue[]
+}
+
+export interface SavedPortfolioConfiguration {
+  rows: readonly unknown[]
 }
 
 export interface LegacyTickerPersistenceRow {
@@ -356,8 +366,19 @@ function invalidResolutionIssue(value: unknown, rowId: string): PortfolioResolut
 }
 
 export function resolvePortfolioComposition(rows: readonly unknown[]): ResolvedPortfolioComposition {
+  return resolveRows(rows)
+}
+
+function resolveRows(
+  rows: readonly unknown[],
+  savedPortfolios?: ReadonlyMap<string, SavedPortfolioConfiguration>,
+  referencePath?: string[],
+  stack: string[] = [],
+): ResolvedPortfolioComposition {
   const exposures = new Map<InstrumentExpression, number>()
   const issues: PortfolioResolutionIssue[] = []
+  const withPath = (issue: PortfolioResolutionIssue): PortfolioResolutionIssue =>
+    referencePath == null ? issue : { ...issue, referencePath }
 
   const addExposure = (instrument: InstrumentExpression, allocation: number) => {
     const next = (exposures.get(instrument) ?? 0) + allocation
@@ -373,14 +394,68 @@ export function resolvePortfolioComposition(rows: readonly unknown[]): ResolvedP
       : String(index)
     const row = canonicalPortfolioRow(value)
     if (row == null) {
-      issues.push(invalidResolutionIssue(value, rowId))
+      issues.push(withPath(invalidResolutionIssue(value, rowId)))
       return
     }
     if (row.type === 'HOLDING') {
+      if (row.instrument === 'DUMMY') {
+        issues.push(withPath({
+          code: 'LEGACY_DUMMY',
+          rowId: row.id,
+          message: 'Legacy DUMMY holdings must be rewritten before resolution.',
+        }))
+        return
+      }
       addExposure(row.instrument, row.allocation)
       return
     }
     if (row.type === 'PORTFOLIO_REFERENCE') {
+      if (savedPortfolios != null) {
+        const childPath = [...(referencePath ?? []), row.portfolioName]
+        const child = savedPortfolios.get(row.portfolioName)
+        if (child == null) {
+          issues.push({
+            code: 'MISSING_REFERENCE',
+            rowId: row.id,
+            referencePath: childPath,
+            message: `Saved portfolio ${row.portfolioName} was not found.`,
+          })
+          return
+        }
+        if (stack.includes(row.portfolioName)) {
+          issues.push({
+            code: 'CIRCULAR_REFERENCE',
+            rowId: row.id,
+            referencePath: childPath,
+            message: `Circular portfolio reference: ${childPath.join(' -> ')}.`,
+          })
+          return
+        }
+
+        const childResult = resolveRows(
+          child.rows,
+          savedPortfolios,
+          childPath,
+          [...stack, row.portfolioName],
+        )
+        issues.push(...childResult.issues)
+        if (row.normalizationMode === 'NET_100' && childResult.net <= EPSILON) {
+          if (childResult.issues.length === 0) {
+            issues.push({
+              code: 'INVALID_NORMALIZED_CHILD',
+              rowId: row.id,
+              referencePath: childPath,
+              message: `Normalized portfolio reference ${row.portfolioName} requires positive signed net exposure.`,
+            })
+          }
+          return
+        }
+        const scale = row.normalizationMode === 'NET_100'
+          ? row.allocation / childResult.net
+          : row.allocation / 100
+        childResult.composition.forEach(position => addExposure(position.instrument, position.exposure * scale))
+        return
+      }
       issues.push({
         code: 'UNSUPPORTED_REFERENCE',
         rowId: row.id,
@@ -392,19 +467,19 @@ export function resolvePortfolioComposition(rows: readonly unknown[]): ResolvedP
     const available = Math.max(exposures.get(row.source) ?? 0, 0)
     const amount = row.transfer.mode === 'ALL_REMAINING' ? available : row.transfer.amount
     if (available <= EPSILON) {
-      issues.push({
+      issues.push(withPath({
         code: 'SOURCE_UNAVAILABLE',
         rowId: row.id,
         message: `No positive ${row.source} exposure is available to swap.`,
-      })
+      }))
       return
     }
     if (amount - available > EPSILON) {
-      issues.push({
+      issues.push(withPath({
         code: 'INSUFFICIENT_SOURCE',
         rowId: row.id,
         message: `Only ${available} of positive ${row.source} exposure is available to swap ${amount}.`,
-      })
+      }))
       return
     }
 
@@ -417,5 +492,38 @@ export function resolvePortfolioComposition(rows: readonly unknown[]): ResolvedP
     composition,
     net: composition.reduce((sum, position) => sum + position.exposure, 0),
     issues,
+  }
+}
+
+export function resolveRootPortfolioComposition(
+  rows: readonly unknown[],
+  savedPortfolios: ReadonlyMap<string, SavedPortfolioConfiguration>,
+  options: { rootName?: string } = {},
+): ResolvedPortfolioComposition {
+  const referencePath = options.rootName == null ? [] : [options.rootName]
+  const resolved = resolveRows(rows, savedPortfolios, referencePath)
+  if (resolved.net <= EPSILON) {
+    return {
+      ...resolved,
+      issues: [
+        ...resolved.issues,
+        {
+          code: 'INVALID_ROOT_NET',
+          rowId: options.rootName ?? 'root',
+          referencePath,
+          message: 'Root portfolio requires positive signed net exposure.',
+        },
+      ],
+    }
+  }
+
+  const scale = 100 / resolved.net
+  return {
+    composition: resolved.composition.map(position => ({
+      ...position,
+      exposure: position.exposure * scale,
+    })),
+    net: resolved.net,
+    issues: resolved.issues,
   }
 }

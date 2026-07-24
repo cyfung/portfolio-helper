@@ -7,6 +7,7 @@ import {
   formatSwapRow,
   parseSwapInput,
   resolvePortfolioComposition,
+  resolveRootPortfolioComposition,
   type PortfolioRow,
 } from './portfolioComposition'
 
@@ -211,5 +212,166 @@ describe('canonical portfolio composition', () => {
         normalizationMode: 'UNKNOWN',
       }],
     })).toBeNull()
+  })
+
+  it('resolves nested references within local boundaries and normalizes the root', () => {
+    const savedPortfolios = new Map([
+      ['Normalized', { rows: [
+        { id: 'child-holding', type: 'HOLDING', instrument: 'SPY', allocation: 60 },
+        { id: 'child-swap', type: 'SWAP', source: 'SPY', transfer: { mode: 'AMOUNT', amount: 20 }, legs: [
+          { instrument: 'TLT', multiplier: 1 },
+        ] },
+      ] }],
+      ['Preserved', { rows: [
+        { id: 'preserved-holding', type: 'HOLDING', instrument: 'GLD', allocation: 200 },
+      ] }],
+    ])
+
+    expect(resolveRootPortfolioComposition([
+      { id: 'parent-before', type: 'SWAP', source: 'SPY', transfer: { mode: 'ALL_REMAINING' }, legs: [
+        { instrument: 'CASH', multiplier: 1 },
+      ] },
+      {
+        id: 'normalized-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Normalized',
+        allocation: -50,
+        normalizationMode: 'NET_100',
+      },
+      {
+        id: 'preserved-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Preserved',
+        allocation: 100,
+        normalizationMode: 'PRESERVE',
+      },
+      { id: 'parent-after', type: 'SWAP', source: 'GLD', transfer: { mode: 'AMOUNT', amount: 50 }, legs: [
+        { instrument: 'CASH', multiplier: 1 },
+      ] },
+    ], savedPortfolios, { rootName: 'Root' })).toEqual({
+      composition: [
+        { instrument: 'SPY', exposure: -200 / 9 },
+        { instrument: 'TLT', exposure: -100 / 9 },
+        { instrument: 'GLD', exposure: 100 },
+        { instrument: 'CASH', exposure: 50 * (100 / 150) },
+      ],
+      net: 150,
+      issues: [
+        {
+          code: 'SOURCE_UNAVAILABLE',
+          rowId: 'parent-before',
+          referencePath: ['Root'],
+          message: 'No positive SPY exposure is available to swap.',
+        },
+      ],
+    })
+  })
+
+  it('reports nested reference failures with local rows and full paths', () => {
+    const savedPortfolios = new Map([
+      ['Broken', { rows: [
+        { id: 'dummy', type: 'HOLDING', instrument: 'DUMMY', allocation: 25 },
+        {
+          id: 'missing',
+          type: 'PORTFOLIO_REFERENCE',
+          portfolioName: 'Gone',
+          allocation: 75,
+          normalizationMode: 'NET_100',
+        },
+      ] }],
+      ['CycleA', { rows: [{
+        id: 'to-b',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'CycleB',
+        allocation: 100,
+        normalizationMode: 'NET_100',
+      }] }],
+      ['CycleB', { rows: [{
+        id: 'to-a',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'CycleA',
+        allocation: 100,
+        normalizationMode: 'NET_100',
+      }] }],
+      ['Negative', { rows: [
+        { id: 'short', type: 'HOLDING', instrument: 'SPY', allocation: -100 },
+      ] }],
+    ])
+
+    expect(resolveRootPortfolioComposition([
+      {
+        id: 'broken-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Broken',
+        allocation: 50,
+        normalizationMode: 'NET_100',
+      },
+      {
+        id: 'cycle-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'CycleA',
+        allocation: 25,
+        normalizationMode: 'PRESERVE',
+      },
+      {
+        id: 'negative-ref',
+        type: 'PORTFOLIO_REFERENCE',
+        portfolioName: 'Negative',
+        allocation: 25,
+        normalizationMode: 'NET_100',
+      },
+    ], savedPortfolios, { rootName: 'Root' }).issues).toEqual([
+      {
+        code: 'LEGACY_DUMMY',
+        rowId: 'dummy',
+        referencePath: ['Root', 'Broken'],
+        message: 'Legacy DUMMY holdings must be rewritten before resolution.',
+      },
+      {
+        code: 'MISSING_REFERENCE',
+        rowId: 'missing',
+        referencePath: ['Root', 'Broken', 'Gone'],
+        message: 'Saved portfolio Gone was not found.',
+      },
+      {
+        code: 'CIRCULAR_REFERENCE',
+        rowId: 'to-a',
+        referencePath: ['Root', 'CycleA', 'CycleB', 'CycleA'],
+        message: 'Circular portfolio reference: Root -> CycleA -> CycleB -> CycleA.',
+      },
+      {
+        code: 'INVALID_NORMALIZED_CHILD',
+        rowId: 'negative-ref',
+        referencePath: ['Root', 'Negative'],
+        message: 'Normalized portfolio reference Negative requires positive signed net exposure.',
+      },
+      {
+        code: 'INVALID_ROOT_NET',
+        rowId: 'Root',
+        referencePath: ['Root'],
+        message: 'Root portfolio requires positive signed net exposure.',
+      },
+    ])
+  })
+
+  it('normalizes references independently of legacy DUMMY exposure', () => {
+    const savedPortfolios = new Map([
+      ['Child', { rows: [
+        { id: 'real', type: 'HOLDING', instrument: 'SPY', allocation: 50 },
+        { id: 'dummy', type: 'HOLDING', instrument: 'DUMMY', allocation: 50 },
+      ] }],
+    ])
+
+    const result = resolveRootPortfolioComposition([{
+      id: 'child',
+      type: 'PORTFOLIO_REFERENCE',
+      portfolioName: 'Child',
+      allocation: 100,
+      normalizationMode: 'NET_100',
+    }], savedPortfolios)
+
+    expect(result.composition).toEqual([{ instrument: 'SPY', exposure: 100 }])
+    expect(result.net).toBe(100)
+    expect(result.issues[0]?.code).toBe('LEGACY_DUMMY')
   })
 })
