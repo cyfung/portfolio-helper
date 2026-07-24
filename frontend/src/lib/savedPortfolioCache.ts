@@ -6,6 +6,7 @@ export const SAVED_PORTFOLIOS_CHANGED_EVENT = 'saved-portfolios-changed'
 let savedPortfolios: SavedPortfolio[] = []
 let loaded = false
 let pending: Promise<SavedPortfolio[]> | null = null
+let queuedRefresh: Promise<SavedPortfolio[]> | null = null
 const listeners = new Set<() => void>()
 
 function notify() {
@@ -23,7 +24,15 @@ async function loadSavedPortfolios(): Promise<SavedPortfolio[]> {
 }
 
 export function refreshSavedPortfolios(): Promise<SavedPortfolio[]> {
-  if (pending != null) return pending
+  if (pending != null) {
+    if (queuedRefresh == null) {
+      queuedRefresh = pending.then(() => {
+        queuedRefresh = null
+        return refreshSavedPortfolios()
+      })
+    }
+    return queuedRefresh
+  }
   pending = loadSavedPortfolios()
     .catch(() => {
       loaded = true
@@ -38,7 +47,8 @@ export function refreshSavedPortfolios(): Promise<SavedPortfolio[]> {
 }
 
 export function getSavedPortfolios(): Promise<SavedPortfolio[]> {
-  return loaded ? Promise.resolve(savedPortfolios) : refreshSavedPortfolios()
+  if (loaded) return Promise.resolve(savedPortfolios)
+  return pending ?? refreshSavedPortfolios()
 }
 
 export function savedPortfolioSnapshot() {
@@ -56,7 +66,7 @@ export function useSavedPortfolios() {
     savedPortfolioSnapshot,
     savedPortfolioSnapshot,
   )
-  if (!loaded && pending == null) void refreshSavedPortfolios()
+  if (!loaded && pending == null) void getSavedPortfolios()
   return { savedPortfolios: snapshot, loaded }
 }
 
@@ -72,6 +82,7 @@ export function invalidateSavedPortfolioCache() {
   savedPortfolios = []
   loaded = false
   pending = null
+  queuedRefresh = null
   notify()
 }
 

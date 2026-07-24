@@ -135,7 +135,15 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     const from = resolvedFrom; const to = resolvedTo
     if (!from || !to) return
 
-    const portfolio = resolvedBlockStateToAPIPortfolio(benchmarkBlock, 0, savedPortfolios)
+    let portfolio: ReturnType<typeof resolvedBlockStateToAPIPortfolio>
+    try {
+      portfolio = resolvedBlockStateToAPIPortfolio(benchmarkBlock, 0, savedPortfolios)
+    } catch (resolutionError) {
+      setBenchmarkCache({})
+      setBenchmarkLoading(false)
+      setError(resolutionError instanceof Error ? resolutionError.message : 'Unable to resolve benchmark portfolio.')
+      return
+    }
     if (!portfolio.tickers.length) return
 
     const marginKeys: string[] = ['none', ...benchmarkBlock.margins.map((_, i) => String(i))]

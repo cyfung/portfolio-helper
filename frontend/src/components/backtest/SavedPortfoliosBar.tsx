@@ -1,6 +1,6 @@
 // ── SavedPortfoliosBar.tsx — Draggable chips for saved portfolios ─────────────
 
-import { useEffect, useImperativeHandle, forwardRef } from 'react'
+import { useImperativeHandle, forwardRef } from 'react'
 import {
   announceSavedPortfoliosChanged,
   refreshSavedPortfolios,
@@ -22,8 +22,6 @@ const SavedPortfoliosBar = forwardRef<SavedPortfoliosBarRef, Props>(
     async function refresh() {
       await refreshSavedPortfolios()
     }
-
-    useEffect(() => { refresh() }, [])
 
     useImperativeHandle(ref, () => ({ refresh }))
 

@@ -38,4 +38,21 @@ describe('saved portfolio cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(refreshed[0].name).toBe('Two')
   })
+
+  it('queues a change refresh behind an in-flight initial request', async () => {
+    let finishInitial!: (value: unknown) => void
+    const initial = new Promise(resolve => { finishInitial = resolve })
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(initial)
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ name: 'Fresh', config: { rows: [] } }] })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = getSavedPortfolios()
+    const refreshed = refreshSavedPortfolios()
+    finishInitial({ ok: true, json: async () => [{ name: 'Stale', config: { rows: [] } }] })
+
+    await first
+    expect((await refreshed)[0].name).toBe('Fresh')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })
