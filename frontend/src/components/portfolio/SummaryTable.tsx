@@ -94,8 +94,6 @@ export default function SummaryTable() {
 
   const dayChangeUsd = grandTotalKnown ? (lastPortfolioTotals?.dayChangeUsd ?? null) : null
   const grandTotalUsdRaw = lastPortfolioTotals?.grandTotalUsd ?? null
-  const dayChangePct = grandTotalKnown && dayChangeUsd !== null && grandTotalUsdRaw !== null
-    ? (dayChangeUsd / (grandTotalUsdRaw - dayChangeUsd) * 100) : null
   const dayChangeStr = dayChangeUsd !== null ? fmtSignedDisplay(dayChangeUsd) : ''
   const isAfterHours = (lastStockDisplay?.stocks ?? []).length > 0
     && (lastStockDisplay?.stocks ?? []).every(s => s.isMarketClosed)
@@ -110,12 +108,41 @@ export default function SummaryTable() {
   const stockGross = lastPortfolioTotals?.stockGrossKnown
     ? fmt(stockGrossUsd) : '—'
 
-  const stockDayChangeUsd = stockGrossKnown ? (lastPortfolioTotals?.dayChangeUsd ?? null) : null
-  const stockDayChangePct = stockGrossKnown && stockDayChangeUsd !== null && stockGrossUsd !== 0
-    ? (stockDayChangeUsd / (stockGrossUsd - stockDayChangeUsd) * 100) : null
-  const stockDayChangeStr = stockDayChangeUsd !== null ? fmtSignedDisplay(stockDayChangeUsd) : ''
-  const stockDayChangeColor = stockDayChangeUsd !== null && stockDayChangeUsd > 0
-    ? 'positive' : stockDayChangeUsd !== null && stockDayChangeUsd < 0 ? 'negative' : ''
+  const equityBaseUsd = stockGrossUsd + marginUsdVal
+  const showEquityBase = grandTotalKnown
+    && !!lastPortfolioTotals?.cashKnown
+    && grandTotalUsdRaw !== null
+    && grandTotalUsdRaw !== 0
+    && Math.abs(equityBaseUsd - grandTotalUsdRaw) / Math.abs(grandTotalUsdRaw) >= 0.01
+
+  function formatDailyChangePct(baseUsd: number, known: boolean): string {
+    if (!known || dayChangeUsd === null) return '—'
+    const previousBaseUsd = baseUsd - dayChangeUsd
+    if (previousBaseUsd === 0) return '—'
+    const pct = dayChangeUsd / previousBaseUsd * 100
+    return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+  }
+
+  const valueCards = [
+    {
+      label: 'Portfolio Value',
+      value: grandTotal,
+      changePct: formatDailyChangePct(grandTotalUsdRaw ?? 0, grandTotalKnown),
+      valueId: 'portfolio-total',
+    },
+    ...(showEquityBase ? [{
+      label: 'Equity Base',
+      value: fmt(equityBaseUsd),
+      changePct: formatDailyChangePct(equityBaseUsd, true),
+      valueId: 'equity-base-total',
+    }] : []),
+    {
+      label: 'Stock Gross Value',
+      value: stockGross,
+      changePct: formatDailyChangePct(stockGrossUsd, stockGrossKnown),
+      valueId: 'stock-gross-total',
+    },
+  ]
 
   // Correct formula: margin / (stockGross - margin); margin may be negative (debt)
   const absMargin = Math.abs(marginUsdVal)
@@ -128,21 +155,18 @@ export default function SummaryTable() {
   const activeIsMarginUsd = !activeIsRebal && !activeIsMarginPct && marginTargetUsd !== null
 
   // ── Single underlying rebal target; all placeholders derive from it ───────
-  // equity = stocks + marginUsdVal: subtracts debt (negative) or adds credit (positive)
-  const equity = stockGrossUsd + marginUsdVal
-
   const underlyingUsd: number | null = (() => {
     if (!stockGrossKnown) return null
     if (activeIsRebal)     return rebalTargetUsd!
-    if (activeIsMarginPct) return equity * (1 + marginTargetPct! / 100)
-    if (activeIsMarginUsd) return equity + marginTargetUsd!
+    if (activeIsMarginPct) return equityBaseUsd * (1 + marginTargetPct! / 100)
+    if (activeIsMarginUsd) return equityBaseUsd + marginTargetUsd!
     return null
   })()
 
   // implied margin amount and % from the underlying target
-  const impliedMargin    = underlyingUsd !== null ? Math.max(0, underlyingUsd - equity) : absMargin
-  const impliedMarginPct = equity > 0
-    ? (underlyingUsd !== null ? underlyingUsd - equity : absMargin) / equity * 100
+  const impliedMargin    = underlyingUsd !== null ? Math.max(0, underlyingUsd - equityBaseUsd) : absMargin
+  const impliedMarginPct = equityBaseUsd > 0
+    ? (underlyingUsd !== null ? underlyingUsd - equityBaseUsd : absMargin) / equityBaseUsd * 100
     : 0
 
   // Placeholders: active field shows its value; others show derived equivalents.
@@ -150,7 +174,7 @@ export default function SummaryTable() {
   const rebalPlaceholder     = underlyingUsd !== null
     ? formatUsdForInput(underlyingUsd)
     : stockGrossKnown ? formatUsdForInput(stockGrossUsd) : ''
-  const targetImpliesNoMargin = underlyingUsd !== null && underlyingUsd <= equity
+  const targetImpliesNoMargin = underlyingUsd !== null && underlyingUsd <= equityBaseUsd
   const noCurrentMargin = underlyingUsd === null && marginUsdVal >= 0
   const marginPctPlaceholder = noCurrentMargin ? '-' : impliedMarginPct > 0 ? impliedMarginPct.toFixed(2) : (targetImpliesNoMargin ? '-' : '')
   const marginUsdPlaceholder = noCurrentMargin ? '-' : impliedMargin > 0 ? formatUsdForInput(impliedMargin) : (targetImpliesNoMargin ? '-' : '')
@@ -224,20 +248,38 @@ export default function SummaryTable() {
   }
 
   return (
-    // 5 columns: Label | Badges | Currency | Amount | Value
-    <table className="portfolio-cash-table">
+    <div className="portfolio-summary">
+      <div className="portfolio-value-cards">
+        {valueCards.map(card => (
+          <section
+            key={card.label}
+            className="portfolio-value-card"
+            role="group"
+            aria-label={card.label}
+          >
+            <div className="portfolio-value-card-label">{card.label}</div>
+            <div className="portfolio-value-card-value" id={card.valueId}>{card.value}</div>
+            <div className={`portfolio-value-card-change ${dayChangeColor}${isAfterHours ? ' after-hours' : ''}`}>
+              {card.changePct}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {/* 5 columns: Label | Badges | Currency | Amount | Value */}
+      <table className="portfolio-cash-table">
       <tbody>
-        {/* ── Grand total ──────────────────────────────────────────────── */}
-        <tr className="grand-total-row">
-          <td>Portfolio Value</td>
+        {/* ── Shared day change ────────────────────────────────────────── */}
+        <tr className="day-change-row">
+          <td>Day Change</td>
           <td /><td /><td />
           <td>
-            <span id="portfolio-total">{grandTotal}</span>
-            <div className={`summary-subvalue ${grandTotalKnown && dayChangeStr ? dayChangeColor : ''}${isAfterHours ? ' after-hours' : ''}`} id="total-day-change">
-              {grandTotalKnown && dayChangeStr
-                ? <>{dayChangeStr}{dayChangePct !== null && ` (${dayChangePct >= 0 ? '+' : ''}${dayChangePct.toFixed(2)}%)`}</>
-                : '— (—)'}
-            </div>
+            <span
+              className={`${grandTotalKnown && dayChangeStr ? dayChangeColor : ''}${isAfterHours ? ' after-hours' : ''}`}
+              id="total-day-change"
+            >
+              {grandTotalKnown && dayChangeStr ? dayChangeStr : '—'}
+            </span>
           </td>
         </tr>
 
@@ -355,19 +397,6 @@ export default function SummaryTable() {
             )}
 
             <tr className="summary-section-break"><td colSpan={5} /></tr>
-
-            <tr className="stock-gross-row">
-              <td>Stock Gross Value</td>
-              <td /><td /><td />
-              <td>
-                <div id="stock-gross-total">{stockGross}</div>
-                <div className={`summary-subvalue ${stockGrossKnown && stockDayChangeStr ? stockDayChangeColor : ''}${isAfterHours ? ' after-hours' : ''}`} id="portfolio-day-change">
-                  {stockGrossKnown && stockDayChangeStr
-                    ? <>{stockDayChangeStr}{stockDayChangePct !== null && ` (${stockDayChangePct >= 0 ? '+' : ''}${stockDayChangePct.toFixed(2)}%)`}</>
-                    : '— (—)'}
-                </div>
-              </td>
-            </tr>
           </>
         )}
 
@@ -456,6 +485,7 @@ export default function SummaryTable() {
           </tr>
         )}
       </tbody>
-    </table>
+      </table>
+    </div>
   )
 }

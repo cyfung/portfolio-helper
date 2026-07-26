@@ -34,6 +34,58 @@
 /* ============================================
    Summary Table (Cash + Portfolio Totals)
    ============================================ */
+.portfolio-summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.portfolio-value-cards {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.portfolio-value-card {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: var(--color-bg-secondary);
+    text-align: right;
+}
+
+.portfolio-value-card-label {
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.portfolio-value-card-value,
+.portfolio-value-card-change {
+    font-family: var(--font-family-mono), monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.portfolio-value-card-value {
+    margin-top: 2px;
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.portfolio-value-card:first-child .portfolio-value-card-value {
+    color: var(--color-accent-primary);
+}
+
+.portfolio-value-card-change {
+    margin-top: 2px;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-sm);
+}
+
 .portfolio-cash-table {
     width: auto;
     border-collapse: separate;
@@ -86,17 +138,13 @@
 }
 
 .portfolio-cash-table .total-cash-row td,
-.portfolio-cash-table .grand-total-row td {
+.portfolio-cash-table .day-change-row td {
     font-weight: var(--font-weight-semibold);
 }
 
 .portfolio-cash-table .total-cash-row td:last-child,
 .portfolio-cash-table .stock-gross-row td:last-child {
     color: var(--color-text-primary);
-}
-
-.portfolio-cash-table .grand-total-row td:last-child {
-    color: var(--color-accent-primary);
 }
 
 .portfolio-cash-table .timestamp-row td {
@@ -312,12 +360,16 @@
     color: var(--color-text-secondary) !important;
     opacity: 1;
 }
-.summary-subvalue.positive { color: var(--color-positive); }
-.summary-subvalue.negative { color: var(--color-negative); }
-.summary-subvalue.after-hours {
+.summary-subvalue.positive,
+.portfolio-value-card-change.positive { color: var(--color-positive); }
+.summary-subvalue.negative,
+.portfolio-value-card-change.negative { color: var(--color-negative); }
+.summary-subvalue.after-hours,
+.portfolio-value-card-change.after-hours {
     opacity: 0.75;
 }
-.after-hours-gray .summary-subvalue.after-hours {
+.after-hours-gray .summary-subvalue.after-hours,
+.after-hours-gray .portfolio-value-card-change.after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 1;
 }

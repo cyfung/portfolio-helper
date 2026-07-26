@@ -102,3 +102,89 @@ describe('cash summary disclosure', () => {
     expect(screen.getByText('Total Cash')).toBeTruthy()
   })
 })
+
+describe('portfolio value cards', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    seedCashSummary()
+  })
+
+  afterEach(cleanup)
+
+  it('shows portfolio, equity-base, and stock-gross values with their own daily percentages', () => {
+    usePortfolioStore.setState({
+      lastPortfolioTotals: {
+        type: 'portfolio-totals',
+        portfolioId: 'main',
+        stockGrossUsd: 120_000,
+        stockGrossKnown: true,
+        cashTotalUsd: -25_000,
+        cashKnown: true,
+        grandTotalUsd: 95_000,
+        grandTotalKnown: true,
+        marginUsd: -20_000,
+        dayChangeUsd: 1_000,
+        prevDayUsd: 94_000,
+      },
+    })
+
+    render(<SummaryTable />)
+
+    expect(screen.getByRole('group', { name: 'Portfolio Value' }).textContent).toContain('95,000.00+1.06%')
+    expect(screen.getByRole('group', { name: 'Equity Base' }).textContent).toContain('100,000.00+1.01%')
+    expect(screen.getByRole('group', { name: 'Stock Gross Value' }).textContent).toContain('120,000.00+0.84%')
+
+    const dayChangeRow = screen.getByRole('row', { name: /Day Change/ })
+    expect(dayChangeRow.textContent).toContain('1,000.00')
+    expect(dayChangeRow.textContent).not.toContain('%')
+    expect(dayChangeRow.compareDocumentPosition(screen.getByText('Total Cash')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getAllByText('Portfolio Value')).toHaveLength(1)
+    expect(screen.getAllByText('Stock Gross Value')).toHaveLength(1)
+  })
+
+  it('hides the equity-base card when it is less than one percent from portfolio value', () => {
+    usePortfolioStore.setState({
+      lastPortfolioTotals: {
+        type: 'portfolio-totals',
+        portfolioId: 'main',
+        stockGrossUsd: 100_000,
+        stockGrossKnown: true,
+        cashTotalUsd: -500,
+        cashKnown: true,
+        grandTotalUsd: 99_500,
+        grandTotalKnown: true,
+        marginUsd: -500,
+        dayChangeUsd: -100,
+        prevDayUsd: 99_600,
+      },
+    })
+
+    render(<SummaryTable />)
+
+    expect(screen.queryByRole('group', { name: 'Equity Base' })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Portfolio Value' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Stock Gross Value' })).toBeTruthy()
+  })
+
+  it('hides the equity-base card when cash totals are unknown', () => {
+    usePortfolioStore.setState({
+      lastPortfolioTotals: {
+        type: 'portfolio-totals',
+        portfolioId: 'main',
+        stockGrossUsd: 120_000,
+        stockGrossKnown: true,
+        cashTotalUsd: -25_000,
+        cashKnown: false,
+        grandTotalUsd: 95_000,
+        grandTotalKnown: true,
+        marginUsd: -20_000,
+        dayChangeUsd: 1_000,
+        prevDayUsd: 94_000,
+      },
+    })
+
+    render(<SummaryTable />)
+
+    expect(screen.queryByRole('group', { name: 'Equity Base' })).toBeNull()
+  })
+})
