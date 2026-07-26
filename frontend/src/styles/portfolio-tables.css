@@ -148,6 +148,77 @@
     white-space: nowrap;
 }
 
+.cash-details-row-group {
+    view-transition-name: portfolio-cash-details;
+}
+
+:root.cash-details-transition {
+    view-transition-name: none;
+}
+
+.cash-total-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.cash-details-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+}
+
+.cash-details-toggle:hover {
+    background: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
+    color: var(--color-accent-primary);
+}
+
+.cash-details-toggle:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 1px;
+}
+
+.cash-details-toggle svg {
+    transition: transform 180ms ease;
+}
+
+.cash-details-toggle[aria-expanded='false'] svg {
+    transform: rotate(-90deg);
+}
+
+.cash-details-count {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+}
+
+::view-transition-group(portfolio-cash-details),
+::view-transition-old(portfolio-cash-details),
+::view-transition-new(portfolio-cash-details) {
+    animation-duration: 180ms;
+    animation-timing-function: ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cash-details-toggle svg {
+        transition: none;
+    }
+
+    ::view-transition-group(portfolio-cash-details),
+    ::view-transition-old(portfolio-cash-details),
+    ::view-transition-new(portfolio-cash-details) {
+        animation-duration: 0s;
+    }
+}
+
 /* Right-align numeric columns */
 .portfolio-table th.col-num,
 .portfolio-table th.rebal-column,

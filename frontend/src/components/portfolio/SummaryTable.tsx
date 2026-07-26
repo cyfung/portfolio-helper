@@ -1,8 +1,17 @@
 // ── SummaryTable.tsx — Port of buildSummaryRows from PortfolioRenderer.kt ────
 import { useRef, useState, useEffect, useMemo } from 'react'
+import { flushSync } from 'react-dom'
+import { ChevronDown } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { formatCurrency, formatDisplayCurrency, formatSignedCurrency, formatSignedDisplayCurrency, hasFxRate } from '@/lib/portfolio-utils'
 import { buildSortedCcys, getCcyClass } from '@/lib/ccy-colors'
+
+const CASH_DETAILS_EXPANDED_KEY = 'portfolio-helper-cash-details-expanded'
+
+function readCashDetailsExpanded(): boolean {
+  if (typeof window === 'undefined') return true
+  return window.localStorage.getItem(CASH_DETAILS_EXPANDED_KEY) !== 'false'
+}
 
 export default function SummaryTable() {
   const store = usePortfolioStore()
@@ -21,6 +30,9 @@ export default function SummaryTable() {
 
   const hasMargin = cash.some(c => c.marginFlag)
   const hasCash = cash.length > 0
+  const cashDetailCount = lastCashDisplay?.entries.length ?? 0
+  const hasCashDetails = cashDetailCount > 0
+  const [cashDetailsExpanded, setCashDetailsExpanded] = useState(readCashDetailsExpanded)
 
   const rebalInputRef = useRef<HTMLInputElement>(null)
   const marginPctInputRef = useRef<HTMLInputElement>(null)
@@ -206,6 +218,26 @@ export default function SummaryTable() {
       : num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
+  function toggleCashDetails() {
+    const expanded = !cashDetailsExpanded
+    const update = () => {
+      flushSync(() => setCashDetailsExpanded(expanded))
+      window.localStorage.setItem(CASH_DETAILS_EXPANDED_KEY, String(expanded))
+    }
+    const transitionDocument = document as Document & {
+      startViewTransition?: (callback: () => void) => { finished: Promise<unknown> }
+    }
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    if (transitionDocument.startViewTransition && !reducedMotion) {
+      document.documentElement.classList.add('cash-details-transition')
+      transitionDocument.startViewTransition(update).finished.finally(() => {
+        document.documentElement.classList.remove('cash-details-transition')
+      })
+    } else {
+      update()
+    }
+  }
+
   return (
     // 5 columns: Label | Badges | Currency | Amount | Value
     <table className="portfolio-cash-table">
@@ -224,15 +256,48 @@ export default function SummaryTable() {
           </td>
         </tr>
 
+        {/* ── Cash total and disclosure ─────────────────────────────────── */}
+        {hasCash && (
+          <tr className="total-cash-row">
+            <td>
+              <span className="cash-total-label">
+                <span>Total Cash</span>
+                {hasCashDetails && (
+                  <button
+                    type="button"
+                    className="cash-details-toggle"
+                    aria-label={cashDetailsExpanded ? 'Hide cash entries' : 'Show cash entries'}
+                    aria-expanded={cashDetailsExpanded}
+                    onClick={toggleCashDetails}
+                  >
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </button>
+                )}
+                {!cashDetailsExpanded && hasCashDetails && (
+                  <span className="cash-details-count">
+                    {cashDetailCount} {cashDetailCount === 1 ? 'entry' : 'entries'}
+                  </span>
+                )}
+              </span>
+            </td>
+            <td /><td /><td />
+            <td><span id="cash-total-usd">{cashTotal}</span></td>
+          </tr>
+        )}
+
         {/* ── Hidden anchor row (kept for JS compatibility) ────────────── */}
         <tr id="cash-rows-anchor" style={{ display: 'none' }} />
+      </tbody>
 
         {/* ── Cash rows from SSE ────────────────────────────────────────── */}
-        {lastCashDisplay?.entries.map((entry, i, arr) => {
-          const showLabel = i === 0 || arr[i - 1].label !== entry.label
-          const isRef = !!entry.portfolioRef
-          return (
-            <tr key={entry.entryId} className={`leading-[1.4] ${entry.isMarginEntry ? 'cash-margin-entry' : ''}`}>
+        {cashDetailsExpanded && hasCashDetails && (
+          <tbody className="cash-details-row-group">
+            <tr className="summary-divider cash-details-divider"><td colSpan={5} /></tr>
+            {lastCashDisplay!.entries.map((entry, i, arr) => {
+              const showLabel = i === 0 || arr[i - 1].label !== entry.label
+              const isRef = !!entry.portfolioRef
+              return (
+                <tr key={entry.entryId} className={`leading-[1.4] ${entry.isMarginEntry ? 'cash-margin-entry' : ''}`}>
               {/* Col 1: Label */}
               <td>{showLabel ? entry.label : ''}</td>
 
@@ -270,20 +335,16 @@ export default function SummaryTable() {
               <td>
                 {entry.baseUsd !== null ? fmt(entry.baseUsd) : '—'}
               </td>
-            </tr>
-          )
-        })}
+                </tr>
+              )
+            })}
+          </tbody>
+        )}
 
+      <tbody>
         {/* ── Cash summary rows ─────────────────────────────────────────── */}
         {hasCash && (
           <>
-            <tr className="summary-divider"><td colSpan={5} /></tr>
-            <tr className="total-cash-row">
-              <td>Total Cash</td>
-              <td /><td /><td />
-              <td><span id="cash-total-usd">{cashTotal}</span></td>
-            </tr>
-
             {hasMargin && (
               <tr
                 className="margin-row"
