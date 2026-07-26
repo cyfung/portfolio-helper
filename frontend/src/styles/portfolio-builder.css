@@ -1,4 +1,6 @@
 .portfolio-ref-row .portfolio-ref-name {
+    --portfolio-ref-accent: var(--color-accent-primary);
+
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -9,13 +11,43 @@
 }
 
 .portfolio-ref-row-exists .portfolio-ref-name {
+    --portfolio-ref-accent: var(--color-positive);
+
     border-color: color-mix(in srgb, var(--color-positive) 70%, var(--color-border-medium));
     background: color-mix(in srgb, var(--color-positive) 10%, var(--color-bg-secondary));
 }
 
 .portfolio-ref-row-missing .portfolio-ref-name {
+    --portfolio-ref-accent: var(--color-negative);
+
     border-color: color-mix(in srgb, var(--color-negative) 70%, var(--color-border-medium));
     background: color-mix(in srgb, var(--color-negative) 10%, var(--color-bg-secondary));
+}
+
+.portfolio-ref-row .portfolio-ref-mode {
+    flex: none;
+    padding: 0.1rem 0.25rem 0.1rem 0.35rem;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--portfolio-ref-accent) 18%, transparent);
+    color: var(--portfolio-ref-accent);
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+}
+
+.portfolio-ref-row .portfolio-ref-mode select {
+    width: 4.25rem;
+    min-width: 0;
+    height: 1.05rem;
+    padding: 0 0.9rem 0 0;
+    border-radius: 0;
+    color: inherit;
+    font-weight: inherit;
+    line-height: 1.05rem;
+}
+
+.portfolio-ref-row .portfolio-ref-mode svg {
+    right: 0.15rem;
+    color: inherit;
 }
 
 .backtest-ticker-row .portfolio-ref-input {

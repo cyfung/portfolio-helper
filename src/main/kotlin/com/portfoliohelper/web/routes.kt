@@ -41,6 +41,24 @@ private const val monteCarloSettingsKey = "backtest.mc-settings"
 private const val marketTimingSettingsKey = "backtest.market-timing-settings"
 private const val rebalanceStrategySettingsKey = "backtest.rebalance-strategy-settings"
 
+internal enum class HttpRequestPolicy {
+    ALLOW,
+    REDIRECT_TO_HTTPS,
+    REQUIRE_HTTPS,
+}
+
+internal fun httpRequestPolicy(
+    httpMode: Boolean,
+    requestPort: Int,
+    httpPort: Int,
+    path: String,
+): HttpRequestPolicy = when {
+    requestPort != httpPort -> HttpRequestPolicy.ALLOW
+    !httpMode -> HttpRequestPolicy.REDIRECT_TO_HTTPS
+    path.startsWith("/api/sync/") -> HttpRequestPolicy.REQUIRE_HTTPS
+    else -> HttpRequestPolicy.ALLOW
+}
+
 private val commonScenarioSettingsKeys = setOf(
     "fromDate",
     "toDate",
@@ -1037,18 +1055,25 @@ private fun loanEntryKey(obj: JsonObject): String =
     LOAN_COMPARE_FIELDS.joinToString("|") { obj[it]?.toString() ?: "" }
 
 @OptIn(DelicateCoroutinesApi::class)
-fun Application.configureRouting() {
+fun Application.configureRouting(httpMode: Boolean = false) {
     val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
     val httpPort = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
 
     install(SSE)
 
     intercept(ApplicationCallPipeline.Plugins) {
-        if (call.request.local.localPort == httpPort) {
-            val host = call.request.host()
-            val path = call.request.uri
-            call.respondRedirect("https://$host:$httpsPort$path", permanent = true)
-            return@intercept finish()
+        when (httpRequestPolicy(httpMode, call.request.local.localPort, httpPort, call.request.path())) {
+            HttpRequestPolicy.REDIRECT_TO_HTTPS -> {
+                val host = call.request.host()
+                val path = call.request.uri
+                call.respondRedirect("https://$host:$httpsPort$path", permanent = true)
+                return@intercept finish()
+            }
+            HttpRequestPolicy.REQUIRE_HTTPS -> {
+                call.respond(HttpStatusCode.UpgradeRequired, "Sync endpoints require HTTPS")
+                return@intercept finish()
+            }
+            HttpRequestPolicy.ALLOW -> Unit
         }
     }
 

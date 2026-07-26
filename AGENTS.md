@@ -11,3 +11,15 @@ Use the default five-label triage vocabulary. See `docs/agents/triage-labels.md`
 ### Domain docs
 
 This is a single-context repository. See `docs/agents/domain.md`.
+
+## Test Environment
+
+In PowerShell, start the test server with HTTP explicitly enabled:
+
+```powershell
+$env:PORTFOLIO_HELPER_PORT='9093'
+$env:PORTFOLIO_HELPER_HTTP_PORT='9090'
+.\gradlew.bat run --args='--http'
+```
+
+Open `http://localhost:9090`. HTTPS remains available on port 9093, and sync endpoints require HTTPS. Without `--http`, port 9090 redirects to HTTPS.

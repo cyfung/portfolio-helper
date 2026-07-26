@@ -14,7 +14,9 @@ import java.nio.file.Paths
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
-fun main() {
+internal fun httpModeEnabled(args: Array<String>): Boolean = args.contains("--http")
+
+fun main(args: Array<String>) {
     // Force IPv4 to avoid JmDNS issues on Windows (SocketException: setsockopt)
     System.setProperty("java.net.preferIPv4Stack", "true")
 
@@ -123,6 +125,7 @@ fun main() {
     // ---------------------------------------------------------------
     val httpsPort = System.getenv("PORTFOLIO_HELPER_PORT")?.toIntOrNull() ?: 8443
     val httpPort = System.getenv("PORTFOLIO_HELPER_HTTP_PORT")?.toIntOrNull() ?: 8080
+    val httpMode = httpModeEnabled(args)
     var stopServer: () -> Unit = {}
 
     // Load or generate TLS certificate — no hostname binding, Android trusts by fingerprint
@@ -149,7 +152,12 @@ fun main() {
     // ---------------------------------------------------------------
     // 9. Start web server
     // ---------------------------------------------------------------
-    logger.info("Starting HTTPS server on port $httpsPort, HTTP redirect on port $httpPort...")
+    if (httpMode) {
+        logger.warn("Explicit HTTP support enabled for non-sync routes")
+        logger.info("Starting HTTPS server on port $httpsPort, HTTP server on port $httpPort...")
+    } else {
+        logger.info("Starting HTTPS server on port $httpsPort, HTTP redirect on port $httpPort...")
+    }
     try {
         val server = embeddedServer(Netty, configure = {
             workerGroupSize = 32
@@ -170,7 +178,7 @@ fun main() {
                 host = "0.0.0.0"
             }
         }) {
-            configureRouting()
+            configureRouting(httpMode = httpMode)
         }.start(wait = false)
         stopServer = { server.stop(gracePeriodMillis = 1000, timeoutMillis = 5000) }
 
@@ -180,7 +188,7 @@ fun main() {
         exitProcess(1)
     }
 
-    logger.info("Application ready. Access at https://localhost:$httpsPort (press Ctrl+C or use tray menu to exit)")
+    logger.info("Application ready. Access at $url (press Ctrl+C or use tray menu to exit)")
 
     runBlocking {
         delay(1.seconds)
