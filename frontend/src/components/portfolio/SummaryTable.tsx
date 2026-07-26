@@ -1,6 +1,5 @@
 // ── SummaryTable.tsx — Port of buildSummaryRows from PortfolioRenderer.kt ────
 import { useRef, useState, useEffect, useMemo } from 'react'
-import { flushSync } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { formatCurrency, formatDisplayCurrency, formatSignedCurrency, formatSignedDisplayCurrency, hasFxRate } from '@/lib/portfolio-utils'
@@ -220,22 +219,8 @@ export default function SummaryTable() {
 
   function toggleCashDetails() {
     const expanded = !cashDetailsExpanded
-    const update = () => {
-      flushSync(() => setCashDetailsExpanded(expanded))
-      window.localStorage.setItem(CASH_DETAILS_EXPANDED_KEY, String(expanded))
-    }
-    const transitionDocument = document as Document & {
-      startViewTransition?: (callback: () => void) => { finished: Promise<unknown> }
-    }
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-    if (transitionDocument.startViewTransition && !reducedMotion) {
-      document.documentElement.classList.add('cash-details-transition')
-      transitionDocument.startViewTransition(update).finished.finally(() => {
-        document.documentElement.classList.remove('cash-details-transition')
-      })
-    } else {
-      update()
-    }
+    setCashDetailsExpanded(expanded)
+    window.localStorage.setItem(CASH_DETAILS_EXPANDED_KEY, String(expanded))
   }
 
   return (
@@ -273,7 +258,7 @@ export default function SummaryTable() {
                     <ChevronDown size={14} aria-hidden="true" />
                   </button>
                 )}
-                {!cashDetailsExpanded && hasCashDetails && (
+                {hasCashDetails && (
                   <span className="cash-details-count">
                     {cashDetailCount} {cashDetailCount === 1 ? 'entry' : 'entries'}
                   </span>
@@ -290,8 +275,12 @@ export default function SummaryTable() {
       </tbody>
 
         {/* ── Cash rows from SSE ────────────────────────────────────────── */}
-        {cashDetailsExpanded && hasCashDetails && (
-          <tbody className="cash-details-row-group">
+        {hasCashDetails && (
+          <tbody
+            className="cash-details-row-group"
+            data-expanded={cashDetailsExpanded}
+            aria-hidden={!cashDetailsExpanded}
+          >
             <tr className="summary-divider cash-details-divider"><td colSpan={5} /></tr>
             {lastCashDisplay!.entries.map((entry, i, arr) => {
               const showLabel = i === 0 || arr[i - 1].label !== entry.label

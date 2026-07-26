@@ -56,9 +56,11 @@ describe('cash summary disclosure', () => {
     const totalCash = screen.getByText('Total Cash')
     const cashEntry = screen.getByText('Broker Cash')
     expect(totalCash.compareDocumentPosition(cashEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('1 entry')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Hide cash entries' }))
 
-    expect(screen.queryByText('Broker Cash')).toBeNull()
+    expect(screen.queryByRole('row', { name: /Broker Cash/ })).toBeNull()
+    expect(screen.getByText('Broker Cash').closest('tbody')?.getAttribute('aria-hidden')).toBe('true')
     expect(screen.getByText('Total Cash')).toBeTruthy()
     expect(screen.getByText('1 entry')).toBeTruthy()
     expect(screen.getByText('Portfolio Value')).toBeTruthy()
@@ -75,7 +77,8 @@ describe('cash summary disclosure', () => {
     render(<SummaryTable />)
 
     expect(screen.getByRole('button', { name: 'Show cash entries' })).toBeTruthy()
-    expect(screen.queryByText('Broker Cash')).toBeNull()
+    expect(screen.queryByRole('row', { name: /Broker Cash/ })).toBeNull()
+    expect(screen.getByText('Broker Cash').closest('tbody')?.getAttribute('aria-hidden')).toBe('true')
     expect(screen.getByText('1 entry')).toBeTruthy()
   })
 
