@@ -1099,28 +1099,74 @@
     border-color: var(--color-accent-primary);
 }
 .result-view-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.45rem 0.9rem;
-  margin: 0.75rem 0 0.45rem;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 0.82rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.9rem;
+    margin: 0.75rem 0 0.45rem;
+    padding: 0.625rem 0.75rem;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
 }
 
 .result-view-controls label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-text-secondary);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
 }
 
 .result-view-controls-title {
-  font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.result-view-controls input[type="checkbox"] {
+    accent-color: var(--color-accent-primary);
+}
+
+.result-view-controls input:disabled,
+.result-view-controls input:disabled + * {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.result-view-controls select {
+    min-width: 9rem;
+    height: 2rem;
+    padding: 0.3rem 1.75rem 0.3rem 0.5rem;
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-input);
+    color: var(--color-text-primary);
+    font: inherit;
+}
+
+.result-view-controls select:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+}
+
+.result-view-controls .backtest-config-btn {
+    min-height: 2rem;
+}
+
+.result-view-controls .backtest-config-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
 }
 
 .result-view-controls-notice {
-  flex-basis: 100%;
-  color: var(--color-text-tertiary);
+    flex-basis: 100%;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
 }
