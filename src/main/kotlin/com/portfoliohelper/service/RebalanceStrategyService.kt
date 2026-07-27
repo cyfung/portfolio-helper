@@ -8,6 +8,7 @@ import kotlin.math.max
 
 object RebalanceStrategyService {
   fun run(request: RebalanceStrategyRequest): MultiBacktestResult {
+    request.cashflow?.validate()
     val enabledStrategies = request.strategies.filter { it.enabled }
     val referenceTickers = enabledStrategies.flatMap { it.referenceTickers() }.distinct()
     val standaloneMarginTickers =

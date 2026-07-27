@@ -8,7 +8,31 @@ import {
   portfolioEditorRowMergeKey,
   sortAndMergePortfolioEditorRows,
   type BlockState,
+  cashflowToPayload,
+  setGuardrailCashflowState,
 } from './backtest'
+
+describe('guardrail cashflow payload', () => {
+  it('serializes annual amounts and percentage limits', () => {
+    setGuardrailCashflowState({
+      mode: 'GUARDRAIL_WITHDRAWAL',
+      initialAnnualWithdrawal: '12000',
+      lowerWithdrawalRate: '3',
+      upperWithdrawalRate: '6',
+      minimumAnnualWithdrawal: '9000',
+    })
+
+    expect(cashflowToPayload('0', 'MONTHLY')).toEqual({
+      amount: 0,
+      frequency: 'MONTHLY',
+      mode: 'GUARDRAIL_WITHDRAWAL',
+      initialAnnualWithdrawal: 12000,
+      lowerWithdrawalRate: 0.03,
+      upperWithdrawalRate: 0.06,
+      minimumAnnualWithdrawal: 9000,
+    })
+  })
+})
 
 describe('saved portfolio persistence', () => {
   it('round-trips explicit editor rows without legacy ticker conversion', () => {

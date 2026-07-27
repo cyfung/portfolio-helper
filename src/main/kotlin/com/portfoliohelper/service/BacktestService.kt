@@ -48,6 +48,7 @@ object BacktestService {
         ticker?.trim()?.uppercase()?.takeIf { it.isNotBlank() } ?: DEFAULT_BETA_REFERENCE_TICKER
 
     fun runMulti(request: MultiBacktestRequest): MultiBacktestResult {
+        request.cashflow?.validate()
         val fromDate = request.fromDate?.let { LocalDate.parse(it) }
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         validateDateRange(fromDate, toDate)
@@ -107,8 +108,10 @@ object BacktestService {
             val pConfig = portfolios[idx]
             val seriesMap = allSeriesMaps[idx]
 
+            val inflationFactors = InflationSeries.factorsFor(globalDates, InflationSeries.load())
+                .takeIf { it.available }?.factors.orEmpty()
             val noMarginValues = computeNoMargin(
-                pConfig, seriesMap, globalDates, request.startingBalance, request.cashflow
+                pConfig, seriesMap, globalDates, request.startingBalance, request.cashflow, inflationFactors
             )
             val noMarginMarketValues =
                 if (request.cashflow == null) noMarginValues
@@ -1546,7 +1549,8 @@ object BacktestService {
         seriesMap: Map<String, Map<LocalDate, Double>>,
         dates: List<LocalDate>,
         startingBalance: Double = 10_000.0,
-        cashflow: CashflowConfig? = null
+        cashflow: CashflowConfig? = null,
+        inflationFactors: List<Double> = emptyList(),
     ): List<Double> {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
@@ -1560,6 +1564,7 @@ object BacktestService {
         values.add(startValue)
 
         val returnRatios = buildReturnRatios(tickers, seriesMap, dates)
+        val cashflowRuntime = CashflowRuntime(cashflow, dates, inflationFactors)
 
         for (i in 1 until dates.size) {
             val prevDate = dates[i - 1]
@@ -1574,14 +1579,19 @@ object BacktestService {
                 }
             }
 
-            applyDailyReturns(tickers, holdings, returnRatios, i)
-
-            val cashflowAmount = cashflowAmountOnDate(cashflow, prevDate, curDate)
-            if (cashflowAmount != 0.0) {
+            val valueBeforeReturn = holdings.values.sum()
+            if (valueBeforeReturn > 0.0) applyDailyReturns(tickers, holdings, returnRatios, i)
+            val valueBeforeCashflow = holdings.values.sum().coerceAtLeast(0.0)
+            val investmentFactor =
+                if (valueBeforeReturn > 0.0) valueBeforeCashflow / valueBeforeReturn else 1.0
+            val requestedCashflow = cashflowRuntime.requestedCashflow(i, valueBeforeCashflow, investmentFactor)
+            val (valueAfterCashflow, appliedCashflow) = cashflowRuntime.apply(valueBeforeCashflow, requestedCashflow)
+            if (appliedCashflow != 0.0 && valueBeforeCashflow > 0.0) {
                 for (ticker in tickers) {
-                    holdings[ticker] = (holdings[ticker] ?: 0.0) + cashflowAmount * (targetWeights[ticker] ?: 0.0)
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) * (valueAfterCashflow / valueBeforeCashflow)
                 }
             }
+            if (valueAfterCashflow == 0.0) for (ticker in tickers) holdings[ticker] = 0.0
 
             values.add(holdings.values.sum())
         }
@@ -1702,7 +1712,10 @@ object BacktestService {
         prevDate: LocalDate,
         curDate: LocalDate
     ): Double =
-        if (cashflow != null && isCashflowDate(cashflow.frequency, prevDate, curDate)) cashflow.amount else 0.0
+        if (cashflow != null && isCashflowDate(cashflow.frequency, prevDate, curDate)) {
+            if (cashflow.mode == CashflowMode.FIXED) cashflow.amount
+            else CashflowPolicy.guardrailPayment(cashflow, cashflow.initialAnnualWithdrawal ?: 0.0)
+        } else 0.0
 
     internal fun isCashflowDate(frequency: CashflowFrequency, prevDate: LocalDate, curDate: LocalDate): Boolean =
         when (frequency) {

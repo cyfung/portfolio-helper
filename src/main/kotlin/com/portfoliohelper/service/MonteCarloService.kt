@@ -95,6 +95,7 @@ object MonteCarloService {
     }
 
     suspend fun runMonteCarlo(request: MonteCarloRequest): MonteCarloResult = withContext(Dispatchers.Default) {
+        request.cashflow?.validate()
         lastResultState.set(null)
         lastErrorState.set(null)
         updateProgress(

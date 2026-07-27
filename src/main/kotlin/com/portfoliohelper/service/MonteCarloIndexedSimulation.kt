@@ -286,8 +286,13 @@ internal object MonteCarloIndexedSimulation {
         val values = DoubleArray(path.returnIndexes.size + 1)
         values[0] = startingBalance
         var totalHoldings = startingBalance
+        var depleted = false
 
         for (dayIndex in path.returnIndexes.indices) {
+            if (depleted) {
+                values[dayIndex + 1] = 0.0
+                continue
+            }
             val returnIndex = path.returnIndexes[dayIndex]
             if (returnIndex >= 0) {
                 if (rebalanceFlags.getOrElse(dayIndex + 1) { false }) {
@@ -309,11 +314,10 @@ internal object MonteCarloIndexedSimulation {
 
             val cashflowAmount = cashflows.getOrElse(dayIndex + 1) { 0.0 }
             if (cashflowAmount != 0.0) {
-                for (i in holdings.indices) {
-                    val addition = cashflowAmount * runtime.weights[i]
-                    holdings[i] += addition
-                    nextTotal += addition
-                }
+                val (afterCashflow, appliedCashflow) = CashflowPolicy.applyToPortfolio(nextTotal, cashflowAmount)
+                if (nextTotal > 0.0) for (i in holdings.indices) holdings[i] *= afterCashflow / nextTotal
+                nextTotal = afterCashflow
+                depleted = appliedCashflow < 0.0 && nextTotal == 0.0
             }
             totalHoldings = nextTotal
             values[dayIndex + 1] = totalHoldings
@@ -338,8 +342,13 @@ internal object MonteCarloIndexedSimulation {
         values[0] = startingBalance
         val dailySpread = mc.marginSpread / 252.0
         val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
+        var depleted = false
 
         for (dayIndex in path.returnIndexes.indices) {
+            if (depleted) {
+                values[dayIndex + 1] = 0.0
+                continue
+            }
             val returnIndex = path.returnIndexes[dayIndex]
             if (returnIndex >= 0) {
                 if (rebalanceFlags.getOrElse(dayIndex + 1) { false }) {
@@ -365,12 +374,20 @@ internal object MonteCarloIndexedSimulation {
 
             val cashflowAmount = cashflows.getOrElse(dayIndex + 1) { 0.0 }
             if (cashflowAmount != 0.0) {
-                val contributionExposure = cashflowAmount * (1.0 + mc.marginRatio)
-                borrowed += cashflowAmount * mc.marginRatio
+                val equityBeforeCashflow = (totalHoldings - borrowed).coerceAtLeast(0.0)
+                val (_, appliedCashflow) = CashflowPolicy.applyToPortfolio(equityBeforeCashflow, cashflowAmount)
+                val contributionExposure = appliedCashflow * (1.0 + mc.marginRatio)
+                borrowed += appliedCashflow * mc.marginRatio
                 for (i in holdings.indices) {
                     val addition = contributionExposure * runtime.weights[i]
                     holdings[i] += addition
                     totalHoldings += addition
+                }
+                if (appliedCashflow < 0.0 && totalHoldings - borrowed <= 0.0) {
+                    holdings.fill(0.0)
+                    totalHoldings = 0.0
+                    borrowed = 0.0
+                    depleted = true
                 }
             }
 

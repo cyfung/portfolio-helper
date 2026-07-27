@@ -97,10 +97,34 @@ fun PortfolioConfig.withoutPlaceholderTickers(): PortfolioConfig {
 
 enum class CashflowFrequency { NONE, MONTHLY, QUARTERLY, YEARLY }
 
+enum class CashflowMode { FIXED, GUARDRAIL_WITHDRAWAL }
+
 data class CashflowConfig(
     val amount: Double,
-    val frequency: CashflowFrequency
-)
+    val frequency: CashflowFrequency,
+    val mode: CashflowMode = CashflowMode.FIXED,
+    val initialAnnualWithdrawal: Double? = null,
+    val lowerWithdrawalRate: Double? = null,
+    val upperWithdrawalRate: Double? = null,
+    val minimumAnnualWithdrawal: Double? = null,
+) {
+    fun validate() {
+        if (mode == CashflowMode.GUARDRAIL_WITHDRAWAL) {
+            require(initialAnnualWithdrawal != null && initialAnnualWithdrawal > 0.0) {
+                "Initial annual withdrawal must be greater than 0."
+            }
+            require(lowerWithdrawalRate != null && lowerWithdrawalRate >= 0.0) {
+                "Lower withdrawal rate must be non-negative."
+            }
+            require(upperWithdrawalRate != null && upperWithdrawalRate > lowerWithdrawalRate) {
+                "Upper withdrawal rate must be greater than lower withdrawal rate."
+            }
+            require(minimumAnnualWithdrawal == null || minimumAnnualWithdrawal >= 0.0) {
+                "Minimum annual withdrawal must be non-negative."
+            }
+        }
+    }
+}
 
 enum class MarketTimingReferenceSource { PORTFOLIO, TICKER }
 enum class MarketTimingInterestMode { SPREAD, FIXED }
