@@ -100,7 +100,7 @@ enum class CashflowFrequency { NONE, MONTHLY, QUARTERLY, YEARLY }
 enum class CashflowMode { FIXED, GUARDRAIL_WITHDRAWAL }
 
 data class CashflowConfig(
-    val amount: Double,
+    val amount: Double = 0.0,
     val frequency: CashflowFrequency,
     val mode: CashflowMode = CashflowMode.FIXED,
     val initialAnnualWithdrawal: Double? = null,

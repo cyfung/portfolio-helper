@@ -1766,6 +1766,32 @@ class RebalanceStrategyServiceTest {
     }
 
     @Test
+    fun guardrailWithdrawal_reviewsOnStartAnniversaryBeforeNextYearlyPayment() {
+        val start = LocalDate.of(2024, 7, 15)
+        val end = LocalDate.of(2026, 1, 2)
+        val dates = days(start, (end.toEpochDay() - start.toEpochDay()).toInt() + 1)
+        val series = mapOf("SPY" to flatCurve(dates))
+        val cashflow = CashflowConfig(
+            frequency = CashflowFrequency.YEARLY,
+            mode = CashflowMode.GUARDRAIL_WITHDRAWAL,
+            initialAnnualWithdrawal = 1_200.0,
+            lowerWithdrawalRate = 0.03,
+            upperWithdrawalRate = 0.06,
+        )
+
+        val equity = RebalanceStrategyService.runStrategyForTest(
+            singleStockPortfolio(),
+            strategy(cashflowImmediateInvestPct = 1.0, cashflowScaling = CashflowScaling.NO_SCALING),
+            cashflow,
+            series,
+            dates,
+            emptyMap(),
+        )
+
+        assertApprox(7_720.0, equity.last(), label = "equity after reviewed yearly withdrawal")
+    }
+
+    @Test
     fun derivedStrategy_cashflowDepositsWithoutImmediateInvesting() {
         val start = LocalDate.of(2024, 1, 2)
         val dates = days(start, 45)

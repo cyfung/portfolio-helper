@@ -317,7 +317,8 @@ object MonteCarloService {
             pConfig: PortfolioConfig,
             path: List<AssembledDay>,
             startingBalance: Double,
-            cashflow: CashflowConfig?
+            cashflow: CashflowConfig?,
+            inflationFactors: List<Double> = emptyList(),
         ): List<CurveResult> {
             val seriesMap = MonteCarloSyntheticSeries.seriesMap(allTickers, path, syntheticDates)
             val syntheticEffrx = MonteCarloSyntheticSeries.effrxSeries(path, syntheticDates)
@@ -331,6 +332,7 @@ object MonteCarloService {
                     syntheticEffrx,
                     startingBalance,
                     betaReferenceTicker = betaReferenceTicker,
+                    inflationFactors = inflationFactors,
                 )
             val expected = strategyLabels(pConfig).size
             require(curves.size == expected) {
@@ -407,6 +409,7 @@ object MonteCarloService {
             portfolioCurveConfigs.forEachIndexed { pi, config ->
                 var ci = 0
                 config.simpleCurves.forEach { curveConfig ->
+                    val appliedCashflows = DoubleArray(syntheticDates.size)
                     val values = MonteCarloIndexedSimulation.simulate(
                         portfolioRuntimes[pi],
                         curveConfig.mc,
@@ -416,22 +419,28 @@ object MonteCarloService {
                         request.startingBalance,
                         syntheticCashflows,
                         syntheticRebalanceFlagsByPortfolio[pi],
+                        request.cashflow,
+                        syntheticDates,
+                        (realFactors ?: DoubleArray(syntheticDates.size) { 1.0 }).toList(),
+                        appliedCashflows,
                     )
                     val stats = MonteCarloIndexedSimulation.computeStats(
                         values,
                         years,
                         rfAnnualized,
-                        syntheticCashflows,
+                        appliedCashflows,
                         benchmarkValues,
                     )
                     allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
                     if (realFactors != null && realCashflows != null && realBenchmarkValues != null && realRfAnnualized != null) {
+                        val appliedRealCashflows =
+                            DoubleArray(appliedCashflows.size) { i -> appliedCashflows[i] / realFactors[i] }
                         val realValues = DoubleArray(values.size) { i -> values[i] / realFactors[i] }
                         allRealMetrics!![pi][ci][simIdx] = MonteCarloIndexedSimulation.computeStats(
                             realValues,
                             years,
                             realRfAnnualized,
-                            realCashflows,
+                            appliedRealCashflows,
                             realBenchmarkValues,
                         ).toSimPassMetrics()
                     }
@@ -444,7 +453,13 @@ object MonteCarloService {
                         tickerReturnsByDay,
                         effrxDailyRates,
                     )
-                    val strategyCurves = simulateAttachedStrategies(config.portfolio, path, request.startingBalance, request.cashflow)
+                    val strategyCurves = simulateAttachedStrategies(
+                        config.portfolio,
+                        path,
+                        request.startingBalance,
+                        request.cashflow,
+                        realFactors?.toList() ?: List(syntheticDates.size) { 1.0 },
+                    )
                     strategyCurves.forEach { curve ->
                         val stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
                         allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
@@ -639,6 +654,7 @@ object MonteCarloService {
                     val values: List<Double>
                     val stats: PortfolioStats
                     if (ci < config.simpleCurves.size) {
+                        val appliedCashflows = DoubleArray(syntheticDates.size)
                         val valueArray = MonteCarloIndexedSimulation.simulate(
                             portfolioRuntimes[pi],
                             config.simpleCurves[ci].mc,
@@ -648,13 +664,19 @@ object MonteCarloService {
                             request.startingBalance,
                             syntheticCashflows,
                             syntheticRebalanceFlagsByPortfolio[pi],
+                            request.cashflow,
+                            syntheticDates,
+                            (inflationDailyRates?.let {
+                                MonteCarloIndexedSimulation.inflationFactors(path, it).toList()
+                            } ?: List(syntheticDates.size) { 1.0 }),
+                            appliedCashflows,
                         )
                         values = valueArray.toList()
                         stats = MonteCarloIndexedSimulation.computeStats(
                             valueArray,
                             years,
                             rfAnnualized,
-                            syntheticCashflows,
+                            appliedCashflows,
                             benchmarkValues,
                         )
                     } else {
@@ -669,6 +691,9 @@ object MonteCarloService {
                             ),
                             request.startingBalance,
                             request.cashflow,
+                            inflationDailyRates?.let {
+                                MonteCarloIndexedSimulation.inflationFactors(path, it).toList()
+                            } ?: List(syntheticDates.size) { 1.0 },
                         )[strategyIndex]
                         values = curve.points.map { it.value }
                         stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
@@ -738,7 +763,7 @@ object MonteCarloService {
                                 request.startingBalance,
                             )
                             val realBenchmark = DoubleArray(nominalBenchmark.size) { i -> nominalBenchmark[i] / factors[i] }
-                            val realCashflows = DoubleArray(syntheticCashflows.size) { i -> syntheticCashflows[i] / factors[i] }
+                            val appliedNominalCashflows = DoubleArray(syntheticCashflows.size)
                             val inflationAnnualized = factors.last().pow(1.0 / years) - 1.0
                             val realRf = (1.0 + rfAnnualized) / (1.0 + inflationAnnualized) - 1.0
                             val nominalValues =
@@ -752,6 +777,10 @@ object MonteCarloService {
                                         request.startingBalance,
                                         syntheticCashflows,
                                         syntheticRebalanceFlagsByPortfolio[pi],
+                                        request.cashflow,
+                                        syntheticDates,
+                                        factors.toList(),
+                                        appliedNominalCashflows,
                                     )
                                 } else {
                                     val strategyIndex = ci - config.simpleCurves.size
@@ -762,7 +791,16 @@ object MonteCarloService {
                                         ),
                                         request.startingBalance,
                                         request.cashflow,
+                                        factors.toList(),
                                     )[strategyIndex].points.map { it.value }.toDoubleArray()
+                                }
+                            val realCashflows =
+                                if (ci < config.simpleCurves.size) {
+                                    DoubleArray(appliedNominalCashflows.size) { i ->
+                                        appliedNominalCashflows[i] / factors[i]
+                                    }
+                                } else {
+                                    DoubleArray(syntheticCashflows.size) { i -> syntheticCashflows[i] / factors[i] }
                                 }
                             val values = DoubleArray(nominalValues.size) { i -> nominalValues[i] / factors[i] }
                             val stats = MonteCarloIndexedSimulation.computeStats(

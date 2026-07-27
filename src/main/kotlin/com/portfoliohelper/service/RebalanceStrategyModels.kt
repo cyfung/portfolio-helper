@@ -502,4 +502,10 @@ class PaperTradingPortfolio(
     fun deposit(amount: Double) {
         _cashBalance += amount
     }
+
+    fun deplete() {
+        for (ticker in _holdings.keys) _holdings[ticker] = 0.0
+        _grossStockValue = 0.0
+        _cashBalance = 0.0
+    }
 }

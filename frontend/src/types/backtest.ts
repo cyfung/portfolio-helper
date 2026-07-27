@@ -127,6 +127,11 @@ export interface CashflowFormState {
   cashflowAmount: string
   cashflowFrequency: string
   betaReferenceTicker: string
+  cashflowMode?: 'FIXED' | 'GUARDRAIL_WITHDRAWAL'
+  initialAnnualWithdrawal?: string
+  lowerWithdrawalRate?: string
+  upperWithdrawalRate?: string
+  minimumAnnualWithdrawal?: string
 }
 
 export interface GuardrailCashflowState {

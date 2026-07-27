@@ -70,6 +70,8 @@ internal class CashflowRuntime(
     private var nominalInvestmentFactor = 1.0
     private var reviewInflationFactor = inflationFactors.firstOrNull() ?: 1.0
     private var depleted = false
+    private var currentIndex = 0
+    val appliedCashflows: MutableList<Double> = MutableList(dates.size) { 0.0 }
 
     init {
         config?.validate()
@@ -77,11 +79,13 @@ internal class CashflowRuntime(
 
     fun requestedCashflow(index: Int, portfolioValueBeforeWithdrawal: Double, investmentFactor: Double): Double {
         if (config == null || depleted || index <= 0) return 0.0
+        currentIndex = index
         nominalInvestmentFactor *= investmentFactor.takeIf { it.isFinite() && it >= 0.0 } ?: 1.0
         val prevDate = dates[index - 1]
         val curDate = dates[index]
-        if (!BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) return 0.0
-        if (config.mode == CashflowMode.FIXED) return config.amount
+        if (config.mode == CashflowMode.FIXED) {
+            return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) config.amount else 0.0
+        }
 
         val completedPolicyYears = completedPolicyYears(dates.first(), curDate)
         if (completedPolicyYears > policyYear) {
@@ -102,11 +106,16 @@ internal class CashflowRuntime(
             nominalInvestmentFactor = 1.0
             reviewInflationFactor = currentInflationFactor
         }
-        return CashflowPolicy.guardrailPayment(config, annualWithdrawal)
+        return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) {
+            CashflowPolicy.guardrailPayment(config, annualWithdrawal)
+        } else {
+            0.0
+        }
     }
 
     fun apply(portfolioValue: Double, requestedCashflow: Double): Pair<Double, Double> {
         val result = CashflowPolicy.applyToPortfolio(portfolioValue, requestedCashflow)
+        appliedCashflows[currentIndex] = result.second
         if (portfolioValue > 0.0 && result.first == 0.0 && requestedCashflow < 0.0) depleted = true
         return result
     }

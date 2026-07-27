@@ -6,6 +6,7 @@ import {
   type CashflowFormState,
   type GuardrailCashflowState,
 } from '@/types/backtest'
+import { writeSharedCashflowSettings } from '@/lib/sharedCashflowSettings'
 
 interface Props extends CashflowFormState {
   idPrefix: string
@@ -31,6 +32,17 @@ export default function CashflowControls({
     const next = { ...guardrail, ...patch }
     setGuardrail(next)
     setGuardrailCashflowState(next)
+    writeSharedCashflowSettings({
+      startingBalance,
+      cashflowAmount,
+      cashflowFrequency,
+      betaReferenceTicker,
+      cashflowMode: next.mode,
+      initialAnnualWithdrawal: next.initialAnnualWithdrawal,
+      lowerWithdrawalRate: next.lowerWithdrawalRate,
+      upperWithdrawalRate: next.upperWithdrawalRate,
+      minimumAnnualWithdrawal: next.minimumAnnualWithdrawal,
+    })
   }
   const startingBalanceId = `${idPrefix}-starting-balance`
   const cashflowAmountId = `${idPrefix}-cashflow-amount`

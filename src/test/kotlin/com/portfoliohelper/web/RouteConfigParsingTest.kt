@@ -3,6 +3,7 @@ package com.portfoliohelper.web
 import com.portfoliohelper.service.DerivedTargetScaleFunction
 import com.portfoliohelper.service.HysteresisStairsFallMode
 import com.portfoliohelper.service.HysteresisStairsReferenceMode
+import com.portfoliohelper.service.CashflowMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -14,6 +15,34 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
 class RouteConfigParsingTest {
+    @Test
+    fun parseCashflowConfigSupportsGuardrailAndDefaultsLegacyToFixed() {
+        val guardrail = buildJsonObject {
+            put("cashflow", buildJsonObject {
+                put("mode", JsonPrimitive("GUARDRAIL_WITHDRAWAL"))
+                put("frequency", JsonPrimitive("MONTHLY"))
+                put("initialAnnualWithdrawal", JsonPrimitive(12_000.0))
+                put("lowerWithdrawalRate", JsonPrimitive(0.03))
+                put("upperWithdrawalRate", JsonPrimitive(0.06))
+                put("minimumAnnualWithdrawal", JsonPrimitive(9_000.0))
+            })
+        }.parseCashflowConfig()!!
+        val legacy = buildJsonObject {
+            put("cashflow", buildJsonObject {
+                put("amount", JsonPrimitive(-1_000.0))
+                put("frequency", JsonPrimitive("QUARTERLY"))
+            })
+        }.parseCashflowConfig()!!
+
+        assertEquals(CashflowMode.GUARDRAIL_WITHDRAWAL, guardrail.mode)
+        assertEquals(12_000.0, guardrail.initialAnnualWithdrawal)
+        assertEquals(0.03, guardrail.lowerWithdrawalRate)
+        assertEquals(0.06, guardrail.upperWithdrawalRate)
+        assertEquals(9_000.0, guardrail.minimumAnnualWithdrawal)
+        assertEquals(CashflowMode.FIXED, legacy.mode)
+        assertEquals(-1_000.0, legacy.amount)
+    }
+
     @Test
     fun parseCashEntriesPreservesPortfolioReferenceMultiplier() {
         val rows = buildJsonArray {

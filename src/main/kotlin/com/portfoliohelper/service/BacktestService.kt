@@ -102,21 +102,21 @@ object BacktestService {
         if (globalDates.size < 2) {
             throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
         }
+        val policyInflationFactors = InflationSeries.factorsFor(globalDates, InflationSeries.load())
+            .takeIf { it.available }?.factors.orEmpty()
 
         // Step 7: Compute portfolio results (portfolios and strategies run in parallel)
         val portfolioResults = portfolios.indices.toList().parallelStream().map { idx ->
             val pConfig = portfolios[idx]
             val seriesMap = allSeriesMaps[idx]
 
-            val inflationFactors = InflationSeries.factorsFor(globalDates, InflationSeries.load())
-                .takeIf { it.available }?.factors.orEmpty()
-            val noMarginValues = computeNoMargin(
-                pConfig, seriesMap, globalDates, request.startingBalance, request.cashflow, inflationFactors
+            val noMarginPath = computeNoMargin(
+                pConfig, seriesMap, globalDates, request.startingBalance, request.cashflow, policyInflationFactors
             )
+            val noMarginValues = noMarginPath.values
             val noMarginMarketValues =
                 if (request.cashflow == null) noMarginValues
-                else computeNoMargin(pConfig, seriesMap, globalDates, request.startingBalance, null)
-            val externalCashflows = cashflowAmounts(globalDates, request.cashflow)
+                else computeNoMargin(pConfig, seriesMap, globalDates, request.startingBalance, null).values
             val curves = mutableListOf<CurveResult>()
             if (pConfig.includeNoMargin) {
                 val noMarginPoints =
@@ -125,7 +125,7 @@ object BacktestService {
                     noMarginValues,
                     globalDates,
                     effrxSeries,
-                    cashflows = externalCashflows,
+                    cashflows = noMarginPath.cashflows,
                     benchmarkValues = betaReferenceValues(globalDates, betaReferenceSeries),
                 )
                 val noMarginActionPoints =
@@ -149,6 +149,7 @@ object BacktestService {
                         applyMarginProportional(
                             pConfig, seriesMap, globalDates, effrxSeries, mc, request.startingBalance, request.cashflow,
                             request.zeroMarginInterest,
+                            policyInflationFactors,
                         )
                     else
                         applyMargin(
@@ -159,6 +160,7 @@ object BacktestService {
                             pConfig.rebalanceStrategy,
                             request.cashflow,
                             request.zeroMarginInterest,
+                            policyInflationFactors,
                         )
                 val marginValuePoints = globalDates.mapIndexed { i, d ->
                     DataPoint(d.toString(), marginResult.values[i])
@@ -169,7 +171,7 @@ object BacktestService {
                 val marginStats = computeBacktestStats(
                     marginResult.values, globalDates, effrxSeries,
                     marginResult.upperTriggers, marginResult.lowerTriggers,
-                    cashflows = externalCashflows,
+                    cashflows = marginResult.cashflows,
                     benchmarkValues = betaReferenceValues(globalDates, betaReferenceSeries),
                 )
                 CurveResult(
@@ -193,6 +195,7 @@ object BacktestService {
                     startingBalance = request.startingBalance,
                     zeroMarginInterest = request.zeroMarginInterest,
                     betaReferenceTicker = betaReferenceTicker,
+                    inflationFactors = policyInflationFactors,
                 )
             )
             PortfolioResult(pConfig.label, curves)
@@ -246,10 +249,10 @@ object BacktestService {
         val dates = intersectDates(dateSeries, fromDate, toDate)
         if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
 
-        val portfolioValues = computeNoMargin(portfolio, portfolioSeriesMap, dates, request.startingBalance, null)
+        val portfolioValues = computeNoMargin(portfolio, portfolioSeriesMap, dates, request.startingBalance, null).values
         val referenceHistory = if (referenceSeries == null) {
             val historyDates = intersectDates(portfolioSeriesMap.values.toList(), null, toDate)
-            val historyValues = computeNoMargin(portfolio, portfolioSeriesMap, historyDates, request.startingBalance, null)
+            val historyValues = computeNoMargin(portfolio, portfolioSeriesMap, historyDates, request.startingBalance, null).values
             historyDates to historyValues
         } else {
             val historyDates = (referenceSeries.keys + dates)
@@ -1544,6 +1547,8 @@ object BacktestService {
 
     // ── Portfolio computation ─────────────────────────────────────────────────
 
+    private data class CashflowPath(val values: List<Double>, val cashflows: List<Double>)
+
     private fun computeNoMargin(
         pConfig: PortfolioConfig,
         seriesMap: Map<String, Map<LocalDate, Double>>,
@@ -1551,7 +1556,7 @@ object BacktestService {
         startingBalance: Double = 10_000.0,
         cashflow: CashflowConfig? = null,
         inflationFactors: List<Double> = emptyList(),
-    ): List<Double> {
+    ): CashflowPath {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
         // Initial allocation: weights × start value
@@ -1586,16 +1591,19 @@ object BacktestService {
                 if (valueBeforeReturn > 0.0) valueBeforeCashflow / valueBeforeReturn else 1.0
             val requestedCashflow = cashflowRuntime.requestedCashflow(i, valueBeforeCashflow, investmentFactor)
             val (valueAfterCashflow, appliedCashflow) = cashflowRuntime.apply(valueBeforeCashflow, requestedCashflow)
-            if (appliedCashflow != 0.0 && valueBeforeCashflow > 0.0) {
+            if (appliedCashflow != 0.0 && valueAfterCashflow > 0.0) {
                 for (ticker in tickers) {
-                    holdings[ticker] = (holdings[ticker] ?: 0.0) * (valueAfterCashflow / valueBeforeCashflow)
+                    holdings[ticker] = (holdings[ticker] ?: 0.0) +
+                        appliedCashflow * (targetWeights[ticker] ?: 0.0)
                 }
             }
+            // Depletion is intentionally absorbing: supported runs cannot switch from
+            // withdrawals to contributions, so later returns or cashflows must not revive them.
             if (valueAfterCashflow == 0.0) for (ticker in tickers) holdings[ticker] = 0.0
 
             values.add(holdings.values.sum())
         }
-        return values
+        return CashflowPath(values, cashflowRuntime.appliedCashflows)
     }
 
     private fun scheduledPortfolioRebalanceActionPoints(
@@ -1730,7 +1738,8 @@ object BacktestService {
         val marginUtilization: List<Double>,
         val upperTriggers: Int,   // ratio > target + deviation (market fell, forced to de-lever)
         val lowerTriggers: Int,   // ratio < target - deviation (market rose, forced to re-lever)
-        val actionPoints: List<ActionPoint> = emptyList()
+        val actionPoints: List<ActionPoint> = emptyList(),
+        val cashflows: List<Double> = emptyList(),
     )
 
     private fun applyMargin(
@@ -1741,6 +1750,7 @@ object BacktestService {
         rebalanceStrategy: RebalanceStrategy,
         cashflow: CashflowConfig? = null,
         zeroMarginInterest: Boolean = false,
+        inflationFactors: List<Double> = emptyList(),
     ): MarginApplyResult {
         val marginTarget = marginConfig.marginRatio
         val spread = marginConfig.marginSpread
@@ -1761,6 +1771,7 @@ object BacktestService {
         val dailyLoanRates =
             if (zeroMarginInterest) DoubleArray(dates.size)
             else buildDailyLoanRates(dates, effrx, dailySpread)
+        val cashflowRuntime = CashflowRuntime(cashflow, dates, inflationFactors)
 
         for (i in 1 until noMargin.size) {
             val prevDate = dates[i - 1]
@@ -1770,10 +1781,20 @@ object BacktestService {
             val portfolioReturn = if (noMargin[i - 1] != 0.0) noMargin[i] / noMargin[i - 1] else 1.0
             totalExposure *= portfolioReturn
 
-            val cashflowAmount = cashflowAmountOnDate(cashflow, prevDate, curDate)
-            if (cashflowAmount != 0.0) {
-                totalExposure += cashflowAmount * (1.0 + marginTarget)
-                borrowed += cashflowAmount * marginTarget
+            val equityBeforeCashflow = (totalExposure - borrowed).coerceAtLeast(0.0)
+            val requestedCashflow = cashflowRuntime.requestedCashflow(
+                i,
+                equityBeforeCashflow,
+                portfolioReturn,
+            )
+            val (_, appliedCashflow) = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+            if (appliedCashflow != 0.0) {
+                totalExposure += appliedCashflow * (1.0 + marginTarget)
+                borrowed += appliedCashflow * marginTarget
+                if (totalExposure - borrowed <= 0.0) {
+                    totalExposure = 0.0
+                    borrowed = 0.0
+                }
             }
 
             borrowed *= (1.0 + dailyLoanRates[i])
@@ -1805,7 +1826,10 @@ object BacktestService {
             result.add(equity)
             marginUtilization.add(if (equity > 0.0) borrowed.coerceAtLeast(0.0) / equity else 0.0)
         }
-        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers, actionPoints)
+        return MarginApplyResult(
+            result, marginUtilization, upperTriggers, lowerTriggers, actionPoints,
+            cashflowRuntime.appliedCashflows,
+        )
     }
 
     fun computeWaterfall(
@@ -1983,6 +2007,7 @@ object BacktestService {
         startingBalance: Double = 10_000.0,
         cashflow: CashflowConfig? = null,
         zeroMarginInterest: Boolean = false,
+        inflationFactors: List<Double> = emptyList(),
     ): MarginApplyResult {
         val (tickers, targetWeights) = pConfig.mergeWeights()
 
@@ -2008,21 +2033,31 @@ object BacktestService {
             if (zeroMarginInterest) DoubleArray(dates.size)
             else buildDailyLoanRates(dates, effrx, dailySpread)
         var previousMarginRatio = targetRatio
+        val cashflowRuntime = CashflowRuntime(cashflow, dates, inflationFactors)
 
         for (i in 1 until dates.size) {
             val prevDate = dates[i - 1]
             val curDate = dates[i]
             val rebalanceDay = shouldRebalance(pConfig.rebalanceStrategy, prevDate, curDate)
 
-            applyDailyReturns(tickers, holdings, returnRatios, i)
-
-            val cashflowAmount = cashflowAmountOnDate(cashflow, prevDate, curDate)
-            if (cashflowAmount != 0.0) {
-                val contributionExposure = cashflowAmount * (1.0 + targetRatio)
-                borrowed += cashflowAmount * targetRatio
+            val equityBeforeReturn = (holdings.values.sum() - borrowed).coerceAtLeast(0.0)
+            if (equityBeforeReturn > 0.0) applyDailyReturns(tickers, holdings, returnRatios, i)
+            val equityBeforeCashflow = (holdings.values.sum() - borrowed).coerceAtLeast(0.0)
+            val investmentFactor =
+                if (equityBeforeReturn > 0.0) equityBeforeCashflow / equityBeforeReturn else 1.0
+            val requestedCashflow =
+                cashflowRuntime.requestedCashflow(i, equityBeforeCashflow, investmentFactor)
+            val (_, appliedCashflow) = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+            if (appliedCashflow != 0.0) {
+                val contributionExposure = appliedCashflow * (1.0 + targetRatio)
+                borrowed += appliedCashflow * targetRatio
                 for (ticker in tickers) {
                     holdings[ticker] =
                         (holdings[ticker] ?: 0.0) + contributionExposure * (targetWeights[ticker] ?: 0.0)
+                }
+                if (holdings.values.sum() - borrowed <= 0.0) {
+                    for (ticker in tickers) holdings[ticker] = 0.0
+                    borrowed = 0.0
                 }
             }
 
@@ -2076,7 +2111,10 @@ object BacktestService {
             previousMarginRatio = if (endEquity > 0.0) borrowed.coerceAtLeast(0.0) / endEquity else 0.0
             marginUtilization.add(previousMarginRatio)
         }
-        return MarginApplyResult(result, marginUtilization, upperTriggers, lowerTriggers, actionPoints)
+        return MarginApplyResult(
+            result, marginUtilization, upperTriggers, lowerTriggers, actionPoints,
+            cashflowRuntime.appliedCashflows,
+        )
     }
 
     fun computeUndervalueFirst(

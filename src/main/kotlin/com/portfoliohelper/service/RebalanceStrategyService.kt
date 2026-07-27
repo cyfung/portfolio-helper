@@ -106,6 +106,7 @@ object RebalanceStrategyService {
       includeActionDiagnostics: Boolean = false,
       zeroMarginInterest: Boolean = false,
       betaReferenceTicker: String? = "SPY",
+      inflationFactors: List<Double> = emptyList(),
       warningCollector: ((String, List<String>) -> Unit)? = null,
   ): List<CurveResult> {
     val enabledStrategies = strategies.filter { it.enabled }
@@ -158,6 +159,7 @@ object RebalanceStrategyService {
       includeActionDiagnostics: Boolean = false,
       zeroMarginInterest: Boolean = false,
       betaReferenceTicker: String? = "SPY",
+      inflationFactors: List<Double> = emptyList(),
   ): List<CurveResult> {
     val context = RunContext(seriesMap, dates, effrx)
     val normalizedBetaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(betaReferenceTicker)
@@ -178,6 +180,7 @@ object RebalanceStrategyService {
                   includeActionDiagnostics,
                   zeroMarginInterest = zeroMarginInterest,
                   betaReferenceTicker = normalizedBetaReferenceTicker,
+                  inflationFactors = inflationFactors,
               )
           val request =
               RebalanceStrategyRequest(
@@ -701,6 +704,7 @@ object RebalanceStrategyService {
       baseMarginIntentionSeries: List<List<MarginIntention>>? = null,
       zeroMarginInterest: Boolean = false,
       betaReferenceTicker: String? = "SPY",
+      inflationFactors: List<Double> = emptyList(),
   ): CurveResult =
       runStrategyWithIntentions(
           portfolio,
@@ -717,6 +721,7 @@ object RebalanceStrategyService {
           baseMarginIntentionSeries,
           zeroMarginInterest,
           betaReferenceTicker,
+          inflationFactors,
       ).curve
 
   private fun runStrategyWithIntentions(
@@ -734,6 +739,7 @@ object RebalanceStrategyService {
       baseMarginIntentionSeries: List<List<MarginIntention>>? = null,
       zeroMarginInterest: Boolean = false,
       betaReferenceTicker: String? = "SPY",
+      inflationFactors: List<Double> = emptyList(),
   ): StrategyRunResult {
     val (tickers, targetWeights) = portfolio.mergeWeights()
     val normalRebalance = portfolio.rebalanceStrategy
@@ -970,6 +976,14 @@ object RebalanceStrategyService {
     val strategyEquityValues = mutableListOf(account.equity())
     val vmTimingPoints = mutableListOf<VmTimingPoint>()
     var lastDerivedActionIndex: Int? = null
+    val policyInflationFactors =
+        inflationFactors.ifEmpty {
+          InflationSeries.factorsFor(dates, InflationSeries.load())
+              .takeIf { it.available }
+              ?.factors
+              .orEmpty()
+        }
+    val cashflowRuntime = CashflowRuntime(cashflow, dates, policyInflationFactors)
 
     fun recordVmTimingPoint(date: LocalDate) {
       val valuation = vmTimingCapeHistory?.valuationFactor(date) ?: return
@@ -1715,7 +1729,12 @@ object RebalanceStrategyService {
       }
 
       // Step 6: Cashflow injection (if due)
-      val rawCashflow = BacktestService.cashflowAmountOnDate(cashflow, prevDate, curDate)
+      val equityBeforeCashflow = account.equity().coerceAtLeast(0.0)
+      val investmentFactor =
+          if (equityBefore > 0.0) equityBeforeCashflow / equityBefore else 1.0
+      val requestedCashflow =
+          cashflowRuntime.requestedCashflow(i, equityBeforeCashflow, investmentFactor)
+      val (_, rawCashflow) = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
       if (rawCashflow != 0.0) {
         val currentMarginRatio =
             if (account.equity() > 0) account.currentMarginRatio() else marginTarget
@@ -1732,6 +1751,7 @@ object RebalanceStrategyService {
             else 0.0
         account.deposit(rawCashflow)
         for (ticker in tickers) account.buy(ticker, totalInvest * (targetWeights[ticker] ?: 0.0))
+        if (account.equity() <= 0.0 && rawCashflow < 0.0) account.deplete()
       }
 
       // Step 7: Advance all trigger checkers with today's values
@@ -1773,7 +1793,7 @@ object RebalanceStrategyService {
         values,
         dates,
         effrx,
-        cashflows = BacktestService.cashflowAmounts(dates, cashflow),
+        cashflows = cashflowRuntime.appliedCashflows,
         benchmarkValues = BacktestService.betaReferenceValues(
             dates,
             seriesMap[BacktestService.normalizeBetaReferenceTicker(betaReferenceTicker)],

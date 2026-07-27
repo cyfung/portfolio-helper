@@ -917,13 +917,20 @@ private data class PortfolioOptionDto(val slug: String, val name: String, val se
 @Serializable
 private data class TickerConfigDto(val symbol: String, val letf: String, val groups: String)
 
-private fun JsonObject.parseCashflowConfig(): CashflowConfig? =
+internal fun JsonObject.parseCashflowConfig(): CashflowConfig? =
     (this["cashflow"] as? JsonObject)?.let { cf ->
         CashflowConfig(
             amount = cf["amount"]?.jsonPrimitive?.double ?: 0.0,
             frequency = runCatching {
                 CashflowFrequency.valueOf(cf["frequency"]?.jsonPrimitive?.content ?: "NONE")
-            }.getOrDefault(CashflowFrequency.NONE)
+            }.getOrDefault(CashflowFrequency.NONE),
+            mode = runCatching {
+                CashflowMode.valueOf(cf["mode"]?.jsonPrimitive?.content ?: CashflowMode.FIXED.name)
+            }.getOrDefault(CashflowMode.FIXED),
+            initialAnnualWithdrawal = cf["initialAnnualWithdrawal"]?.jsonPrimitive?.doubleOrNull,
+            lowerWithdrawalRate = cf["lowerWithdrawalRate"]?.jsonPrimitive?.doubleOrNull,
+            upperWithdrawalRate = cf["upperWithdrawalRate"]?.jsonPrimitive?.doubleOrNull,
+            minimumAnnualWithdrawal = cf["minimumAnnualWithdrawal"]?.jsonPrimitive?.doubleOrNull,
         )
     }
 

@@ -1,5 +1,6 @@
 package com.portfoliohelper.service
 
+import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
@@ -100,12 +101,24 @@ internal object MonteCarloIndexedSimulation {
         effrxDailyRates: DoubleArray,
         startingBalance: Double,
         cashflows: DoubleArray = DoubleArray(0),
-        rebalanceFlags: BooleanArray = BooleanArray(0)
+        rebalanceFlags: BooleanArray = BooleanArray(0),
+        cashflowConfig: CashflowConfig? = null,
+        dates: List<LocalDate> = emptyList(),
+        inflationFactors: List<Double> = emptyList(),
+        appliedCashflowsOut: DoubleArray? = null,
     ): DoubleArray =
         if (mc == null) {
-            simulateNoMargin(runtime, path, tickerReturnsByDay, startingBalance, cashflows, rebalanceFlags)
+            simulateNoMargin(
+                runtime, path, tickerReturnsByDay, startingBalance, cashflows, rebalanceFlags,
+                cashflowConfig, dates, inflationFactors,
+                appliedCashflowsOut,
+            )
         } else {
-            simulateWithMargin(runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflows, rebalanceFlags)
+            simulateWithMargin(
+                runtime, mc, path, tickerReturnsByDay, effrxDailyRates, startingBalance, cashflows,
+                rebalanceFlags, cashflowConfig, dates, inflationFactors,
+                appliedCashflowsOut,
+            )
         }
 
     fun computeStats(
@@ -280,13 +293,19 @@ internal object MonteCarloIndexedSimulation {
         tickerReturnsByDay: Array<DoubleArray>,
         startingBalance: Double,
         cashflows: DoubleArray,
-        rebalanceFlags: BooleanArray
+        rebalanceFlags: BooleanArray,
+        cashflowConfig: CashflowConfig?,
+        dates: List<LocalDate>,
+        inflationFactors: List<Double>,
+        appliedCashflowsOut: DoubleArray?,
     ): DoubleArray {
         val holdings = DoubleArray(runtime.tickers.size) { startingBalance * runtime.weights[it] }
         val values = DoubleArray(path.returnIndexes.size + 1)
         values[0] = startingBalance
         var totalHoldings = startingBalance
         var depleted = false
+        val cashflowRuntime =
+            cashflowConfig?.let { CashflowRuntime(it, dates, inflationFactors) }
 
         for (dayIndex in path.returnIndexes.indices) {
             if (depleted) {
@@ -300,6 +319,7 @@ internal object MonteCarloIndexedSimulation {
                 }
             }
 
+            val valueBeforeReturn = totalHoldings
             var nextTotal = 0.0
             if (returnIndex >= 0) {
                 val dayReturns = tickerReturnsByDay[returnIndex]
@@ -312,15 +332,30 @@ internal object MonteCarloIndexedSimulation {
                 for (holding in holdings) nextTotal += holding
             }
 
-            val cashflowAmount = cashflows.getOrElse(dayIndex + 1) { 0.0 }
+            val investmentFactor =
+                if (valueBeforeReturn > 0.0) nextTotal / valueBeforeReturn else 1.0
+            val cashflowAmount = cashflowRuntime?.requestedCashflow(
+                dayIndex + 1,
+                nextTotal.coerceAtLeast(0.0),
+                investmentFactor,
+            ) ?: cashflows.getOrElse(dayIndex + 1) { 0.0 }
             if (cashflowAmount != 0.0) {
-                val (afterCashflow, appliedCashflow) = CashflowPolicy.applyToPortfolio(nextTotal, cashflowAmount)
-                if (nextTotal > 0.0) for (i in holdings.indices) holdings[i] *= afterCashflow / nextTotal
+                val (afterCashflow, appliedCashflow) =
+                    cashflowRuntime?.apply(nextTotal, cashflowAmount)
+                        ?: CashflowPolicy.applyToPortfolio(nextTotal, cashflowAmount)
+                if (afterCashflow > 0.0) {
+                    for (i in holdings.indices) holdings[i] += appliedCashflow * runtime.weights[i]
+                } else {
+                    holdings.fill(0.0)
+                }
                 nextTotal = afterCashflow
                 depleted = appliedCashflow < 0.0 && nextTotal == 0.0
             }
             totalHoldings = nextTotal
             values[dayIndex + 1] = totalHoldings
+        }
+        cashflowRuntime?.appliedCashflows?.forEachIndexed { index, amount ->
+            if (index < (appliedCashflowsOut?.size ?: 0)) appliedCashflowsOut!![index] = amount
         }
         return values
     }
@@ -333,7 +368,11 @@ internal object MonteCarloIndexedSimulation {
         effrxDailyRates: DoubleArray,
         startingBalance: Double,
         cashflows: DoubleArray,
-        rebalanceFlags: BooleanArray
+        rebalanceFlags: BooleanArray,
+        cashflowConfig: CashflowConfig?,
+        dates: List<LocalDate>,
+        inflationFactors: List<Double>,
+        appliedCashflowsOut: DoubleArray?,
     ): DoubleArray {
         var borrowed = startingBalance * mc.marginRatio
         val holdings = DoubleArray(runtime.tickers.size) { (startingBalance + borrowed) * runtime.weights[it] }
@@ -343,6 +382,8 @@ internal object MonteCarloIndexedSimulation {
         val dailySpread = mc.marginSpread / 252.0
         val isDailyMode = mc.upperRebalanceMode == MarginRebalanceMode.DAILY.name
         var depleted = false
+        val cashflowRuntime =
+            cashflowConfig?.let { CashflowRuntime(it, dates, inflationFactors) }
 
         for (dayIndex in path.returnIndexes.indices) {
             if (depleted) {
@@ -359,6 +400,7 @@ internal object MonteCarloIndexedSimulation {
                 }
             }
 
+            val equityBeforeReturn = (totalHoldings - borrowed).coerceAtLeast(0.0)
             var nextTotal = 0.0
             if (returnIndex >= 0) {
                 val dayReturns = tickerReturnsByDay[returnIndex]
@@ -372,10 +414,18 @@ internal object MonteCarloIndexedSimulation {
             }
             totalHoldings = nextTotal
 
-            val cashflowAmount = cashflows.getOrElse(dayIndex + 1) { 0.0 }
+            val equityBeforeCashflow = (totalHoldings - borrowed).coerceAtLeast(0.0)
+            val investmentFactor =
+                if (equityBeforeReturn > 0.0) equityBeforeCashflow / equityBeforeReturn else 1.0
+            val cashflowAmount = cashflowRuntime?.requestedCashflow(
+                dayIndex + 1,
+                equityBeforeCashflow,
+                investmentFactor,
+            ) ?: cashflows.getOrElse(dayIndex + 1) { 0.0 }
             if (cashflowAmount != 0.0) {
-                val equityBeforeCashflow = (totalHoldings - borrowed).coerceAtLeast(0.0)
-                val (_, appliedCashflow) = CashflowPolicy.applyToPortfolio(equityBeforeCashflow, cashflowAmount)
+                val (_, appliedCashflow) =
+                    cashflowRuntime?.apply(equityBeforeCashflow, cashflowAmount)
+                        ?: CashflowPolicy.applyToPortfolio(equityBeforeCashflow, cashflowAmount)
                 val contributionExposure = appliedCashflow * (1.0 + mc.marginRatio)
                 borrowed += appliedCashflow * mc.marginRatio
                 for (i in holdings.indices) {
@@ -418,6 +468,9 @@ internal object MonteCarloIndexedSimulation {
             }
 
             values[dayIndex + 1] = totalHoldings - borrowed
+        }
+        cashflowRuntime?.appliedCashflows?.forEachIndexed { index, amount ->
+            if (index < (appliedCashflowsOut?.size ?: 0)) appliedCashflowsOut!![index] = amount
         }
         return values
     }
