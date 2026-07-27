@@ -805,7 +805,7 @@ export default function BacktestPage() {
             startingBalance: startingBalanceToPayload(startingBalance, { strict: true }),
             portfolios,
             settingsPortfolios,
-            cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
+            cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow, { strict: true }),
             betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
           }),
         }),
@@ -858,7 +858,7 @@ export default function BacktestPage() {
       toDate: toDate || null,
       startingBalance: exportStartingBalance,
       portfolios,
-      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow, { strict: true }),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       inflationAdjusted,
     }, portfolios))

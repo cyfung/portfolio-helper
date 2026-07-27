@@ -33,14 +33,18 @@ describe('guardrail cashflow payload', () => {
     })
   })
 
-  it('rejects invalid annual withdrawal and reversed limits with user-facing messages', () => {
-    expect(() => cashflowToPayload('0', 'MONTHLY', {
+  it('allows incomplete guardrail drafts but rejects them for strict submissions', () => {
+    const incompleteGuardrail = {
       mode: 'GUARDRAIL_WITHDRAWAL',
-      initialAnnualWithdrawal: '0',
+      initialAnnualWithdrawal: '',
       lowerWithdrawalRate: '3',
       upperWithdrawalRate: '6',
       minimumAnnualWithdrawal: '',
-    })).toThrow('Initial Annual Withdrawal must be greater than 0.')
+    } as const
+
+    expect(() => cashflowToPayload('0', 'MONTHLY', incompleteGuardrail)).not.toThrow()
+    expect(() => cashflowToPayload('0', 'MONTHLY', incompleteGuardrail, { strict: true }))
+      .toThrow('Initial Annual Withdrawal must be greater than 0.')
 
     expect(() => cashflowToPayload('0', 'MONTHLY', {
       mode: 'GUARDRAIL_WITHDRAWAL',
@@ -48,7 +52,7 @@ describe('guardrail cashflow payload', () => {
       lowerWithdrawalRate: '6',
       upperWithdrawalRate: '3',
       minimumAnnualWithdrawal: '',
-    })).toThrow('Upper Withdrawal-Rate Limit must be greater than the lower limit.')
+    }, { strict: true })).toThrow('Upper Withdrawal-Rate Limit must be greater than the lower limit.')
   })
 
   it('round-trips imported guardrail settings through the shared payload representation', () => {

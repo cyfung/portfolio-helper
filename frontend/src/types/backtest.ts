@@ -161,6 +161,7 @@ export function cashflowToPayload(
   amount: string,
   frequency: string,
   guardrailCashflow: GuardrailCashflowState = DEFAULT_GUARDRAIL_CASHFLOW_STATE,
+  options: BlockConversionOptions = {},
 ): CashflowPayload | null {
   if (frequency === 'NONE') return null
   if (guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL') {
@@ -168,23 +169,23 @@ export function cashflowToPayload(
     const lowerWithdrawalRate = Number(guardrailCashflow.lowerWithdrawalRate) / 100
     const upperWithdrawalRate = Number(guardrailCashflow.upperWithdrawalRate) / 100
     const minimumText = guardrailCashflow.minimumAnnualWithdrawal.trim()
-    if (!Number.isFinite(initialAnnualWithdrawal) || initialAnnualWithdrawal <= 0)
+    if (options.strict && (!Number.isFinite(initialAnnualWithdrawal) || initialAnnualWithdrawal <= 0))
       throw new Error('Initial Annual Withdrawal must be greater than 0.')
-    if (!Number.isFinite(lowerWithdrawalRate) || lowerWithdrawalRate < 0)
+    if (options.strict && (!Number.isFinite(lowerWithdrawalRate) || lowerWithdrawalRate < 0))
       throw new Error('Lower Withdrawal-Rate Limit must be non-negative.')
-    if (!Number.isFinite(upperWithdrawalRate) || upperWithdrawalRate <= lowerWithdrawalRate)
+    if (options.strict && (!Number.isFinite(upperWithdrawalRate) || upperWithdrawalRate <= lowerWithdrawalRate))
       throw new Error('Upper Withdrawal-Rate Limit must be greater than the lower limit.')
     const minimumAnnualWithdrawal = minimumText ? Number(minimumText) : undefined
-    if (minimumAnnualWithdrawal != null && (!Number.isFinite(minimumAnnualWithdrawal) || minimumAnnualWithdrawal < 0))
+    if (options.strict && minimumAnnualWithdrawal != null && (!Number.isFinite(minimumAnnualWithdrawal) || minimumAnnualWithdrawal < 0))
       throw new Error('Minimum Annual Withdrawal must be non-negative.')
     return {
       amount: 0,
       frequency,
       mode: 'GUARDRAIL_WITHDRAWAL',
-      initialAnnualWithdrawal,
-      lowerWithdrawalRate,
-      upperWithdrawalRate,
-      ...(minimumAnnualWithdrawal != null ? { minimumAnnualWithdrawal } : {}),
+      initialAnnualWithdrawal: Number.isFinite(initialAnnualWithdrawal) ? initialAnnualWithdrawal : 0,
+      lowerWithdrawalRate: Number.isFinite(lowerWithdrawalRate) ? lowerWithdrawalRate : 0,
+      upperWithdrawalRate: Number.isFinite(upperWithdrawalRate) ? upperWithdrawalRate : 0,
+      ...(minimumAnnualWithdrawal != null && Number.isFinite(minimumAnnualWithdrawal) ? { minimumAnnualWithdrawal } : {}),
     }
   }
   return amount && Number.isFinite(Number(amount))
