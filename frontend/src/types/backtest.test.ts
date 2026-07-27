@@ -9,6 +9,7 @@ import {
   sortAndMergePortfolioEditorRows,
   type BlockState,
   cashflowToPayload,
+  cashflowStateFromSettings,
 } from './backtest'
 
 describe('guardrail cashflow payload', () => {
@@ -48,6 +49,33 @@ describe('guardrail cashflow payload', () => {
       upperWithdrawalRate: '3',
       minimumAnnualWithdrawal: '',
     })).toThrow('Upper Withdrawal-Rate Limit must be greater than the lower limit.')
+  })
+
+  it('round-trips imported guardrail settings through the shared payload representation', () => {
+    const imported = cashflowStateFromSettings({
+      cashflow: {
+        mode: 'GUARDRAIL_WITHDRAWAL',
+        frequency: 'QUARTERLY',
+        initialAnnualWithdrawal: 24000,
+        lowerWithdrawalRate: 0.025,
+        upperWithdrawalRate: 0.055,
+        minimumAnnualWithdrawal: 18000,
+      },
+    })
+
+    expect(cashflowToPayload(
+      imported.cashflowAmount!,
+      imported.cashflowFrequency!,
+      imported.guardrailCashflow!,
+    )).toEqual({
+      amount: 0,
+      frequency: 'QUARTERLY',
+      mode: 'GUARDRAIL_WITHDRAWAL',
+      initialAnnualWithdrawal: 24000,
+      lowerWithdrawalRate: 0.025,
+      upperWithdrawalRate: 0.055,
+      minimumAnnualWithdrawal: 18000,
+    })
   })
 })
 

@@ -1734,7 +1734,8 @@ object RebalanceStrategyService {
           if (equityBefore > 0.0) equityBeforeCashflow / equityBefore else 1.0
       val requestedCashflow =
           cashflowRuntime.requestedCashflow(i, equityBeforeCashflow, investmentFactor)
-      val (_, rawCashflow) = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+      val application = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+      val rawCashflow = application.appliedCashflow
       if (rawCashflow != 0.0) {
         val currentMarginRatio =
             if (account.equity() > 0) account.currentMarginRatio() else marginTarget
@@ -1751,7 +1752,7 @@ object RebalanceStrategyService {
             else 0.0
         account.deposit(rawCashflow)
         for (ticker in tickers) account.buy(ticker, totalInvest * (targetWeights[ticker] ?: 0.0))
-        if (account.equity() <= 0.0 && rawCashflow < 0.0) account.deplete()
+        if (application.depleted) account.deplete()
       }
 
       // Step 7: Advance all trigger checkers with today's values

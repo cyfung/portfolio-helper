@@ -1549,6 +1549,16 @@ object BacktestService {
 
     private data class CashflowPath(val values: List<Double>, val cashflows: List<Double>)
 
+    internal fun computeNoMarginForTest(
+        portfolio: PortfolioConfig,
+        seriesMap: Map<String, Map<LocalDate, Double>>,
+        dates: List<LocalDate>,
+        startingBalance: Double,
+        cashflow: CashflowConfig?,
+        inflationFactors: List<Double> = emptyList(),
+    ): List<Double> =
+        computeNoMargin(portfolio, seriesMap, dates, startingBalance, cashflow, inflationFactors).values
+
     private fun computeNoMargin(
         pConfig: PortfolioConfig,
         seriesMap: Map<String, Map<LocalDate, Double>>,
@@ -1590,7 +1600,9 @@ object BacktestService {
             val investmentFactor =
                 if (valueBeforeReturn > 0.0) valueBeforeCashflow / valueBeforeReturn else 1.0
             val requestedCashflow = cashflowRuntime.requestedCashflow(i, valueBeforeCashflow, investmentFactor)
-            val (valueAfterCashflow, appliedCashflow) = cashflowRuntime.apply(valueBeforeCashflow, requestedCashflow)
+            val application = cashflowRuntime.apply(valueBeforeCashflow, requestedCashflow)
+            val valueAfterCashflow = application.portfolioValue
+            val appliedCashflow = application.appliedCashflow
             if (appliedCashflow != 0.0 && valueAfterCashflow > 0.0) {
                 for (ticker in tickers) {
                     holdings[ticker] = (holdings[ticker] ?: 0.0) +
@@ -1599,7 +1611,7 @@ object BacktestService {
             }
             // Depletion is intentionally absorbing: supported runs cannot switch from
             // withdrawals to contributions, so later returns or cashflows must not revive them.
-            if (valueAfterCashflow == 0.0) for (ticker in tickers) holdings[ticker] = 0.0
+            if (application.depleted) for (ticker in tickers) holdings[ticker] = 0.0
 
             values.add(holdings.values.sum())
         }
@@ -1787,11 +1799,12 @@ object BacktestService {
                 equityBeforeCashflow,
                 portfolioReturn,
             )
-            val (_, appliedCashflow) = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+            val application = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+            val appliedCashflow = application.appliedCashflow
             if (appliedCashflow != 0.0) {
                 totalExposure += appliedCashflow * (1.0 + marginTarget)
                 borrowed += appliedCashflow * marginTarget
-                if (totalExposure - borrowed <= 0.0) {
+                if (application.depleted) {
                     totalExposure = 0.0
                     borrowed = 0.0
                 }
@@ -2047,7 +2060,8 @@ object BacktestService {
                 if (equityBeforeReturn > 0.0) equityBeforeCashflow / equityBeforeReturn else 1.0
             val requestedCashflow =
                 cashflowRuntime.requestedCashflow(i, equityBeforeCashflow, investmentFactor)
-            val (_, appliedCashflow) = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+            val application = cashflowRuntime.apply(equityBeforeCashflow, requestedCashflow)
+            val appliedCashflow = application.appliedCashflow
             if (appliedCashflow != 0.0) {
                 val contributionExposure = appliedCashflow * (1.0 + targetRatio)
                 borrowed += appliedCashflow * targetRatio
@@ -2055,7 +2069,7 @@ object BacktestService {
                     holdings[ticker] =
                         (holdings[ticker] ?: 0.0) + contributionExposure * (targetWeights[ticker] ?: 0.0)
                 }
-                if (holdings.values.sum() - borrowed <= 0.0) {
+                if (application.depleted) {
                     for (ticker in tickers) holdings[ticker] = 0.0
                     borrowed = 0.0
                 }

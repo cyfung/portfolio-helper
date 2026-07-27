@@ -340,16 +340,18 @@ internal object MonteCarloIndexedSimulation {
                 investmentFactor,
             ) ?: cashflows.getOrElse(dayIndex + 1) { 0.0 }
             if (cashflowAmount != 0.0) {
-                val (afterCashflow, appliedCashflow) =
+                val application =
                     cashflowRuntime?.apply(nextTotal, cashflowAmount)
                         ?: CashflowPolicy.applyToPortfolio(nextTotal, cashflowAmount)
+                val afterCashflow = application.portfolioValue
+                val appliedCashflow = application.appliedCashflow
                 if (afterCashflow > 0.0) {
                     for (i in holdings.indices) holdings[i] += appliedCashflow * runtime.weights[i]
                 } else {
                     holdings.fill(0.0)
                 }
                 nextTotal = afterCashflow
-                depleted = appliedCashflow < 0.0 && nextTotal == 0.0
+                depleted = application.depleted
             }
             totalHoldings = nextTotal
             values[dayIndex + 1] = totalHoldings
@@ -423,9 +425,10 @@ internal object MonteCarloIndexedSimulation {
                 investmentFactor,
             ) ?: cashflows.getOrElse(dayIndex + 1) { 0.0 }
             if (cashflowAmount != 0.0) {
-                val (_, appliedCashflow) =
+                val application =
                     cashflowRuntime?.apply(equityBeforeCashflow, cashflowAmount)
                         ?: CashflowPolicy.applyToPortfolio(equityBeforeCashflow, cashflowAmount)
+                val appliedCashflow = application.appliedCashflow
                 val contributionExposure = appliedCashflow * (1.0 + mc.marginRatio)
                 borrowed += appliedCashflow * mc.marginRatio
                 for (i in holdings.indices) {
@@ -433,7 +436,7 @@ internal object MonteCarloIndexedSimulation {
                     holdings[i] += addition
                     totalHoldings += addition
                 }
-                if (appliedCashflow < 0.0 && totalHoldings - borrowed <= 0.0) {
+                if (application.depleted) {
                     holdings.fill(0.0)
                     totalHoldings = 0.0
                     borrowed = 0.0
