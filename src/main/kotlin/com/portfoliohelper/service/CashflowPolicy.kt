@@ -30,6 +30,7 @@ internal object CashflowPolicy {
         portfolioValueBeforeWithdrawal: Double,
         completedYearRealInvestmentReturn: Double,
         completedYearInflationRate: Double,
+        inflationAdjustedMinimumAnnualWithdrawal: Double? = null,
     ): Double {
         config.validate()
         var candidate =
@@ -46,7 +47,12 @@ internal object CashflowPolicy {
             rate > config.upperWithdrawalRate!! -> candidate * 0.9
             else -> candidate
         }
-        return max(candidate, config.minimumAnnualWithdrawal ?: 0.0)
+        return max(
+            candidate,
+            inflationAdjustedMinimumAnnualWithdrawal
+                ?: config.minimumAnnualWithdrawal?.times(1.0 + completedYearInflationRate)
+                ?: 0.0,
+        )
     }
 
     fun applyToPortfolio(portfolioValue: Double, requestedCashflow: Double): CashflowApplication {
@@ -73,6 +79,7 @@ internal class CashflowRuntime(
     private val inflationFactors: List<Double> = List(dates.size) { 1.0 },
 ) {
     private var annualWithdrawal = config?.initialAnnualWithdrawal ?: 0.0
+    private var minimumAnnualWithdrawal = config?.minimumAnnualWithdrawal
     private var policyYear = 0
     private var nominalInvestmentFactor = 1.0
     private var reviewInflationFactor = inflationFactors.firstOrNull() ?: 1.0
@@ -110,12 +117,15 @@ internal class CashflowRuntime(
             val realInvestmentReturn =
                 if (1.0 + inflationRate > 0.0) nominalInvestmentFactor / (1.0 + inflationRate) - 1.0
                 else nominalInvestmentFactor - 1.0
+            minimumAnnualWithdrawal =
+                minimumAnnualWithdrawal?.times(1.0 + inflationRate)
             annualWithdrawal = CashflowPolicy.reviewedAnnualWithdrawal(
                 config,
                 annualWithdrawal,
                 portfolioValueBeforeWithdrawal,
                 realInvestmentReturn,
                 inflationRate,
+                minimumAnnualWithdrawal,
             )
             policyYear = completedPolicyYears
             nominalInvestmentFactor = 1.0

@@ -27,7 +27,7 @@ class CashflowPolicyTest {
     }
 
     @Test
-    fun `annual review applies inflation then one lower guardrail adjustment then minimum`() {
+    fun `annual review applies inflation then one lower guardrail adjustment then inflation adjusted minimum`() {
         val reviewed = CashflowPolicy.reviewedAnnualWithdrawal(
             config = guardrail(minimum = 13_000.0),
             priorAnnualWithdrawal = 10_000.0,
@@ -36,7 +36,7 @@ class CashflowPolicyTest {
             completedYearInflationRate = 0.02,
         )
 
-        assertEquals(13_000.0, reviewed)
+        assertEquals(13_260.0, reviewed)
     }
 
     @Test
@@ -111,6 +111,31 @@ class CashflowPolicyTest {
             runtime.requestedCashflow(index, 1_000_000.0, 1.0)
         }
         assertEquals(-1_122.0, runtime.requestedCashflow(12, 1_000_000.0, 1.05), 1e-9)
+    }
+
+    @Test
+    fun `minimum annual withdrawal compounds with inflation even after non-positive real returns`() {
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..24L).map(start::plusMonths)
+        val runtime = CashflowRuntime(
+            guardrail(CashflowFrequency.YEARLY, minimum = 12_000.0),
+            dates,
+            List(12) { 1.0 } + List(12) { 1.02 } + 1.0608,
+        )
+
+        assertEquals(-12_240.0, runtime.requestedCashflow(12, 300_000.0, 0.9), 1e-9)
+        assertEquals(-12_729.6, runtime.requestedCashflow(24, 300_000.0, 0.9), 1e-9)
+    }
+
+    @Test
+    fun `each curve runtime reviews guardrails from its own portfolio value`() {
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..12L).map(start::plusMonths)
+        val strongCurve = CashflowRuntime(guardrail(CashflowFrequency.YEARLY), dates)
+        val weakCurve = CashflowRuntime(guardrail(CashflowFrequency.YEARLY), dates)
+
+        assertEquals(-13_200.0, strongCurve.requestedCashflow(12, 1_000_000.0, 1.0), 1e-9)
+        assertEquals(-10_800.0, weakCurve.requestedCashflow(12, 100_000.0, 1.0), 1e-9)
     }
 
     @Test
