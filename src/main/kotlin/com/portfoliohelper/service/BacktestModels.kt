@@ -239,7 +239,14 @@ data class PortfolioResult(
 @Serializable
 data class MultiBacktestResult(
     val portfolios: List<PortfolioResult>,
-    val warnings: List<String> = emptyList()
+    val warnings: List<String> = emptyList(),
+    val inflationAdjusted: InflationAdjustedBacktestResult? = null,
+    val inflationAdjustmentUnavailableReason: String? = null,
+)
+
+@Serializable
+data class InflationAdjustedBacktestResult(
+    val portfolios: List<PortfolioResult>,
 )
 
 /** Merges duplicate tickers by summing weights, then normalises to sum-to-1. */

@@ -98,7 +98,14 @@ data class MonteCarloResult(
     val simulatedYears: Int,
     val numSimulations: Int,
     val portfolios: List<MonteCarloPortfolioResult>,
-    val seed: Long
+    val seed: Long,
+    val inflationAdjusted: InflationAdjustedMonteCarloResult? = null,
+    val inflationAdjustmentUnavailableReason: String? = null,
+)
+
+@Serializable
+data class InflationAdjustedMonteCarloResult(
+    val portfolios: List<MonteCarloPortfolioResult>,
 )
 
 // ── Internal only ─────────────────────────────────────────────────────────────

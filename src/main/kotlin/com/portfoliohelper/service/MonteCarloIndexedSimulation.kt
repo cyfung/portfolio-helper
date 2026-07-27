@@ -17,6 +17,17 @@ internal data class MonteCarloSimplePortfolioRuntime(
 internal data class MonteCarloIndexedPath(val returnIndexes: IntArray)
 
 internal object MonteCarloIndexedSimulation {
+    fun inflationFactors(path: MonteCarloIndexedPath, inflationDailyRates: DoubleArray): DoubleArray {
+        val factors = DoubleArray(path.returnIndexes.size + 1)
+        factors[0] = 1.0
+        for (i in path.returnIndexes.indices) {
+            val returnIndex = path.returnIndexes[i]
+            val rate = if (returnIndex >= 0) inflationDailyRates.getOrElse(returnIndex) { 0.0 } else 0.0
+            factors[i + 1] = factors[i] * (1.0 + rate)
+        }
+        return factors
+    }
+
     fun simpleRuntimeForPortfolio(
         pConfig: PortfolioConfig,
         tickerIndex: Map<String, Int>

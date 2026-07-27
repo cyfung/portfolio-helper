@@ -39,7 +39,16 @@ object RebalanceStrategyService {
           enabledStrategies.map { runConfiguredStrategy(request, it, context, standaloneBaseCache) }
         }
     warnings.addAll(baseResult.warnings)
-    return MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
+    val nominal = MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
+    return InflationAdjustment.backtestResult(
+        nominal = nominal,
+        effrx = context.effrx,
+        cashflows = BacktestService.cashflowAmounts(context.dates, request.cashflow),
+        benchmarkValues = BacktestService.betaReferenceValues(
+            context.dates,
+            context.seriesMap[betaReferenceTicker],
+        ),
+    )
   }
 
   fun scoreBatch(request: RebalanceStrategyScoreBatchRequest): List<Double> {

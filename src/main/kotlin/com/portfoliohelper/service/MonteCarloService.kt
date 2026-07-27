@@ -173,10 +173,19 @@ object MonteCarloService {
                     ?: error("Series for '$ticker' not found in cache"))
             }
         }
-        val poolDates = BacktestService.intersectDates(
+        val rawPoolDates = BacktestService.intersectDates(
             allSeriesMaps.flatMap { it.values }, if (hasPrependedChain) null else fromDate, toDate
         )
+        val inflationPool = withContext(Dispatchers.IO) { InflationSeries.load() }
+        val firstCpiDate = if (inflationPool.isEmpty()) null else inflationPool.firstKey()
+        val poolDates =
+            if (hasPrependedChain && fromDate != null && firstCpiDate != null && fromDate >= firstCpiDate) {
+                rawPoolDates.filter { it >= firstCpiDate }
+            } else {
+                rawPoolDates
+            }
         val poolSize = poolDates.size
+        val poolInflation = InflationSeries.factorsFor(poolDates, inflationPool)
 
         val targetDays = request.simulatedYears * 252
         val minChunkDays = (request.minChunkYears * 252).toInt().coerceAtLeast(1)
@@ -251,6 +260,12 @@ object MonteCarloService {
             val cur = effrxSeries[poolDates[i + 1]]
             effrxDailyRates[i] = if (prev != null && cur != null && prev != 0.0) cur / prev - 1.0 else 0.0
         }
+        val inflationDailyRates = if (poolInflation.available) {
+            DoubleArray(returnDayCount) { i ->
+                val previous = poolInflation.factors[i]
+                if (previous != 0.0) poolInflation.factors[i + 1] / previous - 1.0 else 0.0
+            }
+        } else null
 
         val masterSeed = request.seed ?: Random.nextLong()
         logger.info("MC seed: $masterSeed")
@@ -351,6 +366,11 @@ object MonteCarloService {
         val allMetrics = Array(portfolioCurveConfigs.size) { pi ->
             Array(portfolioCurveConfigs[pi].allLabels.size) { Array(numSims) { zero } }
         }
+        val allRealMetrics = inflationDailyRates?.let {
+            Array(portfolioCurveConfigs.size) { pi ->
+                Array(portfolioCurveConfigs[pi].allLabels.size) { Array(numSims) { zero } }
+            }
+        }
 
         MonteCarloParallel.parallelForRange(numSims) { simIdx ->
             val rng = Random(masterSeed + simIdx)
@@ -369,6 +389,19 @@ object MonteCarloService {
                 effrxDailyRates,
                 request.startingBalance,
             )
+            val realFactors = inflationDailyRates?.let {
+                MonteCarloIndexedSimulation.inflationFactors(indexedPath, it)
+            }
+            val realCashflows = realFactors?.let { factors ->
+                DoubleArray(syntheticCashflows.size) { i -> syntheticCashflows[i] / factors[i] }
+            }
+            val realBenchmarkValues = realFactors?.let { factors ->
+                DoubleArray(benchmarkValues.size) { i -> benchmarkValues[i] / factors[i] }
+            }
+            val realRfAnnualized = realFactors?.let { factors ->
+                val inflationAnnualized = factors.last().pow(1.0 / years) - 1.0
+                (1.0 + rfAnnualized) / (1.0 + inflationAnnualized) - 1.0
+            }
 
             portfolioCurveConfigs.forEachIndexed { pi, config ->
                 var ci = 0
@@ -391,6 +424,16 @@ object MonteCarloService {
                         benchmarkValues,
                     )
                     allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
+                    if (realFactors != null && realCashflows != null && realBenchmarkValues != null && realRfAnnualized != null) {
+                        val realValues = DoubleArray(values.size) { i -> values[i] / realFactors[i] }
+                        allRealMetrics!![pi][ci][simIdx] = MonteCarloIndexedSimulation.computeStats(
+                            realValues,
+                            years,
+                            realRfAnnualized,
+                            realCashflows,
+                            realBenchmarkValues,
+                        ).toSimPassMetrics()
+                    }
                     ci++
                 }
                 if (config.strategyLabels.isNotEmpty()) {
@@ -404,6 +447,17 @@ object MonteCarloService {
                     strategyCurves.forEach { curve ->
                         val stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
                         allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
+                        if (realFactors != null && realCashflows != null && realBenchmarkValues != null && realRfAnnualized != null) {
+                            val nominalValues = curve.points.map { it.value }
+                            val realValues = DoubleArray(nominalValues.size) { i -> nominalValues[i] / realFactors[i] }
+                            allRealMetrics!![pi][ci][simIdx] = MonteCarloIndexedSimulation.computeStats(
+                                realValues,
+                                years,
+                                realRfAnnualized,
+                                realCashflows,
+                                realBenchmarkValues,
+                            ).toSimPassMetrics()
+                        }
                         ci++
                     }
                 }
@@ -450,6 +504,14 @@ object MonteCarloService {
                 pctIdxList.map { sortedByCagr[it] }
             }
         }
+        val realPctSimIndices = allRealMetrics?.let { metrics ->
+            MonteCarloParallel.parallelMap(metrics.toList()) { portfolioMetrics ->
+                portfolioMetrics.map { simMetrics ->
+                    val sortedByCagr = (0 until numSims).sortedBy { simMetrics[it].cagr }
+                    pctIdxList.map { sortedByCagr[it] }
+                }
+            }
+        }
 
         // ── Per-metric independent percentile values ───────────────────────────
         val maxDdPctValues   = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.maxDD }
@@ -462,9 +524,38 @@ object MonteCarloService {
         val betaPctValues    = metricPercentiles(allMetrics, numSims, pctIdxList) { it.beta }
         val volPctValues     = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true)  { it.volatility }
         val longestDdPctValues = metricPercentiles(allMetrics, numSims, pctIdxList, descending = true) { it.longestDrawdownDays.toDouble() }
+        data class MetricPercentileSet(
+            val maxDd: List<List<List<Double>>>,
+            val sharpe: List<List<List<Double>>>,
+            val sortino: List<List<List<Double>>>,
+            val ulcer: List<List<List<Double>>>,
+            val upi: List<List<List<Double>>>,
+            val averageDrawdown: List<List<List<Double>>>,
+            val calmar: List<List<List<Double>>>,
+            val beta: List<List<List<Double>>>,
+            val volatility: List<List<List<Double>>>,
+            val longestDrawdown: List<List<List<Double>>>,
+        )
+        val realMetricPercentiles = allRealMetrics?.let { metrics ->
+            MetricPercentileSet(
+                metricPercentiles(metrics, numSims, pctIdxList, descending = true) { it.maxDD },
+                metricPercentiles(metrics, numSims, pctIdxList) { it.sharpe },
+                metricPercentiles(metrics, numSims, pctIdxList) { it.sortino },
+                metricPercentiles(metrics, numSims, pctIdxList, descending = true) { it.ulcerIndex },
+                metricPercentiles(metrics, numSims, pctIdxList) { it.upi },
+                metricPercentiles(metrics, numSims, pctIdxList, descending = true) { it.averageDrawdown },
+                metricPercentiles(metrics, numSims, pctIdxList) { it.calmar },
+                metricPercentiles(metrics, numSims, pctIdxList) { it.beta },
+                metricPercentiles(metrics, numSims, pctIdxList, descending = true) { it.volatility },
+                metricPercentiles(metrics, numSims, pctIdxList, descending = true) { it.longestDrawdownDays.toDouble() },
+            )
+        }
 
         // ── Pass 2: re-run needed sims with full paths ────────────────────────
-        val neededSimIndices = pctSimIndices.flatten().flatten().toSet()
+        val neededSimIndices = (
+            pctSimIndices.flatten().flatten() +
+                realPctSimIndices.orEmpty().flatten().flatten()
+            ).toSet()
         logger.info("MC Pass 2: ${neededSimIndices.size} unique sims for full paths")
         updateProgress(
             phase = "paths",
@@ -633,6 +724,84 @@ object MonteCarloService {
             }
             MonteCarloPortfolioResult(config.portfolio.label, curveResults)
         }
+        val realPortfolioResults =
+            if (inflationDailyRates != null && realPctSimIndices != null && realMetricPercentiles != null) {
+                MonteCarloParallel.parallelMapIndexed(portfolioCurveConfigs) { pi, config ->
+                    val curveResults = MonteCarloParallel.parallelMapIndexed(config.allLabels) { ci, label ->
+                        val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
+                            val simIdx = realPctSimIndices[pi][ci][pctIdx]
+                            val path = fullPaths[simIdx]!!
+                            val factors = MonteCarloIndexedSimulation.inflationFactors(path, inflationDailyRates)
+                            val nominalBenchmark = MonteCarloIndexedSimulation.simulate(
+                                betaReferenceRuntime, null, path, tickerReturnsByDay, effrxDailyRates,
+                                request.startingBalance,
+                            )
+                            val realBenchmark = DoubleArray(nominalBenchmark.size) { i -> nominalBenchmark[i] / factors[i] }
+                            val realCashflows = DoubleArray(syntheticCashflows.size) { i -> syntheticCashflows[i] / factors[i] }
+                            val inflationAnnualized = factors.last().pow(1.0 / years) - 1.0
+                            val realRf = (1.0 + rfAnnualized) / (1.0 + inflationAnnualized) - 1.0
+                            val nominalValues =
+                                if (ci < config.simpleCurves.size) {
+                                    MonteCarloIndexedSimulation.simulate(
+                                        portfolioRuntimes[pi],
+                                        config.simpleCurves[ci].mc,
+                                        path,
+                                        tickerReturnsByDay,
+                                        effrxDailyRates,
+                                        request.startingBalance,
+                                        syntheticCashflows,
+                                        syntheticRebalanceFlagsByPortfolio[pi],
+                                    )
+                                } else {
+                                    val strategyIndex = ci - config.simpleCurves.size
+                                    simulateAttachedStrategies(
+                                        config.portfolio,
+                                        MonteCarloIndexedSimulation.toAssembledPath(
+                                            path, allTickerList, tickerReturnsByDay, effrxDailyRates,
+                                        ),
+                                        request.startingBalance,
+                                        request.cashflow,
+                                    )[strategyIndex].points.map { it.value }.toDoubleArray()
+                                }
+                            val values = DoubleArray(nominalValues.size) { i -> nominalValues[i] / factors[i] }
+                            val stats = MonteCarloIndexedSimulation.computeStats(
+                                values, years, realRf, realCashflows, realBenchmark,
+                            )
+                            MonteCarloPercentilePath(
+                                pct,
+                                values.toList(),
+                                values.last(),
+                                stats.cagr,
+                                stats.maxDrawdown,
+                                stats.sharpe,
+                                stats.ulcerIndex,
+                                stats.upi,
+                                stats.annualVolatility,
+                                stats.longestDrawdownDays,
+                                stats.sortino,
+                                stats.averageDrawdown,
+                                stats.calmar,
+                                stats.beta,
+                            )
+                        }
+                        MonteCarloCurveResult(
+                            label,
+                            percentilePaths,
+                            realMetricPercentiles.maxDd[pi][ci],
+                            realMetricPercentiles.sharpe[pi][ci],
+                            realMetricPercentiles.sortino[pi][ci],
+                            realMetricPercentiles.ulcer[pi][ci],
+                            realMetricPercentiles.upi[pi][ci],
+                            realMetricPercentiles.averageDrawdown[pi][ci],
+                            realMetricPercentiles.calmar[pi][ci],
+                            realMetricPercentiles.beta[pi][ci],
+                            realMetricPercentiles.volatility[pi][ci],
+                            realMetricPercentiles.longestDrawdown[pi][ci],
+                        )
+                    }
+                    MonteCarloPortfolioResult(config.portfolio.label, curveResults)
+                }
+            } else null
 
         updateProgress(
             phase = "complete",
@@ -647,7 +816,14 @@ object MonteCarloService {
             ),
             done = true
         )
-        val result = MonteCarloResult(request.simulatedYears, numSims, portfolioResults, masterSeed)
+        val result = MonteCarloResult(
+            request.simulatedYears,
+            numSims,
+            portfolioResults,
+            masterSeed,
+            inflationAdjusted = realPortfolioResults?.let(::InflationAdjustedMonteCarloResult),
+            inflationAdjustmentUnavailableReason = poolInflation.reason,
+        )
         lastResultState.set(result)
         result
     }

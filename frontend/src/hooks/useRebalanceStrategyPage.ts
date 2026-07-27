@@ -4,6 +4,7 @@ import type { RebalanceStrategyBlockRef } from '@/components/rebalance/Rebalance
 import type { SavedStrategiesBarRef } from '@/components/rebalance/SavedStrategiesBar'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
+import { useInflationAdjustedPreference } from '@/hooks/useInflationAdjustedPreference'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { curveSelectionKey } from '@/lib/curveNaming'
 import { validateDateRange } from '@/lib/dateRange'
@@ -61,6 +62,7 @@ type PageConfigLike = Record<string, unknown> & {
   cashflow?: { amount?: unknown; frequency?: string }
   betaReferenceTicker?: string
   includeActionDiagnostics?: boolean
+  inflationAdjusted?: boolean
   portfolios?: (Record<string, unknown> & { label?: string })[]
   portfolio?: Record<string, unknown> & { label?: string }
   strategies?: StrategyConfigLike[]
@@ -103,6 +105,7 @@ function restoreStrategyStates(req: PageConfigLike) {
 }
 
 export function useRebalanceStrategyPage() {
+  const { inflationAdjusted, setInflationAdjusted } = useInflationAdjustedPreference()
   const [portfolio, setPortfolio] = useState<BlockState>(emptyBlock(0))
   const [strategies, setStrategies] = useState<RebalStrategyState[]>([emptyStrategy(0), emptyStrategy(1)])
   const [fromDate, setFromDate] = useState('')
@@ -149,6 +152,7 @@ export function useRebalanceStrategyPage() {
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       includeActionDiagnostics,
+      inflationAdjusted,
       settingsPortfolio: blockStateToSettingsPortfolio(nextPortfolio, 0),
       strategyStates: nextStrategies,
     }
@@ -158,6 +162,7 @@ export function useRebalanceStrategyPage() {
     betaReferenceTicker,
     fromDate,
     includeActionDiagnostics,
+    inflationAdjusted,
     portfolio,
     startingBalance,
     strategies,
@@ -211,6 +216,7 @@ export function useRebalanceStrategyPage() {
           if (req.fromDate) setFromDate(req.fromDate)
           if (req.toDate) setToDate(req.toDate)
           if (typeof req.includeActionDiagnostics === 'boolean') setIncludeActionDiagnostics(req.includeActionDiagnostics)
+          if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
           if (req.portfolios?.[0]) setPortfolio(configToBlockState(req.portfolios[0], configToBlockInputLabel(req.portfolios[0], 0)))
           const restoredStrategies = restoreStrategyStates(req)
           if (restoredStrategies) setStrategies(restoredStrategies)
@@ -383,6 +389,7 @@ export function useRebalanceStrategyPage() {
       portfolio: portfolioConfig,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+      inflationAdjusted,
       strategies: currentStrategies,
     }, [portfolioConfig], { savedStrategies }))
     setImportCode(code)
@@ -402,6 +409,7 @@ export function useRebalanceStrategyPage() {
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
     if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
+    if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
     if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
     const restoredStrategies = restoreStrategyStates(req)
     if (restoredStrategies) setStrategies(restoredStrategies)
@@ -519,5 +527,7 @@ export function useRebalanceStrategyPage() {
     strategyCommitSaveHandlers,
     refreshSaved,
     refreshSavedStrategies,
+    inflationAdjusted,
+    setInflationAdjusted,
   }
 }

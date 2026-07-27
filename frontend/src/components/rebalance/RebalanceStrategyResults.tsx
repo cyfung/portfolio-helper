@@ -22,6 +22,7 @@ import {
   visibleActionPointGroups,
 } from '@/lib/rebalanceStrategyResults'
 import { BacktestResults } from '@/types/backtest'
+import ResultViewControls from '@/components/backtest/ResultViewControls'
 
 type RiskChartTab = 'drawdown' | 'recover'
 type MarginChartTab = 'margin' | 'marginCushion' | 'marginReciprocal'
@@ -110,6 +111,9 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
   zeroMarginInterestResults,
   zeroMarginInterestRunning = false,
   onLoadZeroMarginInterestResults,
+  inflationAdjusted,
+  onInflationAdjustedChange,
+  inflationAdjustmentUnavailableReason,
 }: {
   results: BacktestResults
   selected: Set<string>
@@ -117,6 +121,9 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
   zeroMarginInterestResults?: BacktestResults | null
   zeroMarginInterestRunning?: boolean
   onLoadZeroMarginInterestResults?: () => void | Promise<void>
+  inflationAdjusted: boolean
+  onInflationAdjustedChange: (value: boolean) => void
+  inflationAdjustmentUnavailableReason?: string | null
 }) {
   const theme = useChartTheme()
   const { gridColor, textColor } = theme
@@ -369,6 +376,11 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
 
   return (
     <>
+      <ResultViewControls
+        inflationAdjusted={inflationAdjusted}
+        onInflationAdjustedChange={onInflationAdjustedChange}
+        unavailableReason={inflationAdjustmentUnavailableReason}
+      />
       <ResultsStatsTable
         allChecked={allChecked}
         anyChecked={anyChecked}

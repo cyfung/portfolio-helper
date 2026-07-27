@@ -195,7 +195,13 @@ object BacktestService {
             PortfolioResult(pConfig.label, curves)
         }.toList()
 
-        return MultiBacktestResult(portfolioResults, synchronized(warnings) { warnings.toList() })
+        val nominal = MultiBacktestResult(portfolioResults, synchronized(warnings) { warnings.toList() })
+        return InflationAdjustment.backtestResult(
+            nominal = nominal,
+            effrx = effrxSeries,
+            cashflows = cashflowAmounts(globalDates, request.cashflow),
+            benchmarkValues = betaReferenceValues(globalDates, betaReferenceSeries),
+        )
     }
 
     fun runMarketTiming(request: MarketTimingRequest): MarketTimingMultiResult {

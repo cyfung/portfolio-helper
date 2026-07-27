@@ -15,6 +15,13 @@ import { useRebalanceStrategyPage } from '@/hooks/useRebalanceStrategyPage'
 
 export default function RebalanceStrategyPage() {
   const page = useRebalanceStrategyPage()
+  const displayResults = page.results && page.inflationAdjusted && page.results.inflationAdjusted
+    ? { ...page.results, portfolios: page.results.inflationAdjusted.portfolios }
+    : page.results
+  const displayZeroMarginInterestResults =
+    page.zeroMarginInterestResults && page.inflationAdjusted && page.zeroMarginInterestResults.inflationAdjusted
+      ? { ...page.zeroMarginInterestResults, portfolios: page.zeroMarginInterestResults.inflationAdjusted.portfolios }
+      : page.zeroMarginInterestResults
 
   return (
     <div className="container">
@@ -104,14 +111,20 @@ export default function RebalanceStrategyPage() {
           ))}
         </div>
       )}
-      {page.results && (
+      {displayResults && (
         <RebalanceStrategyResults
-          results={page.results}
+          results={displayResults}
           selected={page.selected}
           setSelected={page.setSelected}
-          zeroMarginInterestResults={page.zeroMarginInterestResults}
+          zeroMarginInterestResults={displayZeroMarginInterestResults}
           zeroMarginInterestRunning={page.zeroMarginInterestRunning}
           onLoadZeroMarginInterestResults={page.loadZeroMarginInterestResults}
+          inflationAdjusted={page.inflationAdjusted}
+          onInflationAdjustedChange={page.setInflationAdjusted}
+          inflationAdjustmentUnavailableReason={
+            page.results?.inflationAdjustmentUnavailableReason ??
+            (page.results && !page.results.inflationAdjusted ? 'Inflation-adjusted results are unavailable for this run.' : null)
+          }
         />
       )}
       {page.pendingImport && (

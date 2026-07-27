@@ -11,6 +11,7 @@ import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
+import ResultViewControls from '@/components/backtest/ResultViewControls'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import TransientToast from '@/components/TransientToast'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
@@ -19,6 +20,7 @@ import { useChartTheme } from '@/lib/chartTheme'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
+import { useInflationAdjustedPreference } from '@/hooks/useInflationAdjustedPreference'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import {
   applyImportDependencyPreview,
@@ -54,7 +56,7 @@ import {
   buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
 } from '@/lib/chartData'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
-import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStatesToAPIPortfolios } from '@/lib/portfolioRefs'
 import { validateDateRange } from '@/lib/dateRange'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
@@ -88,6 +90,7 @@ interface StoredBacktestConfig {
   toDate?: string | null
   betaReferenceTicker?: string | null
   portfolios?: Record<string, unknown>[]
+  inflationAdjusted?: boolean
 }
 
 interface PerformanceIngestResponse {
@@ -304,6 +307,7 @@ export default function BacktestPage() {
   const { results, realData, selected } = viewState
   const [logScale, setLogScale]       = useState(false)
   const [scaleToNav, setScaleToNav]   = useState(true)
+  const { inflationAdjusted, setInflationAdjusted } = useInflationAdjustedPreference()
   const [visibleActionPointTypes, setVisibleActionPointTypes] = useState<Set<string>>(
     () => new Set(Object.entries(ACTION_MARKERS).filter(([, marker]) => marker.defaultVisible !== false).map(([type]) => type)),
   )
@@ -338,8 +342,9 @@ export default function BacktestPage() {
     startingBalance: startingBalanceToPayload(startingBalance),
     cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+    inflationAdjusted,
     settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
-  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, startingBalance, toDate])
+  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, inflationAdjusted, startingBalance, toDate])
 
   useSettingsAutosave('/api/backtest/settings', settingsPayload, settingsLoaded)
 
@@ -478,6 +483,7 @@ export default function BacktestPage() {
           setCashflowAmount(cashflowState.cashflowAmount)
           setCashflowFrequency(cashflowState.cashflowFrequency)
           setBetaReferenceTicker(cashflowState.betaReferenceTicker)
+          if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
           if (req.portfolios) {
             setBlocks(prev => {
               const next = [...prev]
@@ -541,25 +547,54 @@ export default function BacktestPage() {
   const theme  = useChartTheme()
   const { isDark, gridColor, textColor } = theme
 
-  const displayResults = results
+  const displayResults = useMemo<BacktestResults | null>(() => {
+    if (!results || !inflationAdjusted || !results.inflationAdjusted) return results
+    return { ...results, portfolios: results.inflationAdjusted.portfolios }
+  }, [inflationAdjusted, results])
+  const displayedRealData = useMemo(() => {
+    if (!realData || !inflationAdjusted || !results?.inflationAdjusted) return realData
+    const nominalPoints = results.portfolios[0]?.curves[0]?.points ?? []
+    const realPoints = results.inflationAdjusted.portfolios[0]?.curves[0]?.points ?? []
+    const factorByDate = new Map<string, number>()
+    nominalPoints.forEach((point, index) => {
+      const realValue = realPoints[index]?.value
+      if (realValue && realValue !== 0) factorByDate.set(point.date, point.value / realValue)
+    })
+    const deflateValue = (series: number[] | null) => series?.map((value, index) => {
+      const factor = factorByDate.get(realData.dates[index]) ?? 1
+      return value / factor
+    }) ?? null
+    const deflateReturn = (series: number[] | null) => series?.map((value, index) => {
+      const factor = factorByDate.get(realData.dates[index]) ?? 1
+      return (1 + value) / factor - 1
+    }) ?? null
+    return {
+      ...realData,
+      twrSeries: deflateReturn(realData.twrSeries) ?? [],
+      mwrSeries: deflateReturn(realData.mwrSeries),
+      positionSeries: deflateReturn(realData.positionSeries),
+      navSeries: deflateValue(realData.navSeries) ?? [],
+    }
+  }, [inflationAdjusted, realData, results])
 
   // ── Computed chart data ───────────────────────────────────────────────────
 
   const chartData = useMemo(() => {
     if (!displayResults) return null
+    const realData = displayedRealData
     const labels        = buildCommonLabels(displayResults)
     const backtestStart = displayResults.portfolios[0]?.curves[0]?.points[0]?.value ?? 1
-    const navDisplayFactor = realData ? privacyNavScaleFactor / realData.navScaleFactor : 1
-    const realNavSeries = realData?.navSeries.map(v => v * navDisplayFactor) ?? []
+    const navDisplayFactor = displayedRealData ? privacyNavScaleFactor / displayedRealData.navScaleFactor : 1
+    const realNavSeries = displayedRealData?.navSeries.map(v => v * navDisplayFactor) ?? []
 
     // Build date→index lookup for real portfolio data
-    const realDateIndex: Map<string, number> = realData?.dates.length
-      ? new Map(realData.dates.map((d, i) => [d, i]))
+    const realDateIndex: Map<string, number> = displayedRealData?.dates.length
+      ? new Map(displayedRealData.dates.map((d, i) => [d, i]))
       : new Map()
 
     // NAV scale is only valid when the real portfolio existed at the FIRST backtest date.
     // If the portfolio started later, navStart = 0 → scaling disabled.
-    const firstLabelRealIdx = realData?.dates.length ? realDateIndex.get(labels[0]) : undefined
+    const firstLabelRealIdx = displayedRealData?.dates.length ? realDateIndex.get(labels[0]) : undefined
     const navStart          = firstLabelRealIdx != null ? (realNavSeries[firstLabelRealIdx] ?? 0) : 0
     const shouldScaleToNav  = scaleToNav && navStart > 0 && !!realSlug
 
@@ -711,7 +746,7 @@ export default function BacktestPage() {
       navStart,
       shouldScaleToNav,
     }
-  }, [displayResults, selected, realData, scaleToNav, realSlug, isDark, privacyNavScaleFactor])
+  }, [displayResults, selected, displayedRealData, scaleToNav, realSlug, isDark, privacyNavScaleFactor])
   const selectedActionPointGroups = useMemo(() => (
     visibleActionPointGroups(selectedActionCurve?.curve.actionPoints, visibleActionPointTypes, chartData?.labels ?? [])
   ), [chartData?.labels, selectedActionCurve, visibleActionPointTypes])
@@ -731,8 +766,11 @@ export default function BacktestPage() {
     let mappingWarnings: string[]
     try {
       const latestSavedPortfolios = await fetchSavedPortfolios()
-      const mappedPortfolios = runBlocks
-        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, latestSavedPortfolios, { strict: true }))
+      const mappedPortfolios = resolvedBlockStatesToAPIPortfolios(
+        runBlocks,
+        latestSavedPortfolios,
+        { strict: true },
+      )
         .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
       mappingWarnings = mappedPortfolios.flatMap(mapped => mapped.warnings)
       portfolios = mappedPortfolios
@@ -818,6 +856,7 @@ export default function BacktestPage() {
       portfolios,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+      inflationAdjusted,
     }, portfolios))
     setImportCode(code)
     try {
@@ -836,6 +875,7 @@ export default function BacktestPage() {
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
     if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
+    if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
     if (req.portfolios) {
       const portfolios = req.portfolios
       setBlocks(prev => {
@@ -1151,42 +1191,6 @@ export default function BacktestPage() {
           onToast={showImportToast}
         />
 
-        {realPortfolios.length > 0 && (
-          <div className="backtest-section" style={{ marginTop: '0.5rem' }}>
-            <label htmlFor="real-portfolio-select">Real Portfolio Overlay</label>
-            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.25rem' }}>
-              <select
-                id="real-portfolio-select"
-                value={realSlug}
-                onChange={e => {
-                  setRealSlug(e.target.value)
-                  setRealFetchNotice('')
-                }}
-                style={{ width: 'auto' }}
-              >
-                <option value="">— none —</option>
-                {realPortfolios.map(p => (
-                  <option key={p.slug} value={p.slug}>{p.name}</option>
-                ))}
-              </select>
-              <button
-                className="backtest-config-btn"
-                type="button"
-                style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
-                onClick={() => handleFetchRealFromIbkr(realSlug)}
-                disabled={!realSlug || realIngesting || !!dateRangeError}
-              >
-                {realIngesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
-              </button>
-            </div>
-            {realFetchNotice && (
-              <div style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: 'var(--color-text-tertiary)' }}>
-                {realFetchNotice}
-              </div>
-            )}
-          </div>
-        )}
-
         <SavedPortfolioBlocksSection
           savedBarRef={savedBarRef}
           blocks={blocks}
@@ -1234,6 +1238,47 @@ export default function BacktestPage() {
         legendMetaMap={legendMetaMap}
         render={() => displayResults && chartData ? (
           <>
+          <ResultViewControls
+            inflationAdjusted={inflationAdjusted}
+            onInflationAdjustedChange={setInflationAdjusted}
+            unavailableReason={
+              results?.inflationAdjustmentUnavailableReason ??
+              (results && !results.inflationAdjusted ? 'Inflation-adjusted results are unavailable for this run.' : null)
+            }
+          >
+            {realPortfolios.length > 0 && (
+              <>
+                <label htmlFor="real-portfolio-select">Real Portfolio Overlay</label>
+                <select
+                  id="real-portfolio-select"
+                  value={realSlug}
+                  onChange={e => {
+                    setRealSlug(e.target.value)
+                    setRealFetchNotice('')
+                  }}
+                  style={{ width: 'auto' }}
+                >
+                  <option value="">— none —</option>
+                  {realPortfolios.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                </select>
+                <button
+                  className="backtest-config-btn"
+                  type="button"
+                  onClick={() => handleFetchRealFromIbkr(realSlug)}
+                  disabled={!realSlug || realIngesting || !!dateRangeError}
+                >
+                  {realIngesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
+                </button>
+              </>
+            )}
+            {showNavScaleBtn && (
+              <label>
+                <input type="checkbox" checked={scaleToNav} onChange={e => setScaleToNav(e.target.checked)} />
+                NAV adjusted
+              </label>
+            )}
+            {realFetchNotice && <span className="result-view-controls-notice">{realFetchNotice}</span>}
+          </ResultViewControls>
           {/* Stats table */}
           <div className="stats-container">
             <table className="backtest-stats-table">
@@ -1342,16 +1387,6 @@ export default function BacktestPage() {
             >
               Log
             </button>
-            {showNavScaleBtn && (
-              <button
-                className={`chart-scale-toggle${scaleToNav ? ' active' : ''}`}
-                type="button"
-                style={{ position: 'static' }}
-                onClick={() => setScaleToNav(s => !s)}
-              >
-                NAV Scale
-              </button>
-            )}
           </div>
           {renderDenseActionStrips('main')}
           <div className="backtest-chart-container" ref={chartContainerRef}>

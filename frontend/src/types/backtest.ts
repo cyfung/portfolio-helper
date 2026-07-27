@@ -546,6 +546,8 @@ export interface BacktestResults {
   portfolios: BacktestPortfolioResult[]
   warnings?: string[]
   error?: string
+  inflationAdjusted?: { portfolios: BacktestPortfolioResult[] } | null
+  inflationAdjustmentUnavailableReason?: string | null
 }
 
 export interface McPercentilePath {
@@ -592,6 +594,8 @@ export interface MonteCarloResults {
   portfolios: McPortfolioResult[]
   warnings?: string[]
   error?: string
+  inflationAdjusted?: { portfolios: McPortfolioResult[] } | null
+  inflationAdjustmentUnavailableReason?: string | null
 }
 
 export interface SavedPortfolio {

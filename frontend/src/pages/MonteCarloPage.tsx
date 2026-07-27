@@ -10,12 +10,14 @@ import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
+import ResultViewControls from '@/components/backtest/ResultViewControls'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import TransientToast from '@/components/TransientToast'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
+import { useInflationAdjustedPreference } from '@/hooks/useInflationAdjustedPreference'
 import { getChartTheme } from '@/lib/chartTheme'
 import { scaleDash } from '@/lib/colorScheme'
 import { curveDisplayLabel, curveSelectionKey, percentileCurveLabel } from '@/lib/curveNaming'
@@ -183,6 +185,7 @@ export default function MonteCarloPage() {
   const [percentile, setPercentile]   = useState(50)
   const [selected, setSelected]       = useState<Set<string>>(new Set())
   const [logScale, setLogScale]       = useState(false)
+  const { inflationAdjusted, setInflationAdjusted } = useInflationAdjustedPreference()
   const { toast: importToast, showToast: showImportToast, clearToast: clearImportToast } = useTransientToast()
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
@@ -203,8 +206,9 @@ export default function MonteCarloPage() {
     startingBalance: startingBalanceToPayload(startingBalance),
     cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
     betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+    inflationAdjusted,
     settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
-  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
+  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, inflationAdjusted, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
 
   useSettingsAutosave('/api/montecarlo/settings', settingsPayload, settingsLoaded)
 
@@ -268,6 +272,7 @@ export default function MonteCarloPage() {
           setCashflowAmount(cashflowState.cashflowAmount)
           setCashflowFrequency(cashflowState.cashflowFrequency)
           setBetaReferenceTicker(cashflowState.betaReferenceTicker)
+          if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
           if (req && Object.keys(req).length) {
             if (req.fromDate) setFromDate(req.fromDate)
             if (req.toDate)   setToDate(req.toDate)
@@ -302,10 +307,15 @@ export default function MonteCarloPage() {
 
   // ── Computed chart data ───────────────────────────────────────────────────
 
+  const shownResults = useMemo<MonteCarloResults | null>(() => {
+    if (!results || !inflationAdjusted || !results.inflationAdjusted) return results
+    return { ...results, portfolios: results.inflationAdjusted.portfolios }
+  }, [inflationAdjusted, results])
+
   const chartData = useMemo(() => {
-    if (!results) return null
-    const targetDays = results.simulatedYears * 252
-    const effectiveCurves = getEffectiveCurves(results, selected)
+    if (!shownResults) return null
+    const targetDays = shownResults.simulatedYears * 252
+    const effectiveCurves = getEffectiveCurves(shownResults, selected)
     const singleCurve = effectiveCurves.length === 1
 
     // Build rows: one object per day index
@@ -342,9 +352,9 @@ export default function MonteCarloPage() {
       })
     }
 
-    const yearTicks = Array.from({ length: results.simulatedYears + 1 }, (_, i) => i * 252)
+    const yearTicks = Array.from({ length: shownResults.simulatedYears + 1 }, (_, i) => i * 252)
     return { rows, datasets, yearTicks, targetDays, effectiveCurves }
-  }, [results, percentile, selected])
+  }, [shownResults, percentile, selected])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -507,6 +517,7 @@ export default function MonteCarloPage() {
       startingBalance: runStartingBalance,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+      inflationAdjusted,
       portfolios,
       settingsPortfolios,
     }
@@ -589,6 +600,7 @@ export default function MonteCarloPage() {
       startingBalance: exportStartingBalance,
       cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+      inflationAdjusted,
       portfolios,
     }, portfolios))
     setImportCode(code)
@@ -608,6 +620,7 @@ export default function MonteCarloPage() {
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
     if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
+    if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
     if (req.minChunkYears  != null) setMinChunk(String(req.minChunkYears))
     if (req.maxChunkYears  != null) setMaxChunk(String(req.maxChunkYears))
     if (req.simulatedYears != null) setSimYears(String(req.simulatedYears))
@@ -666,10 +679,10 @@ export default function MonteCarloPage() {
   // ── Curve toggle ──────────────────────────────────────────────────────────
 
   const allKeys = useMemo(
-    () => results
-      ? results.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci)))
+    () => shownResults
+      ? shownResults.portfolios.flatMap((p, pi) => p.curves.map((_, ci) => curveSelectionKey(pi, ci)))
       : [],
-    [results],
+    [shownResults],
   )
   const allChecked = allKeys.length > 0 && allKeys.every(k => selected.has(k))
   const anyChecked = selected.size > 0
@@ -805,7 +818,7 @@ export default function MonteCarloPage() {
       )}
 
       <MonteCarloChartRenderBoundary
-        results={results}
+        results={shownResults}
         chartData={chartData}
         selected={selected}
         percentile={percentile}
@@ -816,8 +829,16 @@ export default function MonteCarloPage() {
         isDark={isDark}
         gridColor={gridColor}
         textColor={textColor}
-        render={() => results && chartData ? (
+        render={() => shownResults && chartData ? (
           <>
+          <ResultViewControls
+            inflationAdjusted={inflationAdjusted}
+            onInflationAdjustedChange={setInflationAdjusted}
+            unavailableReason={
+              results?.inflationAdjustmentUnavailableReason ??
+              (results && !results.inflationAdjusted ? 'Inflation-adjusted results are unavailable for this run.' : null)
+            }
+          />
           <div style={{ opacity: 0.7, margin: '0.5rem 0 1rem', lineHeight: 1.5 }}>
             <p style={{ fontSize: 'var(--font-size-md)', margin: 0 }}>
               ⚠︎ Each metric is independently ranked across all simulations.
@@ -846,7 +867,7 @@ export default function MonteCarloPage() {
           {/* Stats table */}
           <div className="stats-container">
             <div className="mc-stats-header">
-              Results at <strong>{percentile}th percentile</strong> ({results.numSimulations} simulations, {results.simulatedYears}yr)
+              Results at <strong>{percentile}th percentile</strong> ({shownResults.numSimulations} simulations, {shownResults.simulatedYears}yr)
             </div>
             <table className="backtest-stats-table">
               <thead>
@@ -864,7 +885,7 @@ export default function MonteCarloPage() {
                 </tr>
               </thead>
               <tbody>
-                {results.portfolios.flatMap((portfolio, pi) =>
+                {shownResults.portfolios.flatMap((portfolio, pi) =>
                   portfolio.curves.map((curve, ci) => {
                     const key = curveSelectionKey(pi, ci)
                     const pctIdx = PERCENTILE_LIST.indexOf(percentile)
