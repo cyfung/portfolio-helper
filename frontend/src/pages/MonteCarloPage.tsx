@@ -60,7 +60,7 @@ import {
   DEFAULT_BETA_REFERENCE_TICKER, DEFAULT_CASHFLOW_FREQUENCY, hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
   DEFAULT_GUARDRAIL_CASHFLOW_STATE,
 } from '@/types/backtest'
-import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
+import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStatesToAPIPortfolios } from '@/lib/portfolioRefs'
 
 // ── Effective curves helper ───────────────────────────────────────────────────
 
@@ -476,8 +476,11 @@ export default function MonteCarloPage() {
         { label: 'Saved portfolios loaded', value: savedPortfolios.length },
         { label: 'Portfolio blocks', value: runBlocks.length },
       ])
-      const mappedPortfolios = runBlocks
-        .map((b, i) => resolvedBlockStateToAPIPortfolio(b, i, savedPortfolios, { strict: true }))
+      const mappedPortfolios = resolvedBlockStatesToAPIPortfolios(
+        runBlocks,
+        savedPortfolios,
+        { strict: true },
+      )
         .map(p => applyTickerMappingsToPortfolioWithWarnings(p, selectedTickerMappingSet))
       mappingWarnings = mappedPortfolios.flatMap(mapped => mapped.warnings)
       portfolios = mappedPortfolios
