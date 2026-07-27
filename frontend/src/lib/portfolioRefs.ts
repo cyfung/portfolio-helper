@@ -181,3 +181,15 @@ export function resolvedBlockStateToAPIPortfolio(
 
   return { ...apiPortfolio, tickers }
 }
+
+export function resolvedBlockStatesToAPIPortfolios(
+  blocks: BlockState[],
+  savedPortfolios: SavedPortfolio[],
+  options: BlockConversionOptions = {},
+) {
+  return blocks.flatMap((block, idx) => (
+    blockStateToSavedConfig(block).rows.length === 0
+      ? []
+      : [resolvedBlockStateToAPIPortfolio(block, idx, savedPortfolios, options)]
+  ))
+}

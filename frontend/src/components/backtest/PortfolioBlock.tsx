@@ -749,6 +749,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                   <label className="ticker-input portfolio-ref-name" title={portfolioRefStatusTitle}>
                     <label className="portfolio-ref-mode" title="Choose how the referenced portfolio exposure is scaled">
                       <select
+                        className="portfolio-ref-mode-select"
                         aria-label={`Reference mode for ${t.portfolioName || 'portfolio'}`}
                         value={t.normalizationMode}
                         onChange={e => commit({

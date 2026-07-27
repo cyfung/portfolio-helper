@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   blockStateResolution,
   blockStateToSettingsPortfolio,
+  resolvedBlockStatesToAPIPortfolios,
   resolvedBlockStateToAPIPortfolio,
 } from './portfolioRefs'
 import type { BlockState, SavedPortfolio } from '@/types/backtest'
@@ -27,6 +28,25 @@ describe('autosaved portfolio persistence', () => {
 })
 
 describe('analysis run payloads', () => {
+  it('skips empty placeholder blocks before resolving valid portfolios', () => {
+    const empty: BlockState = {
+      label: '',
+      tickers: [],
+      rebalance: 'YEARLY',
+      margins: [],
+      rebalanceStrategies: [],
+      includeNoMargin: true,
+    }
+    const valid: BlockState = {
+      ...empty,
+      label: 'Valid',
+      tickers: [{ id: 'holding', type: 'HOLDING', instrument: 'SPY', allocation: '100' }],
+    }
+
+    expect(resolvedBlockStatesToAPIPortfolios([empty, valid], []))
+      .toMatchObject([{ label: 'Valid', tickers: [{ ticker: 'SPY', weight: 100 }] }])
+  })
+
   it('contain only flattened holding allocations in the resolved portfolio composition', () => {
     const block: BlockState = {
       label: 'Root',

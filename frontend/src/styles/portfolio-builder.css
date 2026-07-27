@@ -45,6 +45,19 @@
     line-height: 1.05rem;
 }
 
+[data-theme="light"] .portfolio-ref-mode-select {
+    color-scheme: light;
+}
+
+[data-theme="dark"] .portfolio-ref-mode-select {
+    color-scheme: dark;
+}
+
+.portfolio-ref-mode-select option {
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+}
+
 .portfolio-ref-row .portfolio-ref-mode svg {
     right: 0.15rem;
     color: inherit;
