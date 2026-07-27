@@ -1788,7 +1788,7 @@ class RebalanceStrategyServiceTest {
             emptyMap(),
         )
 
-        assertApprox(7_720.0, equity.last(), label = "equity after reviewed yearly withdrawal")
+        assertApprox(8_920.0, equity.last(), label = "equity after reviewed yearly withdrawal")
     }
 
     @Test

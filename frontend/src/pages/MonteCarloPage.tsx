@@ -58,6 +58,7 @@ import {
   PERCENTILE_COLORS, PERCENTILE_LIST, PALETTE,
   cashflowStateFromSettings, cashflowToPayload, configToBlockInputLabel,
   DEFAULT_BETA_REFERENCE_TICKER, DEFAULT_CASHFLOW_FREQUENCY, hasActiveRebalanceStrategyRows, normalizeBlockSpreadInputs, startingBalanceToPayload,
+  DEFAULT_GUARDRAIL_CASHFLOW_STATE,
 } from '@/types/backtest'
 import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 
@@ -164,6 +165,7 @@ export default function MonteCarloPage() {
   const [toDate, setToDate]           = useState('')
   const [startingBalance, setStartingBalance]     = useState('10000')
   const [cashflowAmount, setCashflowAmount]       = useState('0')
+  const [guardrailCashflow, setGuardrailCashflow] = useState(DEFAULT_GUARDRAIL_CASHFLOW_STATE)
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [betaReferenceTicker, setBetaReferenceTicker] = useState(DEFAULT_BETA_REFERENCE_TICKER)
   const [minChunk, setMinChunk]       = useState('3')
@@ -204,11 +206,11 @@ export default function MonteCarloPage() {
     simulatedYears: settingsMcInteger(simYears, 20),
     numSimulations: settingsMcInteger(numSims, 500),
     startingBalance: startingBalanceToPayload(startingBalance),
-    cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+    cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
     betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
     inflationAdjusted,
     settingsPortfolios: blocks.map((block, i) => blockStateToSettingsPortfolio(block, i)),
-  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, inflationAdjusted, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
+  }), [betaReferenceTicker, blocks, cashflowAmount, cashflowFrequency, fromDate, guardrailCashflow, inflationAdjusted, maxChunk, minChunk, numSims, simYears, startingBalance, toDate])
 
   useSettingsAutosave('/api/montecarlo/settings', settingsPayload, settingsLoaded)
 
@@ -216,13 +218,14 @@ export default function MonteCarloPage() {
     setStartingBalance(shared.startingBalance)
     setCashflowAmount(shared.cashflowAmount)
     setCashflowFrequency(shared.cashflowFrequency)
+    setGuardrailCashflow(shared.guardrailCashflow)
     setBetaReferenceTicker(shared.betaReferenceTicker)
   }), [])
 
   useEffect(() => {
     if (!cashflowCacheLoaded) return
-    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker })
-  }, [betaReferenceTicker, cashflowAmount, cashflowCacheLoaded, cashflowFrequency, startingBalance])
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker, guardrailCashflow })
+  }, [betaReferenceTicker, cashflowAmount, cashflowCacheLoaded, cashflowFrequency, guardrailCashflow, startingBalance])
 
   useEffect(() => {
     let active = true
@@ -271,6 +274,7 @@ export default function MonteCarloPage() {
           setStartingBalance(cashflowState.startingBalance)
           setCashflowAmount(cashflowState.cashflowAmount)
           setCashflowFrequency(cashflowState.cashflowFrequency)
+          setGuardrailCashflow(cashflowState.guardrailCashflow)
           setBetaReferenceTicker(cashflowState.betaReferenceTicker)
           if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
           if (req && Object.keys(req).length) {
@@ -515,7 +519,7 @@ export default function MonteCarloPage() {
       simulatedYears,
       numSimulations: ns,
       startingBalance: runStartingBalance,
-      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       inflationAdjusted,
       portfolios,
@@ -598,7 +602,7 @@ export default function MonteCarloPage() {
       minChunkYears, maxChunkYears,
       simulatedYears, numSimulations,
       startingBalance: exportStartingBalance,
-      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       inflationAdjusted,
       portfolios,
@@ -619,6 +623,7 @@ export default function MonteCarloPage() {
     if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (cashflowState.guardrailCashflow != null) setGuardrailCashflow(cashflowState.guardrailCashflow)
     if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
     if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
     if (req.minChunkYears  != null) setMinChunk(String(req.minChunkYears))
@@ -752,6 +757,7 @@ export default function MonteCarloPage() {
           cashflowAmount={cashflowAmount}
           cashflowFrequency={cashflowFrequency}
           betaReferenceTicker={betaReferenceTicker}
+          guardrailCashflow={guardrailCashflow}
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
           onImportCodeChange={setImportCode}
@@ -761,6 +767,7 @@ export default function MonteCarloPage() {
           onCashflowAmountChange={setCashflowAmount}
           onCashflowFrequencyChange={setCashflowFrequency}
           onBetaReferenceTickerChange={setBetaReferenceTicker}
+          onGuardrailCashflowChange={setGuardrailCashflow}
         />
 
         <TickerMappingControl

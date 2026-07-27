@@ -127,11 +127,7 @@ export interface CashflowFormState {
   cashflowAmount: string
   cashflowFrequency: string
   betaReferenceTicker: string
-  cashflowMode?: 'FIXED' | 'GUARDRAIL_WITHDRAWAL'
-  initialAnnualWithdrawal?: string
-  lowerWithdrawalRate?: string
-  upperWithdrawalRate?: string
-  minimumAnnualWithdrawal?: string
+  guardrailCashflow: GuardrailCashflowState
 }
 
 export interface GuardrailCashflowState {
@@ -142,20 +138,12 @@ export interface GuardrailCashflowState {
   minimumAnnualWithdrawal: string
 }
 
-let guardrailCashflowState: GuardrailCashflowState = {
+export const DEFAULT_GUARDRAIL_CASHFLOW_STATE: GuardrailCashflowState = {
   mode: 'FIXED',
   initialAnnualWithdrawal: '',
   lowerWithdrawalRate: '3',
   upperWithdrawalRate: '6',
   minimumAnnualWithdrawal: '',
-}
-
-export function getGuardrailCashflowState(): GuardrailCashflowState {
-  return { ...guardrailCashflowState }
-}
-
-export function setGuardrailCashflowState(next: GuardrailCashflowState): void {
-  guardrailCashflowState = { ...next }
 }
 
 export type BlockConversionOptions = { strict?: boolean }
@@ -169,13 +157,17 @@ export function startingBalanceToPayload(value: string, options: BlockConversion
   return 10000
 }
 
-export function cashflowToPayload(amount: string, frequency: string): CashflowPayload | null {
+export function cashflowToPayload(
+  amount: string,
+  frequency: string,
+  guardrailCashflow: GuardrailCashflowState = DEFAULT_GUARDRAIL_CASHFLOW_STATE,
+): CashflowPayload | null {
   if (frequency === 'NONE') return null
-  if (guardrailCashflowState.mode === 'GUARDRAIL_WITHDRAWAL') {
-    const initialAnnualWithdrawal = Number(guardrailCashflowState.initialAnnualWithdrawal)
-    const lowerWithdrawalRate = Number(guardrailCashflowState.lowerWithdrawalRate) / 100
-    const upperWithdrawalRate = Number(guardrailCashflowState.upperWithdrawalRate) / 100
-    const minimumText = guardrailCashflowState.minimumAnnualWithdrawal.trim()
+  if (guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL') {
+    const initialAnnualWithdrawal = Number(guardrailCashflow.initialAnnualWithdrawal)
+    const lowerWithdrawalRate = Number(guardrailCashflow.lowerWithdrawalRate) / 100
+    const upperWithdrawalRate = Number(guardrailCashflow.upperWithdrawalRate) / 100
+    const minimumText = guardrailCashflow.minimumAnnualWithdrawal.trim()
     if (!Number.isFinite(initialAnnualWithdrawal) || initialAnnualWithdrawal <= 0)
       throw new Error('Initial Annual Withdrawal must be greater than 0.')
     if (!Number.isFinite(lowerWithdrawalRate) || lowerWithdrawalRate < 0)
@@ -205,13 +197,13 @@ export function cashflowStateFromSettings(req: any): Partial<CashflowFormState> 
     ? DEFAULT_CASHFLOW_FREQUENCY
     : req.cashflow?.frequency
 
-  setGuardrailCashflowState({
+  const guardrailCashflow: GuardrailCashflowState = {
     mode: req.cashflow?.mode === 'GUARDRAIL_WITHDRAWAL' ? 'GUARDRAIL_WITHDRAWAL' : 'FIXED',
     initialAnnualWithdrawal: req.cashflow?.initialAnnualWithdrawal != null ? String(req.cashflow.initialAnnualWithdrawal) : '',
     lowerWithdrawalRate: req.cashflow?.lowerWithdrawalRate != null ? String(Number(req.cashflow.lowerWithdrawalRate) * 100) : '3',
     upperWithdrawalRate: req.cashflow?.upperWithdrawalRate != null ? String(Number(req.cashflow.upperWithdrawalRate) * 100) : '6',
     minimumAnnualWithdrawal: req.cashflow?.minimumAnnualWithdrawal != null ? String(req.cashflow.minimumAnnualWithdrawal) : '',
-  })
+  }
   return {
     ...(req.startingBalance != null ? { startingBalance: String(req.startingBalance) } : {}),
     cashflowAmount: req.cashflow?.amount != null ? String(req.cashflow.amount) : '0',
@@ -219,6 +211,7 @@ export function cashflowStateFromSettings(req: any): Partial<CashflowFormState> 
     betaReferenceTicker: typeof req.betaReferenceTicker === 'string'
       ? req.betaReferenceTicker
       : DEFAULT_BETA_REFERENCE_TICKER,
+    guardrailCashflow,
   }
 }
 

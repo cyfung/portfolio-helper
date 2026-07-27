@@ -45,6 +45,7 @@ export default function RebalanceStrategyPage() {
           cashflowAmount={page.cashflowAmount}
           cashflowFrequency={page.cashflowFrequency}
           betaReferenceTicker={page.betaReferenceTicker}
+          guardrailCashflow={page.guardrailCashflow}
           onFromDateChange={page.setFromDate}
           onToDateChange={page.setToDate}
           onImportCodeChange={page.setImportCode}
@@ -54,6 +55,7 @@ export default function RebalanceStrategyPage() {
           onCashflowAmountChange={page.setCashflowAmount}
           onCashflowFrequencyChange={page.setCashflowFrequency}
           onBetaReferenceTickerChange={page.setBetaReferenceTicker}
+          onGuardrailCashflowChange={page.setGuardrailCashflow}
         />
 
         <TickerMappingControl

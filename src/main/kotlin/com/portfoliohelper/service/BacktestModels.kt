@@ -110,6 +110,9 @@ data class CashflowConfig(
 ) {
     fun validate() {
         if (mode == CashflowMode.GUARDRAIL_WITHDRAWAL) {
+            require(frequency != CashflowFrequency.NONE) {
+                "Guardrail withdrawal frequency must be monthly, quarterly, or yearly."
+            }
             require(initialAnnualWithdrawal != null && initialAnnualWithdrawal > 0.0) {
                 "Initial annual withdrawal must be greater than 0."
             }

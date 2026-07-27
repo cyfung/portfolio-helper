@@ -3,8 +3,7 @@ import {
   DEFAULT_CASHFLOW_FREQUENCY,
   type CashflowFormState,
   cashflowStateFromSettings,
-  getGuardrailCashflowState,
-  setGuardrailCashflowState,
+  DEFAULT_GUARDRAIL_CASHFLOW_STATE,
 } from '@/types/backtest'
 
 const SHARED_CASHFLOW_SETTINGS_KEY = 'ib-viewer-shared-cashflow-settings'
@@ -19,25 +18,13 @@ function normalizeCashflowState(state: Partial<CashflowFormState>): CashflowForm
   const cashflowAmount = String(state.cashflowAmount ?? '').trim() || '0'
   const cashflowFrequency = String(state.cashflowFrequency ?? '').trim() || DEFAULT_CASHFLOW_FREQUENCY
   const betaReferenceTicker = String(state.betaReferenceTicker ?? '').trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER
-  const currentGuardrail = getGuardrailCashflowState()
-  const guardrail = {
-    mode: state.cashflowMode ?? currentGuardrail.mode,
-    initialAnnualWithdrawal: state.initialAnnualWithdrawal ?? currentGuardrail.initialAnnualWithdrawal,
-    lowerWithdrawalRate: state.lowerWithdrawalRate ?? currentGuardrail.lowerWithdrawalRate,
-    upperWithdrawalRate: state.upperWithdrawalRate ?? currentGuardrail.upperWithdrawalRate,
-    minimumAnnualWithdrawal: state.minimumAnnualWithdrawal ?? currentGuardrail.minimumAnnualWithdrawal,
-  }
-  setGuardrailCashflowState(guardrail)
+  const guardrail = state.guardrailCashflow ?? DEFAULT_GUARDRAIL_CASHFLOW_STATE
   return {
     startingBalance,
     cashflowAmount,
     cashflowFrequency,
     betaReferenceTicker,
-    cashflowMode: guardrail.mode,
-    initialAnnualWithdrawal: guardrail.initialAnnualWithdrawal,
-    lowerWithdrawalRate: guardrail.lowerWithdrawalRate,
-    upperWithdrawalRate: guardrail.upperWithdrawalRate,
-    minimumAnnualWithdrawal: guardrail.minimumAnnualWithdrawal,
+    guardrailCashflow: { ...guardrail },
   }
 }
 

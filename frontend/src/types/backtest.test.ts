@@ -9,20 +9,19 @@ import {
   sortAndMergePortfolioEditorRows,
   type BlockState,
   cashflowToPayload,
-  setGuardrailCashflowState,
 } from './backtest'
 
 describe('guardrail cashflow payload', () => {
   it('serializes annual amounts and percentage limits', () => {
-    setGuardrailCashflowState({
+    const guardrailCashflow = {
       mode: 'GUARDRAIL_WITHDRAWAL',
       initialAnnualWithdrawal: '12000',
       lowerWithdrawalRate: '3',
       upperWithdrawalRate: '6',
       minimumAnnualWithdrawal: '9000',
-    })
+    } as const
 
-    expect(cashflowToPayload('0', 'MONTHLY')).toEqual({
+    expect(cashflowToPayload('0', 'MONTHLY', guardrailCashflow)).toEqual({
       amount: 0,
       frequency: 'MONTHLY',
       mode: 'GUARDRAIL_WITHDRAWAL',
@@ -31,6 +30,24 @@ describe('guardrail cashflow payload', () => {
       upperWithdrawalRate: 0.06,
       minimumAnnualWithdrawal: 9000,
     })
+  })
+
+  it('rejects invalid annual withdrawal and reversed limits with user-facing messages', () => {
+    expect(() => cashflowToPayload('0', 'MONTHLY', {
+      mode: 'GUARDRAIL_WITHDRAWAL',
+      initialAnnualWithdrawal: '0',
+      lowerWithdrawalRate: '3',
+      upperWithdrawalRate: '6',
+      minimumAnnualWithdrawal: '',
+    })).toThrow('Initial Annual Withdrawal must be greater than 0.')
+
+    expect(() => cashflowToPayload('0', 'MONTHLY', {
+      mode: 'GUARDRAIL_WITHDRAWAL',
+      initialAnnualWithdrawal: '12000',
+      lowerWithdrawalRate: '6',
+      upperWithdrawalRate: '3',
+      minimumAnnualWithdrawal: '',
+    })).toThrow('Upper Withdrawal-Rate Limit must be greater than the lower limit.')
   })
 })
 

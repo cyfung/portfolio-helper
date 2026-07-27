@@ -35,6 +35,7 @@ import {
   BlockState,
   DEFAULT_BETA_REFERENCE_TICKER,
   DEFAULT_CASHFLOW_FREQUENCY,
+  DEFAULT_GUARDRAIL_CASHFLOW_STATE,
   cashflowStateFromSettings,
   cashflowToPayload,
   configToBlockInputLabel,
@@ -112,6 +113,7 @@ export function useRebalanceStrategyPage() {
   const [toDate, setToDate] = useState('')
   const [startingBalance, setStartingBalance] = useState('10000')
   const [cashflowAmount, setCashflowAmount] = useState('0')
+  const [guardrailCashflow, setGuardrailCashflow] = useState(DEFAULT_GUARDRAIL_CASHFLOW_STATE)
   const [cashflowFrequency, setCashflowFrequency] = useState(DEFAULT_CASHFLOW_FREQUENCY)
   const [betaReferenceTicker, setBetaReferenceTicker] = useState(DEFAULT_BETA_REFERENCE_TICKER)
   const [tickerMappingSettings, setTickerMappingSettings] = useState<TickerMappingSettings>(() => loadTickerMappingSettings())
@@ -149,7 +151,7 @@ export function useRebalanceStrategyPage() {
       fromDate: fromDate || null,
       toDate: toDate || null,
       startingBalance: startingBalanceToPayload(startingBalance),
-      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       includeActionDiagnostics,
       inflationAdjusted,
@@ -159,6 +161,7 @@ export function useRebalanceStrategyPage() {
   }, [
     cashflowAmount,
     cashflowFrequency,
+    guardrailCashflow,
     betaReferenceTicker,
     fromDate,
     includeActionDiagnostics,
@@ -176,13 +179,14 @@ export function useRebalanceStrategyPage() {
     setStartingBalance(shared.startingBalance)
     setCashflowAmount(shared.cashflowAmount)
     setCashflowFrequency(shared.cashflowFrequency)
+    setGuardrailCashflow(shared.guardrailCashflow)
     setBetaReferenceTicker(shared.betaReferenceTicker)
   }), [])
 
   useEffect(() => {
     if (!settingsLoaded) return
-    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker })
-  }, [betaReferenceTicker, cashflowAmount, cashflowFrequency, settingsLoaded, startingBalance])
+    writeSharedCashflowSettings({ startingBalance, cashflowAmount, cashflowFrequency, betaReferenceTicker, guardrailCashflow })
+  }, [betaReferenceTicker, cashflowAmount, cashflowFrequency, guardrailCashflow, settingsLoaded, startingBalance])
 
   useEffect(() => {
     let active = true
@@ -212,6 +216,7 @@ export function useRebalanceStrategyPage() {
           setStartingBalance(cashflowState.startingBalance)
           setCashflowAmount(cashflowState.cashflowAmount)
           setCashflowFrequency(cashflowState.cashflowFrequency)
+          setGuardrailCashflow(cashflowState.guardrailCashflow)
           setBetaReferenceTicker(cashflowState.betaReferenceTicker)
           if (req.fromDate) setFromDate(req.fromDate)
           if (req.toDate) setToDate(req.toDate)
@@ -309,7 +314,7 @@ export function useRebalanceStrategyPage() {
         startingBalance: startingBalanceToPayload(startingBalance, { strict: true }),
         portfolio: runInputs.portfolioApi,
         settingsPortfolio: runInputs.settingsPortfolio,
-        cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+        cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
         betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
         strategies: runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
         strategyStates: runInputs.runStrategies,
@@ -328,6 +333,7 @@ export function useRebalanceStrategyPage() {
   }, [
     cashflowAmount,
     cashflowFrequency,
+    guardrailCashflow,
     betaReferenceTicker,
     dateRangeError,
     fetchRunResults,
@@ -387,7 +393,7 @@ export function useRebalanceStrategyPage() {
       toDate: toDate || null,
       startingBalance: exportStartingBalance,
       portfolio: portfolioConfig,
-      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency),
+      cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow),
       betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       inflationAdjusted,
       strategies: currentStrategies,
@@ -399,7 +405,7 @@ export function useRebalanceStrategyPage() {
     } catch {
       showImportToast('Export code generated.')
     }
-  }, [betaReferenceTicker, cashflowAmount, cashflowFrequency, currentNormalizedStrategies, fromDate, portfolio, showImportToast, startingBalance, strategies, toDate])
+  }, [betaReferenceTicker, cashflowAmount, cashflowFrequency, currentNormalizedStrategies, fromDate, guardrailCashflow, portfolio, showImportToast, startingBalance, strategies, toDate])
 
   const applyImportedConfig = useCallback((req: PageConfigLike) => {
     if (req.fromDate) setFromDate(req.fromDate)
@@ -408,6 +414,7 @@ export function useRebalanceStrategyPage() {
     if (cashflowState.startingBalance != null) setStartingBalance(cashflowState.startingBalance)
     if (cashflowState.cashflowAmount != null) setCashflowAmount(cashflowState.cashflowAmount)
     if (cashflowState.cashflowFrequency != null) setCashflowFrequency(cashflowState.cashflowFrequency)
+    if (cashflowState.guardrailCashflow != null) setGuardrailCashflow(cashflowState.guardrailCashflow)
     if (cashflowState.betaReferenceTicker != null) setBetaReferenceTicker(cashflowState.betaReferenceTicker)
     if (typeof req.inflationAdjusted === 'boolean') setInflationAdjusted(req.inflationAdjusted)
     if (req.portfolio) setPortfolio(configToBlockState(req.portfolio, configToBlockInputLabel(req.portfolio, 0)))
@@ -491,6 +498,8 @@ export function useRebalanceStrategyPage() {
     setCashflowAmount,
     cashflowFrequency,
     setCashflowFrequency,
+    guardrailCashflow,
+    setGuardrailCashflow,
     betaReferenceTicker,
     setBetaReferenceTicker,
     tickerMappingSettings,

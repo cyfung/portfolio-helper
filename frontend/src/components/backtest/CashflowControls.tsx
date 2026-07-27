@@ -1,12 +1,8 @@
-import { useState } from 'react'
 import {
   CASHFLOW_FREQUENCY_OPTIONS,
-  getGuardrailCashflowState,
-  setGuardrailCashflowState,
   type CashflowFormState,
   type GuardrailCashflowState,
 } from '@/types/backtest'
-import { writeSharedCashflowSettings } from '@/lib/sharedCashflowSettings'
 
 interface Props extends CashflowFormState {
   idPrefix: string
@@ -14,6 +10,7 @@ interface Props extends CashflowFormState {
   onCashflowAmountChange: (value: string) => void
   onCashflowFrequencyChange: (value: string) => void
   onBetaReferenceTickerChange: (value: string) => void
+  onGuardrailCashflowChange: (value: GuardrailCashflowState) => void
 }
 
 export default function CashflowControls({
@@ -22,27 +19,15 @@ export default function CashflowControls({
   cashflowAmount,
   cashflowFrequency,
   betaReferenceTicker,
+  guardrailCashflow,
   onStartingBalanceChange,
   onCashflowAmountChange,
   onCashflowFrequencyChange,
   onBetaReferenceTickerChange,
+  onGuardrailCashflowChange,
 }: Props) {
-  const [guardrail, setGuardrail] = useState(getGuardrailCashflowState)
   const updateGuardrail = (patch: Partial<GuardrailCashflowState>) => {
-    const next = { ...guardrail, ...patch }
-    setGuardrail(next)
-    setGuardrailCashflowState(next)
-    writeSharedCashflowSettings({
-      startingBalance,
-      cashflowAmount,
-      cashflowFrequency,
-      betaReferenceTicker,
-      cashflowMode: next.mode,
-      initialAnnualWithdrawal: next.initialAnnualWithdrawal,
-      lowerWithdrawalRate: next.lowerWithdrawalRate,
-      upperWithdrawalRate: next.upperWithdrawalRate,
-      minimumAnnualWithdrawal: next.minimumAnnualWithdrawal,
-    })
+    onGuardrailCashflowChange({ ...guardrailCashflow, ...patch })
   }
   const startingBalanceId = `${idPrefix}-starting-balance`
   const cashflowAmountId = `${idPrefix}-cashflow-amount`
@@ -66,7 +51,7 @@ export default function CashflowControls({
         <label htmlFor={`${idPrefix}-cashflow-mode`}>Cashflow Mode</label>
         <select
           id={`${idPrefix}-cashflow-mode`}
-          value={guardrail.mode}
+          value={guardrailCashflow.mode}
           onChange={e => updateGuardrail({ mode: e.target.value as GuardrailCashflowState['mode'] })}
         >
           <option value="FIXED">Fixed Cashflow</option>
@@ -75,35 +60,35 @@ export default function CashflowControls({
       </div>
       <div>
         <label htmlFor={cashflowAmountId}>
-          {guardrail.mode === 'FIXED' ? 'Cashflow Amount' : 'Initial Annual Withdrawal'}
+          {guardrailCashflow.mode === 'FIXED' ? 'Cashflow Amount' : 'Initial Annual Withdrawal'}
         </label>
         <input
           type="number"
           id={cashflowAmountId}
           placeholder="e.g. 1000"
-          min={guardrail.mode === 'GUARDRAIL_WITHDRAWAL' ? '0' : undefined}
+          min={guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' ? '0' : undefined}
           step="100"
-          value={guardrail.mode === 'FIXED' ? cashflowAmount : guardrail.initialAnnualWithdrawal}
-          onChange={e => guardrail.mode === 'FIXED'
+          value={guardrailCashflow.mode === 'FIXED' ? cashflowAmount : guardrailCashflow.initialAnnualWithdrawal}
+          onChange={e => guardrailCashflow.mode === 'FIXED'
             ? onCashflowAmountChange(e.target.value)
             : updateGuardrail({ initialAnnualWithdrawal: e.target.value })}
         />
       </div>
-      {guardrail.mode === 'GUARDRAIL_WITHDRAWAL' && (
+      {guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' && (
         <>
           <div>
             <label>Lower Withdrawal-Rate Limit (%)</label>
-            <input type="number" min="0" step="0.1" value={guardrail.lowerWithdrawalRate}
+            <input type="number" min="0" step="0.1" value={guardrailCashflow.lowerWithdrawalRate}
               onChange={e => updateGuardrail({ lowerWithdrawalRate: e.target.value })} />
           </div>
           <div>
             <label>Upper Withdrawal-Rate Limit (%)</label>
-            <input type="number" min="0" step="0.1" value={guardrail.upperWithdrawalRate}
+            <input type="number" min="0" step="0.1" value={guardrailCashflow.upperWithdrawalRate}
               onChange={e => updateGuardrail({ upperWithdrawalRate: e.target.value })} />
           </div>
           <div>
             <label>Minimum Annual Withdrawal (optional)</label>
-            <input type="number" min="0" value={guardrail.minimumAnnualWithdrawal}
+            <input type="number" min="0" value={guardrailCashflow.minimumAnnualWithdrawal}
               onChange={e => updateGuardrail({ minimumAnnualWithdrawal: e.target.value })} />
           </div>
         </>

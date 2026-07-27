@@ -98,25 +98,25 @@ class CashflowPolicyTest {
 
     @Test
     fun `runtime reviews on simulation-start anniversary before its withdrawal`() {
-        val dates = listOf(
-            LocalDate.of(2024, 7, 15),
-            LocalDate.of(2024, 8, 1),
-            LocalDate.of(2025, 7, 15),
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..12L).map(start::plusMonths)
+        val runtime = CashflowRuntime(
+            guardrail(CashflowFrequency.MONTHLY),
+            dates,
+            List(12) { 1.0 } + 1.02,
         )
-        val runtime = CashflowRuntime(guardrail(CashflowFrequency.MONTHLY), dates, listOf(1.0, 1.0, 1.02))
 
         assertEquals(-1_000.0, runtime.requestedCashflow(1, 1_000_000.0, 1.0))
-        assertEquals(-1_122.0, runtime.requestedCashflow(2, 1_000_000.0, 1.05), 1e-9)
+        for (index in 2 until dates.lastIndex) {
+            runtime.requestedCashflow(index, 1_000_000.0, 1.0)
+        }
+        assertEquals(-1_122.0, runtime.requestedCashflow(12, 1_000_000.0, 1.05), 1e-9)
     }
 
     @Test
     fun `monte carlo path uses anniversary review for next yearly withdrawal`() {
-        val dates = listOf(
-            LocalDate.of(2024, 7, 15),
-            LocalDate.of(2025, 1, 2),
-            LocalDate.of(2025, 7, 15),
-            LocalDate.of(2026, 1, 2),
-        )
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..12L).map(start::plusMonths)
         val runtime = MonteCarloSimplePortfolioRuntime(
             tickers = listOf("TEST"),
             targetWeightMap = mapOf("TEST" to 1.0),
@@ -127,29 +127,29 @@ class CashflowPolicyTest {
         val values = MonteCarloIndexedSimulation.simulate(
             runtime = runtime,
             mc = null,
-            path = MonteCarloIndexedPath(intArrayOf(0, 1, 2)),
-            tickerReturnsByDay = arrayOf(doubleArrayOf(1.0), doubleArrayOf(1.1), doubleArrayOf(1.0)),
-            effrxDailyRates = doubleArrayOf(0.0, 0.0, 0.0),
+            path = MonteCarloIndexedPath(IntArray(12) { it }),
+            tickerReturnsByDay = Array(12) { index -> doubleArrayOf(if (index == 11) 1.1 else 1.0) },
+            effrxDailyRates = DoubleArray(12),
             startingBalance = 100_000.0,
             rebalanceFlags = BooleanArray(dates.size),
             cashflowConfig = guardrail(CashflowFrequency.YEARLY),
             dates = dates,
-            inflationFactors = listOf(1.0, 1.01, 1.02, 1.02),
+            inflationFactors = List(12) { 1.0 } + 1.02,
         )
         val marginValues = MonteCarloIndexedSimulation.simulate(
             runtime = runtime,
             mc = MarginConfig(0.0, 0.0, 1.0, 1.0),
-            path = MonteCarloIndexedPath(intArrayOf(0, 1, 2)),
-            tickerReturnsByDay = arrayOf(doubleArrayOf(1.0), doubleArrayOf(1.1), doubleArrayOf(1.0)),
-            effrxDailyRates = doubleArrayOf(0.0, 0.0, 0.0),
+            path = MonteCarloIndexedPath(IntArray(12) { it }),
+            tickerReturnsByDay = Array(12) { index -> doubleArrayOf(if (index == 11) 1.1 else 1.0) },
+            effrxDailyRates = DoubleArray(12),
             startingBalance = 100_000.0,
             rebalanceFlags = BooleanArray(dates.size),
             cashflowConfig = guardrail(CashflowFrequency.YEARLY),
             dates = dates,
-            inflationFactors = listOf(1.0, 1.01, 1.02, 1.02),
+            inflationFactors = List(12) { 1.0 } + 1.02,
         )
 
-        assertEquals(85_784.0, values.last(), 1e-9)
+        assertEquals(98_984.0, values.last(), 1e-9)
         assertEquals(values.last(), marginValues.last(), 1e-9)
     }
 }

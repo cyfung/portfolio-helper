@@ -1,17 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { setGuardrailCashflowState } from '@/types/backtest'
 import CashflowControls from './CashflowControls'
 
 describe('cashflow controls', () => {
   it('shows guardrail-specific annual fields and distribution frequency', () => {
-    setGuardrailCashflowState({
+    const guardrailCashflow = {
       mode: 'GUARDRAIL_WITHDRAWAL',
       initialAnnualWithdrawal: '12000',
       lowerWithdrawalRate: '3',
       upperWithdrawalRate: '6',
       minimumAnnualWithdrawal: '9000',
-    })
+    } as const
 
     const markup = renderToStaticMarkup(
       <CashflowControls
@@ -20,10 +19,12 @@ describe('cashflow controls', () => {
         cashflowAmount="0"
         cashflowFrequency="MONTHLY"
         betaReferenceTicker="SPY"
+        guardrailCashflow={guardrailCashflow}
         onStartingBalanceChange={() => undefined}
         onCashflowAmountChange={() => undefined}
         onCashflowFrequencyChange={() => undefined}
         onBetaReferenceTickerChange={() => undefined}
+        onGuardrailCashflowChange={() => undefined}
       />,
     )
 

@@ -1,6 +1,6 @@
 import type { Ref } from 'react'
 import { PageNavTabs, ConfigButton, ThemeToggle, HeaderRight, PrivacyToggleButton } from '@/components/Layout'
-import type { BlockState, CashflowFormState } from '@/types/backtest'
+import type { BlockState, CashflowFormState, GuardrailCashflowState } from '@/types/backtest'
 import CashflowControls from './CashflowControls'
 import DateFieldWithQuickSelect from './DateFieldWithQuickSelect'
 import PortfolioBlock from './PortfolioBlock'
@@ -43,6 +43,7 @@ interface ScenarioSetupControlsProps extends CashflowFormState {
   onCashflowAmountChange: StringSetter
   onCashflowFrequencyChange: StringSetter
   onBetaReferenceTickerChange: StringSetter
+  onGuardrailCashflowChange: (value: GuardrailCashflowState) => void
 }
 
 export function ScenarioSetupControls({
@@ -61,6 +62,7 @@ export function ScenarioSetupControls({
   cashflowAmount,
   cashflowFrequency,
   betaReferenceTicker,
+  guardrailCashflow,
   onFromDateChange,
   onToDateChange,
   onImportCodeChange,
@@ -70,6 +72,7 @@ export function ScenarioSetupControls({
   onCashflowAmountChange,
   onCashflowFrequencyChange,
   onBetaReferenceTickerChange,
+  onGuardrailCashflowChange,
 }: ScenarioSetupControlsProps) {
   return (
     <>
@@ -108,10 +111,12 @@ export function ScenarioSetupControls({
         cashflowAmount={cashflowAmount}
         cashflowFrequency={cashflowFrequency}
         betaReferenceTicker={betaReferenceTicker}
+        guardrailCashflow={guardrailCashflow}
         onStartingBalanceChange={onStartingBalanceChange}
         onCashflowAmountChange={onCashflowAmountChange}
         onCashflowFrequencyChange={onCashflowFrequencyChange}
         onBetaReferenceTickerChange={onBetaReferenceTickerChange}
+        onGuardrailCashflowChange={onGuardrailCashflowChange}
       />
     </>
   )

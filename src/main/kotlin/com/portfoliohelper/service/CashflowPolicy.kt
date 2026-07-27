@@ -49,16 +49,23 @@ internal object CashflowPolicy {
         return max(candidate, config.minimumAnnualWithdrawal ?: 0.0)
     }
 
-    fun applyToPortfolio(portfolioValue: Double, requestedCashflow: Double): Pair<Double, Double> {
-        if (portfolioValue <= 0.0) return 0.0 to 0.0
+    fun applyToPortfolio(portfolioValue: Double, requestedCashflow: Double): CashflowApplication {
+        if (portfolioValue <= 0.0) return CashflowApplication(0.0, 0.0, depleted = true)
         val applied = if (requestedCashflow < 0.0) {
             -min(-requestedCashflow, portfolioValue)
         } else {
             requestedCashflow
         }
-        return (portfolioValue + applied).coerceAtLeast(0.0) to applied
+        val value = (portfolioValue + applied).coerceAtLeast(0.0)
+        return CashflowApplication(value, applied, depleted = value == 0.0 && applied < 0.0)
     }
 }
+
+internal data class CashflowApplication(
+    val portfolioValue: Double,
+    val appliedCashflow: Double,
+    val depleted: Boolean,
+)
 
 internal class CashflowRuntime(
     private val config: CashflowConfig?,
@@ -69,8 +76,12 @@ internal class CashflowRuntime(
     private var policyYear = 0
     private var nominalInvestmentFactor = 1.0
     private var reviewInflationFactor = inflationFactors.firstOrNull() ?: 1.0
-    private var depleted = false
+    var isDepleted: Boolean = false
+        private set
     private var currentIndex = 0
+    private var nextGuardrailPaymentDate: LocalDate? =
+        config?.takeIf { it.mode == CashflowMode.GUARDRAIL_WITHDRAWAL }
+            ?.let { dates.firstOrNull()?.plusMonths(paymentIntervalMonths(it.frequency).toLong()) }
     val appliedCashflows: MutableList<Double> = MutableList(dates.size) { 0.0 }
 
     init {
@@ -78,7 +89,7 @@ internal class CashflowRuntime(
     }
 
     fun requestedCashflow(index: Int, portfolioValueBeforeWithdrawal: Double, investmentFactor: Double): Double {
-        if (config == null || depleted || index <= 0) return 0.0
+        if (config == null || isDepleted || index <= 0) return 0.0
         currentIndex = index
         nominalInvestmentFactor *= investmentFactor.takeIf { it.isFinite() && it >= 0.0 } ?: 1.0
         val prevDate = dates[index - 1]
@@ -86,6 +97,10 @@ internal class CashflowRuntime(
         if (config.mode == CashflowMode.FIXED) {
             return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) config.amount else 0.0
         }
+        val scheduledDate = nextGuardrailPaymentDate ?: return 0.0
+        if (curDate < scheduledDate) return 0.0
+        nextGuardrailPaymentDate =
+            scheduledDate.plusMonths(paymentIntervalMonths(config.frequency).toLong())
 
         val completedPolicyYears = completedPolicyYears(dates.first(), curDate)
         if (completedPolicyYears > policyYear) {
@@ -106,17 +121,13 @@ internal class CashflowRuntime(
             nominalInvestmentFactor = 1.0
             reviewInflationFactor = currentInflationFactor
         }
-        return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) {
-            CashflowPolicy.guardrailPayment(config, annualWithdrawal)
-        } else {
-            0.0
-        }
+        return CashflowPolicy.guardrailPayment(config, annualWithdrawal)
     }
 
-    fun apply(portfolioValue: Double, requestedCashflow: Double): Pair<Double, Double> {
+    fun apply(portfolioValue: Double, requestedCashflow: Double): CashflowApplication {
         val result = CashflowPolicy.applyToPortfolio(portfolioValue, requestedCashflow)
-        appliedCashflows[currentIndex] = result.second
-        if (portfolioValue > 0.0 && result.first == 0.0 && requestedCashflow < 0.0) depleted = true
+        appliedCashflows[currentIndex] = result.appliedCashflow
+        if (result.depleted) isDepleted = true
         return result
     }
 
@@ -124,5 +135,12 @@ internal class CashflowRuntime(
         var years = current.year - start.year
         if (current < start.plusYears(years.toLong())) years--
         return years.coerceAtLeast(0)
+    }
+
+    private fun paymentIntervalMonths(frequency: CashflowFrequency): Int = when (frequency) {
+        CashflowFrequency.MONTHLY -> 1
+        CashflowFrequency.QUARTERLY -> 3
+        CashflowFrequency.YEARLY -> 12
+        CashflowFrequency.NONE -> 0
     }
 }
