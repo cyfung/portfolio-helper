@@ -361,15 +361,19 @@
     opacity: 1;
 }
 .summary-subvalue.positive,
-.portfolio-value-card-change.positive { color: var(--color-positive); }
+.portfolio-value-card-change.positive,
+.day-change-row .positive { color: var(--color-positive); }
 .summary-subvalue.negative,
-.portfolio-value-card-change.negative { color: var(--color-negative); }
+.portfolio-value-card-change.negative,
+.day-change-row .negative { color: var(--color-negative); }
 .summary-subvalue.after-hours,
-.portfolio-value-card-change.after-hours {
+.portfolio-value-card-change.after-hours,
+.day-change-row .after-hours {
     opacity: 0.75;
 }
 .after-hours-gray .summary-subvalue.after-hours,
-.after-hours-gray .portfolio-value-card-change.after-hours {
+.after-hours-gray .portfolio-value-card-change.after-hours,
+.after-hours-gray .day-change-row .after-hours {
     color: var(--color-text-secondary) !important;
     opacity: 1;
 }
