@@ -14,8 +14,8 @@ object RebalanceStrategyService {
     val standaloneMarginTickers =
         enabledStrategies.flatMap { it.standaloneMarginReferenceTickers() }.distinct()
     val betaReferenceTicker = BacktestService.normalizeBetaReferenceTicker(request.betaReferenceTicker)
-    val warnings = linkedSetOf<String>()
-    val warningCollector = { _: String, tickerWarnings: List<String> ->
+    val warnings = linkedSetOf<AnalysisWarning>()
+    val warningCollector = { _: String, tickerWarnings: List<AnalysisWarning> ->
       warnings.addAll(tickerWarnings)
       Unit
     }
@@ -107,7 +107,7 @@ object RebalanceStrategyService {
       zeroMarginInterest: Boolean = false,
       betaReferenceTicker: String? = "SPY",
       inflationFactors: List<Double> = emptyList(),
-      warningCollector: ((String, List<String>) -> Unit)? = null,
+      warningCollector: ((String, List<AnalysisWarning>) -> Unit)? = null,
   ): List<CurveResult> {
     val enabledStrategies = strategies.filter { it.enabled }
     if (enabledStrategies.isEmpty()) return emptyList()
@@ -591,7 +591,7 @@ object RebalanceStrategyService {
       referenceTickers: Collection<String> = emptyList(),
       extraTickers: Collection<String> = emptyList(),
       overrideDates: List<LocalDate>? = null,
-      warningCollector: ((String, List<String>) -> Unit)? = null,
+      warningCollector: ((String, List<AnalysisWarning>) -> Unit)? = null,
   ): RunContext {
     val fromDate = fromDateText?.let { LocalDate.parse(it) }
     val toDate = toDateText?.let { LocalDate.parse(it) } ?: LocalDate.now()

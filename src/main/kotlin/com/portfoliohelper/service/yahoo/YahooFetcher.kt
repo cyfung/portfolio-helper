@@ -1,5 +1,6 @@
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.service.AnalysisWarning
 import com.portfoliohelper.util.appJson
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -37,7 +38,7 @@ internal fun yahooChartException(ticker: String, error: YahooChartError): YahooH
 
 data class YahooAdjustedCloseResult(
     val prices: Map<LocalDate, Double>,
-    val warnings: List<String> = emptyList(),
+    val warnings: List<AnalysisWarning> = emptyList(),
     val currency: String? = null
 )
 

@@ -14,6 +14,7 @@ import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDi
 import ResultViewControls from '@/components/backtest/ResultViewControls'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import TransientToast from '@/components/TransientToast'
+import WarningSummary from '@/components/WarningSummary'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
@@ -59,6 +60,7 @@ import {
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStatesToAPIPortfolios } from '@/lib/portfolioRefs'
 import { validateDateRange } from '@/lib/dateRange'
+import { mergeAnalysisWarnings, tickerMappingWarnings } from '@/lib/analysisWarnings'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
   hydrateTickerMappingSettings,
@@ -163,7 +165,7 @@ function addResultWarnings(results: BacktestResults, warnings: string[]) {
   if (warnings.length === 0) return results
   return {
     ...results,
-    warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
+    warnings: mergeAnalysisWarnings(results.warnings, tickerMappingWarnings(warnings)),
   }
 }
 
@@ -1211,13 +1213,7 @@ export default function BacktestPage() {
 
       {error && <div className="backtest-error">{error}</div>}
 
-      {!!displayResults?.warnings?.length && (
-        <div className="backtest-error">
-          {displayResults.warnings.map((warning, i) => (
-            <div key={i}>{warning}</div>
-          ))}
-        </div>
-      )}
+      <WarningSummary warnings={displayResults?.warnings} resultKey={results} />
 
       <ChartRenderBoundary
         displayResults={displayResults}

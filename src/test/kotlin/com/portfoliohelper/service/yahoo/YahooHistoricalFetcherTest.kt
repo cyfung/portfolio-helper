@@ -1,5 +1,6 @@
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.service.WarningCategory
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.test.Test
@@ -234,7 +235,8 @@ class YahooHistoricalFetcherTest {
             body = body
         )
 
-        assertTrue(result.warnings.isEmpty(), "Expected no warnings, got ${result.warnings}")
+        assertEquals(WarningCategory.FILLED_DATA, result.warnings.single().category)
+        assertEquals(1, result.warnings.single().occurrences)
         assertEquals(30.67, result.prices[LocalDate.of(2026, 6, 17)])
         assertEquals(30.92, result.prices[LocalDate.of(2026, 6, 18)])
     }
@@ -269,7 +271,7 @@ class YahooHistoricalFetcherTest {
             }
         """.trimIndent()
 
-        val prices = YahooHistoricalFetcher.parseAdjustedCloseResponse(
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
             ticker = "AVGS.L",
             startDate = LocalDate.of(2026, 6, 15),
             endDate = LocalDate.of(2026, 6, 17),
@@ -283,9 +285,12 @@ class YahooHistoricalFetcherTest {
             }
         )
 
-        assertEquals(28.645, prices[LocalDate.of(2026, 6, 15)])
-        assertEquals(28.71, prices[LocalDate.of(2026, 6, 16)])
-        assertEquals(28.80, prices[LocalDate.of(2026, 6, 17)])
+        assertEquals(28.645, result.prices[LocalDate.of(2026, 6, 15)])
+        assertEquals(28.71, result.prices[LocalDate.of(2026, 6, 16)])
+        assertEquals(28.80, result.prices[LocalDate.of(2026, 6, 17)])
+        assertEquals(1, result.warnings.size)
+        assertEquals(setOf(WarningCategory.FILLED_DATA), result.warnings.map { it.category }.toSet())
+        assertEquals(1, result.warnings.sumOf { it.occurrences })
     }
 
     @Test
@@ -335,9 +340,11 @@ class YahooHistoricalFetcherTest {
             }
         )
 
+        assertEquals(WarningCategory.NULL_DATA, result.warnings.single().category)
+        assertEquals(1, result.warnings.single().occurrences)
         assertEquals(
             "Yahoo adjusted-close data for VXUS contains unsupported null rows; invalid null rows: 2026-06-11;",
-            result.warnings.single()
+            result.warnings.single().message
         )
         assertEquals(
             mapOf(
@@ -396,9 +403,11 @@ class YahooHistoricalFetcherTest {
             }
         )
 
+        val nullWarning = result.warnings.single { it.category == WarningCategory.NULL_DATA }
+        assertEquals(1, nullWarning.occurrences)
         assertEquals(
             "Yahoo adjusted-close data for AVGS.L contains unsupported null rows; invalid null rows: 2025-10-24;",
-            result.warnings.single()
+            nullWarning.message
         )
         assertEquals(28.71, result.prices[LocalDate.of(2026, 6, 16)])
         assertEquals(28.80, result.prices[LocalDate.of(2026, 6, 17)])
@@ -481,10 +490,12 @@ class YahooHistoricalFetcherTest {
             ),
             result.prices
         )
+        assertEquals(WarningCategory.SPLIT_REPAIR, result.warnings.single().category)
+        assertEquals(1, result.warnings.single().occurrences)
         assertEquals(
             "Yahoo adjusted-close data for 0050.TW contained split-like break on 2014-01-02; " +
                     "repaired earlier prices by multiplier 0.25 (detected split factor 4.0).",
-            result.warnings.single()
+            result.warnings.single().message
         )
     }
 

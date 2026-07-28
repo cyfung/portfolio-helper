@@ -11,6 +11,7 @@ import RebalanceStrategyBlock from '@/components/rebalance/RebalanceStrategyBloc
 import RebalanceStrategyResults from '@/components/rebalance/RebalanceStrategyResults'
 import SavedStrategiesBar from '@/components/rebalance/SavedStrategiesBar'
 import TransientToast from '@/components/TransientToast'
+import WarningSummary from '@/components/WarningSummary'
 import { useRebalanceStrategyPage } from '@/hooks/useRebalanceStrategyPage'
 
 export default function RebalanceStrategyPage() {
@@ -106,13 +107,7 @@ export default function RebalanceStrategyPage() {
       </div>
 
       {page.error && <div className="backtest-error">{page.error}</div>}
-      {!!page.results?.warnings?.length && (
-        <div className="backtest-error">
-          {page.results.warnings.map((warning, i) => (
-            <div key={i}>{warning}</div>
-          ))}
-        </div>
-      )}
+      <WarningSummary warnings={page.results?.warnings} resultKey={page.results} />
       {displayResults && (
         <RebalanceStrategyResults
           results={displayResults}

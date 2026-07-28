@@ -1,5 +1,7 @@
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.service.AnalysisWarning
+import com.portfoliohelper.service.WarningCategory
 import com.portfoliohelper.util.appJson
 import org.slf4j.LoggerFactory
 import java.time.Instant
@@ -26,15 +28,16 @@ internal object YahooAdjustedCloseParser {
         val rows = buildPriceRows(parsed.timestamps, parsed.adjCloseList, parsed.closeList, endDate)
         val nullPlan = buildNullRowPlan(rows, marketDate)
 
-        val warnings = mutableListOf<String>()
+        val warnings = mutableListOf<AnalysisWarning>()
         val invalidNullRows = rows.filter { it.price == null && it.date !in nullPlan.expectedNullDates }
         if (invalidNullRows.isNotEmpty()) {
-            warnings += logNullAdjustedCloseWarning(
+            warnings += nullDataWarning(
                 ticker,
                 startDate,
                 endDate,
                 marketDate,
-                "invalid null rows: ${invalidNullRows.joinToString { it.date.toString() }}"
+                "invalid null rows: ${invalidNullRows.joinToString { it.date.toString() }}",
+                invalidNullRows.size,
             )
         }
 
@@ -130,7 +133,7 @@ internal object YahooAdjustedCloseParser {
         resultMeta: YahooMeta?,
         nullPlan: NullRowPlan,
         prices: MutableMap<LocalDate, Double>,
-        warnings: MutableList<String>,
+        warnings: MutableList<AnalysisWarning>,
         tailQuoteProvider: (() -> YahooQuote?)?
     ) {
         val needsTailQuote = nullPlan.currentTradingNullDate != null || nullPlan.previousCloseNullDate != null
@@ -167,11 +170,11 @@ internal object YahooAdjustedCloseParser {
         date: LocalDate?,
         previousClose: Double?,
         prices: MutableMap<LocalDate, Double>,
-        warnings: MutableList<String>
+        warnings: MutableList<AnalysisWarning>
     ) {
         if (date == null) return
         if (previousClose == null) {
-            warnings += logNullAdjustedCloseWarning(
+            warnings += nullDataWarning(
                 ticker,
                 startDate,
                 endDate,
@@ -182,7 +185,11 @@ internal object YahooAdjustedCloseParser {
         }
 
         prices[date] = previousClose
-        logger.info("Filled $ticker null adjclose tail row for $date from quote previousClose=$previousClose")
+        val warning = filledDataWarning(
+            "Filled Yahoo adjusted-close data for $ticker on $date from quote previousClose=$previousClose."
+        )
+        warnings += warning
+        logger.info(warning.message)
     }
 
     private fun fillCurrentTradingPrice(
@@ -193,11 +200,11 @@ internal object YahooAdjustedCloseParser {
         date: LocalDate?,
         marketPrice: Double?,
         prices: MutableMap<LocalDate, Double>,
-        warnings: MutableList<String>
+        warnings: MutableList<AnalysisWarning>
     ) {
         if (date != null) {
             if (marketPrice == null) {
-                warnings += logNullAdjustedCloseWarning(
+                warnings += nullDataWarning(
                     ticker,
                     startDate,
                     endDate,
@@ -208,7 +215,11 @@ internal object YahooAdjustedCloseParser {
             }
 
             prices[date] = marketPrice
-            logger.info("Filled $ticker null adjclose current trading row for $date from regularMarketPrice=$marketPrice")
+            val warning = filledDataWarning(
+                "Filled Yahoo adjusted-close data for $ticker on $date from regularMarketPrice=$marketPrice."
+            )
+            warnings += warning
+            logger.info(warning.message)
             return
         }
 
@@ -224,25 +235,29 @@ internal object YahooAdjustedCloseParser {
         return Instant.ofEpochSecond(epochSecond).atOffset(offset).toLocalDate()
     }
 
-    private fun logNullAdjustedCloseWarning(
+    private fun nullDataWarning(
         ticker: String,
         startDate: LocalDate,
         endDate: LocalDate,
         marketDate: LocalDate?,
-        reason: String
-    ): String {
+        reason: String,
+        occurrences: Int = 1,
+    ): AnalysisWarning {
         val message = "Yahoo adjusted-close data for $ticker contains unsupported null rows; $reason;"
         if (loggedNullAdjustedCloseWarnings.add("$ticker|$reason")) {
             logger.error("$message first seen for range $startDate..$endDate (currentTradingDate=$marketDate)")
         }
-        return message
+        return AnalysisWarning(WarningCategory.NULL_DATA, message, occurrences)
     }
+
+    private fun filledDataWarning(message: String): AnalysisWarning =
+        AnalysisWarning(WarningCategory.FILLED_DATA, message)
 
     private fun repairSplitLikeAdjustedCloseBreaks(
         ticker: String,
         prices: MutableMap<LocalDate, Double>,
         rows: List<YahooPriceRow>
-    ): List<String> {
+    ): List<AnalysisWarning> {
         val pricedRows = rows
             .filter { row ->
                 row.price?.takeIf { it > 0.0 } != null &&
@@ -252,7 +267,7 @@ internal object YahooAdjustedCloseParser {
             .sortedBy { it.date }
         if (pricedRows.size < 2) return emptyList()
 
-        val warnings = mutableListOf<String>()
+        val warnings = mutableListOf<AnalysisWarning>()
         for (i in 1 until pricedRows.size) {
             val repair = splitRepairFor(pricedRows[i - 1], pricedRows[i], prices) ?: continue
             val datesToRepair = prices.keys.filter { it < repair.effectiveDate }
@@ -266,7 +281,7 @@ internal object YahooAdjustedCloseParser {
             if (loggedSplitRepairWarnings.add("$ticker|${repair.effectiveDate}|${repair.splitFactor}")) {
                 logger.warn(message)
             }
-            warnings += message
+            warnings += AnalysisWarning(WarningCategory.SPLIT_REPAIR, message)
         }
         return warnings
     }

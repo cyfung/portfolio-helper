@@ -53,8 +53,8 @@ object BacktestService {
         val toDate = request.toDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
         validateDateRange(fromDate, toDate)
         val portfolios = request.portfolios.map { it.withoutPlaceholderTickers() }
-        val warnings = Collections.synchronizedSet(LinkedHashSet<String>())
-        val warningCollector = { _: String, tickerWarnings: List<String> ->
+        val warnings = Collections.synchronizedSet(LinkedHashSet<AnalysisWarning>())
+        val warningCollector = { _: String, tickerWarnings: List<AnalysisWarning> ->
             warnings.addAll(tickerWarnings)
             Unit
         }
@@ -554,7 +554,7 @@ object BacktestService {
     internal fun loadNormalizedSeries(
         ticker: String,
         neededFromDate: LocalDate,
-        warningCollector: ((String, List<String>) -> Unit)? = null
+        warningCollector: ((String, List<AnalysisWarning>) -> Unit)? = null
     ): Map<LocalDate, Double> {
         require(!ticker.contains(' ')) {
             "loadNormalizedSeries called with LETF string '$ticker' — LETF series must be pre-computed via computeLetfSeries"
@@ -635,7 +635,7 @@ object BacktestService {
         upperTicker: String,
         files: List<File>,
         neededToDate: LocalDate,
-        warningCollector: ((String, List<String>) -> Unit)? = null,
+        warningCollector: ((String, List<AnalysisWarning>) -> Unit)? = null,
         allowAnchoredForwardExtension: Boolean = false
     ): TickerCsvLoadResult? {
         val file = files.first()
@@ -706,7 +706,7 @@ object BacktestService {
         upperTicker: String,
         startDate: LocalDate,
         endDate: LocalDate,
-        warningCollector: ((String, List<String>) -> Unit)? = null
+        warningCollector: ((String, List<AnalysisWarning>) -> Unit)? = null
     ): Map<LocalDate, Double> {
         val result = YahooHistoricalFetcher.fetchAdjustedCloseWithWarnings(ticker, startDate, endDate)
         val warnings = result.warnings.toMutableList()
@@ -821,34 +821,35 @@ object BacktestService {
 
     private fun collectTickerWarnings(
         upperTicker: String,
-        warningCollector: ((String, List<String>) -> Unit)?
+        warningCollector: ((String, List<AnalysisWarning>) -> Unit)?
     ) {
         val warnings = readTickerWarnings(upperTicker)
         if (warnings.isNotEmpty()) warningCollector?.invoke(upperTicker, warnings)
     }
 
-    private fun persistTickerWarnings(upperTicker: String, warnings: List<String>) {
+    private fun persistTickerWarnings(upperTicker: String, warnings: List<AnalysisWarning>) {
         if (warnings.isEmpty()) return
         tickerDir.mkdirs()
         val merged = (readTickerWarnings(upperTicker) + warnings)
-            .map { canonicalizeTickerWarning(it) }
-            .filter { it.isNotEmpty() }
+            .map { it.copy(message = canonicalizeTickerWarning(it.message)) }
+            .filter { it.message.isNotEmpty() }
             .distinct()
         tickerWarningsFile(upperTicker).bufferedWriter().use { out ->
             merged.forEach { warning ->
-                out.write(warning)
+                out.write("${warning.category.name}\t${warning.occurrences}\t${warning.message}")
                 out.newLine()
             }
         }
     }
 
-    private fun readTickerWarnings(upperTicker: String): List<String> {
+    private fun readTickerWarnings(upperTicker: String): List<AnalysisWarning> {
         val file = tickerWarningsFile(upperTicker)
         if (!file.exists()) return emptyList()
         return runCatching {
             file.readLines()
-                .map { canonicalizeTickerWarning(it) }
-                .filter { it.isNotEmpty() }
+                .mapNotNull(::parseTickerWarningCacheLine)
+                .map { it.copy(message = canonicalizeTickerWarning(it.message)) }
+                .filter { it.message.isNotEmpty() }
                 .distinct()
         }.getOrElse { e ->
             logger.warn("Failed to read warning file for $upperTicker: ${e.message}")
@@ -862,6 +863,35 @@ object BacktestService {
             "${it.groupValues[1]}; ${it.groupValues[2]};"
         }
         return withoutRange.replace("invalid weekday null rows:", "invalid null rows:")
+    }
+
+    private fun parseTickerWarningCacheLine(line: String): AnalysisWarning? {
+        val parts = line.split('\t', limit = 3)
+        if (parts.size == 3) {
+            val category = runCatching { WarningCategory.valueOf(parts[0]) }.getOrNull()
+            val occurrences = parts[1].toIntOrNull()
+            if (category != null && occurrences != null && occurrences > 0 && parts[2].isNotBlank()) {
+                return AnalysisWarning(category, parts[2], occurrences)
+            }
+        }
+
+        val message = canonicalizeTickerWarning(line)
+        if (message.isEmpty()) return null
+        val category = when {
+            message.contains("contains unsupported null rows") -> WarningCategory.NULL_DATA
+            message.contains("contained split-like break") -> WarningCategory.SPLIT_REPAIR
+            else -> WarningCategory.OTHER
+        }
+        val occurrences = if (category == WarningCategory.NULL_DATA) {
+            message.substringAfter("invalid null rows:", "")
+                .substringBefore(';')
+                .split(',')
+                .count { it.isNotBlank() }
+                .coerceAtLeast(1)
+        } else {
+            1
+        }
+        return AnalysisWarning(category, message, occurrences)
     }
 
     private fun tickerWarningsFile(upperTicker: String): File =
@@ -1035,14 +1065,14 @@ object BacktestService {
         neededFromForTicker: (String) -> LocalDate,
         toDate: LocalDate,
         effrx: Map<LocalDate, Double>,
-        warningCollector: ((String, List<String>) -> Unit)? = null
+        warningCollector: ((String, List<AnalysisWarning>) -> Unit)? = null
     ): Map<String, Map<LocalDate, Double>> {
         fun earlierDate(a: LocalDate, b: LocalDate) = if (a <= b) a else b
         val requiredNeededFrom = mutableMapOf<String, LocalDate>()
         val seriesCache = mutableMapOf<String, Map<LocalDate, Double>>()
         val warningCollectorLock = Any()
         val threadSafeWarningCollector = warningCollector?.let { collector ->
-            { ticker: String, tickerWarnings: List<String> ->
+            { ticker: String, tickerWarnings: List<AnalysisWarning> ->
                 synchronized(warningCollectorLock) {
                     collector(ticker, tickerWarnings)
                 }

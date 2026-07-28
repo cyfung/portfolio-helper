@@ -602,9 +602,24 @@ export interface BacktestPortfolioResult {
   curves: BacktestCurve[]
 }
 
+export type WarningCategory =
+  | 'NULL_DATA'
+  | 'FILLED_DATA'
+  | 'SPLIT_REPAIR'
+  | 'TICKER_MAPPING'
+  | 'OTHER'
+
+export interface AnalysisWarning {
+  category: WarningCategory
+  message: string
+  occurrences: number
+}
+
+export type AnalysisWarningInput = AnalysisWarning | string
+
 export interface BacktestResults {
   portfolios: BacktestPortfolioResult[]
-  warnings?: string[]
+  warnings?: AnalysisWarningInput[]
   error?: string
   inflationAdjusted?: { portfolios: BacktestPortfolioResult[] } | null
   inflationAdjustmentUnavailableReason?: string | null
@@ -652,7 +667,7 @@ export interface MonteCarloResults {
   numSimulations: number
   seed: number
   portfolios: McPortfolioResult[]
-  warnings?: string[]
+  warnings?: AnalysisWarningInput[]
   error?: string
   inflationAdjusted?: { portfolios: McPortfolioResult[] } | null
   inflationAdjustmentUnavailableReason?: string | null

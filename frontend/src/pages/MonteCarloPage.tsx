@@ -13,6 +13,7 @@ import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDi
 import ResultViewControls from '@/components/backtest/ResultViewControls'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import TransientToast from '@/components/TransientToast'
+import WarningSummary from '@/components/WarningSummary'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
@@ -32,6 +33,7 @@ import {
 } from '@/lib/configImportExport'
 import { pct, fmt2, money, dur } from '@/lib/statsFormatters'
 import { validateDateRange } from '@/lib/dateRange'
+import { mergeAnalysisWarnings, tickerMappingWarnings } from '@/lib/analysisWarnings'
 import {
   clearMonteCarloRunProgress,
   isActiveMonteCarloRunProgress,
@@ -89,7 +91,7 @@ function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
   if (warnings.length === 0) return results
   return {
     ...results,
-    warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
+    warnings: mergeAnalysisWarnings(results.warnings, tickerMappingWarnings(warnings)),
   }
 }
 
@@ -819,13 +821,7 @@ export default function MonteCarloPage() {
 
       {error && <div className="backtest-error">{error}</div>}
 
-      {!!results?.warnings?.length && (
-        <div className="backtest-error">
-          {results.warnings.map((warning, i) => (
-            <div key={i}>{warning}</div>
-          ))}
-        </div>
-      )}
+      <WarningSummary warnings={results?.warnings} resultKey={results} />
 
       <MonteCarloChartRenderBoundary
         results={shownResults}

@@ -266,7 +266,7 @@ data class PortfolioResult(
 @Serializable
 data class MultiBacktestResult(
     val portfolios: List<PortfolioResult>,
-    val warnings: List<String> = emptyList(),
+    val warnings: List<AnalysisWarning> = emptyList(),
     val inflationAdjusted: InflationAdjustedBacktestResult? = null,
     val inflationAdjustmentUnavailableReason: String? = null,
 )

@@ -8,6 +8,7 @@ import { useInflationAdjustedPreference } from '@/hooks/useInflationAdjustedPref
 import { compressToCode, decompressFromCode } from '@/lib/compress'
 import { curveSelectionKey } from '@/lib/curveNaming'
 import { validateDateRange } from '@/lib/dateRange'
+import { mergeAnalysisWarnings, tickerMappingWarnings } from '@/lib/analysisWarnings'
 import {
   applyImportDependencyPreview,
   buildImportDependencyPreview,
@@ -93,7 +94,7 @@ function addResultWarnings(results: BacktestResults, warnings: string[]) {
   if (warnings.length === 0) return results
   return {
     ...results,
-    warnings: [...new Set([...(results.warnings ?? []), ...warnings])],
+    warnings: mergeAnalysisWarnings(results.warnings, tickerMappingWarnings(warnings)),
   }
 }
 
