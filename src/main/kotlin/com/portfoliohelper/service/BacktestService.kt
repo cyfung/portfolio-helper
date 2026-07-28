@@ -576,7 +576,7 @@ object BacktestService {
                 warningCollector
             )
             if (extended != null) {
-                collectTickerWarnings(upperTicker, warningCollector)
+                collectTickerWarnings(upperTicker, neededFromDate, today, warningCollector)
                 return extended.series
             }
             localFiles.forEach { it.delete() }
@@ -596,7 +596,7 @@ object BacktestService {
             )
             if (extended != null) {
                 localFiles.filter { it !in resourceFiles }.forEach { it.delete() }
-                collectTickerWarnings(upperTicker, warningCollector)
+                collectTickerWarnings(upperTicker, neededFromDate, today, warningCollector)
                 return extended.series
             }
             resourceFiles.forEach { it.delete() }
@@ -821,10 +821,40 @@ object BacktestService {
 
     private fun collectTickerWarnings(
         upperTicker: String,
+        fromDate: LocalDate,
+        toDate: LocalDate,
         warningCollector: ((String, List<AnalysisWarning>) -> Unit)?
     ) {
         val warnings = readTickerWarnings(upperTicker)
+            .mapNotNull { filterWarningToRange(it, fromDate, toDate) }
         if (warnings.isNotEmpty()) warningCollector?.invoke(upperTicker, warnings)
+    }
+
+    internal fun filterWarningToRange(
+        warning: AnalysisWarning,
+        fromDate: LocalDate,
+        toDate: LocalDate,
+    ): AnalysisWarning? {
+        val dates = Regex("""\d{4}-\d{2}-\d{2}""")
+            .findAll(warning.message)
+            .mapNotNull { match -> runCatching { LocalDate.parse(match.value) }.getOrNull() }
+            .distinct()
+            .toList()
+        if (dates.isEmpty()) return warning
+
+        val relevantDates = dates.filter { it in fromDate..toDate }
+        if (relevantDates.isEmpty()) return null
+
+        val message = if (
+            warning.category == WarningCategory.NULL_DATA &&
+            warning.message.contains("invalid null rows:")
+        ) {
+            val prefix = warning.message.substringBefore("invalid null rows:")
+            "${prefix}invalid null rows: ${relevantDates.joinToString()};"
+        } else {
+            warning.message
+        }
+        return warning.copy(message = message, occurrences = relevantDates.size)
     }
 
     private fun persistTickerWarnings(upperTicker: String, warnings: List<AnalysisWarning>) {

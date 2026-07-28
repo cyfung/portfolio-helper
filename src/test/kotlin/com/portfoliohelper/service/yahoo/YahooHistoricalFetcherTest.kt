@@ -357,6 +357,37 @@ class YahooHistoricalFetcherTest {
     }
 
     @Test
+    fun parseAdjustedCloseResponse_warnsAndSkipsTrailingNullRows() {
+        val jun10 = LocalDate.of(2026, 6, 10).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val jun11 = LocalDate.of(2026, 6, 11).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        val body = """
+            {
+              "chart": {
+                "result": [{
+                  "timestamp": [$jun10, $jun11],
+                  "indicators": {
+                    "adjclose": [{
+                      "adjclose": [84.0, null]
+                    }]
+                  }
+                }]
+              }
+            }
+        """.trimIndent()
+
+        val result = YahooHistoricalFetcher.parseAdjustedCloseResponseWithWarnings(
+            ticker = "VXUS",
+            startDate = LocalDate.of(2026, 6, 10),
+            endDate = LocalDate.of(2026, 6, 11),
+            body = body,
+        )
+
+        assertEquals(WarningCategory.NULL_DATA, result.warnings.single().category)
+        assertEquals(1, result.warnings.single().occurrences)
+        assertTrue(LocalDate.of(2026, 6, 11) !in result.prices)
+    }
+
+    @Test
     fun parseAdjustedCloseResponse_warnsInteriorNullEvenWhenTailNullIsFillable() {
         val oct23 = LocalDate.of(2025, 10, 23).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val oct24 = LocalDate.of(2025, 10, 24).atStartOfDay().toEpochSecond(ZoneOffset.UTC)

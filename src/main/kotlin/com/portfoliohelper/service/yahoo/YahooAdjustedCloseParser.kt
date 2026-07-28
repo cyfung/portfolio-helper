@@ -104,23 +104,9 @@ internal object YahooAdjustedCloseParser {
         val previousCloseNullDate = latestBeforeMarketDate
             ?.takeIf { it.price == null }
             ?.date
-        val latestPricedDate = rows.filter { it.price != null }.maxOfOrNull { it.date }
-        val skippableTrailingNullDates = latestPricedDate
-            ?.let { lastPriced ->
-                nullRows
-                    .filter {
-                        it.date > lastPriced &&
-                                it.date != currentTradingNullDate &&
-                                it.date != previousCloseNullDate
-                    }
-                    .map { it.date }
-                    .toSet()
-            }
-            ?: emptySet()
         val expectedNullDates = buildSet {
             currentTradingNullDate?.let { add(it) }
             previousCloseNullDate?.let { add(it) }
-            addAll(skippableTrailingNullDates)
         }
         return NullRowPlan(currentTradingNullDate, previousCloseNullDate, expectedNullDates)
     }

@@ -1,9 +1,42 @@
 package com.portfoliohelper.service
 
+import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class BacktestWarningTest {
+    @Test
+    fun filterWarningToRange_excludesCachedOccurrencesOutsideTheAnalysisRange() {
+        val warning = AnalysisWarning(
+            WarningCategory.NULL_DATA,
+            "Yahoo adjusted-close data for VXUS contains unsupported null rows; " +
+                    "invalid null rows: 2025-01-02, 2026-01-02;",
+            occurrences = 2,
+        )
+
+        assertEquals(
+            AnalysisWarning(
+                WarningCategory.NULL_DATA,
+                "Yahoo adjusted-close data for VXUS contains unsupported null rows; " +
+                        "invalid null rows: 2026-01-02;",
+                occurrences = 1,
+            ),
+            BacktestService.filterWarningToRange(
+                warning,
+                LocalDate.of(2026, 1, 1),
+                LocalDate.of(2026, 12, 31),
+            ),
+        )
+        assertEquals(
+            null,
+            BacktestService.filterWarningToRange(
+                warning,
+                LocalDate.of(2027, 1, 1),
+                LocalDate.of(2027, 12, 31),
+            ),
+        )
+    }
+
     @Test
     fun canonicalizeTickerWarning_removesVolatileYahooNullRowRange() {
         val warnings = listOf(
