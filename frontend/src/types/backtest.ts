@@ -617,12 +617,20 @@ export interface AnalysisWarning {
 
 export type AnalysisWarningInput = AnalysisWarning | string
 
+export interface AnalysisDataRange {
+  fromDate: string
+  toDate: string
+  startLimiters: string[]
+  endLimiters: string[]
+}
+
 export interface BacktestResults {
   portfolios: BacktestPortfolioResult[]
   warnings?: AnalysisWarningInput[]
   error?: string
   inflationAdjusted?: { portfolios: BacktestPortfolioResult[] } | null
   inflationAdjustmentUnavailableReason?: string | null
+  dataRange?: AnalysisDataRange | null
 }
 
 export interface McPercentilePath {
@@ -671,6 +679,7 @@ export interface MonteCarloResults {
   error?: string
   inflationAdjusted?: { portfolios: McPortfolioResult[] } | null
   inflationAdjustmentUnavailableReason?: string | null
+  dataRange?: AnalysisDataRange | null
 }
 
 export interface SavedPortfolio {

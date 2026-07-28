@@ -40,7 +40,11 @@ object RebalanceStrategyService {
           enabledStrategies.map { runConfiguredStrategy(request, it, context, standaloneBaseCache) }
         }
     warnings.addAll(baseResult.warnings)
-    val nominal = MultiBacktestResult(baseResult.portfolios + strategyResults, warnings.toList())
+    val nominal = MultiBacktestResult(
+        portfolios = baseResult.portfolios + strategyResults,
+        warnings = warnings.toList(),
+        dataRange = context.dataRange,
+    )
     return InflationAdjustment.backtestResult(
         nominal = nominal,
         effrx = context.effrx,
@@ -214,6 +218,7 @@ object RebalanceStrategyService {
       val seriesMap: Map<String, Map<LocalDate, Double>>,
       val dates: List<LocalDate>,
       val effrx: Map<LocalDate, Double>,
+      val dataRange: AnalysisDataRange? = null,
   )
 
   private data class DerivedReferenceSeries(
@@ -620,13 +625,23 @@ object RebalanceStrategyService {
 
     if (overrideDates != null) return RunContext(rawSeriesMap, overrideDates, effrx)
 
-    val portfolioSeries = sanitizedPortfolio.tickers.map { tw ->
-      rawSeriesMap[tw.ticker] ?: error("Series for '${tw.ticker}' not found")
+    val portfolioSeries = sanitizedPortfolio.tickers.associate { tw ->
+      tw.ticker to (rawSeriesMap[tw.ticker] ?: error("Series for '${tw.ticker}' not found"))
     }
-    val dates = BacktestService.intersectDates(portfolioSeries, fromDate, toDate)
+    val dates = BacktestService.intersectDates(portfolioSeries.values.toList(), fromDate, toDate)
     if (dates.size < 2) throw IllegalStateException("Not enough overlapping trading dates")
 
-    return RunContext(rawSeriesMap, dates, effrx)
+    return RunContext(
+        seriesMap = rawSeriesMap,
+        dates = dates,
+        effrx = effrx,
+        dataRange = analysisDataRange(
+            requiredSeriesByIdentifier = portfolioSeries,
+            dates = dates,
+            requestedFrom = fromDate,
+            effectiveTo = toDate,
+        ),
+    )
   }
 
   internal fun runStrategyForTest(

@@ -264,11 +264,20 @@ data class PortfolioResult(
 )
 
 @Serializable
+data class AnalysisDataRange(
+    val fromDate: String,
+    val toDate: String,
+    val startLimiters: List<String> = emptyList(),
+    val endLimiters: List<String> = emptyList(),
+)
+
+@Serializable
 data class MultiBacktestResult(
     val portfolios: List<PortfolioResult>,
     val warnings: List<AnalysisWarning> = emptyList(),
     val inflationAdjusted: InflationAdjustedBacktestResult? = null,
     val inflationAdjustmentUnavailableReason: String? = null,
+    val dataRange: AnalysisDataRange? = null,
 )
 
 @Serializable

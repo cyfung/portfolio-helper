@@ -1002,6 +1002,13 @@
     background: color-mix(in srgb, var(--color-negative) 8%, transparent);
 }
 
+.analysis-data-range-summary {
+  margin: 0.75rem 0 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .warning-summary {
     color: var(--color-warning);
     font-size: var(--font-size-sm);

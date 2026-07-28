@@ -3,6 +3,7 @@ import {
   RunButton,
   ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
+import DataRangeSummary from '@/components/backtest/DataRangeSummary'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
 import PortfolioBlock from '@/components/backtest/PortfolioBlock'
 import SavedPortfoliosBar from '@/components/backtest/SavedPortfoliosBar'
@@ -108,6 +109,7 @@ export default function RebalanceStrategyPage() {
 
       {page.error && <div className="backtest-error">{page.error}</div>}
       <WarningSummary warnings={page.results?.warnings} resultKey={page.results} />
+      <DataRangeSummary dataRange={page.results?.dataRange} />
       {displayResults && (
         <RebalanceStrategyResults
           results={displayResults}

@@ -11,6 +11,7 @@ import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
 } from '@/components/backtest/CommonBacktestSections'
 import ImportDependenciesDialog from '@/components/backtest/ImportDependenciesDialog'
+import DataRangeSummary from '@/components/backtest/DataRangeSummary'
 import ResultViewControls from '@/components/backtest/ResultViewControls'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import TransientToast from '@/components/TransientToast'
@@ -1214,6 +1215,7 @@ export default function BacktestPage() {
       {error && <div className="backtest-error">{error}</div>}
 
       <WarningSummary warnings={displayResults?.warnings} resultKey={results} />
+      <DataRangeSummary dataRange={results?.dataRange} />
 
       <ChartRenderBoundary
         displayResults={displayResults}

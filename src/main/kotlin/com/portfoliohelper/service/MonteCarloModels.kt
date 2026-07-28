@@ -101,6 +101,7 @@ data class MonteCarloResult(
     val seed: Long,
     val inflationAdjusted: InflationAdjustedMonteCarloResult? = null,
     val inflationAdjustmentUnavailableReason: String? = null,
+    val dataRange: AnalysisDataRange? = null,
 )
 
 @Serializable

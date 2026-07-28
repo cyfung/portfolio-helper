@@ -185,6 +185,16 @@ object MonteCarloService {
             } else {
                 rawPoolDates
             }
+        val poolSeries = mergeRequiredSeries(allSeriesMaps).toMutableMap()
+        if (poolDates.firstOrNull() == firstCpiDate && rawPoolDates.firstOrNull() != firstCpiDate) {
+            poolSeries[InflationSeries.FRED_SERIES_ID] = inflationPool
+        }
+        val dataRange = analysisDataRange(
+            requiredSeriesByIdentifier = poolSeries,
+            dates = poolDates,
+            requestedFrom = fromDate,
+            effectiveTo = toDate,
+        )
         val poolSize = poolDates.size
         val poolInflation = InflationSeries.factorsFor(poolDates, inflationPool)
 
@@ -862,6 +872,7 @@ object MonteCarloService {
             masterSeed,
             inflationAdjusted = realPortfolioResults?.let(::InflationAdjustedMonteCarloResult),
             inflationAdjustmentUnavailableReason = poolInflation.reason,
+            dataRange = dataRange,
         )
         lastResultState.set(result)
         result

@@ -102,6 +102,12 @@ object BacktestService {
         if (globalDates.size < 2) {
             throw IllegalStateException("Not enough overlapping trading dates across all portfolios")
         }
+        val dataRange = analysisDataRange(
+            requiredSeriesByIdentifier = mergeRequiredSeries(allSeriesMaps),
+            dates = globalDates,
+            requestedFrom = fromDate,
+            effectiveTo = toDate,
+        )
         val policyInflationFactors = InflationSeries.factorsFor(globalDates, InflationSeries.load())
             .takeIf { it.available }?.factors.orEmpty()
 
@@ -201,7 +207,11 @@ object BacktestService {
             PortfolioResult(pConfig.label, curves)
         }.toList()
 
-        val nominal = MultiBacktestResult(portfolioResults, synchronized(warnings) { warnings.toList() })
+        val nominal = MultiBacktestResult(
+            portfolios = portfolioResults,
+            warnings = synchronized(warnings) { warnings.toList() },
+            dataRange = dataRange,
+        )
         return InflationAdjustment.backtestResult(
             nominal = nominal,
             effrx = effrxSeries,
