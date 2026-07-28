@@ -51,4 +51,17 @@ describe('analysis data range summary', () => {
     expect(screen.getByText(/1 year, 1 month, 1 day/)).toBeTruthy()
     expect(screen.getByText(/A, B, C and 2 others/)).toBeTruthy()
   })
+
+  it('accepts cached data-range payloads without limiter arrays', () => {
+    const cachedDataRange = {
+      fromDate: '2020-01-01',
+      toDate: '2021-01-01',
+    }
+
+    let view: ReturnType<typeof render> | undefined
+    expect(() => {
+      view = render(<DataRangeSummary dataRange={cachedDataRange} />)
+    }).not.toThrow()
+    expect(view?.container.textContent).toContain('1 year, 0 months, 0 days')
+  })
 })

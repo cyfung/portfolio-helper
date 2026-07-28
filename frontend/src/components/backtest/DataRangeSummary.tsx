@@ -64,6 +64,8 @@ function limiterList(identifiers: string[]): string {
 export default function DataRangeSummary({ dataRange }: Props) {
   if (!dataRange) return null
   const duration = calendarDuration(dataRange.fromDate, dataRange.toDate)
+  const startLimiters = dataRange.startLimiters ?? []
+  const endLimiters = dataRange.endLimiters ?? []
   const parts = [
     `Data used: ${dataRange.fromDate} to ${dataRange.toDate}`,
     [
@@ -72,11 +74,11 @@ export default function DataRangeSummary({ dataRange }: Props) {
       formatDurationUnit(duration.days, 'day'),
     ].join(', '),
   ]
-  if (dataRange.startLimiters.length > 0) {
-    parts.push(`Start limited by: ${limiterList(dataRange.startLimiters)}`)
+  if (startLimiters.length > 0) {
+    parts.push(`Start limited by: ${limiterList(startLimiters)}`)
   }
-  if (dataRange.endLimiters.length > 0) {
-    parts.push(`End limited by: ${limiterList(dataRange.endLimiters)}`)
+  if (endLimiters.length > 0) {
+    parts.push(`End limited by: ${limiterList(endLimiters)}`)
   }
 
   return (

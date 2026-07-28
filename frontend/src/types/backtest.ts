@@ -620,8 +620,8 @@ export type AnalysisWarningInput = AnalysisWarning | string
 export interface AnalysisDataRange {
   fromDate: string
   toDate: string
-  startLimiters: string[]
-  endLimiters: string[]
+  startLimiters?: string[]
+  endLimiters?: string[]
 }
 
 export interface BacktestResults {
