@@ -19,7 +19,7 @@ export default function SummaryTable() {
     lastPortfolioTotals, lastCashDisplay, lastStockDisplay,
     rebalTargetUsd, marginTargetPct, marginTargetUsd,
     setRebalTargetUsd, setMarginTargetPct, setMarginTargetUsd,
-    portfolioId, appConfig,
+    portfolioId, appConfig, editModeActive,
   } = store
 
   const sortedCcys = useMemo(() => buildSortedCcys(
@@ -249,22 +249,24 @@ export default function SummaryTable() {
 
   return (
     <div className="portfolio-summary">
-      <div className="portfolio-value-cards">
-        {valueCards.map(card => (
-          <section
-            key={card.label}
-            className="portfolio-value-card"
-            role="group"
-            aria-label={card.label}
-          >
-            <div className="portfolio-value-card-label">{card.label}</div>
-            <div className="portfolio-value-card-value" id={card.valueId}>{card.value}</div>
-            <div className={`portfolio-value-card-change ${dayChangeColor}${isAfterHours ? ' after-hours' : ''}`}>
-              {card.changePct}
-            </div>
-          </section>
-        ))}
-      </div>
+      {!editModeActive && (
+        <div className="portfolio-value-cards">
+          {valueCards.map(card => (
+            <section
+              key={card.label}
+              className="portfolio-value-card"
+              role="group"
+              aria-label={card.label}
+            >
+              <div className="portfolio-value-card-label">{card.label}</div>
+              <div className="portfolio-value-card-value" id={card.valueId}>{card.value}</div>
+              <div className={`portfolio-value-card-change ${dayChangeColor}${isAfterHours ? ' after-hours' : ''}`}>
+                {card.changePct}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
       {/* 5 columns: Label | Badges | Currency | Amount | Value */}
       <table className="portfolio-cash-table">

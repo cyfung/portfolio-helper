@@ -11,6 +11,7 @@ function seedCashSummary() {
     cash: [{ label: 'Broker Cash', currency: 'USD', amount: 1250, marginFlag: true }],
     fxRates: { USD: 1 },
     currentDisplayCurrency: 'USD',
+    editModeActive: false,
     lastCashDisplay: {
       type: 'cash-display',
       portfolioId: 'main',
@@ -110,6 +111,15 @@ describe('portfolio value cards', () => {
   })
 
   afterEach(cleanup)
+
+  it('hides the value cards in edit mode', () => {
+    usePortfolioStore.setState({ editModeActive: true })
+
+    render(<SummaryTable />)
+
+    expect(screen.queryByRole('group', { name: 'Portfolio Value' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Stock Gross Value' })).toBeNull()
+  })
 
   it('shows portfolio, equity-base, and stock-gross values with their own daily percentages', () => {
     usePortfolioStore.setState({
