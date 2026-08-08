@@ -33,6 +33,7 @@ object BacktestService {
     private val fullTickerDir get() = AppDirs.dataDir.resolve(".ticker-full").toFile()
     private val tickerCacheMaxAge = 15.minutes
     private val fullHistoryFetchStartDate: LocalDate = LocalDate.of(1900, 1, 1)
+    private val bundledTickerStartDateCache = ConcurrentHashMap<String, Optional<LocalDate>>()
     private const val isolatedFxOutlierMinJump = 1.2
     private const val isolatedFxOutlierNeighborMaxJump = 1.1
     private val yahooNullRowsWarningRangePattern =
@@ -575,9 +576,15 @@ object BacktestService {
         val today = LocalDate.now()
 
         val localFiles = findFiles(simPattern, fullTickerDir)
+        val bundledResourceFile = findBundledResourceFile(simPattern)
+        val preferBundledResource = localFiles.firstOrNull()?.let { cachedFile ->
+            val cachedStartDate = readSimCsvStartDate(cachedFile)
+            val bundledStartDate = bundledResourceFile?.let(::bundledTickerStartDate)
+            bundledStartDate != null && cachedStartDate != null && bundledStartDate < cachedStartDate
+        } == true
 
         // Tier 1 — local file
-        if (localFiles.isNotEmpty()) {
+        if (localFiles.isNotEmpty() && !preferBundledResource) {
             val extended = tryExtendFullAndValidate(
                 ticker,
                 upperTicker,
@@ -594,7 +601,12 @@ object BacktestService {
         }
 
         // Tier 2 — resource file
-        val resourceFiles = copyFromResources(simPattern, fullTickerDir, forceRefresh = localFiles.isNotEmpty())
+        val resourceFiles = copyFromResources(
+            simPattern,
+            fullTickerDir,
+            forceRefresh = localFiles.isNotEmpty(),
+            resourceFile = bundledResourceFile,
+        )
         if (resourceFiles.isNotEmpty()) {
             val extended = tryExtendFullAndValidate(
                 ticker,
@@ -971,12 +983,10 @@ object BacktestService {
     private fun copyFromResources(
         simPattern: Regex,
         targetDir: File = tickerDir,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        resourceFile: String? = findBundledResourceFile(simPattern),
     ): List<File> {
-        val allResourceFiles = getResourceFiles("data/.ticker")
-        val resourcesFile = allResourceFiles.firstOrNull {
-            simPattern.matches(it)
-        } ?: return emptyList()
+        val resourcesFile = resourceFile ?: return emptyList()
         val cl = object {}::class.java.classLoader
         targetDir.mkdirs()
         val target = targetDir.toPath().resolve(resourcesFile)
@@ -986,6 +996,18 @@ object BacktestService {
         }
         return listOf(target.toFile()).filter { it.exists() }
     }
+
+    private fun findBundledResourceFile(simPattern: Regex): String? =
+        getResourceFiles("data/.ticker").firstOrNull(simPattern::matches)
+
+    private fun bundledTickerStartDate(resourceFile: String): LocalDate? =
+        bundledTickerStartDateCache.computeIfAbsent(resourceFile) {
+            val startDate = object {}::class.java.classLoader
+                .getResourceAsStream("data/.ticker/$resourceFile")
+                ?.bufferedReader()
+                ?.use(::readSimCsvStartDate)
+            Optional.ofNullable(startDate)
+        }.orElse(null)
 
     internal fun findOrCopyFromResources(simPattern: Regex): List<File> =
         findFiles(simPattern).ifEmpty { copyFromResources(simPattern) }
@@ -1440,6 +1462,16 @@ object BacktestService {
             }
         }
         return result
+    }
+
+    private fun readSimCsvStartDate(file: File): LocalDate? =
+        file.bufferedReader().use(::readSimCsvStartDate)
+
+    private fun readSimCsvStartDate(reader: java.io.BufferedReader): LocalDate? {
+        reader.readLine()
+        return reader.lineSequence().mapNotNull { line ->
+            runCatching { LocalDate.parse(line.substringBefore(',').trim()) }.getOrNull()
+        }.firstOrNull()
     }
 
     internal fun writeSimCsv(file: File, series: Map<LocalDate, Double>) {

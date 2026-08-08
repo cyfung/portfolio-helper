@@ -13,6 +13,28 @@ import kotlin.time.Duration.Companion.minutes
 
 class BacktestChainExtendTest {
     @Test
+    fun loadNormalizedSeriesUsesBundledCsvWhenItStartsBeforeCachedCsv() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-bundled-base-test-")
+        try {
+            AppDirs.dataDir = tempDataDir
+            val today = LocalDate.now()
+            val cachedSeries = (0..20).associate { offset ->
+                today.minusDays(20L - offset) to 10_000.0 + offset
+            }
+            val fullDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            BacktestService.writeSimCsv(fullDir.resolve("GLD-$today.csv"), cachedSeries)
+
+            val loaded = BacktestService.loadNormalizedSeries("GLD", LocalDate.of(1960, 1, 1))
+
+            assertEquals(LocalDate.of(1968, 4, 1), loaded.keys.minOrNull())
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun loadNormalizedSeriesReadsNewFullTickerCacheBeforeLegacyTickerCache() {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-full-ticker-cache-test-")
