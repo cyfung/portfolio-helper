@@ -433,11 +433,16 @@ val packagedShadowJar: TaskProvider<out Jar> =
         tasks.shadowJar
     }
 
+val jpackageMainJarName = "portfolio-helper-all.jar"
+
 val copyJar = tasks.register("copyJar", Copy::class) {
     dependsOn(packagedShadowJar)
     val dir = layout.buildDirectory.dir("latest-lib")
     delete(dir)
-    from(packagedShadowJar).into(dir)
+    from(packagedShadowJar) {
+        rename { jpackageMainJarName }
+    }
+    into(dir)
 }
 
 // jpackage Configuration using Petr Panteleyev plugin
@@ -450,7 +455,7 @@ tasks.jpackage {
     destination.set(layout.buildDirectory.dir("jpackage"))
 
     // Application entry point
-    mainJar = packagedShadowJar.get().archiveFileName.get()
+    mainJar = jpackageMainJarName
     mainClass = "com.portfoliohelper.ApplicationKt"
 
     // Application metadata
