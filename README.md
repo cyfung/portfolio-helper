@@ -137,6 +137,18 @@ A tab bar appears automatically when multiple portfolios exist. Access via `/por
 ./gradlew generateLicenseReport # Generate THIRD_PARTY_NOTICES.txt
 ```
 
+### Application logs
+
+Logs are written to `logs/portfolio-helper.log` inside the application data directory.
+Archived logs are retained for up to 14 days, subject to a 250 MB total size cap.
+
+- Windows: `%APPDATA%\PortfolioHelper`
+- macOS: `~/Library/Application Support/PortfolioHelper`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/PortfolioHelper`
+
+Set `PORTFOLIO_HELPER_DATA_DIR` before launch to place both application data and logs
+in a custom location.
+
 ## License
 
 PolyForm Noncommercial License 1.0.0 — free for personal, educational, and non-commercial use. See [LICENSE](LICENSE).

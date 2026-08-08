@@ -10,25 +10,38 @@ import kotlinx.coroutines.*
 import org.jetbrains.exposed.sql.Database
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
-import java.nio.file.Paths
+import java.nio.file.Path
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
 internal fun httpModeEnabled(args: Array<String>): Boolean = args.contains("--http")
 
+internal const val LOG_DIR_PROPERTY = "portfoliohelper.log.dir"
+
+internal fun configureLogging(dataDir: Path) {
+    val logDir = dataDir.resolve("logs").toAbsolutePath()
+    Files.createDirectories(logDir)
+    System.setProperty(LOG_DIR_PROPERTY, logDir.toString())
+}
+
 fun main(args: Array<String>) {
     // Force IPv4 to avoid JmDNS issues on Windows (SocketException: setsockopt)
     System.setProperty("java.net.preferIPv4Stack", "true")
 
-    val logger = LoggerFactory.getLogger("Application")
+    // ---------------------------------------------------------------
+    // 0. Resolve writable directories before the first SLF4J access.
+    // ---------------------------------------------------------------
+    AppDirs.dataDir = AppDirs.resolveDataDir()
+    configureLogging(AppDirs.dataDir)
 
-    // ---------------------------------------------------------------
-    // 0. Resolve data directory (env > OS default)
-    // ---------------------------------------------------------------
-    AppDirs.dataDir = System.getenv("PORTFOLIO_HELPER_DATA_DIR")
-        ?.takeIf { it.isNotBlank() }
-        ?.let { Paths.get(it) }
-        ?: AppDirs.osDefaultDataDir
+    runApplication(args)
+}
+
+internal fun runApplication(args: Array<String>) {
+    checkNotNull(System.getProperty(LOG_DIR_PROPERTY)) {
+        "Logging directory must be configured before application startup"
+    }
+    val logger = LoggerFactory.getLogger("Application")
     logger.info("Active data directory: ${AppDirs.dataDir.toAbsolutePath()}")
 
     // ---------------------------------------------------------------

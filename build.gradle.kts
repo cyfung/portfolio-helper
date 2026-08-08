@@ -23,7 +23,7 @@ plugins {
 }
 
 group = "com.portfoliohelper"
-version = "0.9.15"
+version = "0.9.16"
 
 repositories {
     mavenCentral()
@@ -481,14 +481,10 @@ tasks.jpackage {
     icon.set(file("${projectDir}/frontend/public/favicon.ico"))
 }
 
-// Copy config files into jpackage output (data/ is generated at runtime on first run)
+// Copy release notices into jpackage output (data/ is generated at runtime on first run).
+// Logback configuration is embedded in the application JAR and writes under the data directory.
 tasks.register<Copy>("copyJpackageData") {
     dependsOn(tasks.jpackage, tasks.named("generateLicenseReport"))
-
-    from("src/main/resources") {
-        include("logback.xml")
-        into("config")
-    }
 
     from(layout.buildDirectory.file("reports/dependency-license/THIRD_PARTY_NOTICES.txt"))
 
