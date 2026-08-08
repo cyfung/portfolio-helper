@@ -2,6 +2,7 @@ package com.portfoliohelper.service
 
 import java.time.LocalDate
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -20,6 +21,25 @@ class StatsUtilsTest {
         assertApprox(0.0, stats.cagr, eps = 1e-8)
         assertApprox(0.0, stats.annualVolatility, eps = 1e-8)
         assertApprox(0.0, stats.sharpe, eps = 1e-8)
+    }
+
+    @Test
+    fun cashflowAdjustedCagrRemainsFiniteForLongHistories() {
+        val months = 674
+        val monthlyReturn = 0.005
+        val contribution = 10_000.0
+        val values = MutableList(months + 1) { 500_000.0 }
+        val cashflows = MutableList(months + 1) { 0.0 }
+        for (month in 1..months) {
+            cashflows[month] = contribution
+            values[month] = values[month - 1] * (1.0 + monthlyReturn) + contribution
+        }
+
+        val years = months / 12.0
+        val stats = computeStats(values, years, rfAnnualized = 0.0, cashflows = cashflows)
+        val expectedAnnualizedReturn = (1.0 + monthlyReturn).pow(12.0) - 1.0
+
+        assertApprox(expectedAnnualizedReturn, stats.cagr, eps = 1e-8)
     }
 
     @Test

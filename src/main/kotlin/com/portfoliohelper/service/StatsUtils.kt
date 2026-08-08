@@ -145,7 +145,15 @@ private fun cashflowAdjustedCagr(values: List<Double>, years: Double, cashflows:
     fun npv(rate: Double): Double {
         val base = 1.0 + rate
         if (base <= 0.0) return Double.NaN
-        return signedFlows.sumOf { (t, amount) -> amount / base.pow(t) }
+        val logBase = ln(base)
+        val logTerms = signedFlows.map { (t, amount) ->
+            amount to (ln(abs(amount)) - t * logBase)
+        }
+        val maxLogTerm = logTerms.maxOf { it.second }
+        return logTerms.sumOf { (amount, logTerm) ->
+            val scaledMagnitude = exp(logTerm - maxLogTerm)
+            if (amount < 0.0) -scaledMagnitude else scaledMagnitude
+        }
     }
 
     var low = -0.999999999
