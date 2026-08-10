@@ -106,7 +106,7 @@ export default function PortfolioBuilderPage() {
   const [results, setResults] = useState<ResolvedStockWeight[][] | null>(null)
   const [tickerConfigs, setTickerConfigs] = useState<Record<string, TickerConfig>>({})
   const [showLetfExpandedByBlock, setShowLetfExpandedByBlock] = useState<Record<number, boolean>>({})
-  const [selectedMarginByBlock, setSelectedMarginByBlock] = useState<Record<number, number>>({})
+  const [selectedMarginByBlock, setSelectedMarginByBlock] = useState<Record<number, number | 'no-margin'>>({})
   const [hoveredGroupByBlock, setHoveredGroupByBlock] = useState<Record<number, string>>({})
   const [pinnedGroupByBlock, setPinnedGroupByBlock] = useState<Record<number, string>>({})
   const [groupOverlayPos, setGroupOverlayPos] = useState({ x: 0, y: 0 })
@@ -342,11 +342,14 @@ export default function PortfolioBuilderPage() {
             const activeGroupName = pinnedGroupByBlock[i] ?? hoveredGroupByBlock[i]
             const activeGroup = groupRows.find(group => group.name === activeGroupName)
             const activeMarginGroup = marginGroupRows.find(group => group.name === activeGroupName)
-            const hasMargin = block.margins.length > 0
-            const selectedMarginIndex = hasMargin
-              ? Math.min(selectedMarginByBlock[i] ?? 0, block.margins.length - 1)
-              : 0
-            const multiplier = 1 + marginRatio(block, selectedMarginIndex) / 100
+            const hasMarginOption = block.includeNoMargin || block.margins.length > 0
+            const marginOptionCount = block.margins.length + Number(block.includeNoMargin)
+            const requestedMargin = selectedMarginByBlock[i] ?? (block.includeNoMargin ? 'no-margin' : 0)
+            const selectedMargin = requestedMargin === 'no-margin' && !block.includeNoMargin ? 0 : requestedMargin
+            const selectedMarginIndex = selectedMargin === 'no-margin'
+              ? null
+              : Math.min(selectedMargin, block.margins.length - 1)
+            const multiplier = selectedMarginIndex == null ? 1 : 1 + marginRatio(block, selectedMarginIndex) / 100
             const totalWeight = normalizedRows.reduce((sum, row) => sum + row.weight, 0)
             const totalMarginScaled = marginExposureRows.reduce((sum, row) => sum + row.weight * multiplier, 0)
 
@@ -375,13 +378,17 @@ export default function PortfolioBuilderPage() {
                         {showLetfExpanded ? 'LETF: On' : 'LETF: Off'}
                       </button>
                     )}
-                    {block.margins.length > 1 && (
+                    {marginOptionCount > 1 && (
                       <select
                         className="portfolio-builder-margin-select"
-                        value={selectedMarginIndex}
-                        onChange={e => setSelectedMarginByBlock(prev => ({ ...prev, [i]: Number(e.target.value) }))}
+                        value={selectedMarginIndex ?? 'no-margin'}
+                        onChange={e => setSelectedMarginByBlock(prev => ({
+                          ...prev,
+                          [i]: e.target.value === 'no-margin' ? 'no-margin' : Number(e.target.value),
+                        }))}
                         aria-label={`Margin for ${block.label.trim() || `Portfolio ${i + 1}`}`}
                       >
+                        {block.includeNoMargin && <option value="no-margin">No margin</option>}
                         {block.margins.map((margin, marginIndex) => (
                           <option key={margin.id} value={marginIndex}>
                             Margin {marginIndex + 1}: {(parseFloat(margin.ratio) || 0).toFixed(2)}%
@@ -399,7 +406,7 @@ export default function PortfolioBuilderPage() {
                       <tr>
                         <th>Stock</th>
                         <th>Weight</th>
-                        {hasMargin && <th>Margin Scaled</th>}
+                        {hasMarginOption && <th>Margin Scaled</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -407,7 +414,7 @@ export default function PortfolioBuilderPage() {
                         <tr key={row.ticker}>
                           <td>{row.ticker}</td>
                           <td>{row.weight.toFixed(2)}%</td>
-                          {hasMargin && (
+                          {hasMarginOption && (
                             <td>{(((marginExposureRows.find(marginRow => marginRow.ticker === row.ticker)?.weight) ?? 0) * multiplier).toFixed(2)}%</td>
                           )}
                         </tr>
@@ -417,7 +424,7 @@ export default function PortfolioBuilderPage() {
                       <tr>
                         <th>Total</th>
                         <th>{totalWeight.toFixed(2)}%</th>
-                        {hasMargin && <th>{totalMarginScaled.toFixed(2)}%</th>}
+                        {hasMarginOption && <th>{totalMarginScaled.toFixed(2)}%</th>}
                       </tr>
                     </tfoot>
                   </table>
@@ -436,7 +443,7 @@ export default function PortfolioBuilderPage() {
                         <tr>
                           <th>Group</th>
                           <th>Weight</th>
-                          {hasMargin && <th>Margin Scaled</th>}
+                          {hasMarginOption && <th>Margin Scaled</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -469,7 +476,7 @@ export default function PortfolioBuilderPage() {
                               </span>
                             </td>
                             <td>{group.weight.toFixed(2)}%</td>
-                            {hasMargin && (
+                            {hasMarginOption && (
                               <td>{((marginGroupRows.find(marginGroup => marginGroup.name === group.name)?.weight ?? 0) * multiplier).toFixed(2)}%</td>
                             )}
                           </tr>
@@ -487,7 +494,7 @@ export default function PortfolioBuilderPage() {
                           <tr>
                             <th>{activeGroup.name}</th>
                             <th>Weight</th>
-                            {hasMargin && <th>Margin Scaled</th>}
+                            {hasMarginOption && <th>Margin Scaled</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -500,7 +507,7 @@ export default function PortfolioBuilderPage() {
                               <tr key={child.ticker}>
                                 <td>{child.ticker}</td>
                                 <td>{groupWeight.toFixed(2)}%</td>
-                                {hasMargin && <td>{marginScaled.toFixed(2)}%</td>}
+                                {hasMarginOption && <td>{marginScaled.toFixed(2)}%</td>}
                               </tr>
                             )
                           })}
