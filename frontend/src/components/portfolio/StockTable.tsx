@@ -15,6 +15,12 @@ import {
   type PortfolioColumnId,
 } from '@/lib/portfolioColumns'
 
+type SortDirection = 'asc' | 'desc'
+type WeightSortPart = 'cur' | 'tgt' | 'dev'
+type DirectSortKey = Exclude<PortfolioColumnId, 'weight' | 'flexWeight'>
+type StockSortKey = DirectSortKey | 'markPct' | `weight:${WeightSortPart}` | `flexWeight:${WeightSortPart}`
+type SortState = { key: StockSortKey; direction: SortDirection }
+
 function getMainGroup(groups: string): string {
   if (!groups) return ''
   const first = groups.split(';')[0].trim()
@@ -35,44 +41,123 @@ function headerClassName(columnId: PortfolioColumnId): string {
   ].filter(Boolean).join(' ')
 }
 
-function columnHeader(columnId: PortfolioColumnId): ReactNode {
+function preferredSortDirection(key: StockSortKey): SortDirection {
+  return key === 'symbol' || key === 'ccy' ? 'asc' : 'desc'
+}
+
+function nextSortDirection(sort: SortState | null, key: StockSortKey): SortDirection {
+  if (sort?.key !== key) return preferredSortDirection(key)
+  return sort.direction === 'asc' ? 'desc' : 'asc'
+}
+
+function sortButton(
+  key: StockSortKey,
+  label: string,
+  sort: SortState | null,
+  onSort: (key: StockSortKey) => void,
+  accessibleLabel = label,
+  displayedLabel: ReactNode = label,
+): ReactNode {
+  const active = sort?.key === key
+  const nextDirection = nextSortDirection(sort, key)
+  return (
+    <button
+      type="button"
+      className={`stock-sort-button${active ? ' active' : ''}`}
+      aria-label={`Sort by ${accessibleLabel} ${nextDirection === 'asc' ? 'ascending' : 'descending'}`}
+      onClick={() => onSort(key)}
+    >
+      {displayedLabel}{active ? ` ${sort.direction === 'asc' ? '↑' : '↓'}` : ''}
+    </button>
+  )
+}
+
+function sortDivider(): ReactNode {
+  return <span className="stock-sort-divider" aria-hidden="true">│</span>
+}
+
+function columnHeader(
+  columnId: PortfolioColumnId,
+  sort: SortState | null,
+  onSort: (key: StockSortKey) => void,
+): ReactNode {
   const className = headerClassName(columnId) || undefined
   if (columnId === 'est') {
     return (
       <th className={className} id="th-est-val">
-        EST <span className="col-info-hint" title="Hover a cell to see price targets">(i)</span>
+        {sortButton(columnId, 'EST', sort, onSort)} <span className="col-info-hint" title="Hover a cell to see price targets">(i)</span>
       </th>
     )
   }
   if (columnId === 'weight') {
     return (
       <th className={className}>
-        Weight <span className="th-sub">Cur / Tgt / Dev</span>
+        <span className="weight-sort-controls">
+          <span className="weight-column-marker" aria-label="Weight">⚖️</span>
+          {sortButton('weight:cur', 'CUR', sort, onSort, 'current weight')}
+          {sortDivider()}
+          {sortButton('weight:tgt', 'TGT', sort, onSort, 'target weight')}
+          {sortDivider()}
+          {sortButton('weight:dev', 'DEV', sort, onSort, 'weight deviation')}
+        </span>
       </th>
     )
   }
   if (columnId === 'flexWeight') {
     return (
       <th className={className}>
-        <span className="flex-column-marker">F</span> Weight <span className="th-sub">Cur / Flex / Dev</span>
+        <span className="weight-sort-controls">
+          <span className="weight-column-marker" aria-label="Flexible weight"><span className="flex-column-marker">F</span> ⚖️</span>
+          {sortButton('flexWeight:cur', 'CUR', sort, onSort, 'flexible current weight')}
+          {sortDivider()}
+          {sortButton('flexWeight:tgt', 'FLEX', sort, onSort, 'flexible target weight')}
+          {sortDivider()}
+          {sortButton('flexWeight:dev', 'DEV', sort, onSort, 'flexible weight deviation')}
+        </span>
+      </th>
+    )
+  }
+  if (columnId === 'mark') {
+    return (
+      <th className={className}>
+        <span className="weight-sort-controls">
+          {sortButton('mark', 'MARK', sort, onSort, 'mark price')}
+          {sortDivider()}
+          {sortButton('markPct', 'Δ%', sort, onSort, 'daily percentage change')}
+        </span>
       </th>
     )
   }
   if (columnId === 'flexRebalQty') {
     return (
       <th className={className}>
-        <span className="flex-column-marker">F</span> Rebal Qty
+        {sortButton(
+          columnId,
+          'F Rebal Qty',
+          sort,
+          onSort,
+          'F Rebal Qty',
+          <><span className="flex-column-marker">F</span> Rebal Qty</>,
+        )}
       </th>
     )
   }
   if (columnId === 'flexRebalDollars') {
     return (
       <th className={className}>
-        <span className="flex-column-marker">F</span> Rebal💰
+        {sortButton(
+          columnId,
+          'F Rebal💰',
+          sort,
+          onSort,
+          'F Rebal dollars',
+          <><span className="flex-column-marker">F</span> Rebal💰</>,
+        )}
       </th>
     )
   }
-  return <th className={className}>{COLUMN_LABELS.get(columnId) ?? columnId}</th>
+  const label = COLUMN_LABELS.get(columnId) ?? columnId
+  return <th className={className}>{sortButton(columnId, label, sort, onSort)}</th>
 }
 
 export default function StockTable() {
@@ -86,6 +171,7 @@ export default function StockTable() {
     appConfig, stockGroupBy, portfolioColumnModeId,
   } = usePortfolioStore()
   const [freshAt, setFreshAt] = useState<Date | null>(null)
+  const [sort, setSort] = useState<SortState | null>(null)
 
   useEffect(() => {
     if (lastStockDisplay) setFreshAt(new Date())
@@ -113,26 +199,6 @@ export default function StockTable() {
   const liveBySymbol = useMemo(() => new Map(
     (lastStockDisplay?.stocks ?? []).map(s => [s.symbol, s])
   ), [lastStockDisplay])
-
-  const groupedStocks = useMemo(() => {
-    if (stockGroupBy === 'none') return [{ key: null as string | null, stocks }]
-    const map = new Map<string, typeof stocks>()
-    for (const stock of stocks) {
-      const key = stockGroupBy === 'ccy'
-        ? (liveBySymbol.get(stock.label)?.currency ?? 'USD')
-        : (getMainGroup(stock.groups) || 'No Group')
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(stock)
-    }
-    const entries = [...map.entries()].sort(([a], [b]) => {
-      if (stockGroupBy === 'mainGroup') {
-        if (a === 'No Group') return 1
-        if (b === 'No Group') return -1
-      }
-      return a.localeCompare(b)
-    })
-    return entries.map(([key, stocks]) => ({ key, stocks }))
-  }, [stocks, stockGroupBy, liveBySymbol])
 
   const hasGroups = stocks.some(s => s.groups)
   const serverAllocDollars = (hasGroups && groupViewActive)
@@ -173,6 +239,113 @@ export default function StockTable() {
         flexibleWeightMappings,
       )
     : null
+
+  function displayedSortValue(stock: typeof stocks[number], key: StockSortKey): string | number | null {
+    const live = liveBySymbol.get(stock.label)
+    const stockCcy = live?.currency ?? null
+    const fxRate = stockCcy ? (stockCcy === 'USD' ? 1 : fxRates[stockCcy]) : null
+    const posVal = live?.positionValueUsd ?? null
+    const currentWeight = stockGrossKnown && posVal !== null && stockGrossUsd > 0
+      ? posVal / stockGrossUsd * 100
+      : null
+    const targetWeight = stock.targetWeight ?? 0
+    const flexTargetWeight = computedFlexible?.targetWeight[stock.label] ?? targetWeight
+    const rebalDollars = stockGrossKnown ? (computedAlloc?.rebalDollars[stock.label] ?? null) : null
+    const flexRebalDollars = stockGrossKnown ? (computedFlexible?.rebalDollars[stock.label] ?? rebalDollars) : null
+    const allocDollars = stockGrossKnown ? (computedAlloc?.allocDollars[stock.label] ?? null) : null
+    const markPrice = live?.markPrice ?? null
+    const displayedDollars = (usd: number | null) => usd !== null && fxRate
+      ? usd / fxRate
+      : null
+    const displayedQty = (usd: number | null) => usd !== null && markPrice && markPrice > 0 && fxRate
+      ? usd / (markPrice * fxRate)
+      : null
+
+    switch (key) {
+      case 'symbol': return stock.label
+      case 'qty': return stock.amount
+      case 'lastNav': return live?.lastNav ?? null
+      case 'est': return live?.estPriceNative ?? null
+      case 'last': return live?.closePrice ?? null
+      case 'mark': return live?.markPrice ?? null
+      case 'markPct': return live?.dayChangePct ?? null
+      case 'change': return live?.dayChangeNative ?? null
+      case 'pnl': {
+        const dayChange = live?.dayChangeNative ?? null
+        const liveQty = live?.qty ?? null
+        if (dayChange === null || liveQty === null) return null
+        if (!showStockDisplayCurrency) return fxRate ? dayChange * liveQty : null
+        if (!fxRate || !hasFxRate(fxRates, currentDisplayCurrency)) return null
+        return convertFromUsd(dayChange * liveQty * fxRate, fxRates, currentDisplayCurrency)
+      }
+      case 'mktVal': {
+        if (posVal === null) return null
+        if (showStockDisplayCurrency) {
+          return hasFxRate(fxRates, currentDisplayCurrency)
+            ? convertFromUsd(posVal, fxRates, currentDisplayCurrency)
+            : null
+        }
+        return fxRate ? posVal / fxRate : null
+      }
+      case 'weight:cur':
+      case 'flexWeight:cur': return currentWeight
+      case 'weight:tgt': return targetWeight
+      case 'weight:dev': return currentWeight === null ? null : currentWeight - targetWeight
+      case 'flexWeight:tgt': return flexTargetWeight
+      case 'flexWeight:dev': return currentWeight === null ? null : currentWeight - flexTargetWeight
+      case 'rebalQty': return displayedQty(rebalDollars)
+      case 'rebalDollars': return displayedDollars(rebalDollars)
+      case 'flexRebalQty': return displayedQty(flexRebalDollars)
+      case 'flexRebalDollars': return displayedDollars(flexRebalDollars)
+      case 'allocQty': return displayedQty(allocDollars)
+      case 'allocDollars': return displayedDollars(allocDollars)
+      case 'ccy': return stockCcy
+    }
+  }
+
+  function compareStocks(a: typeof stocks[number], b: typeof stocks[number]): number {
+    if (!sort) return 0
+    const aValue = displayedSortValue(a, sort.key)
+    const bValue = displayedSortValue(b, sort.key)
+    if (aValue === null && bValue !== null) return 1
+    if (aValue !== null && bValue === null) return -1
+    if (aValue !== null && bValue !== null) {
+      const comparison = typeof aValue === 'string' && typeof bValue === 'string'
+        ? aValue.localeCompare(bValue)
+        : Number(aValue) - Number(bValue)
+      if (comparison !== 0) return sort.direction === 'asc' ? comparison : -comparison
+    }
+    return a.label.localeCompare(b.label)
+  }
+
+  const groupedStocks = (() => {
+    if (stockGroupBy === 'none') {
+      return [{ key: null as string | null, stocks: sort ? [...stocks].sort(compareStocks) : stocks }]
+    }
+    const map = new Map<string, typeof stocks>()
+    for (const stock of stocks) {
+      const key = stockGroupBy === 'ccy'
+        ? (liveBySymbol.get(stock.label)?.currency ?? 'USD')
+        : (getMainGroup(stock.groups) || 'No Group')
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(stock)
+    }
+    const entries = [...map.entries()].sort(([a], [b]) => {
+      if (stockGroupBy === 'mainGroup') {
+        if (a === 'No Group') return 1
+        if (b === 'No Group') return -1
+      }
+      return a.localeCompare(b)
+    })
+    return entries.map(([key, groupStocks]) => ({
+      key,
+      stocks: sort ? [...groupStocks].sort(compareStocks) : groupStocks,
+    }))
+  })()
+
+  function handleSort(key: StockSortKey) {
+    setSort(current => ({ key, direction: nextSortDirection(current, key) }))
+  }
 
   const fmt = (usd: number) =>
     hasFxRate(fxRates, currentDisplayCurrency)
@@ -239,7 +412,7 @@ export default function StockTable() {
         <table className="portfolio-table" id="stock-view-table">
           <thead>
             <tr>
-              {visibleColumnIds.map(columnId => <Fragment key={columnId}>{columnHeader(columnId)}</Fragment>)}
+              {visibleColumnIds.map(columnId => <Fragment key={columnId}>{columnHeader(columnId, sort, handleSort)}</Fragment>)}
             </tr>
           </thead>
           <tbody>
