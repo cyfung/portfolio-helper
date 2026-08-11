@@ -29,7 +29,7 @@ object AppConfig {
     private val DEFAULTS = mapOf(
         KEY_OPEN_BROWSER        to "true",
         KEY_NAV_UPDATE_INTERVAL to "",
-        KEY_EXCHANGE_SUFFIXES   to "SBF=.PA,LSEETF=.L,TWSE=.TW",
+        KEY_EXCHANGE_SUFFIXES   to "LSE=.L,LSEETF=.L,SBF=.PA,AEB=.AS,ENEXT.BE=.BR,BVME=.MI,BVME.ETF=.MI,IBIS=.DE,IBIS2=.DE,FWB=.F,FWB2=.F,EBS=.SW,BME=.MC,SEHK=.HK,TSEJ=.T,ASX=.AX,TSE=.TO,VENTURE=.V,SGX=.SI,OSE=.OL,SFB=.ST,CPH=.CO,HEX=.HE,TWSE=.TW,TPEX=.TWO,TRWBUKETF=.L",
         KEY_TWS_HOST            to "127.0.0.1",
         KEY_TWS_PORT            to "7496",
         KEY_IBKR_RATE_INTERVAL  to "3600",
