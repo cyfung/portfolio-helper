@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import PortfolioBlock from './PortfolioBlock'
 import type { BlockState } from '@/types/backtest'
 
@@ -22,6 +25,39 @@ function renderPortfolioBlock(tickers: BlockState['tickers']) {
 }
 
 describe('portfolio row editor', () => {
+  it('adds an empty swap row without opening the swap dialog', () => {
+    const onChange = vi.fn()
+    render(
+      <PortfolioBlock
+        idx={0}
+        value={{
+          label: 'Example',
+          tickers: [],
+          rebalance: 'YEARLY',
+          margins: [],
+          rebalanceStrategies: [],
+          includeNoMargin: true,
+        }}
+        onChange={onChange}
+        onSavedRefresh={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '+Swap' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect((screen.getByLabelText('Swap structure') as HTMLInputElement).value).toBe(' > ')
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tickers: [expect.objectContaining({
+        type: 'SWAP',
+        source: '',
+        transferMode: 'AMOUNT',
+        transferAmount: '',
+        legs: [expect.objectContaining({ instrument: '', multiplier: '1' })],
+      })],
+    }))
+  })
+
   it('explains how to select bundled simulated history', () => {
     const markup = renderPortfolioBlock([])
 

@@ -183,17 +183,16 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   function addSwap() {
     const id = newId()
-    setSwapDialog({
-      isNew: true,
-      submitted: false,
-      draft: {
+    commit({
+      ...localRef.current,
+      tickers: [...localRef.current.tickers, {
         id,
         type: 'SWAP',
         source: '',
         transferMode: 'AMOUNT',
         transferAmount: '',
         legs: [{ id: `${id}-leg-0`, instrument: '', multiplier: '1' }],
-      },
+      }],
     })
   }
 
