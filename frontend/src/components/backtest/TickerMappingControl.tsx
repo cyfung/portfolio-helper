@@ -590,35 +590,37 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                       }
                     }}
                   >
-                    <div className="ticker-mapping-set-heading">
-                      <label className="ticker-mapping-set-name">
-                        <span>Name</span>
-                        <input
-                          value={set.name}
-                          onChange={e => updateSet(set.id, { name: e.target.value })}
-                        />
-                      </label>
-                      <span className={`ticker-mapping-save-state${localUnsaved ? ' unsaved' : ''}${referenceUpdated ? ' reference-updated' : ''}${referenceLost ? ' reference-lost' : ''}`}>
-                        {editSetStatus}
-                      </span>
-                      <div className="ticker-mapping-set-actions">
-                        <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id, 'start')}>+ Add to Start</button>
-                        <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id, 'end')}>+ Add to End</button>
-                        <button
-                          type="button"
-                          className="ticker-mapping-save-set"
-                          title="Save mapping set"
-                          aria-label={`Save ${set.name || 'mapping set'}`}
-                          onClick={() => saveSetAsSaved(set.id)}
-                        >
-                          <Save size={14} />
-                        </button>
+                    <div className="ticker-mapping-sticky-header">
+                      <div className="ticker-mapping-set-heading">
+                        <label className="ticker-mapping-set-name">
+                          <span>Name</span>
+                          <input
+                            value={set.name}
+                            onChange={e => updateSet(set.id, { name: e.target.value })}
+                          />
+                        </label>
+                        <span className={`ticker-mapping-save-state${localUnsaved ? ' unsaved' : ''}${referenceUpdated ? ' reference-updated' : ''}${referenceLost ? ' reference-lost' : ''}`}>
+                          {editSetStatus}
+                        </span>
+                        <div className="ticker-mapping-set-actions">
+                          <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id, 'start')}>+ Add to Start</button>
+                          <button type="button" className="add-ticker-btn" onClick={() => addMapping(set.id, 'end')}>+ Add to End</button>
+                          <button
+                            type="button"
+                            className="ticker-mapping-save-set"
+                            title="Save mapping set"
+                            aria-label={`Save ${set.name || 'mapping set'}`}
+                            onClick={() => saveSetAsSaved(set.id)}
+                          >
+                            <Save size={14} />
+                          </button>
+                        </div>
                       </div>
+                      {resolvedEditSet?.resolveWarnings?.map(warning => (
+                        <div className="ticker-mapping-order-warning" key={warning}>{warning}</div>
+                      ))}
                     </div>
                     <div className="ticker-mapping-order-note">Applied top to bottom. Drag rows to reorder chained mappings.</div>
-                    {resolvedEditSet?.resolveWarnings?.map(warning => (
-                      <div className="ticker-mapping-order-warning" key={warning}>{warning}</div>
-                    ))}
 
                     <div
                       className={`ticker-mapping-rows${dragOverRowsSetId === set.id ? ' drag-over-child' : ''}`}

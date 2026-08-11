@@ -356,18 +356,23 @@
     z-index: 4;
 }
 
-.ticker-mapping-set-heading {
+.ticker-mapping-sticky-header {
     position: sticky;
     top: 0;
     z-index: 2;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 0.5rem;
-    align-items: center;
+    gap: 0.4rem;
     margin: -0.75rem -0.75rem 0;
     padding: 0.75rem 0.75rem 0.65rem;
     border-bottom: 1px solid var(--color-border-subtle);
     background: var(--color-bg-elevated);
+}
+
+.ticker-mapping-set-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.5rem;
+    align-items: center;
 }
 
 .ticker-mapping-set-name {
