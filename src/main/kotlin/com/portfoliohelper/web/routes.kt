@@ -343,7 +343,8 @@ private fun parsePositionRows(arr: JsonArray): List<BackupStock> = arr.mapNotNul
         amount = amount,
         targetWeight = obj["targetWeight"]?.jsonPrimitive?.double ?: 0.0,
         letf = obj["letf"]?.jsonPrimitive?.content ?: "",
-        groups = obj["groups"]?.jsonPrimitive?.content ?: ""
+        groups = obj["groups"]?.jsonPrimitive?.content ?: "",
+        manualQty = obj["manualQty"]?.jsonPrimitive?.booleanOrNull ?: false
     )
 }
 
@@ -999,7 +1000,8 @@ private data class StockDto(
     val originalAmount: Double,
     val targetWeight: Double,
     val letf: String,
-    val groups: String
+    val groups: String,
+    val manualQty: Boolean
 )
 
 @Serializable
@@ -1175,7 +1177,8 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                         originalAmount = stock.amount,
                         targetWeight = stock.targetWeight ?: 0.0,
                         letf = stock.letfComponents?.joinToString(",") { "${it.first},${it.second}" } ?: "",
-                        groups = stock.groups.joinToString(";") { "${it.first} ${it.second}" }
+                        groups = stock.groups.joinToString(";") { "${it.first} ${it.second}" },
+                        manualQty = stock.manualQty
                     )
                 },
                 cash = cashEntries.map { CashDto(it.label, it.currency, it.amount, it.marginFlag, it.portfolioRef) },

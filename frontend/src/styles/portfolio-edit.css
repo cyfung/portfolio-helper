@@ -118,6 +118,23 @@
     box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
 }
 
+.tws-manual-qty-warning {
+  max-width: 420px;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, #d97706 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  color: #b45309;
+  font-size: 0.875rem;
+}
+
+.edit-save-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
 [data-theme="dark"] .editing-active .edit-input:focus {
     box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }

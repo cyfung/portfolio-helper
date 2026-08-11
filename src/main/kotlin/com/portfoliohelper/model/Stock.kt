@@ -9,7 +9,8 @@ data class Stock(
     val isMarketClosed: Boolean = false,
     val lastNav: Double? = null,
     val letfComponents: List<Pair<Double, String>>? = null,
-    val groups: List<Pair<Double, String>> = emptyList()
+    val groups: List<Pair<Double, String>> = emptyList(),
+    val manualQty: Boolean = false
 ) {
     val value: Double?
         get() = when {

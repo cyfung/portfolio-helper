@@ -48,7 +48,8 @@ class ManagedPortfolio(
                         amount         = row[PositionsTable.amount],
                         targetWeight   = row[PositionsTable.targetWeight].takeIf { it != 0.0 },
                         letfComponents = letfComponents,
-                        groups         = groups
+                        groups         = groups,
+                        manualQty      = row[PositionsTable.manualQty]
                     )
                 }
         }
@@ -125,7 +126,8 @@ class ManagedPortfolio(
                     amount = rows.sumOf { it.amount },
                     targetWeight = rows.sumOf { it.targetWeight },
                     letf = rows.lastOrNull { it.letf.isNotBlank() }?.letf ?: "",
-                    groups = rows.lastOrNull { it.groups.isNotBlank() }?.groups ?: ""
+                    groups = rows.lastOrNull { it.groups.isNotBlank() }?.groups ?: "",
+                    manualQty = rows.last().manualQty
                 )
             }
         val symbols = collapsedStocks.map { it.symbol }.distinct()
@@ -146,6 +148,7 @@ class ManagedPortfolio(
             this[PositionsTable.symbol] = s.symbol
             this[PositionsTable.amount] = s.amount
             this[PositionsTable.targetWeight] = s.targetWeight
+            this[PositionsTable.manualQty] = s.manualQty
         }
         collapsedStocks.forEach { s ->
             val existing = existingTickerConfig[s.symbol]

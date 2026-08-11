@@ -8,6 +8,8 @@ import { TWS_CASH_LABEL, isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 import TransientToast from '@/components/TransientToast'
 import { durationForToastType, useTransientToast, type ToastType } from '@/hooks/useTransientToast'
 import { announceSavedPortfoliosChanged } from '@/lib/savedPortfolioCache'
+import { instrumentSymbolKey } from '@/lib/instrumentSymbols'
+import { stageTwsStockSync } from '@/lib/twsStockSync'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
 function parseCashKey(key: string, value: string): CashData | null {
@@ -38,18 +40,14 @@ function parseCashKey(key: string, value: string): CashData | null {
   return { label, currency, amount, marginFlag }
 }
 
-function stockKey(symbol: string): string {
-  return symbol.trim().toUpperCase()
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
 function appendMissingStocksWithZeroQty(imported: StockData[], current: StockData[]): StockData[] {
-  const importedSymbols = new Set(imported.map(s => stockKey(s.label)).filter(Boolean))
+  const importedSymbols = new Set(imported.map(s => instrumentSymbolKey(s.label)).filter(Boolean))
   const missing = current
-    .filter(s => !importedSymbols.has(stockKey(s.label)))
+    .filter(s => !importedSymbols.has(instrumentSymbolKey(s.label)))
     .map(s => ({ ...s, originalAmount: 0, targetWeight: 0 }))
   return [...imported, ...missing]
 }
@@ -131,6 +129,7 @@ export default function PortfolioViewer() {
   const { toast: syncToast, showToast: showSyncToastBase, clearToast: clearSyncToast } = useTransientToast()
   const [stagedEditStocks, setStagedEditStocks] = useState<StockData[] | null>(null)
   const [stagedEditCash, setStagedEditCash] = useState<CashData[] | null>(null)
+  const [reportedManuallyManagedHoldings, setReportedManuallyManagedHoldings] = useState<string[]>([])
   const [pendingBackupDependencyImport, setPendingBackupDependencyImport] = useState<PendingBackupDependencyImport | null>(null)
   const [importDependencyApplying, setImportDependencyApplying] = useState(false)
   const [importDependencyError, setImportDependencyError] = useState('')
@@ -146,16 +145,19 @@ export default function PortfolioViewer() {
   function clearStagedEditData() {
     setStagedEditStocks(null)
     setStagedEditCash(null)
+    setReportedManuallyManagedHoldings([])
   }
 
   function enterEditMode(
     stocks?: StockData[] | null,
     cashEntries?: CashData[] | null,
-    dividendDateOverride?: string | null
+    dividendDateOverride?: string | null,
+    manuallyManagedHoldingSymbols: string[] = [],
   ) {
     setStagedEditStocks(stocks ?? null)
     setStagedEditCash(cashEntries ?? null)
     setDividendDate(dividendDateOverride ?? store.config.dividendStartDate ?? '')
+    setReportedManuallyManagedHoldings(manuallyManagedHoldingSymbols)
     setEditResetKey(k => k + 1)
     setEditModeActive(true)
   }
@@ -173,7 +175,7 @@ export default function PortfolioViewer() {
   function dependencyPayloadFromBackupImport(json: BackupImportPayload) {
     const tickerConfigs = new Map<string, { symbol: string; letf: string; groups: string }>()
     ;(json.stocks ?? []).forEach(stock => {
-      const symbol = stockKey(String(stock.symbol ?? stock.label ?? ''))
+      const symbol = instrumentSymbolKey(String(stock.symbol ?? stock.label ?? ''))
       const letf = String(stock.letf ?? '').trim()
       const groups = String(stock.groups ?? '').trim()
       if (!symbol || (!letf && !groups)) return
@@ -188,11 +190,11 @@ export default function PortfolioViewer() {
   ): StockData[] | null {
     if (!json.stocks) return null
 
-    const currentStocksBySymbol = new Map(store.stocks.map(s => [stockKey(s.label), s]))
-    const previewBySymbol = new Map((preview?.tickerConfigs ?? []).map(row => [stockKey(row.symbol), row]))
+    const currentStocksBySymbol = new Map(store.stocks.map(s => [instrumentSymbolKey(s.label), s]))
+    const previewBySymbol = new Map((preview?.tickerConfigs ?? []).map(row => [instrumentSymbolKey(row.symbol), row]))
     const parsedStocks = json.stocks.map(s => {
       const symbol = String(s.symbol ?? s.label ?? '')
-      const key = stockKey(symbol)
+      const key = instrumentSymbolKey(symbol)
       const current = currentStocksBySymbol.get(key)
       const previewRow = previewBySymbol.get(key)
       const importedLetf = String(s.letf ?? '').trim()
@@ -211,6 +213,7 @@ export default function PortfolioViewer() {
         targetWeight: s.targetWeight ?? 0,
         letf,
         groups,
+        manualQty: s.manualQty ?? false,
       }
     })
     return appendMissingStocksWithZeroQty(parsedStocks, store.stocks)
@@ -286,17 +289,8 @@ export default function PortfolioViewer() {
 
       // Stage TWS positions for edit mode without changing display quantities.
       const positions = snap.positions as Array<{ symbol: string; qty: number }>
-      const qtyBySymbol = new Map(positions.map(p => [stockKey(p.symbol), p.qty]))
-      const updatedStocks: StockData[] = store.stocks.map(s => ({
-        ...s,
-        originalAmount: qtyBySymbol.get(stockKey(s.label)) ?? 0,
-      }))
-      const existingSymbols = new Set(store.stocks.map(s => stockKey(s.label)))
-      for (const pos of positions) {
-        if (!existingSymbols.has(stockKey(pos.symbol))) {
-          updatedStocks.push({ label: pos.symbol, amount: pos.qty, originalAmount: pos.qty, targetWeight: 0, letf: '', groups: '' })
-        }
-      }
+      const stagedSync = stageTwsStockSync(store.stocks, positions)
+      const updatedStocks = stagedSync.stocks
 
       // TWS owns these reserved labels. Replace the whole reserved subset so
       // stale currencies and zero balances disappear from the staged cash rows.
@@ -315,7 +309,7 @@ export default function PortfolioViewer() {
         addTwsCash(TWS_CASH_LABEL.PENDING_DIVIDEND, ccy, amt, false)
       }
 
-      enterEditMode(updatedStocks, updatedCash)
+      enterEditMode(updatedStocks, updatedCash, undefined, stagedSync.reportedManuallyManagedHoldings)
     } catch (e) {
       showSyncToast(`TWS sync failed: ${e}`, 'error')
     } finally {
@@ -340,6 +334,7 @@ export default function PortfolioViewer() {
           targetWeight: s.targetWeight ?? 0,
           letf: s.letf ?? '',
           groups: s.groups ?? '',
+          manualQty: s.manualQty ?? false,
         })),
         cash: importedCash,
         dividendStartDate: dividendDateToSave || null,
@@ -543,19 +538,26 @@ export default function PortfolioViewer() {
           >Edit</button>
 
           {editModeActive && (
-            <button
-              className="save-btn h-btn primary"
-              id="save-btn"
-              type="button"
-              title="Save changes"
-              onClick={() => setSaveKey(k => k + 1)}
-            >
-              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                <path d="M17 21v-8H7v8M7 3v5h8"/>
-              </svg>
-              Save
-            </button>
+            <div className="edit-save-stack">
+              {reportedManuallyManagedHoldings.length > 0 && (
+                <div className="tws-manual-qty-warning" role="status">
+                  TWS reported manually managed holdings: {reportedManuallyManagedHoldings.join(', ')}. Their quantities were not updated.
+                </div>
+              )}
+              <button
+                className="save-btn h-btn primary"
+                id="save-btn"
+                type="button"
+                title="Save changes"
+                onClick={() => setSaveKey(k => k + 1)}
+              >
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <path d="M17 21v-8H7v8M7 3v5h8"/>
+                </svg>
+                Save
+              </button>
+            </div>
           )}
 
           {renderColumnModeControl()}

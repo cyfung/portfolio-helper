@@ -73,6 +73,29 @@ class ManagedPortfolioTest {
     }
 
     @Test
+    fun `manually managed holding survives persistence and backup export`() = withDb { first, _ ->
+        transaction {
+            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, manualQty = true)))
+        }
+
+        val stock = first.getStocks().single()
+        assertTrue(stock.manualQty)
+        assertTrue("\"manualQty\":true" in BackupService.exportJson(first))
+
+        BackupService.saveToDb(first, force = true)
+        val backupId = BackupService.listDbBackups(first).single().id
+        transaction {
+            first.replacePositions(listOf(BackupStock("SSO", 99.0, 50.0, manualQty = false)))
+        }
+        BackupService.restoreFromDb(first, backupId)
+        assertTrue(first.getStocks().single().manualQty)
+
+        val legacyJson = BackupService.exportJson(first).replace(",\"manualQty\":true", "")
+        val legacyImport = BackupService.parseImportFile(legacyJson.toByteArray(), "legacy.json")
+        assertEquals(false, legacyImport.stocks?.single()?.manualQty)
+    }
+
+    @Test
     fun `duplicate rows for the same ticker prefer non-blank metadata`() = withDb { first, _ ->
         transaction {
             first.replacePositions(

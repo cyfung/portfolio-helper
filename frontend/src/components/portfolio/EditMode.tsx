@@ -36,6 +36,7 @@ interface StockRow {
   symbol: string
   qty: NumericInputValue
   weight: NumericInputValue
+  manualQty: boolean
   deleted?: boolean
 }
 
@@ -184,6 +185,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         symbol: s.label,
         qty: zeroAsEmpty(s.originalAmount ?? s.amount),
         weight: zeroAsEmpty(s.targetWeight ?? 0),
+        manualQty: s.manualQty ?? false,
       }))
   )
   const [flexibleRows, setFlexibleRows] = useState<FlexibleMappingRow[]>(() => {
@@ -240,6 +242,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
         symbol: r.symbol.trim().toUpperCase(),
         amount: numberFromInputValue(r.qty),
         targetWeight: numberFromInputValue(r.weight),
+        manualQty: r.manualQty,
       }))
 
     // Read cash from CashEditTable DOM (always-visible section)
@@ -278,7 +281,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }
 
   function addStockRow() {
-    setStockRows(rows => [...rows, { symbol: '', qty: '', weight: '' }])
+    setStockRows(rows => [...rows, { symbol: '', qty: '', weight: '', manualQty: false }])
   }
 
   function addFlexibleRow() {
@@ -351,7 +354,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             next[existingIdx].weight = row.weight
           } else {
             rowBySymbol.set(symbol, next.length)
-            next.push({ symbol, qty: '', weight: row.weight })
+            next.push({ symbol, qty: '', weight: row.weight, manualQty: false })
           }
         }
         return next
@@ -475,7 +478,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
           targetIdx = visibleIndices[visiblePos]
         } else {
           // Need to append a new row
-          next.push({ symbol: '', qty: '', weight: '' })
+          next.push({ symbol: '', qty: '', weight: '', manualQty: false })
           targetIdx = next.length - 1
           visibleIndices.push(targetIdx)
         }
@@ -585,6 +588,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             <th>Symbol <button type="button" className="copy-col-btn" data-column="symbol" title="Copy Symbol column"><Copy size={12} /></button></th>
             <th className="amount">Qty <button type="button" className="copy-col-btn col-num" data-column="qty" title="Copy Qty column"><Copy size={12} /></button></th>
             <th>Weight % <button type="button" className="copy-col-btn" data-column="weight" title="Copy Weight % column"><Copy size={12} /></button></th>
+            <th title="Keep this quantity unchanged when syncing from TWS">Manual Qty</th>
             <th />
           </tr>
         </thead>
@@ -634,6 +638,15 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
               </td>
               <td>
                 <input
+                  type="checkbox"
+                  aria-label={`Keep ${row.symbol || 'holding'} quantity unchanged when syncing from TWS`}
+                  title="Keep this quantity unchanged when syncing from TWS"
+                  checked={row.manualQty}
+                  onChange={e => updateStock(idx, 'manualQty', e.target.checked)}
+                />
+              </td>
+              <td>
+                <input
                   type="text"
                   inputMode="decimal"
                   className="edit-input edit-weight"
@@ -666,7 +679,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
             <td id="target-weight-total" style={totalWeight > 0 && Math.abs(totalWeight - 100) > 0.001 ? { color: 'red' } : undefined}>
               {totalWeight > 0 ? `${totalWeight.toFixed(2)}%` : ''}
             </td>
-            <td />
+            <td /><td />
           </tr>
         </tfoot>
       </table>

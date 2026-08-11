@@ -13,6 +13,7 @@ export interface StockData {
   targetWeight: number     // 0 if unset
   letf: string             // "mult,sym,mult,sym" format
   groups: string           // "mult name;mult name" format
+  manualQty?: boolean      // quantity is excluded from TWS sync
 }
 
 export interface CashData {

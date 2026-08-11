@@ -8,6 +8,10 @@ This context describes portfolio compositions used for analysis, simulation, and
 The signed share of local portfolio capital assigned directly to an investable instrument.
 _Avoid_: Ticker weight
 
+**Manually managed holding**:
+A holding whose quantity is maintained by the user and excluded from brokerage synchronization.
+_Avoid_: Manual managed ticker
+
 **Instrument expression**:
 A canonical description of either a simple ticker or a compound synthetic instrument. Portfolio resolution treats it as an atomic position; specialized analysis may project it into underlying components afterward.
 _Avoid_: Ticker string

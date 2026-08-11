@@ -47,7 +47,7 @@ data class AllSyncResponse(
 
 fun computeSyncChecksum(entries: List<PortfolioSyncEntry>): String {
     val lines = entries
-        .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}" } }
+        .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}:${it.manualQty}" } }
         .sorted()
         .joinToString("\n")
     val digest = MessageDigest.getInstance("SHA-256")
@@ -70,7 +70,8 @@ data class BackupStock(
     val amount: Double,
     val targetWeight: Double = 0.0,
     val letf: String = "",
-    val groups: String = ""
+    val groups: String = "",
+    val manualQty: Boolean = false
 )
 
 @Serializable
@@ -100,7 +101,8 @@ data class ImportedStock(
     val amount: Double,
     val targetWeight: Double,
     val letf: String,
-    val groups: String
+    val groups: String,
+    val manualQty: Boolean = false
 )
 
 @Serializable
@@ -310,7 +312,8 @@ object BackupService {
                         amount = row[PositionsTable.amount],
                         targetWeight = row[PositionsTable.targetWeight],
                         letf = if (includeTickerMetadata) row.getOrNull(StockTickersTable.letf) ?: "" else "",
-                        groups = if (includeTickerMetadata) row.getOrNull(StockTickersTable.groups) ?: "" else ""
+                        groups = if (includeTickerMetadata) row.getOrNull(StockTickersTable.groups) ?: "" else "",
+                        manualQty = row[PositionsTable.manualQty]
                     )
                 }
         }
@@ -408,7 +411,7 @@ object BackupService {
 
     private fun importResultFromRoot(root: BackupRoot): ImportResult {
         val stocks = root.stocks.map { s ->
-            ImportedStock(s.symbol, s.amount, s.targetWeight, s.letf, s.groups)
+            ImportedStock(s.symbol, s.amount, s.targetWeight, s.letf, s.groups, s.manualQty)
         }
         val cash = root.cash.map { c ->
             val value = if (c.currency == "P") {

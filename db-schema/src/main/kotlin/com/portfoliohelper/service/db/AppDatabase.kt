@@ -20,6 +20,7 @@ object PositionsTable : Table("positions") {
     val symbol = varchar("symbol", 32)
     val amount = double("amount")
     val targetWeight = double("target_weight").default(0.0)
+    val manualQty = bool("manual_qty").default(false)
     override val primaryKey = PrimaryKey(portfolioId, symbol)
 }
 
