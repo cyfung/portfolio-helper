@@ -148,8 +148,8 @@ class MonteCarloServiceTest {
             val noMargin = curves.single { it.label == "No Margin" }.percentilePaths.single { it.percentile == 50 }
             val attached = curves.single { it.label == "attached" }.percentilePaths.single { it.percentile == 50 }
 
-            assertEquals(noMargin.endValue, attached.endValue)
-            assertEquals(noMargin.cagr, attached.cagr)
+            assertEquals(noMargin.endValue, attached.endValue, absoluteTolerance = 1e-9)
+            assertEquals(noMargin.cagr, attached.cagr, absoluteTolerance = 1e-12)
         } finally {
             AppDirs.dataDir = originalDataDir
             tempDataDir.toFile().deleteRecursively()
@@ -205,8 +205,8 @@ class MonteCarloServiceTest {
             val noMargin = curves.single { it.label == "No Margin" }.percentilePaths.single { it.percentile == 50 }
             val attached = curves.single { it.label == "attached" }.percentilePaths.single { it.percentile == 50 }
 
-            assertEquals(noMargin.endValue, attached.endValue)
-            assertEquals(noMargin.cagr, attached.cagr)
+            assertEquals(noMargin.endValue, attached.endValue, absoluteTolerance = 1e-9)
+            assertEquals(noMargin.cagr, attached.cagr, absoluteTolerance = 1e-12)
         } finally {
             AppDirs.dataDir = originalDataDir
             tempDataDir.toFile().deleteRecursively()

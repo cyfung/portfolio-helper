@@ -58,13 +58,14 @@ internal object MonteCarloIndexedSimulation {
         var firstChunk = true
 
         while (remaining > 0) {
-            val chunkMax = minOf(maxChunkDays, remaining, poolSize - 1)
+            val returnDayCount = poolSize - 1
+            val chunkMax = minOf(maxChunkDays, remaining, returnDayCount)
             val chunkMin = minChunkDays.coerceAtMost(chunkMax)
             val chunkDays = if (chunkMin >= chunkMax) chunkMax else rng.nextInt(chunkMin, chunkMax + 1)
-            val startIdx = if (poolSize - chunkDays > 1) rng.nextInt(0, poolSize - chunkDays) else 0
+            val startIdx = if (returnDayCount > 1) rng.nextInt(returnDayCount) else 0
 
             for (k in 0 until chunkDays) {
-                path[offset++] = if (k == 0 && !firstChunk) -1 else startIdx + k
+                path[offset++] = if (k == 0 && !firstChunk) -1 else (startIdx + k) % returnDayCount
             }
 
             remaining -= chunkDays
