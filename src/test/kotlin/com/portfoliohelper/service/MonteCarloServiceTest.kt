@@ -27,7 +27,7 @@ class MonteCarloServiceTest {
         dates.associateWith { 100.0 }
 
     private fun writeFullTicker(tempDataDir: java.nio.file.Path, ticker: String, series: Map<LocalDate, Double>) {
-        val tickerDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+        val tickerDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
         val lastDate = series.keys.maxOrNull() ?: error("Series must not be empty")
         BacktestService.writeSimCsv(tickerDir.resolve("$ticker-$lastDate.csv"), series)
     }

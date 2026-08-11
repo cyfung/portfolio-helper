@@ -1,5 +1,6 @@
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.service.requireMarketDataInstrumentSymbol
 import com.portfoliohelper.service.AnalysisWarning
 import com.portfoliohelper.util.appJson
 import okhttp3.OkHttpClient
@@ -76,13 +77,14 @@ object YahooHistoricalFetcher {
         ticker: String,
         at: Instant
     ): Double? {
+        val marketTicker = requireMarketDataInstrumentSymbol(ticker)
         val p1 = at.minus(10, ChronoUnit.DAYS).epochSecond
         val p2 = at.plus(5, ChronoUnit.MINUTES).epochSecond
-        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$marketTicker" +
                 "?period1=$p1&period2=$p2&interval=1m&includePrePost=false"
 
-        logger.info("Fetching intraday $ticker close at or before $at")
-        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker intraday" }
+        logger.info("Fetching intraday $marketTicker close at or before $at")
+        val body = executeTextRequest(url, marketTicker) { "HTTP ${it.code} for $marketTicker intraday" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull() ?: return null
         val timestamps = result.timestamp ?: return null
@@ -104,22 +106,23 @@ object YahooHistoricalFetcher {
         startDate: LocalDate,
         endDate: LocalDate
     ): YahooAdjustedCloseResult {
+        val marketTicker = requireMarketDataInstrumentSymbol(ticker)
         val p1 = startDate.minusDays(5).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$marketTicker" +
                 "?period1=$p1&period2=$p2&interval=1d" +
                 "&events=history%7Cadjclose&includeAdjustedClose=true"
 
-        logger.info("Fetching historical $ticker from $startDate to $endDate")
-        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker" }
+        logger.info("Fetching historical $marketTicker from $startDate to $endDate")
+        val body = executeTextRequest(url, marketTicker) { "HTTP ${it.code} for $marketTicker" }
         val result = parseAdjustedCloseResponseWithWarnings(
-            ticker,
+            marketTicker,
             startDate,
             endDate,
             body,
-            tailQuoteProvider = { fetchCurrentQuote(ticker) }
+            tailQuoteProvider = { fetchCurrentQuote(marketTicker) }
         )
-        logger.info("Fetched ${result.prices.size} trading days for $ticker")
+        logger.info("Fetched ${result.prices.size} trading days for $marketTicker")
         return result
     }
 
@@ -146,13 +149,14 @@ object YahooHistoricalFetcher {
         startDate: LocalDate,
         endDate: LocalDate
     ): Map<LocalDate, Double> {
+        val marketTicker = requireMarketDataInstrumentSymbol(ticker)
         val p1 = startDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$marketTicker" +
                 "?period1=$p1&period2=$p2&interval=1d&events=div"
 
-        logger.info("Fetching dividends for $ticker from $startDate to $endDate")
-        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker dividends" }
+        logger.info("Fetching dividends for $marketTicker from $startDate to $endDate")
+        val body = executeTextRequest(url, marketTicker) { "HTTP ${it.code} for $marketTicker dividends" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull() ?: return emptyMap()
         val dividends = result.events?.dividends ?: return emptyMap()
@@ -163,7 +167,7 @@ object YahooHistoricalFetcher {
             }
             .toMap()
 
-        logger.info("Fetched ${out.size} dividend events for $ticker")
+        logger.info("Fetched ${out.size} dividend events for $marketTicker")
         return out
     }
 
@@ -172,20 +176,21 @@ object YahooHistoricalFetcher {
         startDate: LocalDate = LocalDate.of(1900, 1, 1),
         endDate: LocalDate = LocalDate.now(ZoneOffset.UTC)
     ): YahooCloseDividendHistory {
+        val marketTicker = requireMarketDataInstrumentSymbol(ticker)
         val p1 = startDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC)
         val p2 = endDate.plusDays(1).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
-        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$ticker" +
+        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$marketTicker" +
                 "?period1=$p1&period2=$p2&interval=1d&events=history%7Cdiv"
 
-        logger.info("Fetching close/dividend history for $ticker from $startDate to $endDate")
-        val body = executeTextRequest(url, ticker) { "HTTP ${it.code} for $ticker close/dividend history" }
+        logger.info("Fetching close/dividend history for $marketTicker from $startDate to $endDate")
+        val body = executeTextRequest(url, marketTicker) { "HTTP ${it.code} for $marketTicker close/dividend history" }
         val response = appJson.decodeFromString<YahooChartResponse>(body)
         val result = response.chart.result?.firstOrNull()
-            ?: throw YahooHistoricalDataException("No Yahoo chart result for $ticker")
+            ?: throw YahooHistoricalDataException("No Yahoo chart result for $marketTicker")
         val timestamps = result.timestamp
-            ?: throw YahooHistoricalDataException("No Yahoo timestamps for $ticker")
+            ?: throw YahooHistoricalDataException("No Yahoo timestamps for $marketTicker")
         val closeList = result.indicators?.quote?.firstOrNull()?.close
-            ?: throw YahooHistoricalDataException("No Yahoo close prices for $ticker")
+            ?: throw YahooHistoricalDataException("No Yahoo close prices for $marketTicker")
 
         val closes = TreeMap<LocalDate, Double>()
         timestamps.forEachIndexed { index, epoch ->
@@ -206,7 +211,7 @@ object YahooHistoricalFetcher {
             ?.fold(0.0) { acc, item -> acc + item.second }
             ?: emptyMap()
 
-        logger.info("Fetched ${closes.size} closes and ${dividends.size} dividend dates for $ticker")
+        logger.info("Fetched ${closes.size} closes and ${dividends.size} dividend dates for $marketTicker")
         return YahooCloseDividendHistory(closes, dividends)
     }
 

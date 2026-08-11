@@ -1540,7 +1540,7 @@ class RebalanceStrategyServiceTest {
         AppDirs.dataDir = tempDataDir
         try {
             val dates = days(LocalDate.of(2024, 1, 29), 12)
-            val tickerDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            val tickerDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
             val today = LocalDate.now()
             val aValues = listOf(10_000.0, 8_000.0, 7_000.0, 7_000.0, 10_000.0, 12_000.0, 11_000.0, 9_000.0, 9_500.0, 11_000.0, 10_500.0, 10_800.0)
             val bValues = listOf(10_000.0, 10_500.0, 10_200.0, 10_200.0, 10_000.0, 9_700.0, 10_300.0, 10_700.0, 10_200.0, 9_900.0, 10_100.0, 10_000.0)
@@ -1649,7 +1649,7 @@ class RebalanceStrategyServiceTest {
             )
             val portfolio = PortfolioConfig(
                 label = "40% KMLM / 60% VT",
-                tickers = listOf(TickerWeight("KMLM", 0.4), TickerWeight("VT", 0.6)),
+                tickers = listOf(TickerWeight("KMLM\$", 0.4), TickerWeight("VT\$", 0.6)),
                 rebalanceStrategy = RebalanceStrategy.MONTHLY,
                 marginStrategies = listOf(marginConfig),
                 includeNoMargin = false,
@@ -2663,7 +2663,7 @@ class RebalanceStrategyServiceTest {
         AppDirs.dataDir = tempDataDir
         try {
             val dates = days(LocalDate.of(2024, 1, 2), 3)
-            val tickerDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            val tickerDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
             val today = LocalDate.now()
             BacktestService.writeSimCsv(
                 tickerDir.resolve("DRVMA-$today.csv"),
@@ -2732,7 +2732,7 @@ class RebalanceStrategyServiceTest {
                 LocalDate.of(2024, 2, 1),
                 LocalDate.of(2024, 2, 2),
             )
-            val tickerDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            val tickerDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
             val today = LocalDate.now()
             BacktestService.writeSimCsv(
                 tickerDir.resolve("DRVRA-$today.csv"),
@@ -3747,7 +3747,7 @@ class RebalanceStrategyServiceTest {
         AppDirs.dataDir = tempDataDir
         try {
             val dates = days(LocalDate.of(2024, 1, 2), 3)
-            val tickerDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            val tickerDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
             val today = LocalDate.now()
             val prehistory = days(LocalDate.of(1990, 1, 1), 20).associateWith { 1.0 }
             BacktestService.writeSimCsv(

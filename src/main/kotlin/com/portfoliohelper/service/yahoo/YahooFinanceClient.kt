@@ -1,5 +1,6 @@
 package com.portfoliohelper.service.yahoo
 
+import com.portfoliohelper.service.requireMarketDataInstrumentSymbol
 import com.portfoliohelper.util.appJson
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
@@ -23,22 +24,23 @@ object YahooFinanceClient {
     }
 
     suspend fun fetchQuote(symbol: String): YahooQuote {
+        val marketSymbol = requireMarketDataInstrumentSymbol(symbol)
         try {
-            val url = "https://query1.finance.yahoo.com/v8/finance/chart/$symbol?interval=1d&range=1d"
+            val url = "https://query1.finance.yahoo.com/v8/finance/chart/$marketSymbol?interval=1d&range=1d"
             val response: HttpResponse = httpClient.get(url)
 
             if (response.status.value != 200) {
-                throw YahooFinanceException("HTTP ${response.status.value} for $symbol")
+                throw YahooFinanceException("HTTP ${response.status.value} for $marketSymbol")
             }
 
             val body = response.bodyAsText()
-            return parseQuoteResponse(symbol, body)
+            return parseQuoteResponse(marketSymbol, body)
 
         } catch (e: YahooFinanceException) {
             throw e
         } catch (e: Exception) {
-            logger.error("Failed to fetch quote for $symbol", e)
-            throw YahooFinanceException("Failed to fetch $symbol: ${e.message}", e)
+            logger.error("Failed to fetch quote for $marketSymbol", e)
+            throw YahooFinanceException("Failed to fetch $marketSymbol: ${e.message}", e)
         }
     }
 

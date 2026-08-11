@@ -5,6 +5,7 @@ import {
   convertLegacyTickerRow,
   convertPortfolioRowToLegacyTickerRow,
   formatSwapRow,
+  parseInstrumentExpression,
   parseSwapInput,
   resolvePortfolioComposition,
   resolvePortfolioReferenceComposition,
@@ -13,6 +14,16 @@ import {
 } from './portfolioComposition'
 
 describe('canonical portfolio composition', () => {
+  it('allows exactly one trailing simulated-data qualifier per ticker component', () => {
+    expect(parseInstrumentExpression('SPY$')).toBe('SPY$')
+    expect(parseInstrumentExpression('1 SPY$ 1 TLT')).toBe('1 SPY$ 1 TLT')
+    expect(parseInstrumentExpression('SPY$ | VOO')).toBe('SPY$ | VOO')
+    expect(parseInstrumentExpression('$SPY')).toBeNull()
+    expect(parseInstrumentExpression('SP$Y')).toBeNull()
+    expect(parseInstrumentExpression('SPY$$')).toBeNull()
+    expect(parseInstrumentExpression('$')).toBeNull()
+  })
+
   it('materializes a reference exactly after nested swaps and signed parent scaling', () => {
     const saved = new Map([
       ['Grandchild', { rows: [

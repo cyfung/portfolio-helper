@@ -29,6 +29,34 @@ enum class MarginRebalanceMode {
 
 data class TickerWeight(val ticker: String, val weight: Double)
 
+data class HistoricalInstrumentSymbol(
+    val ticker: String,
+    val simulated: Boolean,
+)
+
+fun parseHistoricalInstrumentSymbol(raw: String): HistoricalInstrumentSymbol {
+    val symbol = raw.trim().uppercase()
+    require(symbol.isNotEmpty()) { "Historical instrument symbol cannot be blank" }
+    val dollarCount = symbol.count { it == '$' }
+    require(dollarCount == 0 || dollarCount == 1 && symbol.endsWith('$') && symbol.length > 1) {
+        "Invalid simulated-data instrument '$raw': use exactly one trailing \$"
+    }
+    val baseTicker = if (dollarCount == 1) symbol.dropLast(1) else symbol
+    require(baseTicker != "EFFRX") { "EFFRX is an internal interest-rate series" }
+    return HistoricalInstrumentSymbol(
+        ticker = baseTicker,
+        simulated = dollarCount == 1,
+    )
+}
+
+fun requireMarketDataInstrumentSymbol(raw: String): String {
+    val symbol = parseHistoricalInstrumentSymbol(raw)
+    require(!symbol.simulated) {
+        "Simulated-data instrument '$raw' is only available for historical simulation and analysis"
+    }
+    return symbol.ticker
+}
+
 data class LETFComponent(val ticker: String, val multiplier: Double)
 
 data class LETFDefinition(

@@ -22,6 +22,13 @@ function renderPortfolioBlock(tickers: BlockState['tickers']) {
 }
 
 describe('portfolio row editor', () => {
+  it('explains how to select bundled simulated history', () => {
+    const markup = renderPortfolioBlock([])
+
+    expect(markup).toContain('Add $ to a supported ticker to use bundled simulated history')
+    expect(markup).toContain('ordinary tickers use market-provider history only')
+  })
+
   it('renders a dedicated drag handle for every portfolio row type', () => {
     const markup = renderPortfolioBlock([
       {

@@ -116,12 +116,14 @@ function canonicalInstrumentSegment(value: string): string | null {
   }
   const expression = tokens.filter(token => !MODIFIER.test(token))
   if (expression.some(token => token.includes('='))) return null
+  const validTickerToken = (token: string) =>
+    !Number.isFinite(Number(token)) && (!token.includes('$') || /^[^$]+\$$/.test(token))
   const validBase = expression.length === 1
-    ? !Number.isFinite(Number(expression[0]))
+    ? validTickerToken(expression[0])
     : expression.length >= 2 &&
       expression.length % 2 === 0 &&
       expression.every((token, index) =>
-        index % 2 === 0 ? Number.isFinite(Number(token)) : !Number.isFinite(Number(token)))
+        index % 2 === 0 ? Number.isFinite(Number(token)) : validTickerToken(token))
   if (!validBase) return null
   const canonical = [...expression, ...modifiers.sort()].join(' ')
   return grouped ? `(${canonical})` : canonical

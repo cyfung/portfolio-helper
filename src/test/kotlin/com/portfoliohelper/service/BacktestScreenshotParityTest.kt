@@ -48,7 +48,7 @@ class BacktestScreenshotParityTest {
         AppDirs.dataDir = tempDataDir
         try {
             val tickerDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
-            val fullTickerDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            val fullTickerDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
             BacktestService.writeSimCsv(
                 tickerDir.resolve("EFFRX-$today.csv"),
                 mapOf(priorDate to 10_000.0, markDate to 10_000.0, today to 10_000.0),

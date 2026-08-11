@@ -21,7 +21,7 @@ import {
   refreshSavedPortfolios,
   useSavedPortfolios,
 } from '@/lib/savedPortfolioCache'
-import { formatSwapRow, parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
+import { parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
 import {
   portfolioListDropTarget,
   portfolioRowDropPosition,
@@ -54,6 +54,14 @@ function validateSwapDraft(row: SwapEditorRow) {
     invalid: sourceInvalid || amountInvalid || row.legs.length === 0 ||
       legErrors.some(error => error.instrumentInvalid || error.multiplierInvalid),
   }
+}
+
+function formatSwapEditorRow(row: Pick<SwapEditorRow, 'source' | 'legs'>) {
+  const raw = `${row.source} > ${row.legs.map(leg => {
+    const multiplier = Number(leg.multiplier)
+    return multiplier === 1 ? leg.instrument : `${multiplier} ${leg.instrument}`
+  }).join(' + ')}`
+  return parseSwapInput(raw)?.formatted ?? raw
 }
 
 const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange, onSavedRefresh }: Props) {
@@ -222,10 +230,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       ? [...localRef.current.tickers, normalizedDraft]
       : localRef.current.tickers.map(row => row.id === normalizedDraft.id ? normalizedDraft : row)
     commit({ ...localRef.current, tickers: nextRows })
-    setSwapTextDrafts(current => ({ ...current, [normalizedDraft.id]: formatSwapRow({
-      source: normalizedDraft.source,
-      legs: normalizedDraft.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
-    }) }))
+    setSwapTextDrafts(current => ({ ...current, [normalizedDraft.id]: formatSwapEditorRow(normalizedDraft) }))
     setInvalidSwapTextIds(current => {
       const nextIds = new Set(current)
       nextIds.delete(normalizedDraft.id)
@@ -235,10 +240,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
   }
 
   function commitSwapText(row: SwapEditorRow) {
-    const text = swapTextDrafts[row.id] ?? formatSwapRow({
-      source: row.source,
-      legs: row.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
-    })
+    const text = swapTextDrafts[row.id] ?? formatSwapEditorRow(row)
     const parsed = parseSwapInput(text)
     if (!parsed) {
       setInvalidSwapTextIds(current => new Set(current).add(row.id))
@@ -619,6 +621,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
               className="ticker-modifier-hint"
               title={[
                 'Synthetic ticker syntax: use multiplier/ticker pairs, e.g. 1 KMLM 1 VT.',
+                'Add $ to a supported ticker to use bundled simulated history, e.g. SPY$.',
                 'Swap syntax: A > B #m + C #n means -A + m*B + n*C plus DUMMY filler; # and multipliers are optional.',
                 'Use * as a swap row weight to swap all remaining source weight at that point in swap order.',
                 'SWAP(A,B,k) is still supported; k defaults to 1.',
@@ -649,6 +652,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
           </div>
         </div>
         <div className={weightHintCls}>{weightHintText}</div>
+        <div className="simulated-data-hint">
+          Add $ to a supported ticker to use bundled simulated history; ordinary tickers use market-provider history only.
+        </div>
         {resolution.issues.length > 0 && (
           <ul className="portfolio-resolution-issues" aria-label="Portfolio resolution issues">
             {resolution.issues.map((issue, index) => (
@@ -811,10 +817,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                     className={`swap-expression-input${invalidSwapTextIds.has(t.id) ? ' input-error' : ''}`}
                     aria-label="Swap structure"
                     aria-invalid={invalidSwapTextIds.has(t.id)}
-                    value={swapTextDrafts[t.id] ?? formatSwapRow({
-                      source: t.source,
-                      legs: t.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
-                    })}
+                    value={swapTextDrafts[t.id] ?? formatSwapEditorRow(t)}
                     onChange={e => setSwapTextDrafts(current => ({ ...current, [t.id]: e.target.value }))}
                     onBlur={() => commitSwapText(t)}
                   />

@@ -7,27 +7,36 @@ import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
 class BacktestChainExtendTest {
     @Test
-    fun loadNormalizedSeriesUsesBundledCsvWhenItStartsBeforeCachedCsv() {
+    fun marketDataInstrumentIgnoresBundledAndLegacyHistory() {
         val originalDataDir = AppDirs.dataDir
-        val tempDataDir = Files.createTempDirectory("ib-viewer-bundled-base-test-")
+        val tempDataDir = Files.createTempDirectory("ib-viewer-market-data-source-test-")
         try {
             AppDirs.dataDir = tempDataDir
             val today = LocalDate.now()
-            val cachedSeries = (0..20).associate { offset ->
-                today.minusDays(20L - offset) to 10_000.0 + offset
-            }
+            val legacyStart = LocalDate.of(1950, 1, 3)
+            val cachedSeries = mapOf(legacyStart to 10_000.0, today to 20_000.0)
             val fullDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
-            BacktestService.writeSimCsv(fullDir.resolve("GLD-$today.csv"), cachedSeries)
+            BacktestService.writeSimCsv(fullDir.resolve("SPY-$today.csv"), cachedSeries)
 
-            val loaded = BacktestService.loadNormalizedSeries("GLD", LocalDate.of(1960, 1, 1))
+            val yahooStart = LocalDate.of(1993, 1, 29)
+            val loaded = BacktestService.loadNormalizedSeries(
+                "SPY",
+                LocalDate.of(1900, 1, 1),
+                historicalFetcher = { ticker, _, end, _ ->
+                    assertEquals("SPY", ticker)
+                    mapOf(yahooStart to 100.0, end to 200.0)
+                },
+            )
 
-            assertEquals(LocalDate.of(1968, 4, 1), loaded.keys.minOrNull())
+            assertEquals(yahooStart, loaded.keys.minOrNull())
+            assertTrue(tempDataDir.resolve(".ticker-full/v2/yahoo/SPY-$today.csv").toFile().isFile)
         } finally {
             AppDirs.dataDir = originalDataDir
             tempDataDir.toFile().deleteRecursively()
@@ -35,7 +44,132 @@ class BacktestChainExtendTest {
     }
 
     @Test
-    fun loadNormalizedSeriesReadsNewFullTickerCacheBeforeLegacyTickerCache() {
+    fun simulatedDataInstrumentUsesBundledHistoryAndAppendsYahooTail() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-simulated-data-source-test-")
+        try {
+            AppDirs.dataDir = tempDataDir
+            val today = LocalDate.now()
+
+            val loaded = BacktestService.loadNormalizedSeries(
+                "GLD\$",
+                LocalDate.of(1960, 1, 1),
+                historicalFetcher = { ticker, start, end, _ ->
+                    assertEquals("GLD", ticker)
+                    mapOf(start to 100.0, end to 101.0)
+                },
+            )
+
+            assertEquals(LocalDate.of(1968, 4, 1), loaded.keys.minOrNull())
+            assertEquals(today, loaded.keys.maxOrNull())
+            assertTrue(tempDataDir.resolve(".ticker-full/v2/simulated/GLD-$today.csv").toFile().isFile)
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun simulatedDataInstrumentRequiresBundledHistory() {
+        val error = assertFailsWith<IllegalArgumentException> {
+            BacktestService.loadNormalizedSeries(
+                "NO_BUNDLED_DATA\$",
+                LocalDate.of(2000, 1, 1),
+                historicalFetcher = { _, _, _, _ -> error("Yahoo must not be called") },
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("No bundled simulated data exists for NO_BUNDLED_DATA\$"))
+    }
+
+    @Test
+    fun transientYahooFailurePreservesValidatedCache() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-transient-cache-test-")
+        try {
+            AppDirs.dataDir = tempDataDir
+            val today = LocalDate.now()
+            val cacheDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
+            val cacheFile = cacheDir.resolve("TRANSIENT-$today.csv")
+            val cachedSeries = (0..20).associate { offset ->
+                today.minusDays(21L - offset) to 10_000.0 + offset
+            }
+            BacktestService.writeSimCsv(cacheFile, cachedSeries)
+            cacheFile.setLastModified(System.currentTimeMillis() - 16.minutes.inWholeMilliseconds)
+
+            assertFailsWith<IllegalStateException> {
+                BacktestService.loadNormalizedSeries(
+                    "TRANSIENT",
+                    LocalDate.of(2000, 1, 1),
+                    historicalFetcher = { _, _, _, _ -> throw IllegalStateException("temporary outage") },
+                )
+            }
+
+            assertTrue(cacheFile.isFile, "Transient provider failures must not delete a validated cache")
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun historicalInstrumentSymbolAllowsExactlyOneTrailingDollar() {
+        assertEquals(
+            HistoricalInstrumentSymbol("SPY", simulated = true),
+            parseHistoricalInstrumentSymbol("spy\$"),
+        )
+        assertEquals(
+            HistoricalInstrumentSymbol("SPY", simulated = false),
+            parseHistoricalInstrumentSymbol(" spy "),
+        )
+        listOf("\$SPY", "SP\$Y", "SPY\$\$", "\$").forEach { malformed ->
+            assertFailsWith<IllegalArgumentException>(malformed) {
+                parseHistoricalInstrumentSymbol(malformed)
+            }
+        }
+    }
+
+    @Test
+    fun marketDataProviderRejectsSimulatedDataInstrument() {
+        assertEquals("SPY", requireMarketDataInstrumentSymbol(" spy "))
+        assertFailsWith<IllegalArgumentException> {
+            requireMarketDataInstrumentSymbol("SPY\$")
+        }
+    }
+
+    @Test
+    fun effrxRemainsInternalToInterestRateLoading() {
+        listOf("EFFRX", "EFFRX\$").forEach { internalSymbol ->
+            assertFailsWith<IllegalArgumentException>(internalSymbol) {
+                parseHistoricalInstrumentSymbol(internalSymbol)
+            }
+        }
+    }
+
+    @Test
+    fun tickerChainCanContainSimulatedDataInstrument() {
+        val originalDataDir = AppDirs.dataDir
+        val tempDataDir = Files.createTempDirectory("ib-viewer-simulated-chain-test-")
+        try {
+            AppDirs.dataDir = tempDataDir
+            val today = LocalDate.now()
+            val series = BacktestService.resolveTickerSeries(
+                tickers = listOf("GLD\$ | SPY"),
+                neededFromForTicker = { LocalDate.of(2000, 1, 1) },
+                toDate = today,
+                effrx = emptyMap(),
+                historicalFetcher = { _, start, end, _ -> mapOf(start to 100.0, end to 101.0) },
+            )
+
+            assertTrue(series.getValue("GLD\$ | SPY").isNotEmpty())
+        } finally {
+            AppDirs.dataDir = originalDataDir
+            tempDataDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun loadNormalizedSeriesReadsYahooV2CacheBeforeLegacyTickerCache() {
         val originalDataDir = AppDirs.dataDir
         val tempDataDir = Files.createTempDirectory("ib-viewer-full-ticker-cache-test-")
         try {
@@ -53,7 +187,7 @@ class BacktestChainExtendTest {
             val legacySeries = fullSeries.mapValues { 1.0 }
 
             val legacyDir = tempDataDir.resolve(".ticker").toFile().also { it.mkdirs() }
-            val fullDir = tempDataDir.resolve(".ticker-full").toFile().also { it.mkdirs() }
+            val fullDir = tempDataDir.resolve(".ticker-full/v2/yahoo").toFile().also { it.mkdirs() }
             BacktestService.writeSimCsv(legacyDir.resolve("FULLPATH-$today.csv"), legacySeries)
             BacktestService.writeSimCsv(fullDir.resolve("FULLPATH-$today.csv"), fullSeries)
 
@@ -143,7 +277,7 @@ class BacktestChainExtendTest {
     }
 
     @Test
-    fun chainExtendFromAnchorPreservesHistoryThroughAnchorAndRebuildsCachedTail() {
+    fun chainAppendAfterLastCachedDatePreservesAllBundledValues() {
         val mar1 = LocalDate.of(2026, 3, 1)
         val mar2 = LocalDate.of(2026, 3, 2)
         val mar3 = LocalDate.of(2026, 3, 3)
@@ -160,12 +294,12 @@ class BacktestChainExtendTest {
             mar4 to 198.0,
         )
 
-        val extended = BacktestService.chainExtendFromAnchor(existing, yahoo, mar2)
+        val extended = BacktestService.chainAppendAfterLastCachedDate(existing, yahoo, mar2)
 
         assertEquals(90.0, extended[mar1])
-        assertClose(90.0 * (200.0 / 210.0), extended[mar2])
-        assertClose(90.0 * (220.0 / 210.0), extended[mar3])
-        assertClose(90.0 * (198.0 / 210.0), extended[mar4])
+        assertEquals(100.0, extended[mar2])
+        assertClose(100.0 * (220.0 / 200.0), extended[mar3])
+        assertClose(100.0 * (198.0 / 200.0), extended[mar4])
     }
 
     @Test

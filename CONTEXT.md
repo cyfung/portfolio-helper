@@ -16,6 +16,14 @@ _Avoid_: Manual managed ticker
 A canonical description of either a simple ticker or a compound synthetic instrument. Portfolio resolution treats it as an atomic position; specialized analysis may project it into underlying components afterward.
 _Avoid_: Ticker string
 
+**Market-data instrument**:
+An instrument written with its ordinary ticker whose historical series comes exclusively from the market-data provider.
+_Avoid_: Actual ticker, live ticker
+
+**Simulated-data instrument**:
+An instrument written with a trailing `$` whose historical series uses bundled simulated history through its final bundled date and market-provider history thereafter.
+_Avoid_: Bundled ticker, fake ticker
+
 **Portfolio reference allocation**:
 The signed share of a parent portfolio's capital assigned to a saved portfolio. The reference mode determines whether transformed exposure is fitted to that share or preserved relative to its original allocation.
 _Avoid_: Portfolio reference weight, raw child weight, child scale
