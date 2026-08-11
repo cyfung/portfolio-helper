@@ -638,15 +638,6 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
               </td>
               <td>
                 <input
-                  type="checkbox"
-                  aria-label={`Keep ${row.symbol || 'holding'} quantity unchanged when syncing from TWS`}
-                  title="Keep this quantity unchanged when syncing from TWS"
-                  checked={row.manualQty}
-                  onChange={e => updateStock(idx, 'manualQty', e.target.checked)}
-                />
-              </td>
-              <td>
-                <input
                   type="text"
                   inputMode="decimal"
                   className="edit-input edit-weight"
@@ -657,6 +648,15 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
                   onBlur={() => handleNumberBlur(idx, 'weight')}
                   onChange={e => updateStock(idx, 'weight', sanitizeNumberEditValue(e.target.value))}
                   onKeyDown={handleEnterKey}
+                />
+              </td>
+              <td>
+                <input
+                  type="checkbox"
+                  aria-label={`Keep ${row.symbol || 'holding'} quantity unchanged when syncing from TWS`}
+                  title="Keep this quantity unchanged when syncing from TWS"
+                  checked={row.manualQty}
+                  onChange={e => updateStock(idx, 'manualQty', e.target.checked)}
                 />
               </td>
               <td>
