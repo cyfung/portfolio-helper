@@ -610,6 +610,12 @@
     font-size: var(--font-size-xs);
 }
 
+.ticker-mapping-help {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+}
+
 .ticker-mapping-active-summary {
     color: var(--color-text-tertiary);
     font-family: var(--font-family-mono), monospace;
@@ -617,6 +623,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.ticker-mapping-builtin-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-accent-primary);
 }
 
 @media (max-width: 640px) {

@@ -8,8 +8,12 @@ import {
   TICKER_CHAIN_SEPARATOR,
   tokenizeDefinition,
 } from '@/lib/tickerExpressions'
+import simulatedInstrumentManifest from '@/data/simulated-instruments.json'
 
-export type TickerMappingStorage = 'server' | 'local'
+export type TickerMappingStorage = 'server' | 'local' | 'builtin'
+export type TickerMappingRefKind = 'saved' | 'builtin'
+
+export const SIMULATED_HISTORY_BUILTIN_ID = 'builtin:simulated-history'
 
 export interface TickerMapping {
   id: string
@@ -19,6 +23,7 @@ export interface TickerMapping {
   applyTo: 'expression' | 'ticker'
   isMappingRef?: boolean
   mappingRef?: string
+  mappingRefKind?: TickerMappingRefKind
 }
 
 export interface TickerMappingSet {
@@ -58,6 +63,35 @@ const ACTIVE_MAPPING_SET_DEFAULTS: TickerMappingSet[] = [
   { id: 'set-1', name: 'Mapping Set 1', mappings: [] },
 ]
 
+const SIMULATED_INSTRUMENTS = simulatedInstrumentManifest.simulatedInstruments
+
+const simulatedHistoryMappings = Object.freeze(SIMULATED_INSTRUMENTS.map(ticker => Object.freeze({
+  id: `${SIMULATED_HISTORY_BUILTIN_ID}:${ticker}`,
+  from: ticker,
+  to: `${ticker}$`,
+  mode: 'replaceAll' as const,
+  applyTo: 'expression' as const,
+})))
+
+const simulatedHistoryBuiltin = Object.freeze({
+  id: SIMULATED_HISTORY_BUILTIN_ID,
+  name: 'Use Simulated History',
+  storage: 'builtin' as const,
+  mappings: simulatedHistoryMappings as unknown as TickerMapping[],
+})
+
+export const BUILTIN_TICKER_MAPPING_SETS: readonly TickerMappingSet[] = Object.freeze([
+  simulatedHistoryBuiltin,
+])
+
+export function builtinTickerMappingSet(id: string) {
+  return BUILTIN_TICKER_MAPPING_SETS.find(set => set.id === id) ?? null
+}
+
+export function isBuiltinTickerMappingSet(set: TickerMappingSet | null | undefined) {
+  return set?.storage === 'builtin'
+}
+
 export const DEFAULT_TICKER_MAPPING_SETTINGS: TickerMappingSettings = {
   selectedSetId: '',
   sets: ACTIVE_MAPPING_SET_DEFAULTS,
@@ -91,6 +125,10 @@ export function isTickerMappingRef(mapping: Partial<TickerMapping> | null | unde
   return mapping?.isMappingRef === true || typeof mapping?.mappingRef === 'string'
 }
 
+export function isBuiltinTickerMappingRef(mapping: Partial<TickerMapping> | null | undefined) {
+  return isTickerMappingRef(mapping) && mapping?.mappingRefKind === 'builtin'
+}
+
 export function tickerMappingRefName(mapping: Partial<TickerMapping>) {
   return normalizeTarget(String(mapping.mappingRef ?? mapping.from ?? ''))
 }
@@ -98,6 +136,7 @@ export function tickerMappingRefName(mapping: Partial<TickerMapping>) {
 function normalizeMapping(mapping: Partial<TickerMapping>): TickerMapping | null {
   const id = String(mapping.id || newMappingId())
   if (isTickerMappingRef(mapping)) {
+    const mappingRefKind = mapping.mappingRefKind === 'builtin' ? 'builtin' : 'saved'
     return {
       id,
       from: '',
@@ -106,6 +145,7 @@ function normalizeMapping(mapping: Partial<TickerMapping>): TickerMapping | null
       applyTo: 'expression',
       isMappingRef: true,
       mappingRef: tickerMappingRefName(mapping),
+      mappingRefKind,
     }
   }
   const from = normalizeSource(String(mapping.from ?? ''))
@@ -153,7 +193,9 @@ export function normalizeTickerMappingSettings(raw: unknown): TickerMappingSetti
   ))
   const savedSets = [...rawSavedSets, ...rawSets.slice(ACTIVE_MAPPING_SET_DEFAULTS.length)]
     .map((set, idx) => normalizeSet(set as Partial<TickerMappingSet>, idx, usedIds))
-  const selectedSetId = savedSets.some(set => set.id === obj.selectedSetId) ? String(obj.selectedSetId) : ''
+  const selectedSetId = savedSets.some(set => set.id === obj.selectedSetId) || builtinTickerMappingSet(String(obj.selectedSetId ?? ''))
+    ? String(obj.selectedSetId)
+    : ''
   return { selectedSetId, sets, savedSets }
 }
 
@@ -177,9 +219,10 @@ function sourceSettings(settings: TickerMappingSettings, source: TickerMappingSt
     storage: source,
   }))
   const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+  const selectedBuiltin = builtinTickerMappingSet(settings.selectedSetId)
   return {
     ...settings,
-    selectedSetId: selected ? sourceSetId(source, persistedSetId(selected)) : '',
+    selectedSetId: selectedBuiltin?.id ?? (selected ? sourceSetId(source, persistedSetId(selected)) : ''),
     savedSets,
   }
 }
@@ -229,12 +272,11 @@ function stripSetForPersistence(set: TickerMappingSet): TickerMappingSet {
 
 function serverSettingsForPersistence(settings: TickerMappingSettings): TickerMappingSettings {
   const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+  const selectedBuiltin = builtinTickerMappingSet(settings.selectedSetId)
   const savedSets = settings.savedSets
     .filter(set => set.storage !== 'local')
     .map(stripSetForPersistence)
-  const selectedSetId = selected && selected.storage !== 'local'
-    ? persistedSetId(selected)
-    : ''
+  const selectedSetId = selectedBuiltin?.id ?? (selected && selected.storage !== 'local' ? persistedSetId(selected) : '')
   return normalizeTickerMappingSettings({
     ...settings,
     selectedSetId,
@@ -357,6 +399,7 @@ export function mappingSetSummary(set: TickerMappingSet | null | undefined) {
 
 export function selectedTickerMappingSet(settings: TickerMappingSettings) {
   const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
+    ?? builtinTickerMappingSet(settings.selectedSetId)
   return selected ? resolveTickerMappingSet(selected, settings.savedSets) : null
 }
 
@@ -373,7 +416,11 @@ export function tickerMappingSetContent(set: Pick<TickerMappingSet, 'name' | 'ma
     name: set.name.trim(),
     mappings: usableTickerMappings(set.mappings).map(mapping => (
       isTickerMappingRef(mapping)
-        ? { isMappingRef: true, mappingRef: tickerMappingRefName(mapping) }
+        ? {
+            isMappingRef: true,
+            mappingRef: tickerMappingRefName(mapping),
+            ...(mapping.mappingRefKind ? { mappingRefKind: mapping.mappingRefKind } : {}),
+          }
         : {
             from: mapping.from,
             to: mapping.to,
@@ -434,12 +481,32 @@ export function resolveTickerMappingSet(
       .filter(([name]) => !!name),
   )
   const warnings = new Set<string>()
+  let simulatedHistoryResolved = false
 
   function expandMappings(mappings: TickerMapping[], stack: string[]): TickerMapping[] {
     return usableTickerMappings(mappings).flatMap(mapping => {
-      if (!isTickerMappingRef(mapping)) return [mapping]
+      const builtinReference = isBuiltinTickerMappingRef(mapping)
+      if (simulatedHistoryResolved && !builtinReference) {
+        warnings.add('Use Simulated History should be the final item in the resolved mapping order.')
+      }
+      if (!isTickerMappingRef(mapping)) {
+        return [mapping]
+      }
 
       const name = tickerMappingRefName(mapping)
+      if (builtinReference) {
+        const builtin = builtinTickerMappingSet(name)
+        if (!builtin) {
+          warnings.add(`Missing built-in ticker mapping reference: ${name}`)
+          return []
+        }
+        if (simulatedHistoryResolved) {
+          warnings.add('Use Simulated History should be the final item in the resolved mapping order.')
+        }
+        const expanded = builtin.mappings.map(item => ({ ...item }))
+        simulatedHistoryResolved = true
+        return expanded
+      }
       const key = name.toLowerCase()
       if (!key) return []
       if (stack.includes(key)) {
@@ -457,6 +524,7 @@ export function resolveTickerMappingSet(
   }
 
   const rootKey = set.name.trim().toLowerCase()
+  if (isBuiltinTickerMappingSet(set)) return { ...set, mappings: set.mappings.map(mapping => ({ ...mapping })), resolveWarnings: [] }
   return {
     ...set,
     mappings: expandMappings(set.mappings, rootKey ? [rootKey] : []),

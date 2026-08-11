@@ -1,17 +1,21 @@
 import { useEffect, useState, type DragEvent } from 'react'
-import { Download, GripVertical, Save, Settings, Trash2, X } from 'lucide-react'
+import { Download, GripVertical, Lock, Save, Settings, Trash2, X } from 'lucide-react'
 import { compressToCode } from '@/lib/compress'
 import { buildSavedTickerMappingsExportPayload } from '@/lib/configImportExport'
 import {
   hydrateTickerMappingSettings,
+  BUILTIN_TICKER_MAPPING_SETS,
+  builtinTickerMappingSet,
   isTickerMappingSettingsHydrated,
   loadTickerMappingSettings,
   mappingSetSummary,
   saveTickerMappingSettings,
   selectedTickerMappingSet,
   isTickerMappingRef,
+  isBuiltinTickerMappingRef,
   tickerMappingSetHash,
   tickerMappingRefName,
+  resolveTickerMappingSet,
   usableTickerMappings,
   type TickerMapping,
   type TickerMappingSettings,
@@ -88,6 +92,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     position: MappingDropPosition
   } | null>(null)
   const [hydrated, setHydrated] = useState(() => isTickerMappingSettingsHydrated())
+  const [previewBuiltinId, setPreviewBuiltinId] = useState('')
 
   useEffect(() => {
     setDraft(value)
@@ -163,7 +168,8 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
       mode: 'prepend',
       applyTo: 'expression',
       isMappingRef: true,
-      mappingRef: savedSet.name,
+      mappingRef: savedSet.storage === 'builtin' ? savedSet.id : savedSet.name,
+      mappingRefKind: savedSet.storage === 'builtin' ? 'builtin' : 'saved',
     }
   }
 
@@ -261,9 +267,9 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
     position: MappingDropPosition = 'after',
   ) {
     const set = draft.sets.find(item => item.id === setId)
-    const savedSet = draft.savedSets.find(item => item.id === savedSetId)
+    const savedSet = draft.savedSets.find(item => item.id === savedSetId) ?? builtinTickerMappingSet(savedSetId)
     if (!set || !savedSet) return
-    if (wouldCreateMappingReferenceCycle(set, savedSet)) {
+    if (savedSet.storage !== 'builtin' && wouldCreateMappingReferenceCycle(set, savedSet)) {
       setError('That child mapping would create a circular mapping reference.')
       return
     }
@@ -345,6 +351,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
   }
 
   const selectedSet = selectedTickerMappingSet(value)
+  const previewBuiltin = builtinTickerMappingSet(previewBuiltinId)
   const serverSavedSets = value.savedSets.filter(set => set.storage !== 'local')
   const localSavedSets = value.savedSets.filter(set => set.storage === 'local')
   const draftServerSavedSets = draft.savedSets.filter(set => set.storage !== 'local')
@@ -352,6 +359,7 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
   const hasLocalSavedSets = localSavedSets.length > 0
   const draftHasLocalSavedSets = draftLocalSavedSets.length > 0
   const editSet = draft.sets[0]
+  const resolvedEditSet = editSet ? resolveTickerMappingSet(editSet, draft.savedSets) : null
   const hasSourceReference = !!editSet?.sourceSavedSetHash && (!!editSet.sourceSavedSetId || !!editSet.sourceSavedSetName)
   const referencedSavedSet = editSet && hasSourceReference
     ? draft.savedSets.find(set => set.id === editSet.sourceSavedSetId) ??
@@ -386,6 +394,11 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             disabled={!hydrated}
           >
             <option value="">None</option>
+            <optgroup label="Built-in">
+              {BUILTIN_TICKER_MAPPING_SETS.map(set => (
+                <option key={set.id} value={set.id}>Built-in · {set.name} ({mappingSetSummary(set)})</option>
+              ))}
+            </optgroup>
             {hasLocalSavedSets ? (
               <>
                 {serverSavedSets.length > 0 && (
@@ -414,11 +427,18 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
           </button>
         </div>
         {selectedSet && usableTickerMappings(selectedSet.mappings).length > 0 ? (
-          <div className="ticker-mapping-active-summary">
+          <div className={`ticker-mapping-active-summary${selectedSet.storage === 'builtin' ? ' ticker-mapping-builtin-summary' : ''}`}>
+            {selectedSet.storage === 'builtin' && <span className="ticker-mapping-builtin-badge"><Lock size={12} /> Built-in</span>}
             {usableTickerMappings(selectedSet.mappings).slice(0, 4).map(mapping => `${mapping.from}->${mapping.to}`).join(', ')}
             {usableTickerMappings(selectedSet.mappings).length > 4 ? `, +${usableTickerMappings(selectedSet.mappings).length - 4}` : ''}
           </div>
         ) : null}
+        {selectedSet?.resolveWarnings?.map(warning => (
+          <div className="ticker-mapping-order-warning" key={warning}>{warning}</div>
+        ))}
+        <div className="ticker-mapping-help">
+          Use Simulated History converts supported ordinary tickers to explicit $ simulated-data instruments. Append it last, after Tax Drag mappings.
+        </div>
         {exportStatus && <div className="ticker-mapping-export-status">{exportStatus}</div>}
       </div>
 
@@ -433,6 +453,33 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
             </div>
 
             <div className="ticker-mapping-saved-section">
+              <div className="ticker-mapping-saved-title">Built-in</div>
+              <div className="saved-portfolios-bar ticker-mapping-saved-bar">
+                {BUILTIN_TICKER_MAPPING_SETS.map(builtin => (
+                  <div
+                    key={builtin.id}
+                    className="saved-portfolio-chip ticker-mapping-saved-chip ticker-mapping-builtin-chip"
+                    draggable
+                    title={`${builtin.name} (${mappingSetSummary(builtin)}). Built-in mappings are read-only.`}
+                    onClick={() => setPreviewBuiltinId(current => current === builtin.id ? '' : builtin.id)}
+                    onDragStart={e => {
+                      e.dataTransfer.setData('application/x-ticker-mapping-set', builtin.id)
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                  >
+                    <Lock size={12} />
+                    <span>{builtin.name}</span>
+                    <span className="ticker-mapping-builtin-badge">Built-in</span>
+                    <span className="ticker-mapping-chip-count">{builtin.mappings.length}</span>
+                  </div>
+                ))}
+              </div>
+              {previewBuiltin && (
+                <div className="ticker-mapping-builtin-preview">
+                  <div><Lock size={13} /> <strong>{previewBuiltin.name}</strong> · read-only</div>
+                  <div>{previewBuiltin.mappings.map(mapping => `${mapping.from}→${mapping.to}`).join(', ')}</div>
+                </div>
+              )}
               <div className="ticker-mapping-saved-title">Saved Mappings</div>
               {draft.savedSets.length ? (
                 <>
@@ -569,6 +616,9 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                       </div>
                     </div>
                     <div className="ticker-mapping-order-note">Applied top to bottom. Drag rows to reorder chained mappings.</div>
+                    {resolvedEditSet?.resolveWarnings?.map(warning => (
+                      <div className="ticker-mapping-order-warning" key={warning}>{warning}</div>
+                    ))}
 
                     <div
                       className={`ticker-mapping-rows${dragOverRowsSetId === set.id ? ' drag-over-child' : ''}`}
@@ -601,11 +651,14 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                           ? dragOverMapping.position
                           : null
                         const mappingRef = isTickerMappingRef(mapping)
+                        const builtinRef = isBuiltinTickerMappingRef(mapping)
                         const mappingRefName = mappingRef ? tickerMappingRefName(mapping) : ''
-                        const mappingRefExists = !!mappingRefName && draft.savedSets.some(savedSet => savedSet.name.trim().toLowerCase() === mappingRefName.toLowerCase())
+                        const mappingRefExists = builtinRef
+                          ? !!builtinTickerMappingSet(mappingRefName)
+                          : !!mappingRefName && draft.savedSets.some(savedSet => savedSet.name.trim().toLowerCase() === mappingRefName.toLowerCase())
                         return (
                         <div
-                          className={`ticker-mapping-row${mappingRef ? ' mapping-ref-row' : ''}${mappingRef && mappingRefExists ? ' mapping-ref-row-exists' : ''}${mappingRef && !mappingRefExists ? ' mapping-ref-row-missing' : ''}${isDragged ? ' dragging' : ''}${dropPosition ? ` drop-${dropPosition}` : ''}`}
+                          className={`ticker-mapping-row${mappingRef ? ' mapping-ref-row' : ''}${builtinRef ? ' mapping-ref-row-builtin' : ''}${mappingRef && mappingRefExists ? ' mapping-ref-row-exists' : ''}${mappingRef && !mappingRefExists ? ' mapping-ref-row-missing' : ''}${isDragged ? ' dragging' : ''}${dropPosition ? ` drop-${dropPosition}` : ''}`}
                           key={mapping.id}
                           onDragOver={e => {
                             if (!e.dataTransfer.types.includes('application/x-ticker-mapping-row') && !e.dataTransfer.types.includes('application/x-ticker-mapping-set')) return
@@ -667,12 +720,13 @@ export default function TickerMappingControl({ idPrefix, value, onChange, onExpo
                           </button>
                           <span className="ticker-mapping-row-order">{mappingIndex + 1}</span>
                           {mappingRef ? (
-                            <label className="ticker-mapping-ref-name" title={mappingRefExists ? 'Saved ticker mapping reference exists' : 'Saved ticker mapping reference not found'}>
-                              <span className="ticker-mapping-ref-badge">Mapping</span>
+                            <label className={`ticker-mapping-ref-name${builtinRef ? ' ticker-mapping-builtin-ref' : ''}`} title={mappingRefExists ? (builtinRef ? 'Built-in ticker mapping reference' : 'Saved ticker mapping reference exists') : 'Ticker mapping reference not found'}>
+                              <span className="ticker-mapping-ref-badge">{builtinRef ? <><Lock size={11} /> Built-in</> : 'Mapping'}</span>
                               <input
                                 value={mappingRefName}
                                 placeholder="Saved mapping name"
                                 aria-label="Child mapping name"
+                                readOnly={builtinRef}
                                 onChange={e => updateMapping(set.id, mapping.id, { mappingRef: e.target.value })}
                                 onBlur={e => updateMapping(set.id, mapping.id, { mappingRef: normalizeTarget(e.currentTarget.value) })}
                               />

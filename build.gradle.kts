@@ -212,6 +212,7 @@ val generateAppDb = tasks.register<JavaExec>("generateAppDb") {
 sourceSets.main {
     resources.srcDir(layout.buildDirectory.dir("generated/db"))
     resources.srcDir(layout.buildDirectory.dir("generated/frontend"))
+    resources.srcDir("frontend/src/data")
 }
 tasks.named("processResources") { dependsOn(generateAppDb) }
 
