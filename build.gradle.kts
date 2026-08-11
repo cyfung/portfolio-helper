@@ -102,6 +102,13 @@ kotlin {
     jvmToolchain(17)
 }
 
+tasks.withType<Test>().configureEach {
+    systemProperty(
+        "portfoliohelper.log.dir",
+        layout.buildDirectory.dir("test-logs").get().asFile.absolutePath
+    )
+}
+
 // Kotlin will automatically use the Java toolchain
 // No need for explicit kotlinOptions.jvmTarget when using toolchains
 
