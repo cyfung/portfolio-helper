@@ -34,8 +34,17 @@ data class PortfolioSyncEntry(
     val serialId: Int,
     val name: String,
     val slug: String,
-    val stocks: List<BackupStock>,
+    val stocks: List<AndroidSyncStock>,
     val cash: List<BackupCash>
+)
+
+@Serializable
+data class AndroidSyncStock(
+    val symbol: String,
+    val amount: Double,
+    val targetWeight: Double = 0.0,
+    val letf: String = "",
+    val groups: String = ""
 )
 
 @Serializable
@@ -47,7 +56,7 @@ data class AllSyncResponse(
 
 fun computeSyncChecksum(entries: List<PortfolioSyncEntry>): String {
     val lines = entries
-        .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}:${it.manualQty}" } }
+        .flatMap { p -> p.stocks.map { "${p.slug}:${it.symbol}:${it.amount}" } }
         .sorted()
         .joinToString("\n")
     val digest = MessageDigest.getInstance("SHA-256")
@@ -72,6 +81,14 @@ data class BackupStock(
     val letf: String = "",
     val groups: String = "",
     val manualQty: Boolean = false
+)
+
+internal fun BackupStock.toAndroidSyncStock() = AndroidSyncStock(
+    symbol = symbol,
+    amount = amount,
+    targetWeight = targetWeight,
+    letf = letf,
+    groups = groups
 )
 
 @Serializable
@@ -239,7 +256,7 @@ object BackupService {
             serialId = portfolio.serialId,
             name = portfolio.name,
             slug = portfolio.slug,
-            stocks = r.stocks,
+            stocks = r.stocks.map { it.toAndroidSyncStock() },
             cash = r.cash
         )
     }
