@@ -650,9 +650,15 @@ export interface McPercentilePath {
   beta?: number
 }
 
+export interface McAnnualPercentileCurve {
+  percentile: number
+  points: number[]
+}
+
 export interface McCurve {
   label: string
   percentilePaths: McPercentilePath[]
+  annualPercentileCurves: McAnnualPercentileCurve[]
   maxDdPercentiles: number[]
   longestDrawdownPercentiles: number[]
   volatilityPercentiles: number[]

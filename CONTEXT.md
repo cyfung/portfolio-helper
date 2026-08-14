@@ -55,3 +55,7 @@ _Avoid_: Expanded child rows
 **Portfolio depletion**:
 The absorbing state reached when a withdrawal exhausts a simulated portfolio. Its value is clamped to zero and remains zero for the rest of the run; later cashflows or returns cannot revive it.
 _Avoid_: Temporary bankruptcy, negative portfolio value
+
+**Annual percentile curve**:
+A series whose value at each simulated year is the independently ranked portfolio-value percentile across all simulations at that year. Its connected points can come from different simulations and do not describe one simulated path.
+_Avoid_: Percentile path, representative simulation

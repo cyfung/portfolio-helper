@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, Brush,
+  Legend, ResponsiveContainer,
 } from 'recharts'
 import {
   BacktestPageHeader, RunButton, SavedPortfolioBlocksSection, ScenarioSetupControls,
@@ -21,7 +21,6 @@ import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { useInflationAdjustedPreference } from '@/hooks/useInflationAdjustedPreference'
 import { getChartTheme } from '@/lib/chartTheme'
-import { scaleDash } from '@/lib/colorScheme'
 import { curveDisplayLabel, curveSelectionKey, percentileCurveLabel } from '@/lib/curveNaming'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
@@ -137,7 +136,6 @@ interface MonteCarloChartRenderBoundaryProps {
   allChecked: boolean
   anyChecked: boolean
   logScale: boolean
-  chartWidth: number
   isDark: boolean
   gridColor: string
   textColor: string
@@ -155,7 +153,6 @@ const MonteCarloChartRenderBoundary = memo(
     prev.allChecked === next.allChecked &&
     prev.anyChecked === next.anyChecked &&
     prev.logScale === next.logScale &&
-    prev.chartWidth === next.chartWidth &&
     prev.isDark === next.isDark &&
     prev.gridColor === next.gridColor &&
     prev.textColor === next.textColor
@@ -195,7 +192,7 @@ export default function MonteCarloPage() {
 
   const savedBarRef       = useRef<SavedPortfoliosBarRef>(null)
   const pollRef           = useRef<number | null>(null)
-  const { chartWidth, chartContainerRef } = useChartContainerWidth()
+  const { chartContainerRef } = useChartContainerWidth()
   const dateRangeError = validateDateRange(fromDate, toDate)
   const selectedTickerMappingSet = useMemo(
     () => resolveSelectedTickerMappingSet(tickerMappingSettings),
@@ -321,12 +318,13 @@ export default function MonteCarloPage() {
 
   const chartData = useMemo(() => {
     if (!shownResults) return null
-    const targetDays = shownResults.simulatedYears * 252
     const effectiveCurves = getEffectiveCurves(shownResults, selected)
     const singleCurve = effectiveCurves.length === 1
 
-    // Build rows: one object per day index
-    const rows: Record<string, any>[] = Array.from({ length: targetDays + 1 }, (_, i) => ({ x: i }))
+    const rows: Record<string, any>[] = Array.from(
+      { length: shownResults.simulatedYears + 1 },
+      (_, year) => ({ year }),
+    )
 
     interface McDataset { label: string; color: string; strokeDasharray?: string; strokeWidth: number }
     const datasets: McDataset[] = []
@@ -334,10 +332,10 @@ export default function MonteCarloPage() {
     if (singleCurve) {
       const { curve } = effectiveCurves[0]
       PERCENTILE_LIST.forEach((p, idx) => {
-        const pp = curve.percentilePaths.find(x => x.percentile === p)
-        if (!pp) return
+        const annualCurve = curve.annualPercentileCurves.find(x => x.percentile === p)
+        if (!annualCurve) return
         const key = percentileCurveLabel(p)
-        pp.points.forEach((val, i) => { rows[i][key] = val })
+        annualCurve.points.forEach((val, year) => { rows[year][key] = val })
         datasets.push({
           label: key,
           color: PERCENTILE_COLORS[idx],
@@ -347,10 +345,10 @@ export default function MonteCarloPage() {
     } else {
       effectiveCurves.forEach(({ portfolio, pi, curve, ci }) => {
         const palette = PALETTE[pi % PALETTE.length]
-        const pp = curve.percentilePaths.find(x => x.percentile === percentile)
-        if (!pp) return
+        const annualCurve = curve.annualPercentileCurves.find(x => x.percentile === percentile)
+        if (!annualCurve) return
         const key = curveDisplayLabel(portfolio.label, curve.label)
-        pp.points.forEach((val, i) => { rows[i][key] = val })
+        annualCurve.points.forEach((val, year) => { rows[year][key] = val })
         datasets.push({
           label: key,
           color: palette[ci % palette.length],
@@ -359,8 +357,8 @@ export default function MonteCarloPage() {
       })
     }
 
-    const yearTicks = Array.from({ length: shownResults.simulatedYears + 1 }, (_, i) => i * 252)
-    return { rows, datasets, yearTicks, targetDays, effectiveCurves }
+    const yearTicks = Array.from({ length: shownResults.simulatedYears + 1 }, (_, year) => year)
+    return { rows, datasets, yearTicks, effectiveCurves }
   }, [shownResults, percentile, selected])
 
   // ── Run ───────────────────────────────────────────────────────────────────
@@ -833,7 +831,6 @@ export default function MonteCarloPage() {
         allChecked={allChecked}
         anyChecked={anyChecked}
         logScale={logScale}
-        chartWidth={chartWidth}
         isDark={isDark}
         gridColor={gridColor}
         textColor={textColor}
@@ -855,7 +852,7 @@ export default function MonteCarloPage() {
               At P50, CAGR shows the median CAGR outcome, Max DD shows the median worst drawdown (ranked by drawdown), and so on.
             </p>
             <p style={{ fontSize: '0.82em', margin: 0 }}>
-              The chart always shows the path at the selected percentile when simulations are ranked by CAGR.
+              Each chart point is the independently ranked portfolio-value percentile for that simulated year. Connected points can come from different simulations.
             </p>
           </div>
 
@@ -948,11 +945,11 @@ export default function MonteCarloPage() {
               <LineChart data={chartData.rows} margin={{ top: 8, right: 16, bottom: 8, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis
-                  dataKey="x"
+                  dataKey="year"
                   type="number"
-                  domain={[0, chartData.targetDays]}
+                  domain={[0, shownResults.simulatedYears]}
                   ticks={chartData.yearTicks}
-                  tickFormatter={v => `Y${v / 252}`}
+                  tickFormatter={v => `Y${v}`}
                   tick={{ fill: textColor, fontSize: 11 }}
                 />
                 <YAxis
@@ -963,33 +960,21 @@ export default function MonteCarloPage() {
                   tickFormatter={v => '$' + Number(v).toFixed(0)}
                   width={72}
                 />
-                <Tooltip content={makeTooltip(v => '$' + v.toFixed(0), v => `Year ${(Number(v) / 252).toFixed(1)}`)} />
+                <Tooltip content={makeTooltip(v => '$' + v.toFixed(0), v => `Year ${Number(v)}`)} />
                 <Legend wrapperStyle={{ color: textColor, fontSize: '0.78em' }} />
-                {(() => {
-                  const numPts = (chartData.targetDays ?? 0) + 1
-                  const pxPt   = chartWidth / Math.max(numPts - 1, 1)
-                  return chartData.datasets.map(ds => (
+                {chartData.datasets.map(ds => (
                   <Line
                     key={ds.label}
                     dataKey={ds.label}
                     stroke={ds.color}
                     strokeWidth={ds.strokeWidth}
-                    strokeDasharray={scaleDash(ds.strokeDasharray, pxPt, 6)}
-                    dot={false}
+                    strokeDasharray={ds.strokeDasharray}
+                    dot={{ r: 3 }}
                     activeDot={{ r: 4 }}
                     connectNulls={false}
                     isAnimationActive={false}
                   />
-                ))
-                })()}
-                <Brush
-                  dataKey="x"
-                  height={26}
-                  stroke={gridColor}
-                  fill={isDark ? '#1a1a1a' : '#f8f8f8'}
-                  travellerWidth={6}
-                  tickFormatter={v => `Y${Math.round(v / 252)}`}
-                />
+                ))}
               </LineChart>
             </ResponsiveContainer>
           </div>

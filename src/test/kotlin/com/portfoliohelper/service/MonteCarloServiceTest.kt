@@ -59,7 +59,7 @@ class MonteCarloServiceTest {
                 toDate = "2021-12-31",
                 minChunkYears = 0.1,
                 maxChunkYears = 0.25,
-                simulatedYears = 1,
+                simulatedYears = 2,
                 numSimulations = 8,
                 portfolios = listOf(
                     PortfolioConfig(
@@ -92,7 +92,17 @@ class MonteCarloServiceTest {
             val runState = MonteCarloService.getRunState()
             assertEquals(second, runState.result)
             assertEquals(null, runState.error)
-            assertTrue(first.portfolios.single().curves.all { it.percentilePaths.all { path -> path.points.size == 253 } })
+            assertTrue(first.portfolios.single().curves.all { it.percentilePaths.all { path -> path.points.size == 505 } })
+            first.portfolios.single().curves.forEach { curve ->
+                assertEquals(listOf(5, 10, 25, 50, 75, 90, 95), curve.annualPercentileCurves.map { it.percentile })
+                assertTrue(curve.annualPercentileCurves.all { annualCurve ->
+                    annualCurve.points.size == 3 && annualCurve.points.first() == request.startingBalance
+                })
+                assertTrue(curve.annualPercentileCurves.any { annualCurve ->
+                    val oldPath = curve.percentilePaths.single { it.percentile == annualCurve.percentile }
+                    annualCurve.points[1] != oldPath.points[252]
+                })
+            }
         } finally {
             AppDirs.dataDir = originalDataDir
             tempDataDir.toFile().deleteRecursively()

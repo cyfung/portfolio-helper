@@ -72,6 +72,12 @@ data class MonteCarloPercentilePath(
 )
 
 @Serializable
+data class MonteCarloAnnualPercentileCurve(
+    val percentile: Int,
+    val points: List<Double>,
+)
+
+@Serializable
 data class MonteCarloCurveResult(
     val label: String,
     val percentilePaths: List<MonteCarloPercentilePath>,  // CAGR-sorted, full paths
@@ -84,7 +90,8 @@ data class MonteCarloCurveResult(
     val calmarPercentiles: List<Double>,
     val betaPercentiles: List<Double>,
     val volatilityPercentiles: List<Double>,      // Volatility-sorted (lower=better → inverted sort)
-    val longestDrawdownPercentiles: List<Double>  // Longest drawdown (trading days), lower=better → inverted sort
+    val longestDrawdownPercentiles: List<Double>, // Longest drawdown (trading days), lower=better → inverted sort
+    val annualPercentileCurves: List<MonteCarloAnnualPercentileCurve>,
 )
 
 @Serializable

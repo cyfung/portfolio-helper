@@ -12,6 +12,7 @@ import kotlin.random.Random
 
 object MonteCarloService {
     private val logger = LoggerFactory.getLogger(MonteCarloService::class.java)
+    private const val tradingDaysPerSimulatedYear = 252
     private const val progressStepCount = 7
     private const val progressPublishIntervalNanos = 250_000_000L
     private val progressState = AtomicReference(MonteCarloProgress.idle())
@@ -198,9 +199,9 @@ object MonteCarloService {
         val poolSize = poolDates.size
         val poolInflation = InflationSeries.factorsFor(poolDates, inflationPool)
 
-        val targetDays = request.simulatedYears * 252
-        val minChunkDays = (request.minChunkYears * 252).toInt().coerceAtLeast(1)
-        val maxChunkDays = (request.maxChunkYears * 252).toInt().coerceAtLeast(minChunkDays)
+        val targetDays = request.simulatedYears * tradingDaysPerSimulatedYear
+        val minChunkDays = (request.minChunkYears * tradingDaysPerSimulatedYear).toInt().coerceAtLeast(1)
+        val maxChunkDays = (request.maxChunkYears * tradingDaysPerSimulatedYear).toInt().coerceAtLeast(minChunkDays)
 
         // Validation: pool must be large enough relative to chunk size
         val minForValidation = minOf(minChunkDays, targetDays)
@@ -283,7 +284,7 @@ object MonteCarloService {
 
         val years = request.simulatedYears.toDouble()
         val avgRfDaily = if (effrxDailyRates.isNotEmpty()) effrxDailyRates.average() else 0.0
-        val rfAnnualized = (1.0 + avgRfDaily).pow(252.0) - 1.0
+        val rfAnnualized = (1.0 + avgRfDaily).pow(tradingDaysPerSimulatedYear.toDouble()) - 1.0
 
         // ── Build curve configs for each portfolio ────────────────────────────
         data class CurveConfig(val label: String, val mc: MarginConfig?)
@@ -384,6 +385,18 @@ object MonteCarloService {
                 Array(portfolioCurveConfigs[pi].allLabels.size) { Array(numSims) { zero } }
             }
         }
+        fun annualValueStorage() =
+            Array(portfolioCurveConfigs.size) { pi ->
+                Array(portfolioCurveConfigs[pi].allLabels.size) {
+                    Array(numSims) { DoubleArray(request.simulatedYears + 1) }
+                }
+            }
+        val annualValues = annualValueStorage()
+        val annualRealValues = inflationDailyRates?.let { annualValueStorage() }
+
+        fun recordAnnualValues(target: DoubleArray, values: DoubleArray) {
+            target.indices.forEach { year -> target[year] = values[year * tradingDaysPerSimulatedYear] }
+        }
 
         MonteCarloParallel.parallelForRange(numSims) { simIdx ->
             val rng = Random(masterSeed + simIdx)
@@ -442,6 +455,7 @@ object MonteCarloService {
                         benchmarkValues,
                     )
                     allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
+                    recordAnnualValues(annualValues[pi][ci][simIdx], values)
                     if (realFactors != null && realCashflows != null && realBenchmarkValues != null && realRfAnnualized != null) {
                         val appliedRealCashflows =
                             DoubleArray(appliedCashflows.size) { i -> appliedCashflows[i] / realFactors[i] }
@@ -453,6 +467,7 @@ object MonteCarloService {
                             appliedRealCashflows,
                             realBenchmarkValues,
                         ).toSimPassMetrics()
+                        recordAnnualValues(annualRealValues!![pi][ci][simIdx], realValues)
                     }
                     ci++
                 }
@@ -473,8 +488,9 @@ object MonteCarloService {
                     strategyCurves.forEach { curve ->
                         val stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
                         allMetrics[pi][ci][simIdx] = stats.toSimPassMetrics()
+                        val nominalValues = curve.points.map { it.value }.toDoubleArray()
+                        recordAnnualValues(annualValues[pi][ci][simIdx], nominalValues)
                         if (realFactors != null && realCashflows != null && realBenchmarkValues != null && realRfAnnualized != null) {
-                            val nominalValues = curve.points.map { it.value }
                             val realValues = DoubleArray(nominalValues.size) { i -> nominalValues[i] / realFactors[i] }
                             allRealMetrics!![pi][ci][simIdx] = MonteCarloIndexedSimulation.computeStats(
                                 realValues,
@@ -483,6 +499,7 @@ object MonteCarloService {
                                 realCashflows,
                                 realBenchmarkValues,
                             ).toSimPassMetrics()
+                            recordAnnualValues(annualRealValues!![pi][ci][simIdx], realValues)
                         }
                         ci++
                     }
@@ -524,6 +541,15 @@ object MonteCarloService {
         val pctIdxList = percentiles.map { pct ->
             (pct.toDouble() / 100.0 * (numSims - 1)).toInt().coerceIn(0, numSims - 1)
         }
+        fun annualPercentileCurves(values: Array<DoubleArray>): List<MonteCarloAnnualPercentileCurve> =
+            percentiles.mapIndexed { pctIndex, percentile ->
+                MonteCarloAnnualPercentileCurve(
+                    percentile = percentile,
+                    points = (0..request.simulatedYears).map { year ->
+                        values.map { it[year] }.sorted()[pctIdxList[pctIndex]]
+                    },
+                )
+            }
         val pctSimIndices = MonteCarloParallel.parallelMap(allMetrics.toList()) { portfolioMetrics ->
             portfolioMetrics.map { simMetrics ->
                 val sortedByCagr = (0 until numSims).sortedBy { simMetrics[it].cagr }
@@ -755,7 +781,8 @@ object MonteCarloService {
                     calmarPctValues[pi][ci],
                     betaPctValues[pi][ci],
                     volPctValues[pi][ci],
-                    longestDdPctValues[pi][ci]
+                    longestDdPctValues[pi][ci],
+                    annualPercentileCurves(annualValues[pi][ci]),
                 )
             }
             MonteCarloPortfolioResult(config.portfolio.label, curveResults)
@@ -846,6 +873,7 @@ object MonteCarloService {
                             realMetricPercentiles.beta[pi][ci],
                             realMetricPercentiles.volatility[pi][ci],
                             realMetricPercentiles.longestDrawdown[pi][ci],
+                            annualPercentileCurves(annualRealValues!![pi][ci]),
                         )
                     }
                     MonteCarloPortfolioResult(config.portfolio.label, curveResults)
