@@ -34,6 +34,7 @@ interface ConfigValues {
   twsHost?: string
   twsPort?: string
   exchangeSuffixes?: string
+  exchangeSymbolMinWidths?: string
   githubRepo?: string
   navUpdateInterval?: string
   ibkrRateInterval?: string
@@ -888,7 +889,7 @@ export default function ConfigPage() {
 
   const GLOBAL_DEFAULTS: Record<string, string> = {
     openBrowser: 'true', navUpdateInterval: '',
-    exchangeSuffixes: 'SBF=.PA,LSEETF=.L', twsHost: '127.0.0.1', twsPort: '7496',
+    exchangeSuffixes: 'SBF=.PA,LSEETF=.L,SEHK=.HK', exchangeSymbolMinWidths: 'SEHK=4', twsHost: '127.0.0.1', twsPort: '7496',
     ibkrRateInterval: '3600', autoUpdate: 'true', updateCheckInterval: '86400',
     hybridAllocStrategies: '',
     portfolioColumnModes: '',
@@ -1304,6 +1305,10 @@ export default function ConfigPage() {
         <ConfigSection title="Market Data">
           <ConfigField label="Exchange Suffixes" description="Comma-separated EXCHANGE=.SUFFIX mappings for TWS snapshot symbol resolution (e.g. SBF=.PA,LSEETF=.L)." inputId="exchange-suffixes" badge="live">
             <input type="text" id="exchange-suffixes" placeholder="SBF=.PA,LSEETF=.L" defaultValue={cfg.exchangeSuffixes ?? ''} onChange={e => saveField('exchangeSuffixes', e.target.value)} />
+          </ConfigField>
+
+          <ConfigField label="Exchange Symbol Minimum Widths" description="Comma-separated EXCHANGE=WIDTH mappings. Fully numeric broker symbols are padded with leading zeros to this minimum width (e.g. SEHK=4)." inputId="exchange-symbol-min-widths" badge="live">
+            <input type="text" id="exchange-symbol-min-widths" placeholder="SEHK=4" defaultValue={cfg.exchangeSymbolMinWidths ?? ''} onChange={e => saveField('exchangeSymbolMinWidths', e.target.value)} />
           </ConfigField>
 
           <ConfigField label="GitHub Repository" description="GitHub repo for update checks (owner/repo format)." inputId="github-repo">

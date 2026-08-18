@@ -20,6 +20,16 @@ class AppConfigTest {
             Database.connect(jdbcUrl, driver = "org.sqlite.JDBC")
 
             assertEquals(EXPECTED_EXCHANGE_SUFFIXES, AppConfig.exchangeSuffixes)
+            assertEquals(mapOf("SEHK" to 4), AppConfig.exchangeSymbolMinWidths)
+
+            AppConfig.save(
+                mapOf(
+                    AppConfig.KEY_EXCHANGE_SUFFIXES to " sehk = .HK ",
+                    AppConfig.KEY_EXCHANGE_SYMBOL_MIN_WIDTHS to "sehk=4,BAD=x,ZERO=0,HUGE=21",
+                )
+            )
+            assertEquals(mapOf("SEHK" to ".HK"), AppConfig.exchangeSuffixes)
+            assertEquals(mapOf("SEHK" to 4), AppConfig.exchangeSymbolMinWidths)
         } finally {
             Files.deleteIfExists(database)
         }

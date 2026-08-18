@@ -7,11 +7,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.upsert
+import org.slf4j.LoggerFactory
 
 object AppConfig {
     const val KEY_OPEN_BROWSER        = "openBrowser"
     const val KEY_NAV_UPDATE_INTERVAL = "navUpdateInterval"
     const val KEY_EXCHANGE_SUFFIXES   = "exchangeSuffixes"
+    const val KEY_EXCHANGE_SYMBOL_MIN_WIDTHS = "exchangeSymbolMinWidths"
     const val KEY_TWS_HOST            = "twsHost"
     const val KEY_TWS_PORT            = "twsPort"
     const val KEY_IBKR_RATE_INTERVAL  = "ibkrRateInterval"
@@ -30,6 +32,7 @@ object AppConfig {
         KEY_OPEN_BROWSER        to "true",
         KEY_NAV_UPDATE_INTERVAL to "",
         KEY_EXCHANGE_SUFFIXES   to "LSE=.L,LSEETF=.L,SBF=.PA,AEB=.AS,ENEXT.BE=.BR,BVME=.MI,BVME.ETF=.MI,IBIS=.DE,IBIS2=.DE,FWB=.F,FWB2=.F,EBS=.SW,BME=.MC,SEHK=.HK,TSEJ=.T,ASX=.AX,TSE=.TO,VENTURE=.V,SGX=.SI,OSE=.OL,SFB=.ST,CPH=.CO,HEX=.HE,TWSE=.TW,TPEX=.TWO,TRWBUKETF=.L",
+        KEY_EXCHANGE_SYMBOL_MIN_WIDTHS to "SEHK=4",
         KEY_TWS_HOST            to "127.0.0.1",
         KEY_TWS_PORT            to "7496",
         KEY_IBKR_RATE_INTERVAL  to "3600",
@@ -94,7 +97,24 @@ object AppConfig {
         get() = get(KEY_EXCHANGE_SUFFIXES).split(",")
             .mapNotNull { part ->
                 val eq = part.indexOf('=')
-                if (eq < 0) null else part.substring(0, eq).trim() to part.substring(eq + 1).trim()
+                if (eq < 0) null else part.substring(0, eq).trim().uppercase() to part.substring(eq + 1).trim()
+            }
+            .filter { it.first.isNotBlank() }
+            .toMap()
+    val exchangeSymbolMinWidths: Map<String, Int>
+        get() = get(KEY_EXCHANGE_SYMBOL_MIN_WIDTHS).split(",")
+            .mapNotNull { part ->
+                val eq = part.indexOf('=')
+                val exchange = if (eq < 0) "" else part.substring(0, eq).trim().uppercase()
+                val width = if (eq < 0) null else part.substring(eq + 1).trim().toIntOrNull()
+                if (exchange.isNotBlank() && width != null && width in 1..20) {
+                    exchange to width
+                } else {
+                    if (part.isNotBlank()) logger.warn("Ignoring invalid exchange symbol minimum width: {}", part.trim())
+                    null
+                }
             }
             .toMap()
+
+    private val logger = LoggerFactory.getLogger(AppConfig::class.java)
 }

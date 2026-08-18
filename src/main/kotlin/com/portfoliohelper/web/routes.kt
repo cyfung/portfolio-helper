@@ -830,7 +830,7 @@ private data class TwsTransactionsResponse(
 )
 
 @Serializable
-private data class IbkrTradeDto(
+internal data class IbkrTradeDto(
     val id: Int,
     val tradeKey: String,
     val tradeDate: String,
@@ -856,12 +856,30 @@ private data class PriceRequestDto(val symbols: List<String> = emptyList())
 @Serializable
 private data class ApiErrorResponse(val status: String = "error", val message: String?)
 
-private fun toIbkrTradeDto(index: Int, trade: IbkrTradeEntry) = IbkrTradeDto(
+private fun resolveMarketDataSymbol(
+    symbol: String,
+    exchange: String,
+    exchangeSuffixes: Map<String, String> = AppConfig.exchangeSuffixes,
+    exchangeSymbolMinWidths: Map<String, Int> = AppConfig.exchangeSymbolMinWidths,
+): String =
+    MarketDataSymbolResolver.resolve(
+        symbol = symbol,
+        exchange = exchange,
+        exchangeSuffixes = exchangeSuffixes,
+        exchangeSymbolMinWidths = exchangeSymbolMinWidths,
+    )
+
+internal fun toIbkrTradeDto(
+    index: Int,
+    trade: IbkrTradeEntry,
+    exchangeSuffixes: Map<String, String> = AppConfig.exchangeSuffixes,
+    exchangeSymbolMinWidths: Map<String, Int> = AppConfig.exchangeSymbolMinWidths,
+) = IbkrTradeDto(
     id = index,
     tradeKey = trade.tradeKey,
     tradeDate = trade.tradeDate,
     tradeTime = trade.tradeTime,
-    symbol = trade.symbol,
+    symbol = resolveMarketDataSymbol(trade.symbol, trade.exchange, exchangeSuffixes, exchangeSymbolMinWidths),
     side = trade.side,
     quantity = trade.quantity,
     price = trade.price,
@@ -873,7 +891,12 @@ private fun toIbkrTradeDto(index: Int, trade: IbkrTradeEntry) = IbkrTradeDto(
     realizedPnl = trade.realizedPnl,
 )
 
-private fun toIbkrTradeDto(index: Int, execution: TwsExecution) = IbkrTradeDto(
+internal fun toIbkrTradeDto(
+    index: Int,
+    execution: TwsExecution,
+    exchangeSuffixes: Map<String, String> = AppConfig.exchangeSuffixes,
+    exchangeSymbolMinWidths: Map<String, Int> = AppConfig.exchangeSymbolMinWidths,
+) = IbkrTradeDto(
     id = index,
     tradeKey = execution.execId.ifBlank {
         listOf(execution.time, execution.symbol, execution.side, execution.shares, execution.price, execution.orderId)
@@ -881,7 +904,7 @@ private fun toIbkrTradeDto(index: Int, execution: TwsExecution) = IbkrTradeDto(
     },
     tradeDate = normalizeTwsTradeDate(execution.time),
     tradeTime = normalizeTwsTradeTime(execution.time),
-    symbol = execution.symbol.trim().uppercase(),
+    symbol = resolveMarketDataSymbol(execution.symbol, execution.exchange, exchangeSuffixes, exchangeSymbolMinWidths),
     side = normalizeTwsSide(execution.side),
     quantity = execution.shares,
     price = execution.price,
@@ -2258,15 +2281,14 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                     )
                 }
 
-                val exchangeSuffixMap = AppConfig.exchangeSuffixes
-
-                fun symbolWithSuffix(exchange: String, symbol: String): String =
-                    symbol + (exchangeSuffixMap[exchange] ?: "")
-
                 val response = TwsSnapshotResponse(
                     account = snapshot.account,
-                    positions = snapshot.positions.map { pos ->
-                        TwsPositionItem(symbolWithSuffix(pos.exchange, pos.symbol), pos.qty)
+                    positions = MarketDataPositionResolver.resolve(
+                        positions = snapshot.positions,
+                        exchangeSuffixes = AppConfig.exchangeSuffixes,
+                        exchangeSymbolMinWidths = AppConfig.exchangeSymbolMinWidths,
+                    ).map { position ->
+                        TwsPositionItem(position.symbol, position.quantity)
                     },
                     cashBalances = snapshot.summary.cashBalances,
                     accruedCash = snapshot.summary.accruedCash,
@@ -2301,7 +2323,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                             execId = execution.execId,
                             time = execution.time,
                             account = execution.account,
-                            symbol = execution.symbol,
+                            symbol = resolveMarketDataSymbol(execution.symbol, execution.exchange),
                             secType = execution.secType,
                             exchange = execution.exchange,
                             currency = execution.currency,
@@ -2444,7 +2466,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
             try {
                 val xml = withContext(Dispatchers.IO) { FlexQueryService.fetch(token, queryId) }
                 val trades = FlexTradesParser.parse(xml)
-                val response = IbkrTradesResponse(trades.mapIndexed(::toIbkrTradeDto))
+                val response = IbkrTradesResponse(trades.mapIndexed { index, trade -> toIbkrTradeDto(index, trade) })
                 call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
             } catch (e: FlexParseException) {
                 call.respondText(
@@ -2469,7 +2491,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                         host, port, account = account, days = days
                     )
                 }
-                val response = IbkrTradesResponse(report.executions.mapIndexed(::toIbkrTradeDto))
+                val response = IbkrTradesResponse(report.executions.mapIndexed { index, execution -> toIbkrTradeDto(index, execution) })
                 call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
             } catch (e: Exception) {
                 call.respondApiError(e)
@@ -2482,7 +2504,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
             try {
                 val xml = call.receiveText()
                 val trades = FlexTradesParser.parse(xml)
-                val response = IbkrTradesResponse(trades.mapIndexed(::toIbkrTradeDto))
+                val response = IbkrTradesResponse(trades.mapIndexed { index, trade -> toIbkrTradeDto(index, trade) })
                 call.respondText(appJson.encodeToString(response), ContentType.Application.Json)
             } catch (e: FlexParseException) {
                 call.respondText(

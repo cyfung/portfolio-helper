@@ -125,12 +125,12 @@ function netCashAmount(trade: TradeRow) {
   return -signedQuantity(trade) * trade.price + commissionCashAdjustment(trade)
 }
 
-function tradeQuoteSymbol(trade: TradeRow, exchangeSuffixes: Map<string, string>) {
-  return isCurrencyTrade(trade) ? '' : portfolioSymbolForTrade(trade, exchangeSuffixes).toUpperCase()
+function tradeQuoteSymbol(trade: TradeRow) {
+  return isCurrencyTrade(trade) ? '' : trade.symbol.trim().toUpperCase()
 }
 
-function tradePnl(trade: TradeRow, quotes: Record<string, PriceQuoteEvent>, exchangeSuffixes: Map<string, string>) {
-  const symbol = tradeQuoteSymbol(trade, exchangeSuffixes)
+function tradePnl(trade: TradeRow, quotes: Record<string, PriceQuoteEvent>) {
+  const symbol = tradeQuoteSymbol(trade)
   if (!symbol) return null
   const quote = quotes[symbol]
   const quotePrice = quote?.price ?? quote?.previousClose ?? null
@@ -141,20 +141,20 @@ function tradePnl(trade: TradeRow, quotes: Record<string, PriceQuoteEvent>, exch
   return signedQuantity(trade) * quotePrice + netCashAmount(trade)
 }
 
-function groupPnl(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>, exchangeSuffixes: Map<string, string>) {
+function groupPnl(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>) {
   let total = 0
   for (const trade of rows) {
-    const pnl = tradePnl(trade, quotes, exchangeSuffixes)
+    const pnl = tradePnl(trade, quotes)
     if (pnl === null) return null
     total += pnl
   }
   return total
 }
 
-function totalPnlByCurrency(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>, exchangeSuffixes: Map<string, string>) {
+function totalPnlByCurrency(rows: TradeRow[], quotes: Record<string, PriceQuoteEvent>) {
   const totalsByCurrency = new Map<string, number>()
   for (const trade of rows) {
-    const pnl = tradePnl(trade, quotes, exchangeSuffixes)
+    const pnl = tradePnl(trade, quotes)
     if (pnl === null) return null
     const currency = trade.currency.trim().toUpperCase() || 'USD'
     totalsByCurrency.set(currency, (totalsByCurrency.get(currency) ?? 0) + pnl)
@@ -179,28 +179,6 @@ function tradeDateRange(rows: TradeRow[]) {
 
 function tradeSelectionKey(trade: TradeRow) {
   return `${trade.id}:${trade.tradeKey}`
-}
-
-function parseExchangeSuffixes(raw: string | undefined) {
-  const entries = (raw ?? '').split(',')
-    .map(part => part.trim())
-    .filter(Boolean)
-    .map(part => {
-      const eq = part.indexOf('=')
-      if (eq < 0) return null
-      return [part.slice(0, eq).trim().toUpperCase(), part.slice(eq + 1).trim()] as const
-    })
-    .filter((entry): entry is readonly [string, string] => !!entry && !!entry[0])
-  return new Map(entries)
-}
-
-function portfolioSymbolForTrade(trade: TradeRow, exchangeSuffixes: Map<string, string>) {
-  const rawSymbol = trade.symbol.trim().toUpperCase()
-  if (!rawSymbol) return ''
-
-  const exchange = trade.exchange.trim().toUpperCase()
-  const suffix = exchangeSuffixes.get(exchange) ?? ''
-  return suffix && !rawSymbol.endsWith(suffix.toUpperCase()) ? `${rawSymbol}${suffix}` : rawSymbol
 }
 
 function tradesNetCashLabel(currency: string) {
@@ -258,7 +236,6 @@ export default function TradesPage() {
   const [createBasePortfolioSlug, setCreateBasePortfolioSlug] = useState('')
   const [creatingPortfolio, setCreatingPortfolio] = useState(false)
   const [notice, setNotice] = useState('')
-  const [exchangeSuffixes, setExchangeSuffixes] = useState<Map<string, string>>(new Map())
   const xmlInputRef = useRef<HTMLInputElement>(null)
   const { toast, showToast, clearToast } = useTransientToast()
 
@@ -303,13 +280,6 @@ export default function TradesPage() {
       .finally(() => setLoading(false))
   }, [slug, navigate, loadPortfolioData])
 
-  useEffect(() => {
-    fetch('/api/admin/config-values')
-      .then(r => r.ok ? r.json() : null)
-      .then((cfg: { exchangeSuffixes?: string } | null) => setExchangeSuffixes(parseExchangeSuffixes(cfg?.exchangeSuffixes)))
-      .catch(() => setExchangeSuffixes(new Map()))
-  }, [])
-
   const trades = useMemo(() => {
     return allTrades.filter(trade =>
       (!from || trade.tradeDate >= from) &&
@@ -319,8 +289,8 @@ export default function TradesPage() {
   }, [allTrades, from, to, showCurrencyTrades])
 
   const quoteSymbols = useMemo(() => {
-    return [...new Set(trades.map(trade => tradeQuoteSymbol(trade, exchangeSuffixes)).filter(Boolean))].sort()
-  }, [exchangeSuffixes, trades])
+    return [...new Set(trades.map(tradeQuoteSymbol).filter(Boolean))].sort()
+  }, [trades])
   const quoteSymbolsKey = quoteSymbols.join('|')
 
   useEffect(() => {
@@ -370,7 +340,7 @@ export default function TradesPage() {
           netGross: sortedRows.reduce((sum, trade) => sum + signedGrossTradeValue(trade), 0),
           netCash: sortedRows.reduce((sum, trade) => sum + netCashAmount(trade), 0),
           netCashCurrency: sortedRows[0]?.currency,
-          pnl: groupPnl(sortedRows, priceQuotes, exchangeSuffixes),
+          pnl: groupPnl(sortedRows, priceQuotes),
           commissions: sortedRows.reduce((sum, trade) => sum + (trade.commission ?? 0), 0),
           commissionCurrency: sortedRows.find(trade => trade.commissionCurrency)?.commissionCurrency ?? sortedRows[0]?.currency,
           dateRange: tradeDateRange(sortedRows),
@@ -378,7 +348,7 @@ export default function TradesPage() {
         }
       })
       .sort((a, b) => a.symbol.localeCompare(b.symbol))
-  }, [exchangeSuffixes, priceQuotes, trades])
+  }, [priceQuotes, trades])
 
   const selectedVisibleTrades = useMemo(() => {
     return trades.filter(trade => selectedTradeKeys.has(tradeSelectionKey(trade)))
@@ -387,7 +357,7 @@ export default function TradesPage() {
   const selectedVisibleCount = selectedVisibleTrades.length
 
   function pnlCellText(trade: TradeRow) {
-    const pnl = tradePnl(trade, priceQuotes, exchangeSuffixes)
+    const pnl = tradePnl(trade, priceQuotes)
     if (pnl !== null) return money2(pnl, trade.currency)
     return '-'
   }
@@ -458,7 +428,7 @@ export default function TradesPage() {
     const cashByCurrency = new Map<string, number>()
 
     rows.forEach(trade => {
-      const symbol = portfolioSymbolForTrade(trade, exchangeSuffixes)
+      const symbol = trade.symbol.trim().toUpperCase()
       const quantity = signedQuantity(trade)
       const currency = trade.currency.trim().toUpperCase() || 'USD'
       if (symbol && Number.isFinite(quantity)) {
@@ -654,14 +624,14 @@ export default function TradesPage() {
 
   const totals = useMemo(() => {
     const commissions = trades.reduce((sum, t) => sum + (t.commission ?? 0), 0)
-    const pnl = totalPnlByCurrency(trades, priceQuotes, exchangeSuffixes)
+    const pnl = totalPnlByCurrency(trades, priceQuotes)
     const hiddenCurrencyTrades = allTrades.filter(trade =>
       (!from || trade.tradeDate >= from) &&
       trade.tradeDate <= to &&
       isCurrencyTrade(trade)
     ).length
     return { count: trades.length, commissions, pnl, hiddenCurrencyTrades }
-  }, [allTrades, exchangeSuffixes, from, priceQuotes, to, trades])
+  }, [allTrades, from, priceQuotes, to, trades])
 
   if (loading) return <div className="container"><div className="trades-page-status">Loading...</div></div>
 
@@ -879,7 +849,7 @@ export default function TradesPage() {
                     </tr>
                     {expandedSymbols.has(group.symbol) && group.rows.map(trade => (
                       (() => {
-                        const pnl = tradePnl(trade, priceQuotes, exchangeSuffixes)
+                        const pnl = tradePnl(trade, priceQuotes)
                         return (
                       <tr
                         key={tradeSelectionKey(trade)}
@@ -909,7 +879,7 @@ export default function TradesPage() {
                   </Fragment>
                 )) : trades.map(trade => (
                   (() => {
-                    const pnl = tradePnl(trade, priceQuotes, exchangeSuffixes)
+                    const pnl = tradePnl(trade, priceQuotes)
                     return (
                   <tr
                     key={tradeSelectionKey(trade)}

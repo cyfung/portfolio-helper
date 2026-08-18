@@ -178,6 +178,7 @@ fun Route.configureAdminRoutes() {
             AppConfig.KEY_TWS_HOST,
             AppConfig.KEY_TWS_PORT,
             AppConfig.KEY_EXCHANGE_SUFFIXES,
+            AppConfig.KEY_EXCHANGE_SYMBOL_MIN_WIDTHS,
             AppConfig.KEY_GITHUB_REPO,
             AppConfig.KEY_NAV_UPDATE_INTERVAL,
             AppConfig.KEY_IBKR_RATE_INTERVAL,
