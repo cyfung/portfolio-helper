@@ -11,6 +11,7 @@ import { useTransientToast } from '@/hooks/useTransientToast'
 import { configToBlockState } from '@/types/backtest'
 import { resolvedBlockStateToAPIPortfolio } from '@/lib/portfolioRefs'
 import { useSavedPortfolios } from '@/lib/savedPortfolioCache'
+import IbkrPerformanceFetchControl from './IbkrPerformanceFetchControl'
 
 interface Props {
   portfolioSlug: string
@@ -220,26 +221,19 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
     }
   }
 
-  // ── Ingest from IBKR ──────────────────────────────────────────────────────
-  async function handleIngest() {
-    setIngesting(true)
-    clearToast()
-    try {
-      const r = await fetch(`/api/performance/ingest/${portfolioSlug}`, { method: 'POST' })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
-      showToast(`Fetched — ${d.written} new snapshot(s) written.`)
-      setSnapshotDates([])
-      setData(null)
-      fetch(`/api/performance/snapshots/${portfolioSlug}`)
-        .then(r2 => r2.json())
-        .then((sd: { dates: string[] }) => setSnapshotDates(sd.dates ?? []))
-        .catch(() => {})
-    } catch (e: any) {
-      showToast(`Error: ${e.message}`, true)
-    } finally {
-      setIngesting(false)
-    }
+  async function refreshAfterIbkrFetch() {
+    const [snapshotsResponse, gapsResponse] = await Promise.all([
+      fetch(`/api/performance/snapshots/${portfolioSlug}`),
+      fetch(`/api/performance/gaps/${portfolioSlug}`),
+    ])
+    if (!snapshotsResponse.ok || !gapsResponse.ok) throw new Error('Performance refresh failed')
+    const [snapshots, nextGaps] = await Promise.all([
+      snapshotsResponse.json() as Promise<{ dates: string[] }>,
+      gapsResponse.json() as Promise<{ from: string; to: string; days: number }[]>,
+    ])
+    setSnapshotDates(snapshots.dates ?? [])
+    setGaps(nextGaps)
+    setData(null)
   }
 
   function showToast(msg: string, isError = false) {
@@ -338,14 +332,13 @@ export default function PerformanceChart({ portfolioSlug }: Props) {
           </button>
 
           {/* Fetch from IBKR */}
-          <button
-            className="backtest-config-btn"
-            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
-            onClick={handleIngest}
+          <IbkrPerformanceFetchControl
+            portfolioSlug={portfolioSlug}
+            onFetched={refreshAfterIbkrFetch}
+            onBusyChange={setIngesting}
             disabled={ingesting}
-          >
-            {ingesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
-          </button>
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.7rem', whiteSpace: 'nowrap' }}
+          />
 
           {/* Import XML */}
           <input

@@ -24,6 +24,14 @@ _Avoid_: Portfolio position metadata
 An instrument written with its ordinary ticker whose historical series comes exclusively from the market-data provider.
 _Avoid_: Actual ticker, live ticker
 
+**Broker contract symbol**:
+The source symbol supplied by the connected broker for an instrument contract. It is converted at the broker integration boundary and is not retained as the application's instrument identifier.
+_Avoid_: Ticker name
+
+**Market-data symbol**:
+The canonical instrument identifier used by the application after broker symbols are converted. It is also used to request quotes and historical data from the market-data provider.
+_Avoid_: Yahoo name, ticker name
+
 **Simulated-data instrument**:
 An instrument written with a trailing `$` whose historical series uses bundled simulated history through its final bundled date and market-provider history thereafter.
 _Avoid_: Bundled ticker, fake ticker

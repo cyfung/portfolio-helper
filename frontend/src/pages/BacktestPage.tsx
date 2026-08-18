@@ -16,6 +16,7 @@ import ResultViewControls from '@/components/backtest/ResultViewControls'
 import TickerMappingControl from '@/components/backtest/TickerMappingControl'
 import TransientToast from '@/components/TransientToast'
 import WarningSummary from '@/components/WarningSummary'
+import IbkrPerformanceFetchControl from '@/components/portfolio/IbkrPerformanceFetchControl'
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
@@ -95,11 +96,6 @@ interface StoredBacktestConfig {
   betaReferenceTicker?: string | null
   portfolios?: Record<string, unknown>[]
   inflationAdjusted?: boolean
-}
-
-interface PerformanceIngestResponse {
-  written?: number
-  error?: string
 }
 
 function errorMessage(error: unknown): string {
@@ -328,8 +324,6 @@ export default function BacktestPage() {
   const [realPortfolios, setRealPortfolios] = useState<{ slug: string; name: string }[]>([])
   const [realSlug, setRealSlug]             = useState(() => localStorage.getItem('backtest-real-slug') ?? '')
   const [realIngesting, setRealIngesting]   = useState(false)
-  const [realFetchNotice, setRealFetchNotice] = useState('')
-  const realIngestingRef = useRef(false)
   const appConfig = usePortfolioStore(s => s.appConfig)
   const appConfigReady = !!appConfig
   const privacyNavScaleFactor = useMemo(() => {
@@ -432,42 +426,10 @@ export default function BacktestPage() {
     localStorage.setItem('backtest-real-slug', realSlug)
   }, [realSlug])
 
-  async function handleFetchRealFromIbkr(slug: string) {
-    if (!slug || realIngestingRef.current) return
-    if (dateRangeError) {
-      setError(dateRangeError)
-      return
-    }
-    const portfolioName = realPortfolios.find(p => p.slug === slug)?.name ?? slug
-    realIngestingRef.current = true
-    setRealIngesting(true)
-    setRealFetchNotice(`Fetching ${portfolioName} from IBKR...`)
-    setError('')
-    try {
-      const r = await fetch(`/api/performance/ingest/${slug}`, { method: 'POST' })
-      const d: PerformanceIngestResponse = await r.json()
-      if (!r.ok) {
-        setRealFetchNotice('')
-        setError(`Fetch from IBKR failed for ${portfolioName}: ${d.error ?? `HTTP ${r.status}`}`)
-        return
-      }
-      const newRealData = appConfigReady
-        ? await fetchRealPortfolioData(slug)
-        : null
-      if (slug === realSlug) {
-        setViewState(prev => ({
-          ...prev,
-          realData: newRealData ?? prev.realData,
-        }))
-      }
-      setRealFetchNotice(`Fetched ${d.written} new snapshot(s).`)
-    } catch (e: unknown) {
-      setRealFetchNotice('')
-      setError(`Fetch from IBKR failed for ${portfolioName}: ${errorMessage(e)}`)
-    } finally {
-      realIngestingRef.current = false
-      setRealIngesting(false)
-    }
+  async function refreshRealPortfolioAfterIbkrFetch() {
+    if (!appConfigReady || !realSlug) return
+    const newRealData = await fetchRealPortfolioData(realSlug)
+    setViewState(prev => ({ ...prev, realData: newRealData }))
   }
 
   // Restore settings on mount
@@ -1257,23 +1219,19 @@ export default function BacktestPage() {
                 <select
                   id="real-portfolio-select"
                   value={realSlug}
-                  onChange={e => {
-                    setRealSlug(e.target.value)
-                    setRealFetchNotice('')
-                  }}
+                  onChange={e => setRealSlug(e.target.value)}
+                  disabled={realIngesting}
                   style={{ width: 'auto' }}
                 >
                   <option value="">— none —</option>
                   {realPortfolios.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
                 </select>
-                <button
-                  className="backtest-config-btn"
-                  type="button"
-                  onClick={() => handleFetchRealFromIbkr(realSlug)}
+                <IbkrPerformanceFetchControl
+                  portfolioSlug={realSlug}
+                  onFetched={refreshRealPortfolioAfterIbkrFetch}
+                  onBusyChange={setRealIngesting}
                   disabled={!realSlug || realIngesting || !!dateRangeError}
-                >
-                  {realIngesting ? <>Fetching…<span className="btn-spinner" /></> : 'Fetch from IBKR'}
-                </button>
+                />
               </>
             )}
             {showNavScaleBtn && (
@@ -1282,7 +1240,6 @@ export default function BacktestPage() {
                 NAV adjusted
               </label>
             )}
-            {realFetchNotice && <span className="result-view-controls-notice">{realFetchNotice}</span>}
           </ResultViewControls>
           {/* Stats table */}
           <div className="stats-container">

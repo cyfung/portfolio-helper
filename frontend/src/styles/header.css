@@ -408,6 +408,28 @@ h1 {
     display: inline-block; margin-right: 5px; vertical-align: middle;
     box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 30%, transparent);
 }
+
+.ibkr-fetch-status {
+  max-width: 28rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.ibkr-fetch-status.running {
+  color: var(--color-text-tertiary);
+}
+
+.ibkr-fetch-status.success {
+  color: var(--color-success, #2f9e67);
+}
+
+.ibkr-fetch-status.warning {
+  color: var(--color-warn, #e8a94a);
+}
+
+.ibkr-fetch-status.failure {
+  color: var(--color-error, #e05c5c);
+}
 .v4-version-progress {
     margin-left: 6px;
     padding-left: 6px;
