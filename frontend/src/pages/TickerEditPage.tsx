@@ -278,18 +278,51 @@ export default function TickerEditPage() {
       return
     }
 
-    setSavingAll(true)
-    let savedCount = 0
-    for (const row of dirtyRows) {
-      const ok = await saveRow(row.id)
-      if (!ok) {
-        setSavingAll(false)
-        return
-      }
-      savedCount += 1
+    const duplicate = dirtyRows.find(duplicateSymbol)
+    if (duplicate) {
+      setStatus({ kind: 'warn', text: `${normalizeSymbol(duplicate.symbol)} appears more than once.` })
+      return
     }
-    setSavingAll(false)
-    setStatus({ kind: 'ok', text: `Saved ${savedCount} ticker${savedCount === 1 ? '' : 's'}.` })
+
+    const changes = dirtyRows.map(row => ({ row, payload: trimConfig(row) }))
+    const invalid = changes.find(({ row, payload }) => !payload.symbol && (!!row.original || !!payload.letf || !!payload.groups))
+    if (invalid) {
+      setStatus({ kind: 'warn', text: 'Symbol is required.' })
+      return
+    }
+    const upserts = changes
+      .filter(({ payload }) => payload.symbol && (payload.letf || payload.groups))
+      .map(({ payload }) => payload)
+    const deletes = changes
+      .filter(({ row, payload }) => !!row.original && !payload.letf && !payload.groups)
+      .map(({ row }) => row.original!.symbol)
+
+    setSavingAll(true)
+    setStatus({ kind: '', text: '' })
+    try {
+      const res = await fetch('/api/ticker-config/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upserts, deletes }),
+      })
+      if (!res.ok) throw new Error(await res.text() || `HTTP ${res.status}`)
+
+      const deleted = new Set(deletes)
+      const savedBySymbol = new Map(upserts.map(config => [config.symbol, config]))
+      setRows(current => current
+        .filter(row => !deleted.has(row.original?.symbol ?? ''))
+        .map(row => {
+          const saved = savedBySymbol.get(normalizeSymbol(row.symbol))
+          return saved
+            ? { ...row, ...saved, id: `ticker-${saved.symbol}`, original: saved, isNew: false, saving: false }
+            : row
+        }))
+      setStatus({ kind: 'ok', text: `Saved ${dirtyRows.length} ticker${dirtyRows.length === 1 ? '' : 's'}.` })
+    } catch (err) {
+      setStatus({ kind: 'error', text: err instanceof Error ? err.message : 'Failed to save ticker configs.' })
+    } finally {
+      setSavingAll(false)
+    }
   }
 
   return (
@@ -316,9 +349,10 @@ export default function TickerEditPage() {
               spellCheck={false}
               value={importCode}
               onChange={e => setImportCode(e.target.value)}
+              disabled={savingAll}
             />
-            <button className="backtest-config-btn" type="button" onClick={handleImport}>Import</button>
-            <button className="backtest-config-btn" type="button" onClick={handleExport}>Export</button>
+            <button className="backtest-config-btn" type="button" onClick={handleImport} disabled={savingAll}>Import</button>
+            <button className="backtest-config-btn" type="button" onClick={handleExport} disabled={savingAll}>Export</button>
             {configError && <div className="backtest-config-error">{configError}</div>}
           </div>
         </div>
@@ -337,9 +371,10 @@ export default function TickerEditPage() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Filter"
+              disabled={savingAll}
             />
           </label>
-          <button className="h-btn subtle" type="button" onClick={addRow}>
+          <button className="h-btn subtle" type="button" onClick={addRow} disabled={savingAll}>
             <Plus size={15} aria-hidden="true" />
             Add
           </button>
@@ -378,7 +413,7 @@ export default function TickerEditPage() {
                       className={duplicate ? 'ticker-edit-invalid' : undefined}
                       value={row.symbol}
                       onChange={e => updateRow(row.id, { symbol: normalizeSymbol(e.target.value) })}
-                      disabled={!row.isNew}
+                      disabled={savingAll || !row.isNew}
                       placeholder="SPY"
                     />
                   </td>
@@ -387,6 +422,7 @@ export default function TickerEditPage() {
                       value={row.letf}
                       onChange={e => updateRow(row.id, { letf: e.target.value })}
                       placeholder="3,SPY"
+                      disabled={savingAll}
                     />
                   </td>
                   <td>
@@ -394,6 +430,7 @@ export default function TickerEditPage() {
                       value={row.groups}
                       onChange={e => updateRow(row.id, { groups: e.target.value })}
                       placeholder="1 Equity;0.5 Hedge"
+                      disabled={savingAll}
                     />
                   </td>
                   <td className="ticker-edit-state-cell">
@@ -404,7 +441,7 @@ export default function TickerEditPage() {
                       className="h-btn subtle icon-only"
                       type="button"
                       onClick={() => resetRow(row.id)}
-                      disabled={row.saving || !dirty}
+                      disabled={savingAll || row.saving || !dirty}
                       aria-label={`Reset ${row.symbol || 'ticker'}`}
                       title="Reset"
                     >
@@ -414,7 +451,7 @@ export default function TickerEditPage() {
                       className="h-btn subtle icon-only ticker-edit-remove-btn"
                       type="button"
                       onClick={() => removeRow(row.id)}
-                      disabled={row.saving}
+                      disabled={savingAll || row.saving}
                       aria-label={`Remove ${row.symbol || 'ticker'}`}
                       title="Remove"
                     >
@@ -424,7 +461,7 @@ export default function TickerEditPage() {
                       className="h-btn primary icon-only"
                       type="button"
                       onClick={() => saveRow(row.id)}
-                      disabled={row.saving || !dirty || duplicate}
+                      disabled={savingAll || row.saving || !dirty || duplicate}
                       aria-label={`Save ${row.symbol || 'ticker'}`}
                       title="Save"
                     >

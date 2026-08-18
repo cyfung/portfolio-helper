@@ -707,3 +707,10 @@ a.loan-calc-link:hover {
     background-color: var(--color-bg-hover);
     border-color: var(--color-accent-primary);
 }
+.portfolio-edit-fieldset,
+.cash-edit-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}

@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { GroupAllocEvent } from '@/types/portfolio'
+import { refreshPortfolioData } from '@/lib/portfolioDataRefresh'
 
 const SSE_URL = '/api/prices/stream'
 const DISCONNECT_RELOAD_MS = 5 * 60 * 1000  // 5 minutes
@@ -56,6 +57,14 @@ export function useSSE() {
         switch (data.type) {
           case 'reload':
             window.location.reload()
+            break
+          case 'portfolio-refresh':
+            if (data.portfolioId === portfolioId) {
+              void refreshPortfolioData(portfolioId).catch(error => {
+                console.error('Failed to refresh portfolio data:', error)
+                setSseStatus('error')
+              })
+            }
             break
           case 'fx-rates':
             setFxRates(data.rates)

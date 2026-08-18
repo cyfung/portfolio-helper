@@ -25,7 +25,8 @@ import { useSavedPortfolios } from '@/lib/savedPortfolioCache'
 
 interface Props {
   saveKey: number   // incrementing triggers save
-  onSaved: () => void
+  onSaved: () => void | Promise<void>
+  onSavingChange?: (saving: boolean) => void
   pendingDividendDate?: string
   initialStocks?: StockData[]
 }
@@ -149,25 +150,7 @@ function flashCopyButton(btn: HTMLElement) {
   setTimeout(() => btn.classList.remove('copy-btn-flash'), 900)
 }
 
-async function fetchTickerConfig(symbol: string): Promise<{ letf: string; groups: string }> {
-  const res = await fetch(`/api/ticker-config?symbol=${encodeURIComponent(symbol)}`)
-  if (!res.ok) throw new Error(`Failed to load ticker config for ${symbol}`)
-  const data = await res.json()
-  return {
-    letf: String(data.letf ?? '').trim(),
-    groups: String(data.groups ?? '').trim(),
-  }
-}
-
-async function latestTickerConfigBySymbol(symbols: string[]) {
-  const uniqueSymbols = [...new Set(symbols.map(s => s.trim().toUpperCase()).filter(Boolean))]
-  const entries = await Promise.all(
-    uniqueSymbols.map(async symbol => [symbol, await fetchTickerConfig(symbol)] as const)
-  )
-  return new Map(entries)
-}
-
-export default function EditMode({ saveKey, onSaved, pendingDividendDate, initialStocks }: Props) {
+export default function EditMode({ saveKey, onSaved, onSavingChange, pendingDividendDate, initialStocks }: Props) {
   const { stocks, portfolioId, config, appConfig } = usePortfolioStore()
   const { toast, showToast, clearToast } = useTransientToast()
   const dividendDate = pendingDividendDate ?? config.dividendStartDate ?? ''
@@ -196,6 +179,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     validateFlexibleWeightMappings(parseFlexibleWeightMappings(config.flexibleWeightMappings))
   )
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
 
   useEffect(() => {
     setSelectedImportName(current => current || savedPortfolios[savedPortfolios.length - 1]?.name || '')
@@ -228,6 +212,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
   }, [saveKey])
 
   async function doSave() {
+    if (savingRef.current) return
     const flexibleMappings = currentFlexibleMappings()
     const validation = validateFlexibleWeightMappings(flexibleMappings)
     setFlexibleRuleValidation(validation)
@@ -248,35 +233,29 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     // Read cash from CashEditTable DOM (always-visible section)
     const cashUpdates = readCashFromDom()
 
+    savingRef.current = true
     setSaving(true)
+    onSavingChange?.(true)
     try {
-      const tickerConfigBySymbol = await latestTickerConfigBySymbol(stockUpdates.map(row => row.symbol))
-      const updates = stockUpdates.map(row => {
-        const tickerConfig = tickerConfigBySymbol.get(row.symbol)
-        return {
-          ...row,
-          letf: tickerConfig?.letf ?? '',
-          groups: tickerConfig?.groups ?? '',
-        }
-      })
-
       const r = await fetch(`/api/portfolio/save-all?portfolio=${portfolioId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stocks: updates,
+          stocks: stockUpdates,
           cash: cashUpdates,
           dividendStartDate: dividendDate || null,
           flexibleWeightMappings: serializeFlexibleWeightMappings(flexibleMappings),
         }),
       })
       if (!r.ok) throw new Error('Save failed')
-      onSaved()
+      await onSaved()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       showToast(`Failed to save: ${message}`, 'error', 5000)
     } finally {
+      savingRef.current = false
       setSaving(false)
+      onSavingChange?.(false)
     }
   }
 
@@ -549,6 +528,8 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
     <>
       <TransientToast msg={toast.msg} type={toast.type} onDismiss={clearToast} />
 
+      <fieldset disabled={saving} className="portfolio-edit-fieldset">
+
       {savedPortfolios.length > 0 && (
         <div className="edit-import-controls">
           <span className="edit-import-label">Import Weights</span>
@@ -775,6 +756,7 @@ export default function EditMode({ saveKey, onSaved, pendingDividendDate, initia
       {saving && (
         <p style={{ color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>Saving…</p>
       )}
+      </fieldset>
     </>
   )
 }

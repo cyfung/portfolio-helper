@@ -916,7 +916,37 @@ private fun normalizeTwsSide(raw: String): String =
 private data class PortfolioOptionDto(val slug: String, val name: String, val seqOrder: Double)
 
 @Serializable
-private data class TickerConfigDto(val symbol: String, val letf: String, val groups: String)
+internal data class TickerConfigDto(val symbol: String, val letf: String, val groups: String)
+
+internal data class TickerConfigChanges(
+    val upserts: List<TickerConfigDto>,
+    val deletes: List<String>,
+)
+
+internal fun parseTickerConfigChanges(body: JsonObject): TickerConfigChanges {
+    val upserts = (body["upserts"] as? JsonArray).orEmpty().map { element ->
+        val row = element.jsonObject
+        val symbol = row["symbol"]?.jsonPrimitive?.contentOrNull
+            ?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("Ticker symbol is required")
+        TickerConfigDto(
+            symbol = symbol,
+            letf = row["letf"]?.jsonPrimitive?.contentOrNull?.trim() ?: "",
+            groups = row["groups"]?.jsonPrimitive?.contentOrNull?.trim() ?: "",
+        )
+    }
+    val deletes = (body["deletes"] as? JsonArray).orEmpty().map { element ->
+        element.jsonPrimitive.content.trim().uppercase().takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("Ticker symbol is required")
+    }
+    val duplicateUpserts = upserts.groupingBy { it.symbol }.eachCount().filterValues { it > 1 }.keys
+    require(duplicateUpserts.isEmpty()) { "Duplicate ticker symbols: ${duplicateUpserts.sorted().joinToString()}" }
+    val conflicts = upserts.map { it.symbol }.toSet().intersect(deletes.toSet())
+    require(conflicts.isEmpty()) {
+        "Ticker symbols cannot be updated and deleted together: ${conflicts.sorted().joinToString()}"
+    }
+    return TickerConfigChanges(upserts, deletes)
+}
 
 internal fun JsonObject.parseCashflowConfig(): CashflowConfig? =
     (this["cashflow"] as? JsonObject)?.let { cf ->
@@ -1267,6 +1297,35 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 PortfolioMasterService.refreshAllStocks()
                 MarketDataCoordinator.refresh()
                 call.respondText(appJson.encodeToString(TickerConfigDto(symbol, letf, groups)), ContentType.Application.Json)
+            } catch (e: Exception) {
+                call.respondApiError(e)
+            }
+        }
+
+        post("/api/ticker-config/bulk") {
+            try {
+                val body = Json.parseToJsonElement(call.receiveText()).jsonObject
+                val changes = parseTickerConfigChanges(body)
+
+                transaction {
+                    changes.deletes.forEach { symbol ->
+                        StockTickersTable.deleteWhere { StockTickersTable.symbol eq symbol }
+                    }
+                    changes.upserts.forEach { row ->
+                        if (row.letf.isBlank() && row.groups.isBlank()) {
+                            StockTickersTable.deleteWhere { StockTickersTable.symbol eq row.symbol }
+                        } else {
+                            StockTickersTable.upsert {
+                                it[StockTickersTable.symbol] = row.symbol
+                                it[StockTickersTable.letf] = row.letf
+                                it[StockTickersTable.groups] = row.groups
+                            }
+                        }
+                    }
+                }
+                PortfolioMasterService.refreshAllStocks()
+                MarketDataCoordinator.refresh()
+                call.respondOk()
             } catch (e: Exception) {
                 call.respondApiError(e)
             }
@@ -1717,7 +1776,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
             }
         }
 
-        // Update portfolio positions — client sends full state: [{symbol, amount, targetWeight, letf, groups}]
+        // Update portfolio positions — client sends full state: [{symbol, amount, targetWeight, manualQty}]
         post("/api/portfolio/update") {
             try {
                 val portfolioEntry = ManagedPortfolio.resolve(call.request.queryParameters["portfolio"])
@@ -1728,7 +1787,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 transaction { portfolioEntry.replacePositions(rows) }
 
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
-                PortfolioUpdateBroadcaster.broadcastReload()
+                PortfolioUpdateBroadcaster.broadcastPortfolioRefresh(portfolioEntry.slug)
                 MarketDataCoordinator.refresh()
                 call.respondOk()
             } catch (e: Exception) {
@@ -1747,7 +1806,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 transaction { portfolioEntry.replaceCash(entries) }
 
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
-                PortfolioUpdateBroadcaster.broadcastReload()
+                PortfolioUpdateBroadcaster.broadcastPortfolioRefresh(portfolioEntry.slug)
                 MarketDataCoordinator.refresh()
                 call.respondOk()
             } catch (e: Exception) {
@@ -1801,7 +1860,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshConfig()
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshStocks()
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshCashEntries()
-                PortfolioUpdateBroadcaster.broadcastReload()
+                PortfolioUpdateBroadcaster.broadcastPortfolioRefresh(portfolioEntry.slug)
                 MarketDataCoordinator.refresh()
                 call.respondOk()
             } catch (e: Exception) {
@@ -1830,7 +1889,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                     }
                 }
                 PortfolioMasterService.get(portfolioEntry.slug)?.refreshConfig()
-                PortfolioUpdateBroadcaster.broadcastReload()
+                PortfolioUpdateBroadcaster.broadcastPortfolioRefresh(portfolioEntry.slug)
                 call.respondOk()
             } catch (e: Exception) {
                 call.respondApiError(e)

@@ -234,7 +234,7 @@ object BackupService {
         val restoredStocks = appendMissingCurrentStocksWithZeroQty(root.stocks, currentStocks)
         val cashEntries = root.cash.map { c -> CashEntry(c.label, c.currency, c.marginFlag, c.amount, c.portfolioRef) }
         transaction {
-            portfolio.replacePositions(restoredStocks)
+            portfolio.replacePositionsWithTickerMetadata(restoredStocks)
             portfolio.replaceCash(cashEntries)
             root.dividendStartDate?.let { restoreDividendStartDate(portfolio.serialId, it) }
         }

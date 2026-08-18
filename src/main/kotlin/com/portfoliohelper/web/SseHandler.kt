@@ -96,6 +96,13 @@ private data class ReloadSseEvent(
     val timestamp: Long
 ) : SseEvent()
 
+@Serializable
+@SerialName("portfolio-refresh")
+private data class PortfolioRefreshSseEvent(
+    val portfolioId: String,
+    val timestamp: Long,
+) : SseEvent()
+
 
 internal suspend fun ServerSSESession.handleSseStream() {
     val channel = Channel<String>(Channel.BUFFERED)
@@ -187,6 +194,14 @@ internal suspend fun ServerSSESession.handleSseStream() {
     launch {
         PortfolioUpdateBroadcaster.reloadEvents.collect {
             channel.trySend(appJson.encodeToString<SseEvent>(ReloadSseEvent(timestamp = it.timestamp)))
+        }
+    }
+
+    launch {
+        PortfolioUpdateBroadcaster.portfolioRefreshEvents.collect {
+            channel.trySend(appJson.encodeToString<SseEvent>(
+                PortfolioRefreshSseEvent(portfolioId = it.portfolioId, timestamp = it.timestamp)
+            ))
         }
     }
 

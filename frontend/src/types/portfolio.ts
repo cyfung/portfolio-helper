@@ -182,6 +182,7 @@ export type SseEvent =
   | IbkrDisplayEvent
   | GroupAllocEvent
   | { type: 'reload' }
+  | { type: 'portfolio-refresh'; portfolioId: string; timestamp: number }
 
 export type AllocMode = string
 

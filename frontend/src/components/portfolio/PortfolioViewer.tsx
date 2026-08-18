@@ -1,6 +1,5 @@
 // ── PortfolioViewer.tsx — Port of PortfolioRenderer.kt body structure ─────────
 import { useState, useCallback, type CSSProperties } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import type { StockData, CashData, StockDisplayItem } from '@/types/portfolio'
 import { computeDisplay } from '@/lib/rebalance'
@@ -10,6 +9,7 @@ import { durationForToastType, useTransientToast, type ToastType } from '@/hooks
 import { announceSavedPortfoliosChanged } from '@/lib/savedPortfolioCache'
 import { instrumentSymbolKey } from '@/lib/instrumentSymbols'
 import { stageTwsStockSync } from '@/lib/twsStockSync'
+import { refreshPortfolioData } from '@/lib/portfolioDataRefresh'
 
 /** Parse a cash key-value pair (e.g. "Cash.USD.M" / "1000") into a CashData entry. */
 function parseCashKey(key: string, value: string): CashData | null {
@@ -107,7 +107,6 @@ type HeaderHoverMenuOption = {
 type HeaderHoverMenuId = 'currency' | 'columnMode'
 
 export default function PortfolioViewer() {
-  const navigate = useNavigate()
   const store = usePortfolioStore()
   const {
     portfolioId, cash, lastPortfolioTotals,
@@ -123,6 +122,7 @@ export default function PortfolioViewer() {
 
   const [backupOpen, setBackupOpen]           = useState(false)
   const [saveKey, setSaveKey] = useState(0)
+  const [editSaving, setEditSaving] = useState(false)
   const [editResetKey, setEditResetKey] = useState(0)
   const [dividendDate, setDividendDate] = useState(store.config.dividendStartDate ?? '')
   const [twsSyncing, setTwsSyncing] = useState(false)
@@ -332,8 +332,6 @@ export default function PortfolioViewer() {
           symbol: s.label.trim().toUpperCase(),
           amount: s.originalAmount ?? s.amount ?? 0,
           targetWeight: s.targetWeight ?? 0,
-          letf: s.letf ?? '',
-          groups: s.groups ?? '',
           manualQty: s.manualQty ?? false,
         })),
         cash: importedCash,
@@ -341,7 +339,7 @@ export default function PortfolioViewer() {
       }),
     })
     if (!r.ok) throw new Error(await r.text())
-    navigate(0)
+    window.location.reload()
   }
 
   // ── Import success callback (from BackupPanel) ─────────────────────────────
@@ -363,7 +361,7 @@ export default function PortfolioViewer() {
     } catch (e) {
       showSyncToast(`Restore failed: ${errorMessage(e)}`, 'error')
     }
-  }, [store, portfolioId, navigate, showSyncToast])
+  }, [store, portfolioId, showSyncToast])
 
   async function confirmPendingBackupDependencyImport(previewArg?: ImportDependencyPreview) {
     if (!pendingBackupDependencyImport || importDependencyApplying) return
@@ -420,9 +418,11 @@ export default function PortfolioViewer() {
 
   // ── After save callback ────────────────────────────────────────────────────
   const handleSaved = useCallback(() => {
-    setSaveKey(k => k + 1)
-    navigate(0)  // reload current route
-  }, [navigate])
+    return refreshPortfolioData(portfolioId).then(() => {
+      clearStagedEditData()
+      setEditModeActive(false)
+    })
+  }, [portfolioId, setEditModeActive])
 
   // ── Currency toggle ───────────────────────────────────────────────────────
   function renderCurrencyControl() {
@@ -526,6 +526,7 @@ export default function PortfolioViewer() {
             type="button"
             title="Backup and restore portfolio"
             onClick={() => setBackupOpen(true)}
+            disabled={editSaving}
           >Backups</button>
 
           <button
@@ -535,6 +536,7 @@ export default function PortfolioViewer() {
             title="Edit Qty and Target Weight"
             aria-label="Toggle edit mode"
             onClick={toggleEditMode}
+            disabled={editSaving}
           >Edit</button>
 
           {editModeActive && (
@@ -550,6 +552,7 @@ export default function PortfolioViewer() {
                 type="button"
                 title="Save changes"
                 onClick={() => setSaveKey(k => k + 1)}
+                disabled={editSaving}
               >
                 <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -578,7 +581,7 @@ export default function PortfolioViewer() {
               type="button"
               title="Sync Qty and Cash from Interactive Brokers TWS"
               onClick={handleTwsSync}
-              disabled={twsSyncing}
+              disabled={editSaving || twsSyncing}
             >{twsSyncing ? 'Syncing…' : 'Sync TWS'}</button>
 
             <button
@@ -627,7 +630,12 @@ export default function PortfolioViewer() {
       <div className="portfolio-tables-wrapper" style={contentScaleStyle}>
         <div className="summary-and-rates">
           <SummaryTable />
-          <CashEditTable key={editResetKey} allPortfolios={allPortfolios} entries={stagedEditCash ?? undefined} />
+          <CashEditTable
+            key={editResetKey}
+            allPortfolios={allPortfolios}
+            entries={stagedEditCash ?? undefined}
+            disabled={editSaving}
+          />
           {virtualBalance && (
             <div className="dividend-from-section">
               <label htmlFor="dividend-from-input">Dividend From</label>
@@ -638,6 +646,7 @@ export default function PortfolioViewer() {
                 value={dividendDate}
                 autoComplete="off"
                 onChange={e => setDividendDate(e.target.value)}
+                disabled={editSaving}
               />
             </div>
           )}
@@ -651,6 +660,7 @@ export default function PortfolioViewer() {
               key={editResetKey}
               saveKey={saveKey}
               onSaved={handleSaved}
+              onSavingChange={setEditSaving}
               pendingDividendDate={dividendDate}
               initialStocks={stagedEditStocks ?? undefined}
             />

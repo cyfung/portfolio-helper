@@ -16,11 +16,16 @@ object PortfolioUpdateBroadcaster {
         replay = 0,
         extraBufferCapacity = 10
     )
+    private val _portfolioRefreshEvents = MutableSharedFlow<PortfolioRefreshEvent>(
+        replay = 0,
+        extraBufferCapacity = 10,
+    )
 
     /**
      * Flow of reload events that SSE clients can subscribe to.
      */
     val reloadEvents: SharedFlow<ReloadEvent> = _reloadEvents.asSharedFlow()
+    val portfolioRefreshEvents: SharedFlow<PortfolioRefreshEvent> = _portfolioRefreshEvents.asSharedFlow()
 
     /**
      * Broadcast a reload event to all connected SSE clients.
@@ -31,8 +36,17 @@ object PortfolioUpdateBroadcaster {
         _reloadEvents.emit(ReloadEvent())
     }
 
+    suspend fun broadcastPortfolioRefresh(portfolioId: String) {
+        logger.info("Broadcasting portfolio refresh event for '$portfolioId'")
+        _portfolioRefreshEvents.emit(PortfolioRefreshEvent(portfolioId))
+    }
+
     /**
      * Event indicating that the portfolio should be reloaded.
      */
     data class ReloadEvent(val timestamp: Long = System.currentTimeMillis())
+    data class PortfolioRefreshEvent(
+        val portfolioId: String,
+        val timestamp: Long = System.currentTimeMillis(),
+    )
 }

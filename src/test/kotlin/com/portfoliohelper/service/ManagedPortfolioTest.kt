@@ -45,10 +45,13 @@ class ManagedPortfolioTest {
     }
 
     @Test
-    fun `adding existing ticker to another portfolio does not clear ticker metadata`() = withDb { first, second ->
+    fun `ordinary position replacement preserves ticker metadata`() = withDb { first, second ->
         transaction {
-            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")))
+            first.replacePositionsWithTickerMetadata(
+                listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")),
+            )
             second.replacePositions(listOf(BackupStock("SSO", 1.0, 0.0)))
+            first.replacePositions(listOf(BackupStock("SSO", 20.0, 75.0)))
 
             val row = StockTickersTable.selectAll()
                 .where { StockTickersTable.symbol eq "SSO" }
@@ -59,10 +62,14 @@ class ManagedPortfolioTest {
     }
 
     @Test
-    fun `blank metadata still clears an existing portfolio ticker`() = withDb { first, _ ->
+    fun `explicit metadata replacement can clear an existing portfolio ticker`() = withDb { first, _ ->
         transaction {
-            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")))
-            first.replacePositions(listOf(BackupStock("SSO", 10.0, 50.0)))
+            first.replacePositionsWithTickerMetadata(
+                listOf(BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity")),
+            )
+            first.replacePositionsWithTickerMetadata(
+                listOf(BackupStock("SSO", 10.0, 50.0)),
+            )
 
             val row = StockTickersTable.selectAll()
                 .where { StockTickersTable.symbol eq "SSO" }
@@ -98,11 +105,11 @@ class ManagedPortfolioTest {
     @Test
     fun `duplicate rows for the same ticker prefer non-blank metadata`() = withDb { first, _ ->
         transaction {
-            first.replacePositions(
+            first.replacePositionsWithTickerMetadata(
                 listOf(
                     BackupStock("SSO", 10.0, 50.0, "2 SPY", "1 Equity"),
                     BackupStock("SSO", 5.0, 10.0),
-                )
+                ),
             )
 
             val ticker = StockTickersTable.selectAll()
@@ -121,7 +128,9 @@ class ManagedPortfolioTest {
     @Test
     fun `restoring db backup keeps missing current ticker with zero amount and zero target weight`() = withDb { first, _ ->
         transaction {
-            first.replacePositions(listOf(BackupStock("SSO", 10.0, 100.0, "2 SPY", "1 Equity")))
+            first.replacePositionsWithTickerMetadata(
+                listOf(BackupStock("SSO", 10.0, 100.0, "2 SPY", "1 Equity")),
+            )
         }
         first.saveConfig("dividendStartDate", "2026-01-15")
         BackupService.saveToDb(first, force = true)
@@ -142,11 +151,11 @@ class ManagedPortfolioTest {
 
         first.saveConfig("dividendStartDate", "2026-02-20")
         transaction {
-            first.replacePositions(
+            first.replacePositionsWithTickerMetadata(
                 listOf(
                     BackupStock("SSO", 20.0, 0.0, "2 SPY", "1 Equity"),
                     BackupStock("UPRO", 3.0, 100.0, "3 SPY", "1 Equity"),
-                )
+                ),
             )
         }
 

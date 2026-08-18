@@ -112,12 +112,13 @@ class ManagedPortfolio(
         }
     }
 
-    fun replacePositions(stocks: List<BackupStock>) {
+    fun replacePositions(stocks: List<BackupStock>) = replacePositions(stocks, includeTickerMetadata = false)
+
+    fun replacePositionsWithTickerMetadata(stocks: List<BackupStock>) =
+        replacePositions(stocks, includeTickerMetadata = true)
+
+    private fun replacePositions(stocks: List<BackupStock>, includeTickerMetadata: Boolean) {
         val pid = serialId
-        val existingPortfolioSymbols = PositionsTable.select(PositionsTable.symbol)
-            .where { PositionsTable.portfolioId eq pid }
-            .map { it[PositionsTable.symbol] }
-            .toSet()
         val collapsedStocks = stocks
             .groupBy { it.symbol }
             .map { (symbol, rows) ->
@@ -130,18 +131,6 @@ class ManagedPortfolio(
                     manualQty = rows.last().manualQty
                 )
             }
-        val symbols = collapsedStocks.map { it.symbol }.distinct()
-        val existingTickerConfig = if (symbols.isEmpty()) {
-            emptyMap()
-        } else {
-            StockTickersTable.selectAll()
-                .where { StockTickersTable.symbol inList symbols }
-                .associate {
-                    it[StockTickersTable.symbol] to
-                        (it[StockTickersTable.letf] to it[StockTickersTable.groups])
-                }
-        }
-
         PositionsTable.deleteWhere { PositionsTable.portfolioId eq pid }
         PositionsTable.batchInsert(collapsedStocks) { s ->
             this[PositionsTable.portfolioId] = pid
@@ -150,19 +139,13 @@ class ManagedPortfolio(
             this[PositionsTable.targetWeight] = s.targetWeight
             this[PositionsTable.manualQty] = s.manualQty
         }
-        collapsedStocks.forEach { s ->
-            val existing = existingTickerConfig[s.symbol]
-            val isNewToPortfolio = s.symbol !in existingPortfolioSymbols
-            val letfToSave = s.letf.takeIf { it.isNotBlank() }
-                ?: existing?.first?.takeIf { isNewToPortfolio && it.isNotBlank() }
-                ?: ""
-            val groupsToSave = s.groups.takeIf { it.isNotBlank() }
-                ?: existing?.second?.takeIf { isNewToPortfolio && it.isNotBlank() }
-                ?: ""
-            StockTickersTable.upsert {
-                it[symbol] = s.symbol
-                it[letf] = letfToSave
-                it[groups] = groupsToSave
+        if (includeTickerMetadata) {
+            collapsedStocks.forEach { s ->
+                StockTickersTable.upsert {
+                    it[symbol] = s.symbol
+                    it[letf] = s.letf
+                    it[groups] = s.groups
+                }
             }
         }
     }

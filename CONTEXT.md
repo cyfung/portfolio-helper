@@ -16,6 +16,10 @@ _Avoid_: Manual managed ticker
 A canonical description of either a simple ticker or a compound synthetic instrument. Portfolio resolution treats it as an atomic position; specialized analysis may project it into underlying components afterward.
 _Avoid_: Ticker string
 
+**Ticker metadata**:
+Shared, instrument-level LETF decomposition and group classification. It is independent of any portfolio holding and changes only through the Ticker Editor or an explicit dependency import or restore.
+_Avoid_: Portfolio position metadata
+
 **Market-data instrument**:
 An instrument written with its ordinary ticker whose historical series comes exclusively from the market-data provider.
 _Avoid_: Actual ticker, live ticker

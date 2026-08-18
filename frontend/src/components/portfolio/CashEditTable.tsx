@@ -7,6 +7,7 @@ import { isTwsManagedCashLabel } from '@/lib/twsCashLabels'
 interface Props {
   allPortfolios: PortfolioOption[]
   entries?: CashData[]
+  disabled?: boolean
 }
 
 interface CashEditRowProps {
@@ -190,7 +191,7 @@ function CashEditRow({ entry, allPortfolios, privacyScalingActive }: CashEditRow
   )
 }
 
-export default function CashEditTable({ allPortfolios, entries }: Props) {
+export default function CashEditTable({ allPortfolios, entries, disabled = false }: Props) {
   const { cash, appConfig } = usePortfolioStore()
   const nextNewRowId = useRef(1)
   const [newRows, setNewRows] = useState<Array<{ id: number }>>([])
@@ -206,6 +207,7 @@ export default function CashEditTable({ allPortfolios, entries }: Props) {
   }
 
   return (
+    <fieldset className="cash-edit-fieldset" disabled={disabled}>
     <div className="cash-edit-table-wrapper">
       <table className="cash-edit-table">
         <tbody>
@@ -230,5 +232,6 @@ export default function CashEditTable({ allPortfolios, entries }: Props) {
       <p className="edit-hint">Label . Ref . Currency . Amount . Margin</p>
       <button type="button" id="add-cash-btn" className="add-cash-btn" onClick={addCashRow}>+ Add Entry</button>
     </div>
+    </fieldset>
   )
 }

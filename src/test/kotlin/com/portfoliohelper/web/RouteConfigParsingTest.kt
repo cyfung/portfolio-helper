@@ -13,8 +13,34 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.test.assertFailsWith
 
 class RouteConfigParsingTest {
+    @Test
+    fun `bulk ticker metadata changes normalize symbols and reject conflicting operations`() {
+        val changes = parseTickerConfigChanges(buildJsonObject {
+            put("upserts", buildJsonArray {
+                add(buildJsonObject {
+                    put("symbol", JsonPrimitive(" sso "))
+                    put("letf", JsonPrimitive(" 2 SPY "))
+                    put("groups", JsonPrimitive(" 1 Equity "))
+                })
+            })
+            put("deletes", buildJsonArray { add(JsonPrimitive("upro")) })
+        })
+
+        assertEquals(listOf(TickerConfigDto("SSO", "2 SPY", "1 Equity")), changes.upserts)
+        assertEquals(listOf("UPRO"), changes.deletes)
+        assertFailsWith<IllegalArgumentException> {
+            parseTickerConfigChanges(buildJsonObject {
+                put("upserts", buildJsonArray {
+                    add(buildJsonObject { put("symbol", JsonPrimitive("SSO")) })
+                })
+                put("deletes", buildJsonArray { add(JsonPrimitive("sso")) })
+            })
+        }
+    }
+
     @Test
     fun parseCashflowConfigSupportsGuardrailAndDefaultsLegacyToFixed() {
         val guardrail = buildJsonObject {
