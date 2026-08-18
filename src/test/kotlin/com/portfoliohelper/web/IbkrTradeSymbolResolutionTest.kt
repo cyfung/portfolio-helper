@@ -25,6 +25,8 @@ class IbkrTradeSymbolResolutionTest {
 
         assertEquals("0050.HK", twsTrade.symbol)
         assertEquals("0050.HK", flexTrade.symbol)
+        assertEquals("SEHK", twsTrade.exchange)
+        assertEquals("SEHK", flexTrade.exchange)
     }
 
     private fun twsExecution(symbol: String) = TwsExecution(
@@ -33,7 +35,7 @@ class IbkrTradeSymbolResolutionTest {
         account = "U1",
         symbol = symbol,
         secType = "STK",
-        exchange = "SEHK",
+        exchange = " sehk ",
         currency = "HKD",
         side = "BOT",
         shares = 1.0,
@@ -50,7 +52,7 @@ class IbkrTradeSymbolResolutionTest {
         quantity = 1.0,
         price = 10.0,
         currency = "HKD",
-        exchange = "SEHK",
+        exchange = " sehk ",
         assetCategory = "STK",
         commission = null,
         commissionCurrency = null,
