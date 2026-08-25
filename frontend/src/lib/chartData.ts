@@ -28,6 +28,26 @@ export function buildCommonLabels(data: BacktestResults): string[] {
   return [...common].sort()
 }
 
+/**
+ * Uniformly decimate a date-label series to at most `maxPoints` entries, always
+ * keeping the first and last date. Recharts renders one SVG vertex (and, with
+ * Brush, a second duplicate vertex in the overview strip) per label per visible
+ * curve — on a multi-decade daily-resolution backtest this is the dominant cost
+ * of both the first chart paint and every subsequent re-render (curve toggles,
+ * tab switches), profiled at multiple seconds of blocked main thread on a
+ * 6,846-point/5-curve run. Downsampling the shared label axis keeps every
+ * series aligned on the same dates so rows/action-marker indices stay valid.
+ */
+export function downsampleLabels(labels: string[], maxPoints = 1500): string[] {
+  if (labels.length <= maxPoints) return labels
+  const stride = (labels.length - 1) / (maxPoints - 1)
+  const out: string[] = []
+  for (let i = 0; i < maxPoints; i++) {
+    out.push(labels[Math.round(i * stride)])
+  }
+  return out
+}
+
 /** Convert datasets into Recharts row objects keyed by stable series id. */
 export function buildRechartsData(
   data: BacktestResults,

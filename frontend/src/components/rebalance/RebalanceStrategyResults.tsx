@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { ReferenceDot } from 'recharts'
 import { ActionDiagnosticsTable, ResultsStatsTable } from '@/components/rebalance/RebalanceResultTables'
+import { ProfileBoundary } from '@/lib/profiling'
 import {
   ACTIVE_DOT,
   LegendLine,
@@ -381,16 +382,18 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
         onInflationAdjustedChange={onInflationAdjustedChange}
         unavailableReason={inflationAdjustmentUnavailableReason}
       />
-      <ResultsStatsTable
-        allChecked={allChecked}
-        anyChecked={anyChecked}
-        rows={statsRows}
-        selected={selected}
-        onToggleAll={toggleAll}
-        onToggleCurve={toggleCurve}
-      />
+      <ProfileBoundary id="stats-and-diagnostics-tables">
+        <ResultsStatsTable
+          allChecked={allChecked}
+          anyChecked={anyChecked}
+          rows={statsRows}
+          selected={selected}
+          onToggleAll={toggleAll}
+          onToggleCurve={toggleCurve}
+        />
 
-      <ActionDiagnosticsTable points={selectedActionDiagnostics} />
+        <ActionDiagnosticsTable points={selectedActionDiagnostics} />
+      </ProfileBoundary>
 
       <div className="backtest-chart-heading">
         <div className="backtest-chart-title">Portfolio Value</div>
@@ -412,22 +415,24 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
         </button>
       </div>
       {renderDenseActionStrips('main')}
-      <div className="backtest-chart-container">
-        <RebalanceLineChart
-          chartData={chartData.mainData}
-          labelsLength={chartData.labels.length}
-          gridColor={gridColor}
-          textColor={textColor}
-          commonLineProps={commonLineProps}
-          makeTooltip={makeTooltip}
-          renderLegend={renderLegend}
-          renderActionMarkers={renderActionMarkers}
-          actionChart="main"
-          kind="money"
-          logScale={logScale && canUseLogScale}
-          brushFill={theme.isDark ? '#1a1a1a' : '#f8f8f8'}
-        />
-      </div>
+      <ProfileBoundary id="main-chart">
+        <div className="backtest-chart-container">
+          <RebalanceLineChart
+            chartData={chartData.mainData}
+            labelsLength={chartData.labels.length}
+            gridColor={gridColor}
+            textColor={textColor}
+            commonLineProps={commonLineProps}
+            makeTooltip={makeTooltip}
+            renderLegend={renderLegend}
+            renderActionMarkers={renderActionMarkers}
+            actionChart="main"
+            kind="money"
+            logScale={logScale && canUseLogScale}
+            brushFill={theme.isDark ? '#1a1a1a' : '#f8f8f8'}
+          />
+        </div>
+      </ProfileBoundary>
 
       <div className="backtest-chart-heading backtest-chart-tabs-heading">
         <div className="backtest-chart-tabs" role="tablist" aria-label="Risk chart">
@@ -453,20 +458,22 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
         {renderActionDotControls(activeRiskChart)}
       </div>
       {renderDenseActionStrips(activeRiskChart)}
-      <div className="backtest-chart-container">
-        <RebalanceLineChart
-          chartData={activeRiskChart === 'drawdown' ? chartData.ddData : chartData.rtrData}
-          labelsLength={chartData.labels.length}
-          gridColor={gridColor}
-          textColor={textColor}
-          commonLineProps={commonLineProps}
-          makeTooltip={makeTooltip}
-          renderLegend={renderLegend}
-          renderActionMarkers={renderActionMarkers}
-          actionChart={activeRiskChart}
-          kind={activeRiskChart}
-        />
-      </div>
+      <ProfileBoundary id="risk-chart">
+        <div className="backtest-chart-container">
+          <RebalanceLineChart
+            chartData={activeRiskChart === 'drawdown' ? chartData.ddData : chartData.rtrData}
+            labelsLength={chartData.labels.length}
+            gridColor={gridColor}
+            textColor={textColor}
+            commonLineProps={commonLineProps}
+            makeTooltip={makeTooltip}
+            renderLegend={renderLegend}
+            renderActionMarkers={renderActionMarkers}
+            actionChart={activeRiskChart}
+            kind={activeRiskChart}
+          />
+        </div>
+      </ProfileBoundary>
 
       {chartData.marginData.datasets.length > 0 && (
         <>
@@ -517,20 +524,22 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
             </div>
           </div>
           {renderDenseActionStrips(activeMarginChart)}
-          <div className="backtest-chart-container">
-            <RebalanceLineChart
-              chartData={marginChartData(marginChartSourceData, activeMarginChart)}
-              labelsLength={chartData.labels.length}
-              gridColor={gridColor}
-              textColor={textColor}
-              commonLineProps={commonLineProps}
-              makeTooltip={makeTooltip}
-              renderLegend={renderLegend}
-              renderActionMarkers={renderActionMarkers}
-              actionChart={activeMarginChart}
-              kind="margin"
-            />
-          </div>
+          <ProfileBoundary id="margin-chart">
+            <div className="backtest-chart-container">
+              <RebalanceLineChart
+                chartData={marginChartData(marginChartSourceData, activeMarginChart)}
+                labelsLength={chartData.labels.length}
+                gridColor={gridColor}
+                textColor={textColor}
+                commonLineProps={commonLineProps}
+                makeTooltip={makeTooltip}
+                renderLegend={renderLegend}
+                renderActionMarkers={renderActionMarkers}
+                actionChart={activeMarginChart}
+                kind="margin"
+              />
+            </div>
+          </ProfileBoundary>
         </>
       )}
 
@@ -539,16 +548,18 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
           <div className="backtest-chart-heading">
             <div className="backtest-chart-title">VM Timing Debug</div>
           </div>
-          <div className="backtest-chart-container">
-            <VmTimingLineChart
-              chartData={vmTimingChartData}
-              labelsLength={chartData.labels.length}
-              gridColor={gridColor}
-              textColor={textColor}
-              commonLineProps={commonLineProps}
-              renderLegend={renderLegend}
-            />
-          </div>
+          <ProfileBoundary id="vm-timing-chart">
+            <div className="backtest-chart-container">
+              <VmTimingLineChart
+                chartData={vmTimingChartData}
+                labelsLength={chartData.labels.length}
+                gridColor={gridColor}
+                textColor={textColor}
+                commonLineProps={commonLineProps}
+                renderLegend={renderLegend}
+              />
+            </div>
+          </ProfileBoundary>
         </>
       )}
     </>

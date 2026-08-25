@@ -1140,6 +1140,8 @@ fun Application.configureRouting(httpMode: Boolean = false) {
     }
 
     intercept(ApplicationCallPipeline.Plugins) {
+        if (System.getenv("PROFILING_MODE") == "1") return@intercept
+
         val path = call.request.path()
         val exempt = path == "/admin" ||
                 path == "/api/admin/login" ||
@@ -2350,6 +2352,15 @@ fun Application.configureRouting(httpMode: Boolean = false) {
         // Admin
         get("/api/admin/update-info") {
             call.respondText(UpdateService.getInfo().toResponseJson(), ContentType.Application.Json)
+        }
+
+        // Lets the frontend gate its own dev-only Profiler/console instrumentation
+        // on the same PROFILING_MODE flag that disables the session-cookie gate.
+        get("/api/admin/profiling-mode") {
+            call.respondText(
+                """{"enabled":${System.getenv("PROFILING_MODE") == "1"}}""",
+                ContentType.Application.Json,
+            )
         }
 
         post("/api/admin/check-update") {

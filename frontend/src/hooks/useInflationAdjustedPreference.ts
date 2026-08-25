@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'portfolio-helper-inflation-adjusted'
 const EVENT_NAME = 'portfolio-helper-inflation-adjusted-change'
@@ -20,11 +20,11 @@ export function useInflationAdjustedPreference() {
     }
   }, [])
 
-  const setInflationAdjusted = (value: boolean) => {
+  const setInflationAdjusted = useCallback((value: boolean) => {
     try { localStorage.setItem(STORAGE_KEY, String(value)) } catch {}
     setValue(value)
     window.dispatchEvent(new Event(EVENT_NAME))
-  }
+  }, [])
 
   return { inflationAdjusted, setInflationAdjusted }
 }
