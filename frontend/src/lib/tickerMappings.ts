@@ -92,6 +92,11 @@ export function isBuiltinTickerMappingSet(set: TickerMappingSet | null | undefin
   return set?.storage === 'builtin'
 }
 
+function builtinTickerMappingSetByName(name: string) {
+  const key = name.trim().toLowerCase()
+  return key ? BUILTIN_TICKER_MAPPING_SETS.find(set => set.name.trim().toLowerCase() === key) ?? null : null
+}
+
 export const DEFAULT_TICKER_MAPPING_SETTINGS: TickerMappingSettings = {
   selectedSetId: '',
   sets: ACTIVE_MAPPING_SET_DEFAULTS,
@@ -162,16 +167,24 @@ function normalizeSet(
   fallback?: TickerMappingSet,
 ): TickerMappingSet {
   let id = String(raw.id || fallback?.id || '').trim()
-  if (!id || usedIds.has(id)) id = newMappingSetId()
+  // A saved/imported set must never claim a built-in's id — that would let it
+  // silently shadow the real built-in wherever lookups fall back to savedSets first.
+  if (!id || usedIds.has(id) || builtinTickerMappingSet(id)) id = newMappingSetId()
   usedIds.add(id)
 
   const mappings = Array.isArray(raw.mappings)
     ? raw.mappings.map(normalizeMapping).filter((m): m is TickerMapping => !!m)
     : []
 
+  let name = String(raw.name || fallback?.name || `Mapping Set ${idx + 1}`).trim() || fallback?.name || `Mapping Set ${idx + 1}`
+  // A saved/imported set must never claim a built-in's name either — name-based
+  // reference lookups (resolveTickerMappingSet's savedByName) would otherwise
+  // let it shadow the real built-in for any saved-kind reference by that name.
+  if (builtinTickerMappingSetByName(name)) name = `${name} (saved)`
+
   return {
     id,
-    name: String(raw.name || fallback?.name || `Mapping Set ${idx + 1}`).trim() || fallback?.name || `Mapping Set ${idx + 1}`,
+    name,
     mappings,
     storage: raw.storage === 'local' || raw.storage === 'server' ? raw.storage : fallback?.storage,
     persistentId: typeof raw.persistentId === 'string' ? raw.persistentId : fallback?.persistentId,
@@ -398,8 +411,11 @@ export function mappingSetSummary(set: TickerMappingSet | null | undefined) {
 }
 
 export function selectedTickerMappingSet(settings: TickerMappingSettings) {
-  const selected = settings.savedSets.find(set => set.id === settings.selectedSetId)
-    ?? builtinTickerMappingSet(settings.selectedSetId)
+  // Built-in sets always take precedence over saved sets so a saved/imported
+  // entry can never shadow the real built-in, even if it ends up with a
+  // colliding id (see normalizeSet's builtin-id guard).
+  const selected = builtinTickerMappingSet(settings.selectedSetId)
+    ?? settings.savedSets.find(set => set.id === settings.selectedSetId)
   return selected ? resolveTickerMappingSet(selected, settings.savedSets) : null
 }
 
@@ -538,11 +554,19 @@ export function mergeSavedTickerMappings(
 ): TickerMappingSettings {
   if (importedSets.length === 0) return normalizeTickerMappingSettings(settings)
 
-  const importedByName = new Map(importedSets.map(set => [set.name.trim().toLowerCase(), set]))
-  const retainedSavedSets = settings.savedSets.filter(set => !importedByName.has(set.name.trim().toLowerCase()))
+  const nameKey = (set: TickerMappingSet) => set.name.trim().toLowerCase()
+  const existingByName = new Map(settings.savedSets.map(set => [nameKey(set), set]))
+  const importedByName = new Map(importedSets.map(set => [nameKey(set), set]))
+  const retainedSavedSets = settings.savedSets.filter(set => !importedByName.has(nameKey(set)))
+  // Preserve the id of any set being replaced so selectedSetId (which points at
+  // an id, not a name) keeps resolving after import instead of going stale.
+  const mergedImportedSets = importedSets.map(set => {
+    const existing = existingByName.get(nameKey(set))
+    return existing ? { ...set, id: existing.id } : set
+  })
   return normalizeTickerMappingSettings({
     ...settings,
-    savedSets: [...retainedSavedSets, ...importedSets],
+    savedSets: [...retainedSavedSets, ...mergedImportedSets],
   })
 }
 

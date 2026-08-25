@@ -4,6 +4,7 @@ import {
   SIMULATED_HISTORY_BUILTIN_ID,
   exportableSavedTickerMappings,
   mapTickerExpressionWithWarnings,
+  mergeSavedTickerMappings,
   normalizeTickerMappingSettings,
   resolveTickerMappingSet,
   selectedTickerMappingSet,
@@ -138,5 +139,93 @@ describe('Use Simulated History built-in ticker mapping', () => {
       mappingRefKind: 'builtin',
       mappingRef: SIMULATED_HISTORY_BUILTIN_ID,
     })
+  })
+
+  it('keeps the selected mapping resolvable after re-importing a set with the same name', () => {
+    const saved: TickerMappingSet = {
+      id: 'set-original-id',
+      name: 'Use Simulated History Mapping',
+      mappings: [builtinRef()],
+    }
+    const settings = normalizeTickerMappingSettings({
+      selectedSetId: saved.id,
+      savedSets: [saved],
+    })
+    expect(selectedTickerMappingSet(settings)).not.toBeNull()
+
+    // Re-importing (e.g. from an export/import round trip) rebuilds the set with a
+    // blank id, matched back to the existing one only by name.
+    const reimported: TickerMappingSet = {
+      id: '',
+      name: saved.name,
+      mappings: [builtinRef('ref-sim-2')],
+    }
+    const merged = mergeSavedTickerMappings(settings, [reimported])
+
+    expect(merged.savedSets).toHaveLength(1)
+    expect(merged.savedSets[0].id).toBe(saved.id)
+    expect(merged.selectedSetId).toBe(saved.id)
+    const resolved = selectedTickerMappingSet(merged)
+    expect(resolved).not.toBeNull()
+    expect(resolved?.resolveWarnings).toEqual([])
+    expect(mapTickerExpressionWithWarnings('SPY', resolved).value).toBe('SPY$')
+  })
+
+  it('never lets a saved/imported set claim a built-in id', () => {
+    const settings = normalizeTickerMappingSettings({
+      savedSets: [{
+        id: SIMULATED_HISTORY_BUILTIN_ID,
+        name: 'Legacy Duplicate',
+        mappings: [row('legacy', 'SPY', 'SPY_STALE')],
+      }],
+    })
+    expect(settings.savedSets).toHaveLength(1)
+    expect(settings.savedSets[0].id).not.toBe(SIMULATED_HISTORY_BUILTIN_ID)
+  })
+
+  it('always resolves the real built-in even if a saved set collides on id', () => {
+    // Bypasses normalization to simulate stale/legacy data that predates the
+    // built-in-id guard, and confirms selection precedence still protects it.
+    const shadowSet: TickerMappingSet = {
+      id: SIMULATED_HISTORY_BUILTIN_ID,
+      name: 'Legacy Duplicate',
+      storage: 'server',
+      mappings: [row('legacy', 'SPY', 'SPY_STALE')],
+    }
+    const settings = {
+      selectedSetId: SIMULATED_HISTORY_BUILTIN_ID,
+      sets: [],
+      savedSets: [shadowSet],
+    }
+    const resolved = selectedTickerMappingSet(settings)
+    expect(resolved?.storage).toBe('builtin')
+    expect(mapTickerExpressionWithWarnings('SPY', resolved).value).toBe('SPY$')
+  })
+
+  it('never lets a saved/imported set claim a built-in name, so name-based references cannot be shadowed', () => {
+    const settings = normalizeTickerMappingSettings({
+      savedSets: [
+        {
+          id: 'impostor',
+          name: 'Use Simulated History',
+          mappings: [row('stale', 'SPY', 'SPY_STALE')],
+        },
+        {
+          id: 'consumer',
+          name: 'Consumer',
+          mappings: [{
+            id: 'ref', isMappingRef: true, mappingRefKind: 'saved', mappingRef: 'Use Simulated History',
+          }],
+        },
+      ],
+    })
+
+    const impostor = settings.savedSets.find(set => set.id === 'impostor')
+    expect(impostor?.name).not.toBe('Use Simulated History')
+
+    const consumer = settings.savedSets.find(set => set.id === 'consumer')!
+    const resolved = resolveTickerMappingSet(consumer, settings.savedSets)
+    expect(resolved.resolveWarnings).toContain('Missing ticker mapping reference: Use Simulated History')
+    expect(mapTickerExpressionWithWarnings('SPY', resolved).value).not.toBe('SPY_STALE')
   })
 })
