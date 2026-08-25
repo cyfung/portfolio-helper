@@ -202,8 +202,6 @@ export function cashflowToPayload(
       throw new Error('Minimum Annual Withdrawal must be non-negative.')
 
     if (guardrailCashflow.mode === 'STAGED') {
-      if (options.strict && guardrailCashflow.fixedPeriods.length === 0)
-        throw new Error('At least one fixed period is required.')
       const fixedPeriods = guardrailCashflow.fixedPeriods.map((period, i) => {
         const periodAmount = Number(period.amount)
         const yearsText = period.years.trim()

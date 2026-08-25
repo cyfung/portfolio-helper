@@ -97,8 +97,7 @@ describe('guardrail cashflow payload', () => {
     } as const
 
     expect(() => cashflowToPayload('0', 'MONTHLY', noPeriods)).not.toThrow()
-    expect(() => cashflowToPayload('0', 'MONTHLY', noPeriods, { strict: true }))
-      .toThrow('At least one fixed period is required.')
+    expect(() => cashflowToPayload('0', 'MONTHLY', noPeriods, { strict: true })).not.toThrow()
 
     expect(() => cashflowToPayload('0', 'MONTHLY', {
       ...noPeriods,
