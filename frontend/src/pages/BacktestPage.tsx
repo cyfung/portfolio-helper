@@ -68,6 +68,7 @@ import {
   applyTickerMappingsToPortfolioWithWarnings,
   hydrateTickerMappingSettings,
   loadTickerMappingSettings,
+  mapTickerExpression,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
   TICKER_MAPPINGS_CHANGED_EVENT,
   type TickerMappingSettings,
@@ -741,7 +742,10 @@ export default function BacktestPage() {
             portfolios,
             settingsPortfolios,
             cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow, { strict: true }),
-            betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+            betaReferenceTicker: mapTickerExpression(
+              betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+              selectedTickerMappingSet,
+            ),
           }),
         }),
         realSlug
