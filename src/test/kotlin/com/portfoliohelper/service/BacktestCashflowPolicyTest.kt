@@ -27,6 +27,21 @@ class BacktestCashflowPolicyTest {
             upperWithdrawalRate = 1.0,
         )
 
+    private fun fixedThenGuardrail(
+        frequency: CashflowFrequency,
+        fixedAmount: Double,
+        fixedYears: Int,
+        annual: Double,
+    ) = CashflowConfig(
+        amount = fixedAmount,
+        frequency = frequency,
+        mode = CashflowMode.FIXED_THEN_GUARDRAIL,
+        initialAnnualWithdrawal = annual,
+        lowerWithdrawalRate = 0.0,
+        upperWithdrawalRate = 1.0,
+        fixedYears = fixedYears,
+    )
+
     @Test
     fun `historical backtest anchors monthly and quarterly guardrail payments to simulation start`() {
         val dates = dates(LocalDate.of(2024, 1, 15), LocalDate.of(2024, 4, 16))
@@ -62,6 +77,20 @@ class BacktestCashflowPolicyTest {
         assertEquals(10_200.0, contribution.last())
         assertEquals(0.0, withdrawal[dates.indexOf(LocalDate.of(2024, 2, 1))])
         assertEquals(0.0, withdrawal.last())
+    }
+
+    @Test
+    fun `fixed-then-guardrail contributes during the fixed years then withdraws under guardrail`() {
+        val dates = dates(LocalDate.of(2024, 1, 15), LocalDate.of(2025, 3, 15))
+        val values = BacktestService.computeNoMarginForTest(
+            portfolio,
+            flatSeries(dates),
+            dates,
+            10_000.0,
+            fixedThenGuardrail(CashflowFrequency.MONTHLY, fixedAmount = 100.0, fixedYears = 1, annual = 1_200.0),
+        )
+
+        assertEquals(11_000.0, values.last())
     }
 
     @Test

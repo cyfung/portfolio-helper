@@ -17,12 +17,20 @@ internal object CashflowPolicy {
 
     fun guardrailPayment(config: CashflowConfig, annualWithdrawal: Double): Double {
         val payments = paymentsPerYear(config.frequency)
-        return if (config.mode == CashflowMode.GUARDRAIL_WITHDRAWAL && payments > 0) {
+        val isGuardrailMode =
+            config.mode == CashflowMode.GUARDRAIL_WITHDRAWAL || config.mode == CashflowMode.FIXED_THEN_GUARDRAIL
+        return if (isGuardrailMode && payments > 0) {
             -annualWithdrawal / payments
         } else {
             0.0
         }
     }
+
+    /** The date the FIXED_THEN_GUARDRAIL mode switches from its fixed cashflow to guardrail withdrawals. */
+    fun guardrailStartDate(config: CashflowConfig?, dates: List<LocalDate>): LocalDate? =
+        config
+            ?.takeIf { it.mode == CashflowMode.FIXED_THEN_GUARDRAIL }
+            ?.let { cfg -> dates.firstOrNull()?.plusYears((cfg.fixedYears ?: 0).toLong()) }
 
     fun reviewedAnnualWithdrawal(
         config: CashflowConfig,
@@ -89,6 +97,8 @@ internal class CashflowRuntime(
     private var nextGuardrailPaymentDate: LocalDate? =
         config?.takeIf { it.mode == CashflowMode.GUARDRAIL_WITHDRAWAL }
             ?.let { dates.firstOrNull()?.plusMonths(paymentIntervalMonths(it.frequency).toLong()) }
+    private val guardrailStartDate: LocalDate? = CashflowPolicy.guardrailStartDate(config, dates)
+    private var guardrailActive = false
     val appliedCashflows: MutableList<Double> = MutableList(dates.size) { 0.0 }
 
     init {
@@ -103,6 +113,19 @@ internal class CashflowRuntime(
         val curDate = dates[index]
         if (config.mode == CashflowMode.FIXED) {
             return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) config.amount else 0.0
+        }
+        if (config.mode == CashflowMode.FIXED_THEN_GUARDRAIL) {
+            val startDate = guardrailStartDate
+            if (startDate == null || curDate < startDate) {
+                return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) config.amount else 0.0
+            }
+            if (!guardrailActive) {
+                guardrailActive = true
+                nextGuardrailPaymentDate = startDate.plusMonths(paymentIntervalMonths(config.frequency).toLong())
+                policyYear = completedPolicyYears(dates.first(), startDate)
+                nominalInvestmentFactor = 1.0
+                reviewInflationFactor = inflationFactors.getOrElse(index) { reviewInflationFactor }
+            }
         }
         val scheduledDate = nextGuardrailPaymentDate ?: return 0.0
         if (curDate < scheduledDate) return 0.0

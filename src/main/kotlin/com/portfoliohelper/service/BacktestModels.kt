@@ -125,7 +125,7 @@ fun PortfolioConfig.withoutPlaceholderTickers(): PortfolioConfig {
 
 enum class CashflowFrequency { NONE, MONTHLY, QUARTERLY, YEARLY }
 
-enum class CashflowMode { FIXED, GUARDRAIL_WITHDRAWAL }
+enum class CashflowMode { FIXED, GUARDRAIL_WITHDRAWAL, FIXED_THEN_GUARDRAIL }
 
 data class CashflowConfig(
     val amount: Double = 0.0,
@@ -135,9 +135,10 @@ data class CashflowConfig(
     val lowerWithdrawalRate: Double? = null,
     val upperWithdrawalRate: Double? = null,
     val minimumAnnualWithdrawal: Double? = null,
+    val fixedYears: Int? = null,
 ) {
     fun validate() {
-        if (mode == CashflowMode.GUARDRAIL_WITHDRAWAL) {
+        if (mode == CashflowMode.GUARDRAIL_WITHDRAWAL || mode == CashflowMode.FIXED_THEN_GUARDRAIL) {
             require(frequency != CashflowFrequency.NONE) {
                 "Guardrail withdrawal frequency must be monthly, quarterly, or yearly."
             }
@@ -152,6 +153,11 @@ data class CashflowConfig(
             }
             require(minimumAnnualWithdrawal == null || minimumAnnualWithdrawal >= 0.0) {
                 "Minimum annual withdrawal must be non-negative."
+            }
+        }
+        if (mode == CashflowMode.FIXED_THEN_GUARDRAIL) {
+            require(fixedYears != null && fixedYears >= 0) {
+                "Fixed years must be a non-negative whole number."
             }
         }
     }

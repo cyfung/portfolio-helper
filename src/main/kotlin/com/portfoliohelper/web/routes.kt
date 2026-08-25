@@ -985,6 +985,7 @@ internal fun JsonObject.parseCashflowConfig(): CashflowConfig? =
             lowerWithdrawalRate = cf["lowerWithdrawalRate"]?.jsonPrimitive?.doubleOrNull,
             upperWithdrawalRate = cf["upperWithdrawalRate"]?.jsonPrimitive?.doubleOrNull,
             minimumAnnualWithdrawal = cf["minimumAnnualWithdrawal"]?.jsonPrimitive?.doubleOrNull,
+            fixedYears = cf["fixedYears"]?.jsonPrimitive?.intOrNull,
         )
     }
 

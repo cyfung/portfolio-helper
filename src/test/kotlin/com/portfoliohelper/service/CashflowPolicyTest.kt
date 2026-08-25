@@ -19,6 +19,20 @@ class CashflowPolicyTest {
         minimumAnnualWithdrawal = minimum,
     )
 
+    private fun fixedThenGuardrail(
+        frequency: CashflowFrequency = CashflowFrequency.MONTHLY,
+        fixedAmount: Double = 500.0,
+        fixedYears: Int? = 1,
+    ) = CashflowConfig(
+        amount = fixedAmount,
+        frequency = frequency,
+        mode = CashflowMode.FIXED_THEN_GUARDRAIL,
+        initialAnnualWithdrawal = 12_000.0,
+        lowerWithdrawalRate = 0.03,
+        upperWithdrawalRate = 0.06,
+        fixedYears = fixedYears,
+    )
+
     @Test
     fun `guardrail annual withdrawal is distributed by payment frequency`() {
         assertEquals(-1_000.0, CashflowPolicy.guardrailPayment(guardrail(), 12_000.0))
@@ -94,6 +108,37 @@ class CashflowPolicyTest {
         assertFailsWith<IllegalArgumentException> {
             guardrail().copy(minimumAnnualWithdrawal = -1.0).validate()
         }
+    }
+
+    @Test
+    fun `invalid fixed-then-guardrail values are rejected`() {
+        assertFailsWith<IllegalArgumentException> {
+            fixedThenGuardrail(fixedYears = null).validate()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            fixedThenGuardrail(fixedYears = -1).validate()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            fixedThenGuardrail().copy(initialAnnualWithdrawal = 0.0).validate()
+        }
+    }
+
+    @Test
+    fun `fixed-then-guardrail pays the fixed amount before the switch and reviewed guardrail payments after`() {
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..24L).map(start::plusMonths)
+        val inflationFactors = List(24) { 1.0 } + 1.02
+        val runtime = CashflowRuntime(fixedThenGuardrail(), dates, inflationFactors)
+
+        for (index in 1..11) {
+            assertEquals(500.0, runtime.requestedCashflow(index, 1_000_000.0, 1.0))
+        }
+        assertEquals(0.0, runtime.requestedCashflow(12, 1_000_000.0, 1.0))
+        assertEquals(-1_000.0, runtime.requestedCashflow(13, 1_000_000.0, 1.0))
+        for (index in 14 until dates.lastIndex) {
+            runtime.requestedCashflow(index, 1_000_000.0, 1.0)
+        }
+        assertEquals(-1_122.0, runtime.requestedCashflow(24, 1_000_000.0, 1.05), 1e-9)
     }
 
     @Test

@@ -1846,19 +1846,26 @@ object BacktestService {
     internal fun rebalanceFlags(dates: List<LocalDate>, strategy: RebalanceStrategy): BooleanArray =
         BooleanArray(dates.size) { i -> i > 0 && shouldRebalance(strategy, dates[i - 1], dates[i]) }
 
-    internal fun cashflowAmounts(dates: List<LocalDate>, cashflow: CashflowConfig?): List<Double> =
-        dates.mapIndexed { i, date ->
-            if (i == 0) 0.0 else cashflowAmountOnDate(cashflow, dates[i - 1], date)
+    internal fun cashflowAmounts(dates: List<LocalDate>, cashflow: CashflowConfig?): List<Double> {
+        val guardrailStartDate = CashflowPolicy.guardrailStartDate(cashflow, dates)
+        return dates.mapIndexed { i, date ->
+            if (i == 0) 0.0 else cashflowAmountOnDate(cashflow, dates[i - 1], date, guardrailStartDate)
         }
+    }
 
     internal fun cashflowAmountOnDate(
         cashflow: CashflowConfig?,
         prevDate: LocalDate,
-        curDate: LocalDate
+        curDate: LocalDate,
+        guardrailStartDate: LocalDate? = null,
     ): Double =
         if (cashflow != null && isCashflowDate(cashflow.frequency, prevDate, curDate)) {
-            if (cashflow.mode == CashflowMode.FIXED) cashflow.amount
-            else CashflowPolicy.guardrailPayment(cashflow, cashflow.initialAnnualWithdrawal ?: 0.0)
+            when {
+                cashflow.mode == CashflowMode.FIXED -> cashflow.amount
+                cashflow.mode == CashflowMode.FIXED_THEN_GUARDRAIL &&
+                    (guardrailStartDate == null || curDate < guardrailStartDate) -> cashflow.amount
+                else -> CashflowPolicy.guardrailPayment(cashflow, cashflow.initialAnnualWithdrawal ?: 0.0)
+            }
         } else 0.0
 
     internal fun isCashflowDate(frequency: CashflowFrequency, prevDate: LocalDate, curDate: LocalDate): Boolean =

@@ -56,26 +56,55 @@ export default function CashflowControls({
         >
           <option value="FIXED">Fixed Cashflow</option>
           <option value="GUARDRAIL_WITHDRAWAL">Guardrail Withdrawal</option>
+          <option value="FIXED_THEN_GUARDRAIL">Fixed, then Guardrail</option>
         </select>
       </div>
-      <div>
-        <label htmlFor={cashflowAmountId}>
-          {guardrailCashflow.mode === 'FIXED' ? 'Cashflow Amount' : 'Initial Annual Withdrawal'}
-        </label>
-        <input
-          type="number"
-          id={cashflowAmountId}
-          placeholder="e.g. 1000"
-          min={guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' ? '0' : undefined}
-          step="100"
-          value={guardrailCashflow.mode === 'FIXED' ? cashflowAmount : guardrailCashflow.initialAnnualWithdrawal}
-          onChange={e => guardrailCashflow.mode === 'FIXED'
-            ? onCashflowAmountChange(e.target.value)
-            : updateGuardrail({ initialAnnualWithdrawal: e.target.value })}
-        />
-      </div>
-      {guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' && (
+      {(guardrailCashflow.mode === 'FIXED' || guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL') && (
+        <div>
+          <label htmlFor={cashflowAmountId}>
+            {guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL' ? 'Fixed Cashflow Amount' : 'Cashflow Amount'}
+          </label>
+          <input
+            type="number"
+            id={cashflowAmountId}
+            placeholder="e.g. 1000"
+            step="100"
+            value={cashflowAmount}
+            onChange={e => onCashflowAmountChange(e.target.value)}
+          />
+        </div>
+      )}
+      {guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL' && (
+        <div>
+          <label htmlFor={`${idPrefix}-fixed-years`}>Fixed Years</label>
+          <input
+            type="number"
+            id={`${idPrefix}-fixed-years`}
+            min="0"
+            step="1"
+            value={guardrailCashflow.fixedYears}
+            onChange={e => updateGuardrail({ fixedYears: e.target.value })}
+          />
+        </div>
+      )}
+      {(guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' || guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL') && (
         <>
+          <div>
+            <label htmlFor={`${idPrefix}-initial-annual-withdrawal`}>
+              {guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL'
+                ? 'Initial Annual Withdrawal (after fixed years)'
+                : 'Initial Annual Withdrawal'}
+            </label>
+            <input
+              type="number"
+              id={`${idPrefix}-initial-annual-withdrawal`}
+              placeholder="e.g. 12000"
+              min="0"
+              step="100"
+              value={guardrailCashflow.initialAnnualWithdrawal}
+              onChange={e => updateGuardrail({ initialAnnualWithdrawal: e.target.value })}
+            />
+          </div>
           <div>
             <label>Lower Withdrawal-Rate Limit (%)</label>
             <input type="number" min="0" step="0.1" value={guardrailCashflow.lowerWithdrawalRate}

@@ -24,7 +24,7 @@ function normalizeCashflowState(state: Partial<CashflowFormState>): CashflowForm
     cashflowAmount,
     cashflowFrequency,
     betaReferenceTicker,
-    guardrailCashflow: { ...guardrail },
+    guardrailCashflow: { ...DEFAULT_GUARDRAIL_CASHFLOW_STATE, ...guardrail },
   }
 }
 

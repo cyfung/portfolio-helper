@@ -20,6 +20,7 @@ describe('guardrail cashflow payload', () => {
       lowerWithdrawalRate: '3',
       upperWithdrawalRate: '6',
       minimumAnnualWithdrawal: '9000',
+      fixedYears: '',
     } as const
 
     expect(cashflowToPayload('0', 'MONTHLY', guardrailCashflow)).toEqual({
@@ -40,6 +41,7 @@ describe('guardrail cashflow payload', () => {
       lowerWithdrawalRate: '3',
       upperWithdrawalRate: '6',
       minimumAnnualWithdrawal: '',
+      fixedYears: '',
     } as const
 
     expect(() => cashflowToPayload('0', 'MONTHLY', incompleteGuardrail)).not.toThrow()
@@ -52,7 +54,77 @@ describe('guardrail cashflow payload', () => {
       lowerWithdrawalRate: '6',
       upperWithdrawalRate: '3',
       minimumAnnualWithdrawal: '',
+      fixedYears: '',
     }, { strict: true })).toThrow('Upper Withdrawal-Rate Limit must be greater than the lower limit.')
+  })
+
+  it('serializes fixed-then-guardrail amounts, fixed years, and percentage limits', () => {
+    const guardrailCashflow = {
+      mode: 'FIXED_THEN_GUARDRAIL',
+      initialAnnualWithdrawal: '12000',
+      lowerWithdrawalRate: '3',
+      upperWithdrawalRate: '6',
+      minimumAnnualWithdrawal: '9000',
+      fixedYears: '5',
+    } as const
+
+    expect(cashflowToPayload('500', 'MONTHLY', guardrailCashflow)).toEqual({
+      amount: 500,
+      frequency: 'MONTHLY',
+      mode: 'FIXED_THEN_GUARDRAIL',
+      fixedYears: 5,
+      initialAnnualWithdrawal: 12000,
+      lowerWithdrawalRate: 0.03,
+      upperWithdrawalRate: 0.06,
+      minimumAnnualWithdrawal: 9000,
+    })
+  })
+
+  it('allows incomplete fixed-then-guardrail drafts but rejects them for strict submissions', () => {
+    const incomplete = {
+      mode: 'FIXED_THEN_GUARDRAIL',
+      initialAnnualWithdrawal: '12000',
+      lowerWithdrawalRate: '3',
+      upperWithdrawalRate: '6',
+      minimumAnnualWithdrawal: '',
+      fixedYears: '',
+    } as const
+
+    expect(() => cashflowToPayload('500', 'MONTHLY', incomplete)).not.toThrow()
+    expect(() => cashflowToPayload('500', 'MONTHLY', incomplete, { strict: true }))
+      .toThrow('Fixed Years must be a non-negative whole number.')
+    expect(() => cashflowToPayload('', 'MONTHLY', { ...incomplete, fixedYears: '5' }, { strict: true }))
+      .toThrow('Fixed Cashflow Amount must be a number.')
+  })
+
+  it('round-trips imported fixed-then-guardrail settings through the shared payload representation', () => {
+    const imported = cashflowStateFromSettings({
+      cashflow: {
+        mode: 'FIXED_THEN_GUARDRAIL',
+        frequency: 'QUARTERLY',
+        amount: 250,
+        fixedYears: 3,
+        initialAnnualWithdrawal: 24000,
+        lowerWithdrawalRate: 0.025,
+        upperWithdrawalRate: 0.055,
+        minimumAnnualWithdrawal: 18000,
+      },
+    })
+
+    expect(cashflowToPayload(
+      imported.cashflowAmount!,
+      imported.cashflowFrequency!,
+      imported.guardrailCashflow!,
+    )).toEqual({
+      amount: 250,
+      frequency: 'QUARTERLY',
+      mode: 'FIXED_THEN_GUARDRAIL',
+      fixedYears: 3,
+      initialAnnualWithdrawal: 24000,
+      lowerWithdrawalRate: 0.025,
+      upperWithdrawalRate: 0.055,
+      minimumAnnualWithdrawal: 18000,
+    })
   })
 
   it('round-trips imported guardrail settings through the shared payload representation', () => {
