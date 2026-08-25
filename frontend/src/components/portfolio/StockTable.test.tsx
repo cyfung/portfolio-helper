@@ -102,10 +102,10 @@ describe('stock table sorting', () => {
     }
     const { container } = render(<StockTable />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sort by Mark descending' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by mark price descending' }))
     expect(renderedSymbols(container)).toEqual(['HIGH', 'LOW', 'MISSING'])
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sort by Mark ascending' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by mark price ascending' }))
     expect(renderedSymbols(container)).toEqual(['LOW', 'HIGH', 'MISSING'])
   })
 
