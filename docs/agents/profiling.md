@@ -138,6 +138,54 @@ deliberate approximation for the decimated view, not a bug — full-resolution
 per-day accuracy is only meaningful at unresampled zoom levels this page
 doesn't currently offer.
 
+## 4a. Rollout to BacktestPage.tsx (2026-08-25)
+
+The same `downsampleLabels()` fix was applied to `BacktestPage.tsx`'s chart
+data, and its previously-duplicated `visibleActionPointGroups`/
+`nearestLabelIndex` were consolidated with the Rebalance versions into a
+shared `frontend/src/lib/actionPointMarkers.ts` (both pages now import from
+there instead of keeping separate copies).
+
+**Note on a small behavior change from that consolidation.** BacktestPage's
+old local copy dropped an action point outright if its date wasn't in
+`labels` (exact match only); the shared version snaps to the nearest label
+instead (see the note above on Rebalance's action markers). In practice this
+only matters at all for BacktestPage when a curve's action point falls on a
+date outside the *intersection* of trading dates across every curve/portfolio
+(`buildCommonLabels` computes that intersection) — an edge case that existed
+independent of downsampling and previously silently dropped the marker. It
+now snaps to the nearest in-range date instead of disappearing, which is a
+strict improvement, not a fabrication risk (unlike the real-portfolio-overlay
+case, the snap target is still one of that curve's own nearby dates). Called
+out here because it's a real (if minor) semantic change riding along with
+what's otherwise a pure de-duplication, not because it needed reverting.
+
+**MonteCarloPage was deliberately left unchanged.** Its chart's row count is
+`simulatedYears + 1` (user input, typically ≤30) — nothing like the
+thousands-of-daily-points case downsampling targets — so there was no
+downsampling to add. Its `dot={{ r: 3 }}` (vs. `dot={false}` elsewhere) was
+flagged early in the original investigation as a possible cheap win, but was
+never profiled or confirmed as a real cost, and at ≤30 points per line the
+dots plausibly aid readability rather than hurt performance. Left as-is
+rather than changed on an unverified guess — profile it first if it's
+suspected to matter.
+
+**BacktestPage's real-portfolio overlay (IBKR account comparison) needed a
+narrower fix than Rebalance's action markers.** That feature matches real
+account data to chart rows by *exact* date across a date range that may only
+*partially* overlap the backtest's range (e.g. a 30-year backtest vs. an
+account with 2 years of history) — nearest-date snapping there, unlike for
+action-point markers, risks fabricating overlay values by pulling in a real
+data point from a real date that isn't actually anywhere near the backtest
+row it got attached to. Rather than build and hand-verify a
+distance-bounded snapping scheme with no live IBKR-synced portfolio to test
+it against, downsampling is skipped entirely whenever a real-portfolio
+overlay is active (`realData` truthy in `BacktestPage.tsx`'s `chartData`
+memo) — such sessions keep the full-resolution label axis and the original
+exact-match behavior, unchanged. Only backtests with no real overlay
+selected get the point-count reduction. Revisit if overlay + very long
+date ranges turns out to need it too.
+
 ## 5. Cleanup
 
 Stop the isolated backend and Vite dev server when done, and confirm the

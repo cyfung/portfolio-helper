@@ -57,8 +57,9 @@ import {
   curveSelectionKey,
 } from '@/lib/curveNaming'
 import {
-  buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR,
+  buildCommonLabels, buildRechartsData, computeDrawdown, computeRTR, downsampleLabels,
 } from '@/lib/chartData'
+import { visibleActionPointGroups } from '@/lib/actionPointMarkers'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockStatesToAPIPortfolios } from '@/lib/portfolioRefs'
 import { validateDateRange } from '@/lib/dateRange'
@@ -110,7 +111,6 @@ const ACTION_MARKERS: Record<string, { label: string; short: string; color: stri
   DRAWDOWN_MR:          { label: 'Drawdown MR',         short: 'DD-MR', color: '#6741d9', defaultVisible: false },
   DRAWDOWN_MR_EXIT:     { label: 'Drawdown MR exit',    short: 'DD-X', color: '#868e96', defaultVisible: false },
 }
-const ACTION_MARKER_RENDER_LIMIT = 350
 type ActionPointChartKey = 'main' | 'drawdown' | 'recover' | 'margin'
 const DEFAULT_ACTION_POINT_CHART_VISIBILITY: Record<ActionPointChartKey, boolean> = {
   main: false,
@@ -123,39 +123,6 @@ const DEFAULT_FORCE_ACTION_POINT_CHART_DOTS: Record<ActionPointChartKey, boolean
   drawdown: false,
   recover: false,
   margin: false,
-}
-
-function visibleActionPointGroups(
-  actionPoints: { date: string; type: string }[] | undefined,
-  visibleTypes: Set<string>,
-  labels: string[],
-) {
-  if (!actionPoints?.length || visibleTypes.size === 0) return { markers: [], denseGroups: [] }
-  const rowIndexByDate = new Map(labels.map((date, i) => [date, i]))
-  const seen = new Set<string>()
-  const points: { date: string; type: string; rowIndex: number }[] = []
-  for (const point of actionPoints) {
-    if (!visibleTypes.has(point.type)) continue
-    const rowIndex = rowIndexByDate.get(point.date)
-    if (rowIndex == null) continue
-    const key = `${point.date}-${point.type}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    points.push({ date: point.date, type: point.type, rowIndex })
-  }
-  const byType = new Map<string, { date: string; type: string; rowIndex: number }[]>()
-  for (const point of points) {
-    const group = byType.get(point.type) ?? []
-    group.push(point)
-    byType.set(point.type, group)
-  }
-  const markers: { date: string; type: string; rowIndex: number }[] = []
-  const denseGroups: { type: string; points: { date: string; type: string; rowIndex: number }[] }[] = []
-  for (const [type, group] of byType) {
-    if (group.length > ACTION_MARKER_RENDER_LIMIT) denseGroups.push({ type, points: group })
-    else markers.push(...group)
-  }
-  return { markers, denseGroups }
 }
 
 function addResultWarnings(results: BacktestResults, warnings: string[]) {
@@ -551,7 +518,10 @@ export default function BacktestPage() {
   const chartData = useMemo(() => {
     if (!displayResults) return null
     const realData = displayedRealData
-    const labels        = buildCommonLabels(displayResults)
+    // Real-portfolio overlay matches by exact date against `labels`; downsampling would
+    // make that match sparse (or, worse in the un-overlapping-range case, wrong) rather
+    // than just less precise, so only downsample when there's no overlay to protect.
+    const labels = realData ? buildCommonLabels(displayResults) : downsampleLabels(buildCommonLabels(displayResults))
     const backtestStart = displayResults.portfolios[0]?.curves[0]?.points[0]?.value ?? 1
     const navDisplayFactor = displayedRealData ? privacyNavScaleFactor / displayedRealData.navScaleFactor : 1
     const realNavSeries = displayedRealData?.navSeries.map(v => v * navDisplayFactor) ?? []

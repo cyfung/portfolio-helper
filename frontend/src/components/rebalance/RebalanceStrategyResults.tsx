@@ -13,6 +13,7 @@ import {
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { useChartTheme } from '@/lib/chartTheme'
 import { curveDataKey, curveSelectionKey } from '@/lib/curveNaming'
+import { visibleActionPointGroups } from '@/lib/actionPointMarkers'
 import {
   ACTION_MARKERS,
   DEFAULT_ACTION_POINT_CHART_VISIBILITY,
@@ -20,7 +21,6 @@ import {
   buildStatsRows,
   useRebalanceChartData,
   useVmTimingChartData,
-  visibleActionPointGroups,
 } from '@/lib/rebalanceStrategyResults'
 import { BacktestResults } from '@/types/backtest'
 import ResultViewControls from '@/components/backtest/ResultViewControls'
