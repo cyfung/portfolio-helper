@@ -100,6 +100,20 @@ interface StoredBacktestConfig {
   inflationAdjusted?: boolean
 }
 
+function hasStrictlyPositiveSeries(chartData: { rows: Record<string, any>[]; datasets: { dataKey: string }[] }) {
+  if (chartData.datasets.length === 0) return false
+  let hasValue = false
+  for (const row of chartData.rows) {
+    for (const dataset of chartData.datasets) {
+      const value = row[dataset.dataKey]
+      if (value == null) continue
+      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false
+      hasValue = true
+    }
+  }
+  return hasValue
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -690,6 +704,15 @@ export default function BacktestPage() {
   const selectedActionPointGroups = useMemo(() => (
     visibleActionPointGroups(selectedActionCurve?.curve.actionPoints, visibleActionPointTypes, chartData?.labels ?? [])
   ), [chartData?.labels, selectedActionCurve, visibleActionPointTypes])
+
+  const canUseLogScale = useMemo(
+    () => (chartData ? hasStrictlyPositiveSeries(chartData.mainData) : false),
+    [chartData],
+  )
+
+  useEffect(() => {
+    if (logScale && !canUseLogScale) setLogScale(false)
+  }, [canUseLogScale, logScale])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -1316,9 +1339,11 @@ export default function BacktestPage() {
               </div>
             )}
             <button
-              className={`chart-scale-toggle${logScale ? ' active' : ''}`}
+              className={`chart-scale-toggle${logScale && canUseLogScale ? ' active' : ''}`}
               type="button"
               style={{ position: 'static' }}
+              disabled={!canUseLogScale}
+              title={canUseLogScale ? 'Use logarithmic value scale' : 'Log scale requires all selected curve values to be above zero'}
               onClick={() => setLogScale(l => !l)}
             >
               Log
@@ -1341,9 +1366,9 @@ export default function BacktestPage() {
                 {/* Primary Y axis — backtest curves + TWR/MWR/Position */}
                 <YAxis
                   yAxisId="main"
-                  scale={logScale ? 'log' : 'linear'}
+                  scale={logScale && canUseLogScale ? 'log' : 'linear'}
                   domain={['auto', 'auto']}
-                  allowDataOverflow={logScale}
+                  allowDataOverflow={logScale && canUseLogScale}
                   tick={{ fill: textColor, fontSize: 11 }}
                   tickFormatter={v => '$' + Number(v).toFixed(0)}
                   width={72}
