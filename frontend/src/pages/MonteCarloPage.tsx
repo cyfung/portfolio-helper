@@ -21,6 +21,7 @@ import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
 import { useInflationAdjustedPreference } from '@/hooks/useInflationAdjustedPreference'
 import { getChartTheme } from '@/lib/chartTheme'
+import { createClampedLogScale } from '@/lib/clampedLogScale'
 import { curveDisplayLabel, curveSelectionKey, percentileCurveLabel } from '@/lib/curveNaming'
 import { makeRechartsTooltip } from '@/lib/chartTooltip'
 import { compressToCode, decompressFromCode } from '@/lib/compress'
@@ -87,20 +88,6 @@ const MC_COLS = [
   { metric: 'SORTINO', label: 'Sortino' }, { metric: 'CALMAR', label: 'Calmar' },
   { metric: 'BETA', label: 'Beta' }, { metric: 'ULCER_INDEX', label: 'Ulcer' }, { metric: 'UPI', label: 'UPI' },
 ]
-
-function hasStrictlyPositiveSeries(chartData: { rows: Record<string, any>[]; datasets: { label: string }[] }) {
-  if (chartData.datasets.length === 0) return false
-  let hasValue = false
-  for (const row of chartData.rows) {
-    for (const dataset of chartData.datasets) {
-      const value = row[dataset.label]
-      if (value == null) continue
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false
-      hasValue = true
-    }
-  }
-  return hasValue
-}
 
 function addResultWarnings(results: MonteCarloResults, warnings: string[]) {
   if (warnings.length === 0) return results
@@ -376,14 +363,7 @@ export default function MonteCarloPage() {
     return { rows, datasets, yearTicks, effectiveCurves }
   }, [shownResults, percentile, selected])
 
-  const canUseLogScale = useMemo(
-    () => (chartData ? hasStrictlyPositiveSeries(chartData) : false),
-    [chartData],
-  )
-
-  useEffect(() => {
-    if (logScale && !canUseLogScale) setLogScale(false)
-  }, [canUseLogScale, logScale])
+  const logScaleRef = useMemo(() => createClampedLogScale(), [])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -962,10 +942,8 @@ export default function MonteCarloPage() {
           {/* MC Chart */}
           <div className="backtest-chart-container" ref={chartContainerRef}>
             <button
-              className={`chart-scale-toggle${logScale && canUseLogScale ? ' active' : ''}`}
+              className={`chart-scale-toggle${logScale ? ' active' : ''}`}
               type="button"
-              disabled={!canUseLogScale}
-              title={canUseLogScale ? 'Use logarithmic value scale' : 'Log scale requires all selected curve values to be above zero'}
               onClick={() => setLogScale(l => !l)}
             >
               Log
@@ -982,9 +960,9 @@ export default function MonteCarloPage() {
                   tick={{ fill: textColor, fontSize: 11 }}
                 />
                 <YAxis
-                  scale={logScale && canUseLogScale ? 'log' : 'linear'}
+                  scale={logScale ? logScaleRef : 'linear'}
                   domain={['auto', 'auto']}
-                  allowDataOverflow={logScale && canUseLogScale}
+                  allowDataOverflow={logScale}
                   tick={{ fill: textColor, fontSize: 11 }}
                   tickFormatter={v => '$' + Number(v).toFixed(0)}
                   width={72}

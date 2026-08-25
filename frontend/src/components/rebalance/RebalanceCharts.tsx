@@ -1,4 +1,4 @@
-import { memo, type ReactNode, useEffect, useRef } from 'react'
+import { memo, type ReactNode, useEffect, useMemo, useRef } from 'react'
 import {
   Brush,
   CartesianGrid,
@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { RechartsChartData } from '@/lib/chartData'
+import { createClampedLogScale } from '@/lib/clampedLogScale'
 
 export type ActionPointChartKey =
   | 'main'
@@ -123,6 +124,7 @@ export const RebalanceLineChart = memo(function RebalanceLineChart({
 }: RebalanceLineChartProps) {
   const format = CHART_FORMATTERS[kind]
   const isMoney = kind === 'money'
+  const logScaleRef = useMemo(() => createClampedLogScale(), [])
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -130,7 +132,7 @@ export const RebalanceLineChart = memo(function RebalanceLineChart({
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
         <XAxis dataKey="x" tick={{ fill: textColor, fontSize: 11 }}
           interval={Math.max(1, Math.floor(labelsLength / 8))} />
-        <YAxis scale={isMoney && logScale ? 'log' : 'linear'} domain={['auto', 'auto']}
+        <YAxis scale={isMoney && logScale ? logScaleRef : 'linear'} domain={['auto', 'auto']}
           allowDataOverflow={isMoney && logScale} tick={{ fill: textColor, fontSize: 11 }}
           tickFormatter={format.axis} width={format.width} />
         <Tooltip content={makeTooltip(format.tooltip)} />

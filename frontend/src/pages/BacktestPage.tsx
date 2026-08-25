@@ -20,6 +20,7 @@ import IbkrPerformanceFetchControl from '@/components/portfolio/IbkrPerformanceF
 import type { SavedPortfoliosBarRef } from '@/components/backtest/SavedPortfoliosBar'
 import { usePortfolioStore } from '@/stores/portfolioStore'
 import { useChartTheme } from '@/lib/chartTheme'
+import { createClampedLogScale } from '@/lib/clampedLogScale'
 import { useChartContainerWidth } from '@/hooks/useChartContainerWidth'
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave'
 import { useTransientToast } from '@/hooks/useTransientToast'
@@ -98,20 +99,6 @@ interface StoredBacktestConfig {
   betaReferenceTicker?: string | null
   portfolios?: Record<string, unknown>[]
   inflationAdjusted?: boolean
-}
-
-function hasStrictlyPositiveSeries(chartData: { rows: Record<string, any>[]; datasets: { dataKey: string }[] }) {
-  if (chartData.datasets.length === 0) return false
-  let hasValue = false
-  for (const row of chartData.rows) {
-    for (const dataset of chartData.datasets) {
-      const value = row[dataset.dataKey]
-      if (value == null) continue
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false
-      hasValue = true
-    }
-  }
-  return hasValue
 }
 
 function errorMessage(error: unknown): string {
@@ -705,14 +692,7 @@ export default function BacktestPage() {
     visibleActionPointGroups(selectedActionCurve?.curve.actionPoints, visibleActionPointTypes, chartData?.labels ?? [])
   ), [chartData?.labels, selectedActionCurve, visibleActionPointTypes])
 
-  const canUseLogScale = useMemo(
-    () => (chartData ? hasStrictlyPositiveSeries(chartData.mainData) : false),
-    [chartData],
-  )
-
-  useEffect(() => {
-    if (logScale && !canUseLogScale) setLogScale(false)
-  }, [canUseLogScale, logScale])
+  const logScaleRef = useMemo(() => createClampedLogScale(), [])
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -1339,11 +1319,9 @@ export default function BacktestPage() {
               </div>
             )}
             <button
-              className={`chart-scale-toggle${logScale && canUseLogScale ? ' active' : ''}`}
+              className={`chart-scale-toggle${logScale ? ' active' : ''}`}
               type="button"
               style={{ position: 'static' }}
-              disabled={!canUseLogScale}
-              title={canUseLogScale ? 'Use logarithmic value scale' : 'Log scale requires all selected curve values to be above zero'}
               onClick={() => setLogScale(l => !l)}
             >
               Log
@@ -1366,9 +1344,9 @@ export default function BacktestPage() {
                 {/* Primary Y axis — backtest curves + TWR/MWR/Position */}
                 <YAxis
                   yAxisId="main"
-                  scale={logScale && canUseLogScale ? 'log' : 'linear'}
+                  scale={logScale ? logScaleRef : 'linear'}
                   domain={['auto', 'auto']}
-                  allowDataOverflow={logScale && canUseLogScale}
+                  allowDataOverflow={logScale}
                   tick={{ fill: textColor, fontSize: 11 }}
                   tickFormatter={v => '$' + Number(v).toFixed(0)}
                   width={72}

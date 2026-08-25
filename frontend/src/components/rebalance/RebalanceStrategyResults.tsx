@@ -67,20 +67,6 @@ function marginChartData(
   return chartData.marginData
 }
 
-function hasStrictlyPositiveSeries(chartData: ReturnType<typeof useRebalanceChartData>['mainData']) {
-  if (chartData.datasets.length === 0) return false
-  let hasValue = false
-  for (const row of chartData.rows) {
-    for (const dataset of chartData.datasets) {
-      const value = row[dataset.dataKey]
-      if (value == null) continue
-      if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return false
-      hasValue = true
-    }
-  }
-  return hasValue
-}
-
 function ActionPointTypeFilter({
   visibleTypes,
   onToggle,
@@ -154,15 +140,9 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
     zeroMarginInterestChart && zeroMarginInterestResults
       ? zeroMarginInterestChartData
       : chartData
-  const canUseLogScale = useMemo(() => hasStrictlyPositiveSeries(chartData.mainData), [chartData.mainData])
-
   useEffect(() => {
     setZeroMarginInterestChart(false)
   }, [results])
-
-  useEffect(() => {
-    if (logScale && !canUseLogScale) setLogScale(false)
-  }, [canUseLogScale, logScale])
 
   const selectRiskChart = useCallback((tab: RiskChartTab) => {
     storeRiskChartTab(tab)
@@ -404,12 +384,10 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
           <ActionPointTypeFilter visibleTypes={visibleActionPointTypes} onToggle={toggleActionPointType} />
         )}
         <button
-          className={`chart-scale-toggle${logScale && canUseLogScale ? ' active' : ''}`}
+          className={`chart-scale-toggle${logScale ? ' active' : ''}`}
           type="button"
           style={{ position: 'static' }}
-          disabled={!canUseLogScale}
           onClick={() => setLogScale(value => !value)}
-          title={canUseLogScale ? 'Use logarithmic value scale' : 'Log scale requires all selected portfolio values to be above zero'}
         >
           Log
         </button>
@@ -428,7 +406,7 @@ const RebalanceStrategyResults = memo(function RebalanceStrategyResults({
             renderActionMarkers={renderActionMarkers}
             actionChart="main"
             kind="money"
-            logScale={logScale && canUseLogScale}
+            logScale={logScale}
             brushFill={theme.isDark ? '#1a1a1a' : '#f8f8f8'}
           />
         </div>
