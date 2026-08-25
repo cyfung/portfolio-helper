@@ -532,6 +532,7 @@ export default function MonteCarloPage() {
         betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
         selectedTickerMappingSet,
       ),
+      settingsBetaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
       inflationAdjusted,
       portfolios,
       settingsPortfolios,

@@ -749,6 +749,7 @@ export default function BacktestPage() {
               betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
               selectedTickerMappingSet,
             ),
+            settingsBetaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
           }),
         }),
         realSlug

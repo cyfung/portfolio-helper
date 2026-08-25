@@ -332,6 +332,7 @@ export function useRebalanceStrategyPage() {
           betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
           selectedTickerMappingSet,
         ),
+        settingsBetaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
         strategies: mappedStrategies.value,
         strategyStates: runInputs.runStrategies,
         includeActionDiagnostics,

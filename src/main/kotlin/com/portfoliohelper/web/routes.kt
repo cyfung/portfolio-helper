@@ -93,6 +93,20 @@ private fun legacyPageSettings(settingsKey: String, legacyBacktestSettings: Json
     }
 }
 
+/**
+ * Run requests send a ticker-mapping-resolved `betaReferenceTicker` for execution, but the
+ * raw (unmapped) ticker the user actually typed should be what gets persisted to settings.
+ * When present, `settingsBetaReferenceTicker` carries that raw value; substitute it in place
+ * of the resolved one before merging into saved settings.
+ */
+private fun jsonForSettingsSave(json: JsonObject): JsonObject {
+    val rawBetaReferenceTicker = json["settingsBetaReferenceTicker"] ?: return json
+    return buildJsonObject {
+        json.forEach { (k, v) -> if (k != "betaReferenceTicker") put(k, v) }
+        put("betaReferenceTicker", rawBetaReferenceTicker)
+    }
+}
+
 internal fun mergedCommonScenarioSettings(
     existingCommon: JsonObject,
     json: JsonObject,
@@ -1484,7 +1498,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveMergedBacktestSettings(json, backtestSettingsKey) }
+                    runCatching { saveMergedBacktestSettings(jsonForSettingsSave(json), backtestSettingsKey) }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -1635,7 +1649,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
                 if (json["saveSettings"]?.jsonPrimitive?.booleanOrNull != false)
-                    runCatching { saveBacktestSettingsFirstPortfolio(json, rebalanceStrategySettingsKey, rebalanceStrategySettingsKeys) }
+                    runCatching { saveBacktestSettingsFirstPortfolio(jsonForSettingsSave(json), rebalanceStrategySettingsKey, rebalanceStrategySettingsKeys) }
 
                 val fromDate = json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val toDate   = json["toDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
@@ -1767,7 +1781,7 @@ fun Application.configureRouting(httpMode: Boolean = false) {
                 val body = call.receiveText()
                 val json = Json.parseToJsonElement(body).jsonObject
 
-                runCatching { saveBacktestSettings(json, monteCarloSettingsKey) }
+                runCatching { saveBacktestSettings(jsonForSettingsSave(json), monteCarloSettingsKey) }
 
                 val fromDate =
                     json["fromDate"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
