@@ -20,8 +20,10 @@ import { blockStateToSettingsPortfolio, fetchSavedPortfolios, resolvedBlockState
 import { makeUniqueStrategyLabels } from '@/lib/rebalanceStrategyConfig'
 import {
   applyTickerMappingsToPortfolioWithWarnings,
+  applyTickerMappingsToStrategyListWithWarnings,
   hydrateTickerMappingSettings,
   loadTickerMappingSettings,
+  mapTickerExpression,
   selectedTickerMappingSet as resolveSelectedTickerMappingSet,
   TICKER_MAPPINGS_CHANGED_EVENT,
   type TickerMappingSettings,
@@ -257,7 +259,12 @@ export function useRebalanceStrategyPage() {
       selectedTickerMappingSet,
     )
     const portfolioApi = mappedPortfolio.value
-    const settingsPortfolio = blockStateToSettingsPortfolio(runPortfolio, 0)
+    const rawSettingsPortfolio = blockStateToSettingsPortfolio(runPortfolio, 0)
+    const mappedSettingsStrategies = applyTickerMappingsToStrategyListWithWarnings(
+      rawSettingsPortfolio.rebalanceStrategies,
+      selectedTickerMappingSet,
+    )
+    const settingsPortfolio = { ...rawSettingsPortfolio, rebalanceStrategies: mappedSettingsStrategies.value }
     if (portfolioApi.tickers.length === 0) {
       throw new Error('Add at least one ticker with a positive net weight to the portfolio.')
     }
@@ -276,7 +283,8 @@ export function useRebalanceStrategyPage() {
       setStrategies(runStrategies)
     }
 
-    return { portfolioApi, settingsPortfolio, allStrategies, runStrategies, mappingWarnings: mappedPortfolio.warnings }
+    const mappingWarnings = [...new Set([...mappedPortfolio.warnings, ...mappedSettingsStrategies.warnings])]
+    return { portfolioApi, settingsPortfolio, allStrategies, runStrategies, mappingWarnings }
   }, [currentNormalizedStrategies, portfolio, selectedTickerMappingSet, strategies])
 
   const fetchRunResults = useCallback(async (payload: RebalanceStrategyRunPayload) => {
@@ -309,6 +317,10 @@ export function useRebalanceStrategyPage() {
 
     setRunning(true)
     try {
+      const mappedStrategies = applyTickerMappingsToStrategyListWithWarnings(
+        runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
+        selectedTickerMappingSet,
+      )
       const payload: RebalanceStrategyRunPayload = {
         fromDate: fromDate || null,
         toDate: toDate || null,
@@ -316,12 +328,18 @@ export function useRebalanceStrategyPage() {
         portfolio: runInputs.portfolioApi,
         settingsPortfolio: runInputs.settingsPortfolio,
         cashflow: cashflowToPayload(cashflowAmount, cashflowFrequency, guardrailCashflow, { strict: true }),
-        betaReferenceTicker: betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
-        strategies: runInputs.allStrategies.map(strategy => strategyStateToAPI(strategy)),
+        betaReferenceTicker: mapTickerExpression(
+          betaReferenceTicker.trim().toUpperCase() || DEFAULT_BETA_REFERENCE_TICKER,
+          selectedTickerMappingSet,
+        ),
+        strategies: mappedStrategies.value,
         strategyStates: runInputs.runStrategies,
         includeActionDiagnostics,
       }
-      const data = addResultWarnings(await fetchRunResults(payload), runInputs.mappingWarnings)
+      const data = addResultWarnings(
+        await fetchRunResults(payload),
+        [...new Set([...runInputs.mappingWarnings, ...mappedStrategies.warnings])],
+      )
       lastRunPayloadRef.current = payload
       setZeroMarginInterestResults(null)
       setResults(data)
@@ -341,6 +359,7 @@ export function useRebalanceStrategyPage() {
     fromDate,
     includeActionDiagnostics,
     resolveRunInputs,
+    selectedTickerMappingSet,
     startingBalance,
     toDate,
   ])

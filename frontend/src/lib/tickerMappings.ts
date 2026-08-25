@@ -830,11 +830,112 @@ export function applyTickerMappingsToPortfolio<T extends { tickers: WeightedTick
   return applyTickerMappingsToPortfolioWithWarnings(portfolio, mappingSet).value
 }
 
-export function applyTickerMappingsToPortfolioWithWarnings<T extends { tickers: WeightedTicker[] }>(
+export function applyTickerMappingsToPortfolioWithWarnings<T extends { tickers: WeightedTicker[]; rebalanceStrategies?: StrategyApiPayload[] }>(
   portfolio: T,
   mappingSet: TickerMappingSet | null | undefined,
 ): TickerMappingResult<T> {
   if (!mappingSet?.mappings.length) return { value: portfolio, warnings: mappingSet?.resolveWarnings ?? [] }
-  const mapped = applyTickerMappingsToRowsWithWarnings(portfolio.tickers, mappingSet)
-  return { value: { ...portfolio, tickers: mapped.value }, warnings: mapped.warnings }
+  const mappedTickers = applyTickerMappingsToRowsWithWarnings(portfolio.tickers, mappingSet)
+  const mappedStrategies = applyTickerMappingsToStrategyListWithWarnings(portfolio.rebalanceStrategies, mappingSet)
+  const warnings = new Set([...mappedTickers.warnings, ...mappedStrategies.warnings])
+  return {
+    value: { ...portfolio, tickers: mappedTickers.value, rebalanceStrategies: mappedStrategies.value },
+    warnings: [...warnings],
+  }
+}
+
+/**
+ * Reference-ticker fields embedded in a rebalance-strategy API payload
+ * (see `strategyStateToAPI` in types/rebalanceStrategy.ts).
+ */
+export type StrategyApiPayload = Record<string, any>
+
+function mapSingleReferenceTicker(
+  ticker: string | null | undefined,
+  mappingSet: TickerMappingSet,
+  warnings: Set<string>,
+): string | null {
+  if (!ticker) return ticker ?? null
+  const mapped = mapTickerExpressionWithWarnings(ticker, mappingSet)
+  mapped.warnings.forEach(warning => warnings.add(warning))
+  return mapped.value || null
+}
+
+function mapDipSurgeReferenceTickers(
+  items: StrategyApiPayload[] | null | undefined,
+  mappingSet: TickerMappingSet,
+  warnings: Set<string>,
+): StrategyApiPayload[] | null | undefined {
+  if (!items) return items
+  return items.map(item => (
+    item?.referenceTicker
+      ? { ...item, referenceTicker: mapSingleReferenceTicker(item.referenceTicker, mappingSet, warnings) }
+      : item
+  ))
+}
+
+export function applyTickerMappingsToStrategyApi<T extends StrategyApiPayload>(
+  strategy: T,
+  mappingSet: TickerMappingSet | null | undefined,
+): T {
+  return applyTickerMappingsToStrategyApiWithWarnings(strategy, mappingSet).value
+}
+
+export function applyTickerMappingsToStrategyApiWithWarnings<T extends StrategyApiPayload>(
+  strategy: T,
+  mappingSet: TickerMappingSet | null | undefined,
+): TickerMappingResult<T> {
+  if (!mappingSet?.mappings.length) return { value: strategy, warnings: mappingSet?.resolveWarnings ?? [] }
+
+  const warnings = new Set(mappingSet.resolveWarnings ?? [])
+  const value: StrategyApiPayload = { ...strategy }
+  if (value.drawdownMarginOverride?.referenceTicker) {
+    value.drawdownMarginOverride = {
+      ...value.drawdownMarginOverride,
+      referenceTicker: mapSingleReferenceTicker(value.drawdownMarginOverride.referenceTicker, mappingSet, warnings),
+    }
+  }
+  if (value.drawdownBuyOnLowMargin?.referenceTicker) {
+    value.drawdownBuyOnLowMargin = {
+      ...value.drawdownBuyOnLowMargin,
+      referenceTicker: mapSingleReferenceTicker(value.drawdownBuyOnLowMargin.referenceTicker, mappingSet, warnings),
+    }
+  }
+  if (value.vmTimingMr?.momentumReferenceTicker) {
+    value.vmTimingMr = {
+      ...value.vmTimingMr,
+      momentumReferenceTicker: mapSingleReferenceTicker(value.vmTimingMr.momentumReferenceTicker, mappingSet, warnings),
+    }
+  }
+  if (Array.isArray(value.buyTheDip)) value.buyTheDip = mapDipSurgeReferenceTickers(value.buyTheDip, mappingSet, warnings)
+  if (Array.isArray(value.sellOnSurge)) value.sellOnSurge = mapDipSurgeReferenceTickers(value.sellOnSurge, mappingSet, warnings)
+  if (Array.isArray(value.derivedSubStrategies)) {
+    value.derivedSubStrategies = value.derivedSubStrategies.map((d: StrategyApiPayload) => (
+      d?.marginReferenceTicker
+        ? { ...d, marginReferenceTicker: mapSingleReferenceTicker(d.marginReferenceTicker, mappingSet, warnings) }
+        : d
+    ))
+  }
+  return { value: value as T, warnings: [...warnings] }
+}
+
+export function applyTickerMappingsToStrategyList<T extends StrategyApiPayload>(
+  strategies: T[] | null | undefined,
+  mappingSet: TickerMappingSet | null | undefined,
+): T[] | null | undefined {
+  return applyTickerMappingsToStrategyListWithWarnings(strategies, mappingSet).value
+}
+
+export function applyTickerMappingsToStrategyListWithWarnings<T extends StrategyApiPayload>(
+  strategies: T[] | null | undefined,
+  mappingSet: TickerMappingSet | null | undefined,
+): TickerMappingResult<T[] | null | undefined> {
+  if (!strategies || !mappingSet?.mappings.length) return { value: strategies, warnings: mappingSet?.resolveWarnings ?? [] }
+  const warnings = new Set(mappingSet.resolveWarnings ?? [])
+  const value = strategies.map(s => {
+    const mapped = applyTickerMappingsToStrategyApiWithWarnings(s, mappingSet)
+    mapped.warnings.forEach(warning => warnings.add(warning))
+    return mapped.value
+  })
+  return { value, warnings: [...warnings] }
 }

@@ -448,6 +448,10 @@ function serializeTrigger(t: PriceMoveTriggerState): object {
   }
 }
 
+function normalizeReferenceTicker(ticker: string | null | undefined): string {
+  return (ticker ?? '').trim().toUpperCase()
+}
+
 function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   const explicitLimit = parseFloat(d.limit)
   if (d.limitPointIndex === undefined && !Number.isFinite(explicitLimit)) {
@@ -471,7 +475,7 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   const coolingOffDays = parseInt(d.coolingOffDays ?? '', 10)
   const minAdjustmentPct = parseFloat(d.minAdjustmentPct ?? '')
   const portfolioSource = d.portfolioSource || 'REFERENCE_PORTFOLIO'
-  const referenceTicker = (d.referenceTicker ?? '').trim().toUpperCase()
+  const referenceTicker = normalizeReferenceTicker(d.referenceTicker)
   return {
     scope: d.scope,
     allocStrategy: d.scope === 'BASE_PORTFOLIO' ? d.allocStrategy : null,
@@ -485,7 +489,10 @@ function serializeDipSurge(d: DipSurgeState, marginPoints: number[]): object {
   }
 }
 
-function serializeDipSurgeScopes(d: DipSurgeScopeState | DipSurgeState | null | undefined, marginPoints: number[]): object[] {
+function serializeDipSurgeScopes(
+  d: DipSurgeScopeState | DipSurgeState | null | undefined,
+  marginPoints: number[],
+): object[] {
   const scopes = normalizeDipSurgeScopes(d)
   return [scopes.basePortfolio, scopes.individualStock]
     .filter((v): v is DipSurgeState => v !== null)
@@ -842,9 +849,9 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
   const buyCooldownAfterSellHighDays = parseInt(s.buyCooldownAfterSellHighDays ?? '', 10)
   const sellCooldownAfterBuyLowDays = parseInt(s.sellCooldownAfterBuyLowDays ?? '', 10)
   const drawdownOverride = s.drawdownMarginOverride ?? emptyDrawdownMarginOverride()
-  const drawdownReferenceTicker = (drawdownOverride.referenceTicker ?? '').trim().toUpperCase()
+  const drawdownReferenceTicker = normalizeReferenceTicker(drawdownOverride.referenceTicker)
   const vmTimingMr = s.vmTimingMr ?? emptyVmTimingMr()
-  const vmMomentumReferenceTicker = (vmTimingMr.momentumReferenceTicker ?? '').trim().toUpperCase()
+  const vmMomentumReferenceTicker = normalizeReferenceTicker(vmTimingMr.momentumReferenceTicker)
   const serializeDerivedSubStrategy = (d: DerivedSubStrategyState) => {
     const scale = d.scale ?? emptyDerivedTargetScale()
     const steepness = parseFloat(scale.sigmoidSteepness)
@@ -859,7 +866,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
       enabled: d.enabled ?? true,
       marginReferenceSource: d.marginReferenceSource === 'STANDALONE_TICKER' ? 'STANDALONE_TICKER' : 'BASE_STRATEGY',
       marginReferenceTicker: d.marginReferenceSource === 'STANDALONE_TICKER'
-        ? d.marginReferenceTicker.trim().toUpperCase()
+        ? normalizeReferenceTicker(d.marginReferenceTicker)
         : null,
       marginReferenceMetric: d.marginReferenceMetric === 'EQUITY_CUSHION'
         ? 'EQUITY_CUSHION'
@@ -901,7 +908,7 @@ export function strategyStateToAPI(s: RebalStrategyState): object {
     const cfg = d ?? fallback
     if (!cfg.enabled) return null
     const portfolioSource = cfg.portfolioSource || 'REFERENCE_PORTFOLIO'
-    const referenceTicker = (cfg.referenceTicker ?? '').trim().toUpperCase()
+    const referenceTicker = normalizeReferenceTicker(cfg.referenceTicker)
     const momentumLookbackMonths = parseInt(cfg.momentumLookbackMonths ?? '', 10)
     const exitExtensionMonths = parseInt(cfg.exitExtensionMonths ?? '', 10)
     const exitTargetMargin = parseFloat(cfg.exitTargetMargin ?? '')

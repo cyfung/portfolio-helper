@@ -837,6 +837,7 @@
     padding: 1rem;
     box-sizing: border-box;
     position: relative;
+    will-change: transform;
 }
 
 .market-timing-reference-drawdown-chart {
