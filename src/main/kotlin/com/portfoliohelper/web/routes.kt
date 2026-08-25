@@ -985,7 +985,14 @@ internal fun JsonObject.parseCashflowConfig(): CashflowConfig? =
             lowerWithdrawalRate = cf["lowerWithdrawalRate"]?.jsonPrimitive?.doubleOrNull,
             upperWithdrawalRate = cf["upperWithdrawalRate"]?.jsonPrimitive?.doubleOrNull,
             minimumAnnualWithdrawal = cf["minimumAnnualWithdrawal"]?.jsonPrimitive?.doubleOrNull,
-            fixedYears = cf["fixedYears"]?.jsonPrimitive?.intOrNull,
+            fixedPeriods = (cf["fixedPeriods"] as? JsonArray)?.map { el ->
+                val period = el.jsonObject
+                FixedCashflowPeriod(
+                    amount = period["amount"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                    years = period["years"]?.jsonPrimitive?.intOrNull ?: 0,
+                    inflationAdjusted = period["inflationAdjusted"]?.jsonPrimitive?.booleanOrNull ?: false,
+                )
+            } ?: emptyList(),
         )
     }
 

@@ -17,8 +17,7 @@ internal object CashflowPolicy {
 
     fun guardrailPayment(config: CashflowConfig, annualWithdrawal: Double): Double {
         val payments = paymentsPerYear(config.frequency)
-        val isGuardrailMode =
-            config.mode == CashflowMode.GUARDRAIL_WITHDRAWAL || config.mode == CashflowMode.FIXED_THEN_GUARDRAIL
+        val isGuardrailMode = config.mode == CashflowMode.GUARDRAIL_WITHDRAWAL || config.mode == CashflowMode.STAGED
         return if (isGuardrailMode && payments > 0) {
             -annualWithdrawal / payments
         } else {
@@ -26,11 +25,22 @@ internal object CashflowPolicy {
         }
     }
 
-    /** The date the FIXED_THEN_GUARDRAIL mode switches from its fixed cashflow to guardrail withdrawals. */
-    fun guardrailStartDate(config: CashflowConfig?, dates: List<LocalDate>): LocalDate? =
-        config
-            ?.takeIf { it.mode == CashflowMode.FIXED_THEN_GUARDRAIL }
-            ?.let { cfg -> dates.firstOrNull()?.plusYears((cfg.fixedYears ?: 0).toLong()) }
+    /**
+     * The start date of each STAGED fixed period plus, as the final entry, the date the mode
+     * switches over to guardrail withdrawals. Empty for any other mode.
+     */
+    fun periodBoundaries(config: CashflowConfig?, dates: List<LocalDate>): List<LocalDate> {
+        if (config == null || config.mode != CashflowMode.STAGED) return emptyList()
+        val start = dates.firstOrNull() ?: return emptyList()
+        val boundaries = ArrayList<LocalDate>(config.fixedPeriods.size + 1)
+        boundaries.add(start)
+        var cursor = start
+        for (period in config.fixedPeriods) {
+            cursor = cursor.plusYears(period.years.toLong())
+            boundaries.add(cursor)
+        }
+        return boundaries
+    }
 
     fun reviewedAnnualWithdrawal(
         config: CashflowConfig,
@@ -97,7 +107,8 @@ internal class CashflowRuntime(
     private var nextGuardrailPaymentDate: LocalDate? =
         config?.takeIf { it.mode == CashflowMode.GUARDRAIL_WITHDRAWAL }
             ?.let { dates.firstOrNull()?.plusMonths(paymentIntervalMonths(it.frequency).toLong()) }
-    private val guardrailStartDate: LocalDate? = CashflowPolicy.guardrailStartDate(config, dates)
+    private val periodBoundaries: List<LocalDate> = CashflowPolicy.periodBoundaries(config, dates)
+    private var currentPeriodIndex = 0
     private var guardrailActive = false
     val appliedCashflows: MutableList<Double> = MutableList(dates.size) { 0.0 }
 
@@ -114,10 +125,18 @@ internal class CashflowRuntime(
         if (config.mode == CashflowMode.FIXED) {
             return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) config.amount else 0.0
         }
-        if (config.mode == CashflowMode.FIXED_THEN_GUARDRAIL) {
-            val startDate = guardrailStartDate
+        if (config.mode == CashflowMode.STAGED) {
+            val startDate = periodBoundaries.lastOrNull()
             if (startDate == null || curDate < startDate) {
-                return if (BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) config.amount else 0.0
+                while (currentPeriodIndex + 1 < config.fixedPeriods.size &&
+                    curDate >= periodBoundaries[currentPeriodIndex + 1]
+                ) {
+                    currentPeriodIndex++
+                }
+                if (!BacktestService.isCashflowDate(config.frequency, prevDate, curDate)) return 0.0
+                val period = config.fixedPeriods[currentPeriodIndex]
+                val inflationFactor = if (period.inflationAdjusted) inflationFactors.getOrElse(index) { 1.0 } else 1.0
+                return period.amount * inflationFactor
             }
             if (!guardrailActive) {
                 guardrailActive = true

@@ -27,19 +27,17 @@ class BacktestCashflowPolicyTest {
             upperWithdrawalRate = 1.0,
         )
 
-    private fun fixedThenGuardrail(
+    private fun staged(
         frequency: CashflowFrequency,
-        fixedAmount: Double,
-        fixedYears: Int,
+        periods: List<FixedCashflowPeriod>,
         annual: Double,
     ) = CashflowConfig(
-        amount = fixedAmount,
         frequency = frequency,
-        mode = CashflowMode.FIXED_THEN_GUARDRAIL,
+        mode = CashflowMode.STAGED,
         initialAnnualWithdrawal = annual,
         lowerWithdrawalRate = 0.0,
         upperWithdrawalRate = 1.0,
-        fixedYears = fixedYears,
+        fixedPeriods = periods,
     )
 
     @Test
@@ -80,17 +78,42 @@ class BacktestCashflowPolicyTest {
     }
 
     @Test
-    fun `fixed-then-guardrail contributes during the fixed years then withdraws under guardrail`() {
+    fun `staged contributes during the fixed period then withdraws under guardrail`() {
         val dates = dates(LocalDate.of(2024, 1, 15), LocalDate.of(2025, 3, 15))
         val values = BacktestService.computeNoMarginForTest(
             portfolio,
             flatSeries(dates),
             dates,
             10_000.0,
-            fixedThenGuardrail(CashflowFrequency.MONTHLY, fixedAmount = 100.0, fixedYears = 1, annual = 1_200.0),
+            staged(
+                CashflowFrequency.MONTHLY,
+                periods = listOf(FixedCashflowPeriod(amount = 100.0, years = 1)),
+                annual = 1_200.0,
+            ),
         )
 
         assertEquals(11_000.0, values.last())
+    }
+
+    @Test
+    fun `staged contributes through multiple fixed periods with different amounts then withdraws under guardrail`() {
+        val dates = dates(LocalDate.of(2024, 1, 15), LocalDate.of(2026, 2, 15))
+        val values = BacktestService.computeNoMarginForTest(
+            portfolio,
+            flatSeries(dates),
+            dates,
+            10_000.0,
+            staged(
+                CashflowFrequency.MONTHLY,
+                periods = listOf(
+                    FixedCashflowPeriod(amount = 50.0, years = 1),
+                    FixedCashflowPeriod(amount = 100.0, years = 1),
+                ),
+                annual = 1_200.0,
+            ),
+        )
+
+        assertEquals(11_700.0, values.last())
     }
 
     @Test

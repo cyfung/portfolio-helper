@@ -1847,9 +1847,9 @@ object BacktestService {
         BooleanArray(dates.size) { i -> i > 0 && shouldRebalance(strategy, dates[i - 1], dates[i]) }
 
     internal fun cashflowAmounts(dates: List<LocalDate>, cashflow: CashflowConfig?): List<Double> {
-        val guardrailStartDate = CashflowPolicy.guardrailStartDate(cashflow, dates)
+        val periodBoundaries = CashflowPolicy.periodBoundaries(cashflow, dates)
         return dates.mapIndexed { i, date ->
-            if (i == 0) 0.0 else cashflowAmountOnDate(cashflow, dates[i - 1], date, guardrailStartDate)
+            if (i == 0) 0.0 else cashflowAmountOnDate(cashflow, dates[i - 1], date, periodBoundaries)
         }
     }
 
@@ -1857,16 +1857,25 @@ object BacktestService {
         cashflow: CashflowConfig?,
         prevDate: LocalDate,
         curDate: LocalDate,
-        guardrailStartDate: LocalDate? = null,
-    ): Double =
-        if (cashflow != null && isCashflowDate(cashflow.frequency, prevDate, curDate)) {
-            when {
-                cashflow.mode == CashflowMode.FIXED -> cashflow.amount
-                cashflow.mode == CashflowMode.FIXED_THEN_GUARDRAIL &&
-                    (guardrailStartDate == null || curDate < guardrailStartDate) -> cashflow.amount
-                else -> CashflowPolicy.guardrailPayment(cashflow, cashflow.initialAnnualWithdrawal ?: 0.0)
+        periodBoundaries: List<LocalDate> = emptyList(),
+    ): Double {
+        if (cashflow == null || !isCashflowDate(cashflow.frequency, prevDate, curDate)) return 0.0
+        return when (cashflow.mode) {
+            CashflowMode.FIXED -> cashflow.amount
+            CashflowMode.GUARDRAIL_WITHDRAWAL ->
+                CashflowPolicy.guardrailPayment(cashflow, cashflow.initialAnnualWithdrawal ?: 0.0)
+            CashflowMode.STAGED -> {
+                val guardrailStartDate = periodBoundaries.lastOrNull()
+                if (guardrailStartDate == null || curDate >= guardrailStartDate) {
+                    CashflowPolicy.guardrailPayment(cashflow, cashflow.initialAnnualWithdrawal ?: 0.0)
+                } else {
+                    val periodIndex = periodBoundaries.indexOfLast { it <= curDate }
+                        .coerceIn(0, cashflow.fixedPeriods.size - 1)
+                    cashflow.fixedPeriods[periodIndex].amount
+                }
             }
-        } else 0.0
+        }
+    }
 
     internal fun isCashflowDate(frequency: CashflowFrequency, prevDate: LocalDate, curDate: LocalDate): Boolean =
         when (frequency) {

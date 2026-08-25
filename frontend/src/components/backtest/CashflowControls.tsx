@@ -1,6 +1,8 @@
 import {
   CASHFLOW_FREQUENCY_OPTIONS,
+  emptyFixedCashflowPeriod,
   type CashflowFormState,
+  type FixedCashflowPeriodInput,
   type GuardrailCashflowState,
 } from '@/types/backtest'
 
@@ -29,6 +31,18 @@ export default function CashflowControls({
   const updateGuardrail = (patch: Partial<GuardrailCashflowState>) => {
     onGuardrailCashflowChange({ ...guardrailCashflow, ...patch })
   }
+  const updatePeriod = (id: string, patch: Partial<FixedCashflowPeriodInput>) => {
+    updateGuardrail({
+      fixedPeriods: guardrailCashflow.fixedPeriods.map(period =>
+        period.id === id ? { ...period, ...patch } : period),
+    })
+  }
+  const addPeriod = () => {
+    updateGuardrail({ fixedPeriods: [...guardrailCashflow.fixedPeriods, emptyFixedCashflowPeriod()] })
+  }
+  const removePeriod = (id: string) => {
+    updateGuardrail({ fixedPeriods: guardrailCashflow.fixedPeriods.filter(period => period.id !== id) })
+  }
   const startingBalanceId = `${idPrefix}-starting-balance`
   const cashflowAmountId = `${idPrefix}-cashflow-amount`
   const cashflowFrequencyId = `${idPrefix}-cashflow-frequency`
@@ -56,14 +70,12 @@ export default function CashflowControls({
         >
           <option value="FIXED">Fixed Cashflow</option>
           <option value="GUARDRAIL_WITHDRAWAL">Guardrail Withdrawal</option>
-          <option value="FIXED_THEN_GUARDRAIL">Fixed, then Guardrail</option>
+          <option value="STAGED">Staged Fixed Periods, then Guardrail</option>
         </select>
       </div>
-      {(guardrailCashflow.mode === 'FIXED' || guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL') && (
+      {guardrailCashflow.mode === 'FIXED' && (
         <div>
-          <label htmlFor={cashflowAmountId}>
-            {guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL' ? 'Fixed Cashflow Amount' : 'Cashflow Amount'}
-          </label>
+          <label htmlFor={cashflowAmountId}>Cashflow Amount</label>
           <input
             type="number"
             id={cashflowAmountId}
@@ -74,25 +86,49 @@ export default function CashflowControls({
           />
         </div>
       )}
-      {guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL' && (
-        <div>
-          <label htmlFor={`${idPrefix}-fixed-years`}>Fixed Years</label>
-          <input
-            type="number"
-            id={`${idPrefix}-fixed-years`}
-            min="0"
-            step="1"
-            value={guardrailCashflow.fixedYears}
-            onChange={e => updateGuardrail({ fixedYears: e.target.value })}
-          />
+      {guardrailCashflow.mode === 'STAGED' && (
+        <div className="backtest-cashflow-periods">
+          <label>Fixed Periods</label>
+          {guardrailCashflow.fixedPeriods.map((period, i) => (
+            <div key={period.id} className="backtest-cashflow-period-row">
+              <input
+                type="number"
+                aria-label={`Fixed Period ${i + 1} Amount`}
+                placeholder="Amount"
+                step="100"
+                value={period.amount}
+                onChange={e => updatePeriod(period.id, { amount: e.target.value })}
+              />
+              <input
+                type="number"
+                aria-label={`Fixed Period ${i + 1} Years`}
+                placeholder="Years"
+                min="1"
+                step="1"
+                value={period.years}
+                onChange={e => updatePeriod(period.id, { years: e.target.value })}
+              />
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label={`Fixed Period ${i + 1} Inflation-adjusted`}
+                  checked={period.inflationAdjusted}
+                  onChange={e => updatePeriod(period.id, { inflationAdjusted: e.target.checked })}
+                />
+                Inflation-adjusted
+              </label>
+              <button type="button" onClick={() => removePeriod(period.id)}>Remove</button>
+            </div>
+          ))}
+          <button type="button" onClick={addPeriod}>Add Fixed Period</button>
         </div>
       )}
-      {(guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' || guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL') && (
+      {(guardrailCashflow.mode === 'GUARDRAIL_WITHDRAWAL' || guardrailCashflow.mode === 'STAGED') && (
         <>
           <div>
             <label htmlFor={`${idPrefix}-initial-annual-withdrawal`}>
-              {guardrailCashflow.mode === 'FIXED_THEN_GUARDRAIL'
-                ? 'Initial Annual Withdrawal (after fixed years)'
+              {guardrailCashflow.mode === 'STAGED'
+                ? 'Initial Annual Withdrawal (after fixed periods)'
                 : 'Initial Annual Withdrawal'}
             </label>
             <input

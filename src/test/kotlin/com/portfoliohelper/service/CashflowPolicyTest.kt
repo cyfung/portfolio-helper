@@ -19,18 +19,16 @@ class CashflowPolicyTest {
         minimumAnnualWithdrawal = minimum,
     )
 
-    private fun fixedThenGuardrail(
+    private fun staged(
         frequency: CashflowFrequency = CashflowFrequency.MONTHLY,
-        fixedAmount: Double = 500.0,
-        fixedYears: Int? = 1,
+        periods: List<FixedCashflowPeriod> = listOf(FixedCashflowPeriod(amount = 500.0, years = 1)),
     ) = CashflowConfig(
-        amount = fixedAmount,
         frequency = frequency,
-        mode = CashflowMode.FIXED_THEN_GUARDRAIL,
+        mode = CashflowMode.STAGED,
         initialAnnualWithdrawal = 12_000.0,
         lowerWithdrawalRate = 0.03,
         upperWithdrawalRate = 0.06,
-        fixedYears = fixedYears,
+        fixedPeriods = periods,
     )
 
     @Test
@@ -111,24 +109,24 @@ class CashflowPolicyTest {
     }
 
     @Test
-    fun `invalid fixed-then-guardrail values are rejected`() {
+    fun `invalid staged values are rejected`() {
         assertFailsWith<IllegalArgumentException> {
-            fixedThenGuardrail(fixedYears = null).validate()
+            staged(periods = emptyList()).validate()
         }
         assertFailsWith<IllegalArgumentException> {
-            fixedThenGuardrail(fixedYears = -1).validate()
+            staged(periods = listOf(FixedCashflowPeriod(amount = 500.0, years = 0))).validate()
         }
         assertFailsWith<IllegalArgumentException> {
-            fixedThenGuardrail().copy(initialAnnualWithdrawal = 0.0).validate()
+            staged().copy(initialAnnualWithdrawal = 0.0).validate()
         }
     }
 
     @Test
-    fun `fixed-then-guardrail pays the fixed amount before the switch and reviewed guardrail payments after`() {
+    fun `staged pays the fixed period's amount before the switch and reviewed guardrail payments after`() {
         val start = LocalDate.of(2024, 7, 15)
         val dates = (0L..24L).map(start::plusMonths)
         val inflationFactors = List(24) { 1.0 } + 1.02
-        val runtime = CashflowRuntime(fixedThenGuardrail(), dates, inflationFactors)
+        val runtime = CashflowRuntime(staged(), dates, inflationFactors)
 
         for (index in 1..11) {
             assertEquals(500.0, runtime.requestedCashflow(index, 1_000_000.0, 1.0))
@@ -139,6 +137,47 @@ class CashflowPolicyTest {
             runtime.requestedCashflow(index, 1_000_000.0, 1.0)
         }
         assertEquals(-1_122.0, runtime.requestedCashflow(24, 1_000_000.0, 1.05), 1e-9)
+    }
+
+    @Test
+    fun `staged supports multiple fixed periods with different amounts before the switch`() {
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..36L).map(start::plusMonths)
+        val runtime = CashflowRuntime(
+            staged(periods = listOf(
+                FixedCashflowPeriod(amount = 500.0, years = 1),
+                FixedCashflowPeriod(amount = 800.0, years = 1),
+            )),
+            dates,
+        )
+
+        for (index in 1..11) {
+            assertEquals(500.0, runtime.requestedCashflow(index, 1_000_000.0, 1.0))
+        }
+        for (index in 12..23) {
+            assertEquals(800.0, runtime.requestedCashflow(index, 1_000_000.0, 1.0))
+        }
+        assertEquals(0.0, runtime.requestedCashflow(24, 1_000_000.0, 1.0))
+        assertEquals(-1_000.0, runtime.requestedCashflow(25, 1_000_000.0, 1.0))
+    }
+
+    @Test
+    fun `staged fixed period applies inflation adjustment when requested`() {
+        val start = LocalDate.of(2024, 7, 15)
+        val dates = (0L..12L).map(start::plusMonths)
+        val inflationFactors = List(6) { 1.0 } + List(7) { 1.05 }
+        val runtime = CashflowRuntime(
+            staged(periods = listOf(FixedCashflowPeriod(amount = 1_000.0, years = 1, inflationAdjusted = true))),
+            dates,
+            inflationFactors,
+        )
+
+        for (index in 1..5) {
+            assertEquals(1_000.0, runtime.requestedCashflow(index, 1_000_000.0, 1.0), 1e-9)
+        }
+        for (index in 6..11) {
+            assertEquals(1_050.0, runtime.requestedCashflow(index, 1_000_000.0, 1.0), 1e-9)
+        }
     }
 
     @Test

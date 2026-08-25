@@ -125,7 +125,13 @@ fun PortfolioConfig.withoutPlaceholderTickers(): PortfolioConfig {
 
 enum class CashflowFrequency { NONE, MONTHLY, QUARTERLY, YEARLY }
 
-enum class CashflowMode { FIXED, GUARDRAIL_WITHDRAWAL, FIXED_THEN_GUARDRAIL }
+enum class CashflowMode { FIXED, GUARDRAIL_WITHDRAWAL, STAGED }
+
+data class FixedCashflowPeriod(
+    val amount: Double,
+    val years: Int,
+    val inflationAdjusted: Boolean = false,
+)
 
 data class CashflowConfig(
     val amount: Double = 0.0,
@@ -135,10 +141,10 @@ data class CashflowConfig(
     val lowerWithdrawalRate: Double? = null,
     val upperWithdrawalRate: Double? = null,
     val minimumAnnualWithdrawal: Double? = null,
-    val fixedYears: Int? = null,
+    val fixedPeriods: List<FixedCashflowPeriod> = emptyList(),
 ) {
     fun validate() {
-        if (mode == CashflowMode.GUARDRAIL_WITHDRAWAL || mode == CashflowMode.FIXED_THEN_GUARDRAIL) {
+        if (mode == CashflowMode.GUARDRAIL_WITHDRAWAL || mode == CashflowMode.STAGED) {
             require(frequency != CashflowFrequency.NONE) {
                 "Guardrail withdrawal frequency must be monthly, quarterly, or yearly."
             }
@@ -155,9 +161,14 @@ data class CashflowConfig(
                 "Minimum annual withdrawal must be non-negative."
             }
         }
-        if (mode == CashflowMode.FIXED_THEN_GUARDRAIL) {
-            require(fixedYears != null && fixedYears >= 0) {
-                "Fixed years must be a non-negative whole number."
+        if (mode == CashflowMode.STAGED) {
+            require(fixedPeriods.isNotEmpty()) {
+                "At least one fixed period is required."
+            }
+            fixedPeriods.forEachIndexed { i, period ->
+                require(period.years > 0) {
+                    "Fixed period ${i + 1} years must be greater than 0."
+                }
             }
         }
     }
