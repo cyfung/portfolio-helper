@@ -71,7 +71,9 @@ describe('cashflow controls', () => {
     expect(markup).toContain('Fixed Period 1 Amount')
     expect(markup).toContain('Fixed Period 2 Years')
     expect(markup).toContain('Fixed Period 2 Inflation-adjusted')
-    expect(markup).toContain('Add Fixed Period')
+    expect(markup).toContain('Remove Fixed Period 1')
+    expect(markup).toContain('Remove Fixed Period 2')
+    expect(markup).toContain('+ Add Period')
     expect(markup).toContain('Initial Annual Withdrawal (after fixed periods)')
     expect(markup).toContain('Lower Withdrawal-Rate Limit (%)')
     expect(markup).toContain('Upper Withdrawal-Rate Limit (%)')
@@ -104,7 +106,7 @@ describe('cashflow controls', () => {
       />,
     )
 
-    expect(markup).toContain('Add Fixed Period')
+    expect(markup).toContain('+ Add Period')
     expect(markup).not.toContain('Fixed Period 1 Amount')
   })
 })
