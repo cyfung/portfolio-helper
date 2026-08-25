@@ -676,6 +676,7 @@ object MonteCarloService {
 
         val portfolioResults = MonteCarloParallel.parallelMapIndexed(portfolioCurveConfigs) { pi, config ->
             val curveResults = MonteCarloParallel.parallelMapIndexed(config.allLabels) { ci, label ->
+                val annualCurves = annualPercentileCurves(annualValues[pi][ci])
                 val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
                     val simIdx = pctSimIndices[pi][ci][pctIdx]
                     val path = fullPaths[simIdx]!!
@@ -734,7 +735,7 @@ object MonteCarloService {
                         values = curve.points.map { it.value }
                         stats = curve.toMonteCarloStats(years, rfAnnualized, syntheticCashflows, benchmarkValues)
                     }
-                    val endValue = values.last()
+                    val endValue = annualCurves[pctIdx].points.last()
                     val done = resultPathsCompleted.incrementAndGet()
                     if (shouldPublishProgress(done, finalPathSlots, resultPathsProgressPublishedAt)) {
                         updateProgress(
@@ -782,7 +783,7 @@ object MonteCarloService {
                     betaPctValues[pi][ci],
                     volPctValues[pi][ci],
                     longestDdPctValues[pi][ci],
-                    annualPercentileCurves(annualValues[pi][ci]),
+                    annualCurves,
                 )
             }
             MonteCarloPortfolioResult(config.portfolio.label, curveResults)
@@ -791,6 +792,7 @@ object MonteCarloService {
             if (inflationDailyRates != null && realPctSimIndices != null && realMetricPercentiles != null) {
                 MonteCarloParallel.parallelMapIndexed(portfolioCurveConfigs) { pi, config ->
                     val curveResults = MonteCarloParallel.parallelMapIndexed(config.allLabels) { ci, label ->
+                        val annualCurves = annualPercentileCurves(annualRealValues!![pi][ci])
                         val percentilePaths = percentiles.mapIndexed { pctIdx, pct ->
                             val simIdx = realPctSimIndices[pi][ci][pctIdx]
                             val path = fullPaths[simIdx]!!
@@ -846,7 +848,7 @@ object MonteCarloService {
                             MonteCarloPercentilePath(
                                 pct,
                                 values.toList(),
-                                values.last(),
+                                annualCurves[pctIdx].points.last(),
                                 stats.cagr,
                                 stats.maxDrawdown,
                                 stats.sharpe,
@@ -873,7 +875,7 @@ object MonteCarloService {
                             realMetricPercentiles.beta[pi][ci],
                             realMetricPercentiles.volatility[pi][ci],
                             realMetricPercentiles.longestDrawdown[pi][ci],
-                            annualPercentileCurves(annualRealValues!![pi][ci]),
+                            annualCurves,
                         )
                     }
                     MonteCarloPortfolioResult(config.portfolio.label, curveResults)
