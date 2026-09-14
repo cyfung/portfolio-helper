@@ -16,6 +16,7 @@ data class IbkrCurrencyInterest(
     val dailyInterestUsd: Double,            // actual daily interest for current loan
     val hypotheticalDailyUsd: Double,        // daily interest if all debt moved to this ccy
     val displayRateText: String,             // e.g. "5.123% (4.830%)" or "4.830%"
+    val benchmarkEffectiveDate: String,
     val nativeBalance: Double,               // actual signed balance (positive = holding, negative = borrowing)
     val fxRateUsd: Double                    // price of 1 unit of this ccy in USD (USD itself = 1.0)
 )
@@ -68,8 +69,9 @@ class IbkrInterestService(
         }
 
         val relevantCurrencyErrors = ratesSnap.currencyErrors.filterKeys { it in marginCurrencies }
-        if (relevantCurrencyErrors.isNotEmpty()) {
-            return errorSnapshot(relevantCurrencyErrors.values.joinToString(" "), ratesSnap.lastFetch)
+        val unavailableCurrencyErrors = relevantCurrencyErrors.filterKeys { it !in allRates }
+        if (unavailableCurrencyErrors.isNotEmpty()) {
+            return errorSnapshot(unavailableCurrencyErrors.values.joinToString(" "), ratesSnap.lastFetch)
         }
 
         if (allRates.isEmpty()) return null
@@ -84,7 +86,7 @@ class IbkrInterestService(
         for (ccy in marginCurrencies) {
             val rates = allRates[ccy] ?: continue
             val tiers = rates.tiers
-            val baseRate = tiers.firstOrNull()?.rate ?: continue
+            val firstTierResolvedMarginRate = tiers.firstOrNull()?.rate ?: continue
 
             val fxRate: Double = when (ccy) {
                 "USD" -> 1.0
@@ -96,7 +98,7 @@ class IbkrInterestService(
             val scaleFactor = (scale ?: 100.0) / 100.0
             val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0)) * scaleFactor
             val blended = if (nativeLoan > 0) blendedRate(tiers, nativeLoan) else null
-            val effectiveRate = blended ?: baseRate
+            val effectiveRate = blended ?: firstTierResolvedMarginRate
             val days = CurrencyConventions.getDaysInYear(ccy)
 
             val nativeDaily = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days else 0.0
@@ -106,7 +108,7 @@ class IbkrInterestService(
             // Use 0.0 when totalMarginUsd == 0 so blendedRate returns null (base tier shown)
             val hypotheticalNative = if (totalMarginUsd > 0) totalMarginUsd / fxRate else 0.0
             val hypotheticalBlended = blendedRate(tiers, hypotheticalNative)
-            val hypotheticalRate = hypotheticalBlended ?: baseRate
+            val hypotheticalRate = hypotheticalBlended ?: firstTierResolvedMarginRate
             val hypotheticalDaily = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
 
             if (totalMarginUsd > 0 && (cheapestCcy == null || hypotheticalDaily < cheapestDailyUsd)) {
@@ -115,9 +117,9 @@ class IbkrInterestService(
             }
 
             val displayRateText = if (hypotheticalBlended != null)
-                "%.3f%% (%.3f%%)".format(hypotheticalBlended, baseRate)
+                "%.3f%% (%.3f%%)".format(hypotheticalBlended, firstTierResolvedMarginRate)
             else
-                "%.3f%%".format(baseRate)
+                "%.3f%%".format(firstTierResolvedMarginRate)
 
             perCurrency += IbkrCurrencyInterest(
                 currency = ccy,
@@ -126,6 +128,7 @@ class IbkrInterestService(
                 dailyInterestUsd = dailyInterestUsd,
                 hypotheticalDailyUsd = hypotheticalDaily,
                 displayRateText = displayRateText,
+                benchmarkEffectiveDate = rates.benchmarkEffectiveDate.toString(),
                 nativeBalance = (nativeMargin[ccy] ?: 0.0) * scaleFactor,
                 fxRateUsd = fxRate
             )
@@ -154,7 +157,8 @@ class IbkrInterestService(
             savingsUsd = savingsUsd,
             label = label,
             perCurrency = perCurrency,
-            lastFetch = ratesSnap.lastFetch
+            lastFetch = ratesSnap.lastFetch,
+            errorMessage = relevantCurrencyErrors.values.joinToString(" ").ifBlank { null }
         )
     }
 

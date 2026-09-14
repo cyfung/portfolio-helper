@@ -145,6 +145,7 @@ export interface PortfolioTotalsEvent {
 export interface IbkrRateCurrency {
   currency: string
   displayRateText: string
+  benchmarkEffectiveDate: string
   dailyInterestUsd: number
 }
 

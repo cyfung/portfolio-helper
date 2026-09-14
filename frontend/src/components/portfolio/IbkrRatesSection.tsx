@@ -38,13 +38,14 @@ export default function IbkrRatesSection() {
           <>
             <table className="ibkr-rates-table">
               <thead>
-                <tr><th>CCY</th><th>IBKR Pro Rate</th></tr>
+                <tr><th>CCY</th><th>IBKR Pro Rate</th><th>BM effective</th></tr>
               </thead>
               <tbody>
                 {data.perCurrency.map(ci => (
                   <tr key={ci.currency}>
                     <td className="ibkr-rate-currency">{ci.currency}</td>
                     <td className="ibkr-rate-value">{ci.displayRateText}</td>
+                    <td className="ibkr-rate-date">{ci.benchmarkEffectiveDate}</td>
                   </tr>
                 ))}
               </tbody>

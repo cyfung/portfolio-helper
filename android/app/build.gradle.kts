@@ -94,6 +94,8 @@ dependencies {
     implementation(libs.bundles.ktor)
     implementation(libs.jsoup)
 
+    testImplementation(kotlin("test"))
+
 }
 
 tasks.register("releaseAab") {

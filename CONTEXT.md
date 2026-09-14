@@ -71,3 +71,19 @@ _Avoid_: Temporary bankruptcy, negative portfolio value
 **Annual percentile curve**:
 A series whose value at each simulated year is the independently ranked portfolio-value percentile across all simulations at that year. Its connected points can come from different simulations and do not describe one simulated path.
 _Avoid_: Percentile path, representative simulation
+
+**Margin-rate tier spread**:
+The currency- and loan-size-specific percentage added to an IBKR benchmark when resolving a margin borrowing rate.
+_Avoid_: Margin rate, charged rate
+
+**Benchmark rate**:
+The currency-specific reference percentage underlying IBKR margin borrowing rates.
+_Avoid_: Base rate, margin rate
+
+**Benchmark effective date**:
+The date on which a benchmark rate became effective; carried-forward values retain their earlier effective date.
+_Avoid_: Fetch date, page date
+
+**Resolved margin rate**:
+The benchmark rate plus the applicable margin-rate tier spread.
+_Avoid_: Benchmark rate, tier spread

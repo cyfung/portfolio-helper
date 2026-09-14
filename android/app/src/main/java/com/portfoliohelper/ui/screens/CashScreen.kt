@@ -223,7 +223,6 @@ fun IbkrRatesSection(
                 lineHeight = 16.sp,
                 modifier = Modifier.padding(horizontal = 12.dp)
             )
-            return@Column
         }
         Spacer(Modifier.height(2.dp))
 
@@ -246,7 +245,10 @@ fun IbkrRatesSection(
                 Box(Modifier.weight(0.4f))
                 // Col 3: rate text, right-aligned
                 Row(modifier = Modifier.weight(1.5f), horizontalArrangement = Arrangement.End) {
-                    MonoText(ci.displayRateText, color = ext.textSecondary, fontSize = 13.sp)
+                    Column(horizontalAlignment = Alignment.End) {
+                        MonoText(ci.displayRateText, color = ext.textSecondary, fontSize = 13.sp)
+                        MonoText("BM ${ci.benchmarkEffectiveDate}", color = ext.textTertiary, fontSize = 10.sp)
+                    }
                 }
                 // Col 4: daily interest in display currency, right-aligned
                 val dailyDisplay = ci.dailyInterestUsd * fxToDisplay

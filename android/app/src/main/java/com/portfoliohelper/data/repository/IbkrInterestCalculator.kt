@@ -5,6 +5,7 @@ import com.portfoliohelper.data.model.CashEntry
 data class IbkrCurrencyInterest(
     val currency: String,
     val displayRateText: String,
+    val benchmarkEffectiveDate: String,
     val dailyInterestUsd: Double,
     val hypotheticalDailyUsd: Double,
     val nativeBalance: Double,   // actual signed balance (positive = holding, negative = borrowing)
@@ -54,8 +55,9 @@ object IbkrInterestCalculator {
         }
 
         val relevantCurrencyErrors = ratesSnap.currencyErrors.filterKeys { it in marginCurrencies }
-        if (relevantCurrencyErrors.isNotEmpty()) {
-            return errorResult(relevantCurrencyErrors.values.joinToString(" "))
+        val unavailableCurrencyErrors = relevantCurrencyErrors.filterKeys { it !in allRates }
+        if (unavailableCurrencyErrors.isNotEmpty()) {
+            return errorResult(unavailableCurrencyErrors.values.joinToString(" "))
         }
 
         // Negative totalMarginUsd means net borrowing; positive means net long (no borrowing needed)
@@ -69,14 +71,14 @@ object IbkrInterestCalculator {
         for (ccy in marginCurrencies) {
             val rates = allRates[ccy] ?: continue
             val tiers = rates.tiers
-            val baseRate = tiers.firstOrNull()?.rate ?: continue
+            val firstTierResolvedMarginRate = tiers.firstOrNull()?.rate ?: continue
             val fxRate = if (ccy == "USD") 1.0 else (fxRates[ccy] ?: continue)
             val days = daysInYear[ccy] ?: 360
 
             // Interest is charged on the net loan per currency only (positive balance = no interest)
             val nativeLoan = maxOf(0.0, -(nativeMargin[ccy] ?: 0.0))
             val blended = if (nativeLoan > 0) blendedRate(tiers, nativeLoan) else null
-            val effectiveRate = blended ?: baseRate
+            val effectiveRate = blended ?: firstTierResolvedMarginRate
             val dailyInterestUsd = if (nativeLoan > 0) nativeLoan * effectiveRate / 100.0 / days * fxRate else 0.0
             currentDailyUsd += dailyInterestUsd
 
@@ -84,7 +86,7 @@ object IbkrInterestCalculator {
             // Use 0.0 when effectiveBorrowingUsd == 0 so blendedRate always returns null (base tier).
             val hypotheticalNative = if (effectiveBorrowingUsd > 0) effectiveBorrowingUsd / fxRate else 0.0
             val hypotheticalBlended = blendedRate(tiers, hypotheticalNative)
-            val hypotheticalRate = hypotheticalBlended ?: baseRate
+            val hypotheticalRate = hypotheticalBlended ?: firstTierResolvedMarginRate
             val hypotheticalDaily = hypotheticalNative * hypotheticalRate / 100.0 / days * fxRate
 
             if (effectiveBorrowingUsd > 0 && (cheapestCcy == null || hypotheticalDaily < cheapestDailyUsd)) {
@@ -93,13 +95,14 @@ object IbkrInterestCalculator {
             }
 
             val displayRateText = if (hypotheticalBlended != null)
-                "%.3f%% (%.3f%%)".format(hypotheticalBlended, baseRate)
+                "%.3f%% (%.3f%%)".format(hypotheticalBlended, firstTierResolvedMarginRate)
             else
-                "%.3f%%".format(baseRate)
+                "%.3f%%".format(firstTierResolvedMarginRate)
 
             perCurrency += IbkrCurrencyInterest(
                 currency = ccy,
                 displayRateText = displayRateText,
+                benchmarkEffectiveDate = rates.benchmarkEffectiveDate.toString(),
                 dailyInterestUsd = dailyInterestUsd,
                 hypotheticalDailyUsd = hypotheticalDaily,
                 nativeBalance = nativeMargin[ccy] ?: 0.0,
@@ -130,7 +133,8 @@ object IbkrInterestCalculator {
             savingsUsd = savingsUsd,
             label = label,
             labelAction = effectiveLabelAction,
-            perCurrency = perCurrency
+            perCurrency = perCurrency,
+            errorMessage = relevantCurrencyErrors.values.joinToString(" ").ifBlank { null }
         )
     }
 
