@@ -21,7 +21,7 @@ import {
   refreshSavedPortfolios,
   useSavedPortfolios,
 } from '@/lib/savedPortfolioCache'
-import { parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
+import { formatSwapInput, parseInstrumentExpression, parseSwapInput } from '@/lib/portfolioComposition'
 import {
   portfolioListDropTarget,
   portfolioRowDropPosition,
@@ -39,8 +39,18 @@ interface Props {
 
 const PORTFOLIO_ROW_DRAG_TYPE = 'application/x-portfolio-row'
 
+function swapEditorRowInput(row: Pick<SwapEditorRow, 'sources' | 'legs'>) {
+  return formatSwapInput({
+    sources: row.sources.map(source => ({ instrument: source.instrument, multiplier: Number(source.multiplier) })),
+    legs: row.legs.map(leg => ({ instrument: leg.instrument, multiplier: Number(leg.multiplier) })),
+  })
+}
+
 function validateSwapDraft(row: SwapEditorRow) {
-  const sourceInvalid = parseInstrumentExpression(row.source) == null
+  const sourceErrors = row.sources.map(source => ({
+    instrumentInvalid: parseInstrumentExpression(source.instrument) == null,
+    multiplierInvalid: !Number.isFinite(Number(source.multiplier)) || Number(source.multiplier) <= 0,
+  }))
   const amountInvalid = row.transferMode === 'AMOUNT' &&
     (!Number.isFinite(Number(row.transferAmount)) || Number(row.transferAmount) <= 0)
   const legErrors = row.legs.map(leg => ({
@@ -48,19 +58,18 @@ function validateSwapDraft(row: SwapEditorRow) {
     multiplierInvalid: !Number.isFinite(Number(leg.multiplier)) || Number(leg.multiplier) === 0,
   }))
   return {
-    sourceInvalid,
+    sourceErrors,
     amountInvalid,
     legErrors,
-    invalid: sourceInvalid || amountInvalid || row.legs.length === 0 ||
+    invalid: parseSwapInput(swapEditorRowInput(row)) == null || row.sources.length === 0 ||
+      sourceErrors.some(error => error.instrumentInvalid || error.multiplierInvalid) ||
+      amountInvalid || row.legs.length === 0 ||
       legErrors.some(error => error.instrumentInvalid || error.multiplierInvalid),
   }
 }
 
-function formatSwapEditorRow(row: Pick<SwapEditorRow, 'source' | 'legs'>) {
-  const raw = `${row.source} > ${row.legs.map(leg => {
-    const multiplier = Number(leg.multiplier)
-    return multiplier === 1 ? leg.instrument : `${multiplier} ${leg.instrument}`
-  }).join(' + ')}`
+function formatSwapEditorRow(row: Pick<SwapEditorRow, 'sources' | 'legs'>) {
+  const raw = swapEditorRowInput(row)
   return parseSwapInput(raw)?.formatted ?? raw
 }
 
@@ -188,7 +197,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       tickers: [...localRef.current.tickers, {
         id,
         type: 'SWAP',
-        source: '',
+        sources: [{ id: `${id}-source-0`, instrument: '', multiplier: '1' }],
         transferMode: 'AMOUNT',
         transferAmount: '',
         legs: [{ id: `${id}-leg-0`, instrument: '', multiplier: '1' }],
@@ -198,6 +207,9 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
 
   function openSwapDialog(row: SwapEditorRow) {
     const draft = structuredClone(row)
+    if (draft.sources.length === 0) {
+      draft.sources.push({ id: `${draft.id}-source-0`, instrument: '', multiplier: '1' })
+    }
     if (draft.legs.length === 0) {
       draft.legs.push({ id: `${draft.id}-leg-0`, instrument: '', multiplier: '1' })
     }
@@ -213,14 +225,19 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
       }, 0)
       return
     }
+    const parsed = parseSwapInput(swapEditorRowInput(swapDialog.draft))!
     const normalizedDraft: SwapEditorRow = {
       ...swapDialog.draft,
-      source: parseInstrumentExpression(swapDialog.draft.source)!,
+      sources: parsed.sources.map((source, index) => ({
+        id: swapDialog.draft.sources[index]?.id ?? `${swapDialog.draft.id}-source-${index}`,
+        instrument: source.instrument,
+        multiplier: String(source.multiplier),
+      })),
       transferAmount: swapDialog.draft.transferMode === 'AMOUNT'
         ? String(Number(swapDialog.draft.transferAmount))
         : '',
-      legs: swapDialog.draft.legs.map(leg => ({
-        ...leg,
+      legs: parsed.legs.map((leg, index) => ({
+        id: swapDialog.draft.legs[index]?.id ?? `${swapDialog.draft.id}-leg-${index}`,
         instrument: parseInstrumentExpression(leg.instrument)!,
         multiplier: String(Number(leg.multiplier)),
       })),
@@ -247,7 +264,11 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     }
     const next: SwapEditorRow = {
       ...row,
-      source: parsed.source,
+      sources: parsed.sources.map((source, index) => ({
+        id: row.sources[index]?.id ?? `${row.id}-source-${index}`,
+        instrument: source.instrument,
+        multiplier: String(source.multiplier),
+      })),
       legs: parsed.legs.map((leg, index) => ({
         id: row.legs[index]?.id ?? `${row.id}-leg-${index}`,
         instrument: leg.instrument,
@@ -484,7 +505,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
     if (row.type === 'PORTFOLIO_REFERENCE') {
       return `Drag ${row.portfolioName || 'unnamed'} portfolio reference row`
     }
-    if (row.type === 'SWAP') return `Drag ${row.source || 'unnamed'} swap row`
+    if (row.type === 'SWAP') return `Drag ${row.sources[0]?.instrument || 'unnamed'} swap row`
     return `Drag ${row.instrument || 'unnamed'} row`
   }
 
@@ -1026,19 +1047,54 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
             {swapDialog.submitted && swapDialogValidation?.invalid && (
               <div className="ticker-config-error" role="alert">Correct the highlighted swap fields.</div>
             )}
-            <label className="ticker-config-field">
-              <span>Source</span>
-              <input
-                autoFocus
-                className={swapDialog.submitted && swapDialogValidation?.sourceInvalid ? 'input-error' : ''}
-                aria-invalid={swapDialog.submitted && swapDialogValidation?.sourceInvalid}
-                value={swapDialog.draft.source}
-                onChange={e => setSwapDialog({ ...swapDialog, draft: { ...swapDialog.draft, source: e.target.value.toUpperCase() } })}
-              />
-              {swapDialog.submitted && swapDialogValidation?.sourceInvalid && (
-                <small className="swap-field-error">Enter a valid source instrument.</small>
-              )}
-            </label>
+            <div className="swap-dialog-legs">
+              <span>Sources</span>
+              {swapDialog.draft.sources.map((source, index) => (
+                <div className="swap-leg" key={source.id}>
+                  <label className="swap-leg-field">
+                    <input
+                      autoFocus={index === 0}
+                      aria-label="Swap source"
+                      className={swapDialog.submitted && swapDialogValidation?.sourceErrors[index]?.instrumentInvalid ? 'input-error' : ''}
+                      aria-invalid={swapDialog.submitted && swapDialogValidation?.sourceErrors[index]?.instrumentInvalid}
+                      placeholder="Instrument"
+                      value={source.instrument}
+                      onChange={e => setSwapDialog({
+                        ...swapDialog,
+                        draft: { ...swapDialog.draft, sources: swapDialog.draft.sources.map(item => item.id === source.id ? { ...item, instrument: e.target.value.toUpperCase() } : item) },
+                      })}
+                    />
+                    {swapDialog.submitted && swapDialogValidation?.sourceErrors[index]?.instrumentInvalid && (
+                      <small className="swap-field-error">Enter a valid source.</small>
+                    )}
+                  </label>
+                  <label className="swap-leg-field swap-leg-multiplier">
+                    <input
+                      aria-label="Swap source multiplier"
+                      className={swapDialog.submitted && swapDialogValidation?.sourceErrors[index]?.multiplierInvalid ? 'input-error' : ''}
+                      aria-invalid={swapDialog.submitted && swapDialogValidation?.sourceErrors[index]?.multiplierInvalid}
+                      placeholder="Multiplier"
+                      value={source.multiplier}
+                      onChange={e => setSwapDialog({
+                        ...swapDialog,
+                        draft: { ...swapDialog.draft, sources: swapDialog.draft.sources.map(item => item.id === source.id ? { ...item, multiplier: e.target.value } : item) },
+                      })}
+                    />
+                    {swapDialog.submitted && swapDialogValidation?.sourceErrors[index]?.multiplierInvalid && (
+                      <small className="swap-field-error">Enter a positive multiplier.</small>
+                    )}
+                  </label>
+                  {swapDialog.draft.sources.length > 1 && <button type="button" aria-label={`Remove source ${source.instrument || index + 1}`} onClick={() => setSwapDialog({
+                    ...swapDialog,
+                    draft: { ...swapDialog.draft, sources: swapDialog.draft.sources.filter(item => item.id !== source.id) },
+                  })}>−</button>}
+                </div>
+              ))}
+              <button type="button" onClick={() => setSwapDialog({
+                ...swapDialog,
+                draft: { ...swapDialog.draft, sources: [...swapDialog.draft.sources, { id: newId(), instrument: '', multiplier: '1' }] },
+              })}>+ Source</button>
+            </div>
             <div className="swap-dialog-transfer">
               <label className="ticker-config-field">
                 <span>Transfer</span>
@@ -1101,7 +1157,7 @@ const PortfolioBlock = React.memo(function PortfolioBlock({ idx, value, onChange
                       <small className="swap-field-error">Enter a non-zero multiplier.</small>
                     )}
                   </label>
-                  {swapDialog.draft.legs.length > 1 && <button type="button" onClick={() => setSwapDialog({
+                  {swapDialog.draft.legs.length > 1 && <button type="button" aria-label={`Remove destination ${leg.instrument || index + 1}`} onClick={() => setSwapDialog({
                     ...swapDialog,
                     draft: { ...swapDialog.draft, legs: swapDialog.draft.legs.filter(item => item.id !== leg.id) },
                   })}>−</button>}

@@ -714,7 +714,8 @@ function formatMappedSwapExpression(
   mapSegment: (ticker: string) => string,
 ) {
   if (!swap.legs) return formatSwapExpression(mapSegment(from), mapSegment(swap.to), swap.factor)
-  return `${mapSegment(from)} > ${swap.legs.map(leg => formatSwapLeg(mapSegment(leg.ticker), leg.weight)).join(' + ')}`
+  const sources = swap.sources ?? [{ ticker: from, weight: 1 }]
+  return `${sources.map(source => formatSwapLeg(mapSegment(source.ticker), source.weight)).join(' + ')} > ${swap.legs.map(leg => formatSwapLeg(mapSegment(leg.ticker), leg.weight)).join(' + ')}`
 }
 
 function normalizeMappedTickerExpression(ticker: string): string {
@@ -737,18 +738,22 @@ function mapTickerExpressionForSingleMapping(
 
   const swap = parseSwapExpression(rawTicker)
   if (swap) {
-    const from = mapTickerExpressionForSingleMapping(swap.from, mapping)
+    const sources = (swap.sources ?? [{ ticker: swap.from, weight: 1 }]).map(source => ({
+      ...source,
+      mapped: mapTickerExpressionForSingleMapping(source.ticker, mapping),
+    }))
     if (swap.legs) {
       const mappedLegs = swap.legs.map(leg => ({
         ...leg,
         mapped: mapTickerExpressionForSingleMapping(leg.ticker, mapping),
       }))
       return {
-        value: `${from.value} > ${mappedLegs.map(leg => formatSwapLeg(leg.mapped.value, leg.weight)).join(' + ')}`,
-        warnings: [...from.warnings, ...mappedLegs.flatMap(leg => leg.mapped.warnings)],
+        value: `${sources.map(source => formatSwapLeg(source.mapped.value, source.weight)).join(' + ')} > ${mappedLegs.map(leg => formatSwapLeg(leg.mapped.value, leg.weight)).join(' + ')}`,
+        warnings: [...sources.flatMap(source => source.mapped.warnings), ...mappedLegs.flatMap(leg => leg.mapped.warnings)],
       }
     }
 
+    const from = sources[0].mapped
     const to = mapTickerExpressionForSingleMapping(swap.to, mapping)
     return {
       value: formatSwapExpression(from.value, to.value, swap.factor),

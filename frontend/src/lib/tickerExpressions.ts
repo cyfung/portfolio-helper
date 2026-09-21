@@ -77,6 +77,7 @@ export interface SwapExpression {
   from: string
   to: string
   factor: number
+  sources?: WeightedTickerExpression[]
   legs?: WeightedTickerExpression[]
 }
 
@@ -113,9 +114,10 @@ function parseShorthandSwapExpression(raw: string): SwapExpression | null {
   if (!parsed) return null
   const usableLegs = parsed.legs.map(leg => ({ ticker: leg.instrument, weight: leg.multiplier }))
   return {
-    from: parsed.source,
+    from: parsed.sources[0].instrument,
     to: usableLegs[0].ticker,
     factor: usableLegs[0].weight,
+    sources: parsed.sources.map(source => ({ ticker: source.instrument, weight: source.multiplier })),
     legs: usableLegs,
   }
 }
@@ -167,6 +169,13 @@ export function expandSwapTickerRows(rows: WeightedTickerExpression[]): Weighted
 export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]): WeightedTickerExpression[] {
   const weights = new Map<string, number>()
 
+  function legacySource(swap: SwapExpression) {
+    if (swap.sources && (swap.sources.length !== 1 || swap.sources[0].weight !== 1)) {
+      throw new Error('Multi-source swaps must be resolved through canonical portfolio composition.')
+    }
+    return swap.sources?.[0].ticker ?? swap.from
+  }
+
   function add(ticker: string, weight: number) {
     const key = normalizeTickerExpression(ticker)
     if (!key || !isResolvedNonZeroWeight(weight)) return
@@ -183,7 +192,7 @@ export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]
     }
     const legs = swap.legs ?? [{ ticker: swap.to, weight: swap.factor }]
     const legWeightTotal = legs.reduce((sum, leg) => sum + leg.weight, 0)
-    expand(swap.from, -weight)
+    expand(legacySource(swap), -weight)
     legs.forEach(leg => expand(leg.ticker, weight * leg.weight))
     add('DUMMY', weight * (2 - legWeightTotal))
   }
@@ -196,16 +205,17 @@ export function resolveSwapTickerRows(rows: WeightedOrWildcardTickerExpression[]
       continue
     }
 
-    const from = normalizeTickerExpression(swap.from)
+    const from = normalizeTickerExpression(legacySource(swap))
 
     if (row.weight !== '*') {
-      if (row.weight > 0) {
+      const amount = row.weight
+      if (amount > 0) {
         const available = weights.get(from) ?? 0
-        if (!isResolvedNonZeroWeight(available) || available < row.weight) {
+        if (!isResolvedNonZeroWeight(available) || available < amount) {
           throw new Error(`Not enough ${from} weight to swap.`)
         }
       }
-      expand(row.ticker, row.weight)
+      expand(row.ticker, amount)
       continue
     }
 

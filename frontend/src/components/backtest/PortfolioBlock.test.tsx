@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import { renderToStaticMarkup } from 'react-dom/server'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import PortfolioBlock from './PortfolioBlock'
 import type { BlockState } from '@/types/backtest'
+
+afterEach(cleanup)
 
 function renderPortfolioBlock(tickers: BlockState['tickers']) {
   return renderToStaticMarkup(
@@ -50,7 +52,7 @@ describe('portfolio row editor', () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       tickers: [expect.objectContaining({
         type: 'SWAP',
-        source: '',
+        sources: [expect.objectContaining({ instrument: '', multiplier: '1' })],
         transferMode: 'AMOUNT',
         transferAmount: '',
         legs: [expect.objectContaining({ instrument: '', multiplier: '1' })],
@@ -83,7 +85,7 @@ describe('portfolio row editor', () => {
       {
         id: 'swap',
         type: 'SWAP',
-        source: 'SPY',
+        sources: [{ id: 'source', instrument: 'SPY', multiplier: '1' }],
         transferMode: 'AMOUNT',
         transferAmount: '10',
         legs: [{ id: 'leg', instrument: 'TLT', multiplier: '1' }],
@@ -131,7 +133,7 @@ describe('portfolio row editor', () => {
     const markup = renderPortfolioBlock([{
       id: 'swap',
       type: 'SWAP',
-      source: 'SPY',
+      sources: [{ id: 'source', instrument: 'SPY', multiplier: '1' }],
       transferMode: 'AMOUNT',
       transferAmount: '10',
       legs: [
@@ -146,6 +148,129 @@ describe('portfolio row editor', () => {
     expect(markup).toContain('class="swap-row-badge">SWAP</span>')
     expect(markup).toContain('aria-label="Swap transfer amount"')
     expect(markup).toContain('aria-label="Edit swap"')
+  })
+
+  it('adds and saves another source leg through the swap dialog', () => {
+    const onChange = vi.fn()
+    render(
+      <PortfolioBlock
+        idx={0}
+        value={{
+          label: 'Example',
+          tickers: [{
+            id: 'swap',
+            type: 'SWAP',
+            sources: [{ id: 'source-1', instrument: 'SPY', multiplier: '1' }],
+            transferMode: 'AMOUNT',
+            transferAmount: '10',
+            legs: [{ id: 'destination-1', instrument: 'QQQ', multiplier: '1' }],
+          }],
+          rebalance: 'YEARLY',
+          margins: [],
+          rebalanceStrategies: [],
+          includeNoMargin: true,
+        }}
+        onChange={onChange}
+        onSavedRefresh={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit swap' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Source' }))
+
+    const sourceInputs = screen.getAllByLabelText('Swap source') as HTMLInputElement[]
+    const multiplierInputs = screen.getAllByLabelText('Swap source multiplier') as HTMLInputElement[]
+    fireEvent.change(sourceInputs[1], { target: { value: '(1 TLT 1 GLD)' } })
+    fireEvent.change(multiplierInputs[1], { target: { value: '2' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      tickers: [expect.objectContaining({
+        sources: [
+          expect.objectContaining({ instrument: 'SPY', multiplier: '1' }),
+          expect.objectContaining({ instrument: '(1 TLT 1 GLD)', multiplier: '2' }),
+        ],
+      })],
+    }))
+    expect((screen.getByLabelText('Swap structure') as HTMLInputElement).value)
+      .toBe('SPY + 2 (1 TLT 1 GLD) > QQQ')
+  })
+
+  it('removes a source leg through the swap dialog', () => {
+    const onChange = vi.fn()
+    render(
+      <PortfolioBlock
+        idx={0}
+        value={{
+          label: 'Example',
+          tickers: [{
+            id: 'swap',
+            type: 'SWAP',
+            sources: [
+              { id: 'source-1', instrument: 'SPY', multiplier: '1' },
+              { id: 'source-2', instrument: 'TLT', multiplier: '1' },
+            ],
+            transferMode: 'AMOUNT',
+            transferAmount: '10',
+            legs: [{ id: 'destination-1', instrument: 'QQQ', multiplier: '1' }],
+          }],
+          rebalance: 'YEARLY',
+          margins: [],
+          rebalanceStrategies: [],
+          includeNoMargin: true,
+        }}
+        onChange={onChange}
+        onSavedRefresh={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit swap' }))
+    const dialog = within(screen.getByRole('dialog'))
+    fireEvent.click(dialog.getByRole('button', { name: 'Remove source TLT' }))
+    fireEvent.click(dialog.getByRole('button', { name: 'Save' }))
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      tickers: [expect.objectContaining({
+        sources: [expect.objectContaining({ instrument: 'SPY', multiplier: '1' })],
+      })],
+    }))
+  })
+
+  it('preserves multi-source shorthand when switching to expanded editing', () => {
+    const onChange = vi.fn()
+    render(
+      <PortfolioBlock
+        idx={0}
+        value={{
+          label: 'Example',
+          tickers: [{
+            id: 'swap',
+            type: 'SWAP',
+            sources: [{ id: 'source-1', instrument: 'SPY', multiplier: '1' }],
+            transferMode: 'AMOUNT',
+            transferAmount: '10',
+            legs: [{ id: 'destination-1', instrument: 'QQQ', multiplier: '1' }],
+          }],
+          rebalance: 'YEARLY',
+          margins: [],
+          rebalanceStrategies: [],
+          includeNoMargin: true,
+        }}
+        onChange={onChange}
+        onSavedRefresh={() => undefined}
+      />,
+    )
+
+    const structure = screen.getByLabelText('Swap structure') as HTMLInputElement
+    fireEvent.change(structure, { target: { value: '2 spy + (1 tlt 1 gld) > -0.5 qqq' } })
+    fireEvent.blur(structure)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit swap' }))
+
+    expect((screen.getAllByLabelText('Swap source') as HTMLInputElement[]).map(input => input.value))
+      .toEqual(['SPY', '(1 TLT 1 GLD)'])
+    expect((screen.getAllByLabelText('Swap source multiplier') as HTMLInputElement[]).map(input => input.value))
+      .toEqual(['2', '1'])
+    expect((screen.getByLabelText('Swap destination multiplier') as HTMLInputElement).value).toBe('-0.5')
   })
 
   it('places percentage units inside allocation controls for every numeric row type', () => {
@@ -166,7 +291,7 @@ describe('portfolio row editor', () => {
       {
         id: 'swap',
         type: 'SWAP',
-        source: 'SPY',
+        sources: [{ id: 'source-1', instrument: 'SPY', multiplier: '1' }],
         transferMode: 'AMOUNT',
         transferAmount: '10',
         legs: [{ id: 'one', instrument: 'TLT', multiplier: '1' }],
@@ -174,7 +299,7 @@ describe('portfolio row editor', () => {
       {
         id: 'all-remaining-swap',
         type: 'SWAP',
-        source: 'TLT',
+        sources: [{ id: 'source-2', instrument: 'TLT', multiplier: '1' }],
         transferMode: 'ALL_REMAINING',
         transferAmount: '',
         legs: [{ id: 'two', instrument: 'SPY', multiplier: '1' }],
@@ -191,7 +316,7 @@ describe('portfolio row editor', () => {
     const markup = renderPortfolioBlock([{
       id: 'swap',
       type: 'SWAP',
-      source: 'SPY',
+      sources: [{ id: 'source', instrument: 'SPY', multiplier: '1' }],
       transferMode: 'AMOUNT',
       transferAmount: '10',
       legs: [{ id: 'one', instrument: 'TLT', multiplier: '1' }],

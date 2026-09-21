@@ -189,7 +189,10 @@ describe('saved portfolio persistence', () => {
         {
           id: 'swap',
           type: 'SWAP',
-          source: 'SPY',
+          sources: [
+            { id: 'source-1', instrument: 'SPY', multiplier: '2' },
+            { id: 'source-2', instrument: '(1 TLT 1 GLD)', multiplier: '1' },
+          ],
           transferMode: 'ALL_REMAINING',
           transferAmount: '',
           legs: [
@@ -218,7 +221,10 @@ describe('saved portfolio persistence', () => {
       {
         id: 'swap',
         type: 'SWAP',
-        source: 'SPY',
+        sources: [
+          { instrument: 'SPY', multiplier: 2 },
+          { instrument: '(1 TLT 1 GLD)', multiplier: 1 },
+        ],
         transfer: { mode: 'ALL_REMAINING' },
         legs: [
           { instrument: 'TLT', multiplier: 1.5 },
@@ -232,12 +238,35 @@ describe('saved portfolio persistence', () => {
       state.tickers[1],
       {
         ...state.tickers[2],
+        sources: [
+          { id: 'swap-source-0', instrument: 'SPY', multiplier: '2' },
+          { id: 'swap-source-1', instrument: '(1 TLT 1 GLD)', multiplier: '1' },
+        ],
         legs: [
           { id: 'swap-leg-0', instrument: 'TLT', multiplier: '1.5' },
           { id: 'swap-leg-1', instrument: 'KMLM', multiplier: '-0.25' },
         ],
       },
     ])
+  })
+
+  it('loads a legacy single swap source as one source leg', () => {
+    expect(configToBlockState({
+      rows: [{
+        id: 'swap',
+        type: 'SWAP',
+        source: 'spy',
+        transfer: { mode: 'AMOUNT', amount: 10 },
+        legs: [{ instrument: 'TLT', multiplier: 1 }],
+      }],
+    }, 'Legacy').tickers).toEqual([{
+      id: 'swap',
+      type: 'SWAP',
+      sources: [{ id: 'swap-source-0', instrument: 'SPY', multiplier: '1' }],
+      transferMode: 'AMOUNT',
+      transferAmount: '10',
+      legs: [{ id: 'swap-leg-0', instrument: 'TLT', multiplier: '1' }],
+    }])
   })
 
   it('keeps legacy DUMMY holdings visible for repair while marking them invalid', () => {
@@ -275,7 +304,7 @@ describe('saved portfolio persistence', () => {
     expect(convertHoldingEditorRowToSwap(holding)).toEqual({
       id: 'candidate',
       type: 'SWAP',
-      source: 'SPY',
+      sources: [{ id: 'candidate-source-0', instrument: 'SPY', multiplier: '1' }],
       transferMode: 'ALL_REMAINING',
       transferAmount: '',
       legs: [
@@ -290,7 +319,7 @@ describe('saved portfolio persistence', () => {
       tickers: [
         { id: 'valid', type: 'HOLDING', instrument: 'SPY', allocation: '100' },
         { id: 'dummy', type: 'HOLDING', instrument: 'DUMMY', allocation: '10' },
-        { id: 'bad-swap', type: 'SWAP', source: '', transferMode: 'AMOUNT', transferAmount: '0', legs: [] },
+        { id: 'bad-swap', type: 'SWAP', sources: [], transferMode: 'AMOUNT', transferAmount: '0', legs: [] },
       ],
     })
 
@@ -324,7 +353,7 @@ describe('ordered portfolio editing operations', () => {
       {
         id: 'swap',
         type: 'SWAP',
-        source: 'AAA',
+        sources: [{ id: 'source', instrument: 'AAA', multiplier: '1' }],
         transferMode: 'AMOUNT',
         transferAmount: '5',
         legs: [{ id: 'leg', instrument: 'BBB', multiplier: '1' }],

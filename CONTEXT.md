@@ -49,15 +49,19 @@ A portfolio reference that scales resolved exposures against the saved portfolio
 _Avoid_: Unnormalized reference, leveraged reference
 
 **Swap**:
-An ordered exposure adjustment that transfers a positive, absolute share of local base capital from currently available source exposure to one or more destinations. Its signed result is a delta, not an allocation, and is never normalized independently; the reverse direction is expressed as another swap.
+An ordered exposure adjustment that applies a positive, absolute share of local base capital independently through one or more source legs and destination legs. Its signed result is a delta, not an allocation, and is never normalized independently; the reverse direction is expressed as another swap.
 _Avoid_: Swap allocation, swap weight
 
-**Swap leg**:
-A destination instrument expression paired with a non-zero signed exposure multiplier. Simple tickers and compound synthetic instruments are both valid destinations.
-_Avoid_: Swap ticker
+**Swap source leg**:
+An instrument expression paired with a positive exposure multiplier. Each source leg removes its multiplier times the swap amount from the matching available exposure; duplicate canonical source expressions combine into one leg.
+_Avoid_: Source ticker
+
+**Swap destination leg**:
+An instrument expression paired with a non-zero signed exposure multiplier. Each destination leg applies its multiplier times the swap amount; duplicate canonical destination expressions combine into one leg and cancel when their multipliers sum to zero.
+_Avoid_: Swap leg, swap ticker
 
 **All-remaining swap**:
-A swap whose transfer amount is all positive source exposure available at its position in the local portfolio.
+A swap whose amount is the largest positive value every source leg can satisfy from exposure available at its position in the local portfolio. The source leg with the least multiplier-adjusted exposure limits the amount.
 _Avoid_: Wildcard weight, star weight
 
 **Resolved portfolio composition**:

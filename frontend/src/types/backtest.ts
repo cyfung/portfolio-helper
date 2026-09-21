@@ -8,6 +8,7 @@ import { allocOptionsFromHybridStrategies, DEFAULT_HYBRID_ALLOC_STRATEGIES } fro
 import { parseSwapExpression } from '@/lib/tickerExpressions'
 import {
   canonicalPortfolioConfiguration,
+  canonicalPortfolioRow,
   convertPortfolioRowToLegacyTickerRow,
   parseInstrumentExpression,
   parseSwapInput,
@@ -40,7 +41,7 @@ export interface SwapLegEditorRow {
 export interface SwapEditorRow {
   id: string
   type: 'SWAP'
-  source: string
+  sources: SwapLegEditorRow[]
   transferMode: 'AMOUNT' | 'ALL_REMAINING'
   transferAmount: string
   legs: SwapLegEditorRow[]
@@ -324,7 +325,11 @@ export function configToBlockState(config: any, name: string): BlockState {
       return {
         id: row.id,
         type: row.type,
-        source: row.source,
+        sources: row.sources.map((source, index) => ({
+          id: `${row.id}-source-${index}`,
+          instrument: source.instrument,
+          multiplier: String(source.multiplier),
+        })),
         transferMode: row.transfer.mode,
         transferAmount: row.transfer.mode === 'AMOUNT' ? String(row.transfer.amount) : '',
         legs: row.legs.map((leg, index) => ({
@@ -396,8 +401,14 @@ export function editorRowToPortfolioRow(row: PortfolioEditorRow): PortfolioRow |
       ? { id: row.id, type: 'PORTFOLIO_REFERENCE', portfolioName, allocation, normalizationMode: row.normalizationMode }
       : null
   }
-  const source = parseInstrumentExpression(row.source)
   const amount = Number(row.transferAmount.trim())
+  const sources = row.sources.map(source => {
+    const instrument = parseInstrumentExpression(source.instrument)
+    const multiplier = Number(source.multiplier.trim())
+    return instrument != null && Number.isFinite(multiplier) && multiplier > 0
+      ? { instrument, multiplier }
+      : null
+  })
   const legs = row.legs.map(leg => {
     const instrument = parseInstrumentExpression(leg.instrument)
     const multiplier = Number(leg.multiplier.trim())
@@ -405,15 +416,15 @@ export function editorRowToPortfolioRow(row: PortfolioEditorRow): PortfolioRow |
       ? { instrument, multiplier }
       : null
   })
-  if (source == null || legs.length === 0 || legs.some(leg => leg == null)) return null
+  if (sources.length === 0 || sources.some(source => source == null) || legs.length === 0 || legs.some(leg => leg == null)) return null
   if (row.transferMode === 'AMOUNT' && (!Number.isFinite(amount) || amount <= 0)) return null
-  return {
+  return canonicalPortfolioRow({
     id: row.id,
     type: 'SWAP',
-    source,
+    sources: sources as NonNullable<(typeof sources)[number]>[],
     transfer: row.transferMode === 'ALL_REMAINING' ? { mode: 'ALL_REMAINING' } : { mode: 'AMOUNT', amount },
     legs: legs as NonNullable<(typeof legs)[number]>[],
-  }
+  })
 }
 
 export function holdingRowSwapCandidate(row: HoldingEditorRow) {
@@ -426,7 +437,11 @@ export function convertHoldingEditorRowToSwap(row: HoldingEditorRow): SwapEditor
   return {
     id: row.id,
     type: 'SWAP',
-    source: swap.source,
+    sources: swap.sources.map((source, index) => ({
+      id: `${row.id}-source-${index}`,
+      instrument: source.instrument,
+      multiplier: String(source.multiplier),
+    })),
     transferMode: row.allocation.trim() === '*' ? 'ALL_REMAINING' : 'AMOUNT',
     transferAmount: row.allocation.trim() === '*' ? '' : row.allocation,
     legs: swap.legs.map((leg, index) => ({
@@ -449,7 +464,7 @@ export function portfolioEditorRowMergeKey(row: PortfolioEditorRow, index: numbe
     ? row.instrument.trim().toUpperCase()
     : row.type === 'PORTFOLIO_REFERENCE'
       ? row.portfolioName.trim()
-      : row.source.trim().toUpperCase()
+      : row.sources.map(source => source.instrument.trim().toUpperCase()).join(' + ')
   if (row.type === 'SWAP') return `swap:${index}:${row.id}`
   if (!label) return `empty:${row.id}`
   return row.type === 'PORTFOLIO_REFERENCE'

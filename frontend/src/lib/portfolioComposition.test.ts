@@ -84,6 +84,83 @@ describe('canonical portfolio composition', () => {
     })
   })
 
+  it('removes each source leg multiplier from the same fixed base amount', () => {
+    expect(resolvePortfolioComposition([
+      { id: 'spy', type: 'HOLDING', instrument: 'SPY', allocation: 40 },
+      { id: 'tlt', type: 'HOLDING', instrument: 'TLT', allocation: 30 },
+      {
+        id: 'swap',
+        type: 'SWAP',
+        sources: [
+          { instrument: 'SPY', multiplier: 2 },
+          { instrument: 'TLT', multiplier: 1 },
+        ],
+        transfer: { mode: 'AMOUNT', amount: 10 },
+        legs: [{ instrument: 'QQQ', multiplier: 1 }],
+      },
+    ])).toEqual({
+      composition: [
+        { instrument: 'SPY', exposure: 20 },
+        { instrument: 'TLT', exposure: 20 },
+        { instrument: 'QQQ', exposure: 10 },
+      ],
+      net: 50,
+      issues: [],
+    })
+  })
+
+  it('limits an all-remaining swap by the least multiplier-adjusted source exposure', () => {
+    expect(resolvePortfolioComposition([
+      { id: 'spy', type: 'HOLDING', instrument: 'SPY', allocation: 30 },
+      { id: 'tlt', type: 'HOLDING', instrument: 'TLT', allocation: 30 },
+      {
+        id: 'swap',
+        type: 'SWAP',
+        sources: [
+          { instrument: 'SPY', multiplier: 2 },
+          { instrument: 'TLT', multiplier: 1 },
+        ],
+        transfer: { mode: 'ALL_REMAINING' },
+        legs: [{ instrument: 'QQQ', multiplier: 1 }],
+      },
+    ])).toEqual({
+      composition: [
+        { instrument: 'TLT', exposure: 15 },
+        { instrument: 'QQQ', exposure: 15 },
+      ],
+      net: 30,
+      issues: [],
+    })
+  })
+
+  it('reports every deficient source without applying a partial fixed swap', () => {
+    expect(resolvePortfolioComposition([
+      { id: 'spy', type: 'HOLDING', instrument: 'SPY', allocation: 10 },
+      { id: 'tlt', type: 'HOLDING', instrument: 'TLT', allocation: 5 },
+      {
+        id: 'swap',
+        type: 'SWAP',
+        sources: [
+          { instrument: 'SPY', multiplier: 2 },
+          { instrument: 'TLT', multiplier: 1 },
+        ],
+        transfer: { mode: 'AMOUNT', amount: 10 },
+        legs: [{ instrument: 'QQQ', multiplier: 1 }],
+      },
+    ])).toEqual({
+      composition: [
+        { instrument: 'SPY', exposure: 10 },
+        { instrument: 'TLT', exposure: 5 },
+      ],
+      net: 15,
+      issues: [{
+        code: 'INSUFFICIENT_SOURCE',
+        rowId: 'swap',
+        message: 'Only 10 of positive SPY exposure is available to swap 20. Only 5 of positive TLT exposure is available to swap 10.',
+      }],
+    })
+  })
+
   it('keeps synthetic expressions atomic and applies signed, all-remaining, and self-destination legs', () => {
     expect(resolvePortfolioComposition([
       { id: 'synthetic', type: 'HOLDING', instrument: '(1 spy 1 tlt)', allocation: 20 },
@@ -127,7 +204,11 @@ describe('canonical portfolio composition', () => {
       net: 5,
       issues: [
         { code: 'INVALID_INSTRUMENT', rowId: 'bad-instrument', message: 'The holding instrument expression is invalid.' },
-        { code: 'INVALID_INSTRUMENT', rowId: 'bad-source', message: 'The swap source instrument expression is invalid.' },
+        {
+          code: 'INVALID_INSTRUMENT',
+          rowId: 'bad-source',
+          message: 'The swap must have at least one valid positive source leg.',
+        },
         { code: 'INVALID_LEGS', rowId: 'bad-leg', message: 'The swap must have at least one valid non-zero leg.' },
         { code: 'INVALID_TRANSFER', rowId: 'bad-amount', message: 'The swap transfer amount must be positive and finite.' },
         { code: 'INVALID_LEGS', rowId: 'empty-legs', message: 'The swap must have at least one valid non-zero leg.' },
@@ -145,7 +226,7 @@ describe('canonical portfolio composition', () => {
     expect(canonicalInstrumentExpression('  spy   R=Q   S=1.5 ')).toBe('SPY R=Q S=1.5')
     expect(canonicalInstrumentExpression('SPY S=1.5 R=Q')).toBe('SPY R=Q S=1.5')
     expect(parseSwapInput('SPY > 1.5 TLT + GLD #-2')).toEqual({
-      source: 'SPY',
+      sources: [{ instrument: 'SPY', multiplier: 1 }],
       legs: [
         { instrument: 'TLT', multiplier: 1.5 },
         { instrument: 'GLD', multiplier: -2 },
@@ -154,18 +235,32 @@ describe('canonical portfolio composition', () => {
     })
     expect(parseSwapInput('SPY > 0 TLT')).toBeNull()
     expect(parseSwapInput('SPY > 0.00000000001 TLT')).toEqual({
-      source: 'SPY',
+      sources: [{ instrument: 'SPY', multiplier: 1 }],
       legs: [{ instrument: 'TLT', multiplier: 0.00000000001 }],
       formatted: 'SPY > 1e-11 TLT',
     })
     expect(parseSwapInput('SPY > 2 ()')).toBeNull()
-    expect(parseSwapInput('2 SPY > TLT')).toBeNull()
+    expect(parseSwapInput('2 SPY > TLT')).toEqual({
+      sources: [{ instrument: 'SPY', multiplier: 2 }],
+      legs: [{ instrument: 'TLT', multiplier: 1 }],
+      formatted: '2 SPY > TLT',
+    })
     expect(parseSwapInput('SPY > 2 QQQ 1 TLT')).toBeNull()
     expect(parseSwapInput('SPY > 2 (1 QQQ 1 TLT)')).toEqual({
-      source: 'SPY',
+      sources: [{ instrument: 'SPY', multiplier: 1 }],
       legs: [{ instrument: '(1 QQQ 1 TLT)', multiplier: 2 }],
       formatted: 'SPY > 2 (1 QQQ 1 TLT)',
     })
+    expect(parseSwapInput('spy + 2 SPY + (1 tlt 1 gld) > QQQ + -1 qqq + GLD')).toEqual({
+      sources: [
+        { instrument: 'SPY', multiplier: 3 },
+        { instrument: '(1 TLT 1 GLD)', multiplier: 1 },
+      ],
+      legs: [{ instrument: 'GLD', multiplier: 1 }],
+      formatted: '3 SPY + (1 TLT 1 GLD) > GLD',
+    })
+    expect(parseSwapInput('-1 SPY + TLT > QQQ')).toBeNull()
+    expect(parseSwapInput('SPY > QQQ + -1 qqq')).toBeNull()
   })
 
   it('converts legacy overloaded rows only at an explicit boundary', () => {
@@ -188,14 +283,14 @@ describe('canonical portfolio composition', () => {
       {
         id: 'swap',
         type: 'SWAP',
-        source: 'SPY',
+        sources: [{ instrument: 'SPY', multiplier: 1 }],
         transfer: { mode: 'ALL_REMAINING' },
         legs: [{ instrument: 'TLT', multiplier: 1.5 }],
       },
       {
         id: 'legacy-swap',
         type: 'SWAP',
-        source: 'GLD',
+        sources: [{ instrument: 'GLD', multiplier: 1 }],
         transfer: { mode: 'AMOUNT', amount: 10 },
         legs: [{ instrument: 'TLT', multiplier: -2 }],
       },

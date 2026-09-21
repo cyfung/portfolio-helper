@@ -23,6 +23,8 @@ export interface SwapLeg {
   multiplier: number
 }
 
+export type SwapSourceLeg = SwapLeg
+
 export type SwapTransfer =
   | { mode: 'AMOUNT'; amount: number }
   | { mode: 'ALL_REMAINING' }
@@ -30,7 +32,7 @@ export type SwapTransfer =
 export interface SwapRow {
   id: string
   type: 'SWAP'
-  source: InstrumentExpression
+  sources: SwapSourceLeg[]
   transfer: SwapTransfer
   legs: SwapLeg[]
 }
@@ -174,7 +176,7 @@ function splitTopLevel(value: string, separator: string) {
   return parts
 }
 
-function parseSwapLeg(value: string): SwapLeg | null {
+function parseSwapLeg(value: string, positiveOnly = false): SwapLeg | null {
   const trimmed = value.trim()
   if (!trimmed) return null
   const prefix = PREFIX_MULTIPLIER.exec(trimmed)
@@ -186,33 +188,49 @@ function parseSwapLeg(value: string): SwapLeg | null {
   const grouped = rawInstrument.startsWith('(') && rawInstrument.endsWith(')')
   if (!grouped && rawInstrument.split(/\s+/).some(token => Number.isFinite(Number(token)))) return null
   const instrument = parseInstrumentExpression(rawInstrument)
-  if (instrument == null || !Number.isFinite(multiplier) || multiplier === 0) return null
+  if (instrument == null || !Number.isFinite(multiplier) || (positiveOnly ? multiplier <= 0 : multiplier === 0)) return null
   return { instrument, multiplier }
 }
 
-export function parseSwapInput(value: string): { source: InstrumentExpression; legs: SwapLeg[]; formatted: string } | null {
+function combineSwapLegs(legs: readonly SwapLeg[], removeZeroSums = true): SwapLeg[] {
+  const combined = new Map<InstrumentExpression, SwapLeg>()
+  legs.forEach(leg => {
+    const existing = combined.get(leg.instrument)
+    if (existing == null) combined.set(leg.instrument, { ...leg })
+    else existing.multiplier += leg.multiplier
+  })
+  return [...combined.values()].filter(leg => !removeZeroSums || leg.multiplier !== 0)
+}
+
+export function formatSwapInput(row: {
+  sources: readonly { instrument: string; multiplier: number }[]
+  legs: readonly { instrument: string; multiplier: number }[]
+}): string {
+  const formatLeg = (leg: { instrument: string; multiplier: number }) => leg.multiplier === 1
+    ? leg.instrument
+    : `${leg.multiplier} ${leg.instrument}`
+  return `${row.sources.map(formatLeg).join(' + ')} > ${row.legs.map(formatLeg).join(' + ')}`
+}
+
+export function parseSwapInput(value: string): { sources: SwapSourceLeg[]; legs: SwapLeg[]; formatted: string } | null {
   if (!balancedParentheses(value)) return null
   const parts = splitTopLevel(value, '>')
   if (parts.length !== 2) return null
-  const rawSource = parts[0].trim()
-  if (!hasSingleOuterGroup(rawSource) && Number.isFinite(Number(rawSource.split(/\s+/)[0]))) return null
-  const source = parseInstrumentExpression(rawSource)
-  const legs = splitTopLevel(parts[1], '+').map(parseSwapLeg)
-  if (source == null || legs.length === 0 || legs.some(leg => leg == null)) return null
-  const parsedLegs = legs as SwapLeg[]
+  const sources = splitTopLevel(parts[0], '+').map(source => parseSwapLeg(source, true))
+  const legs = splitTopLevel(parts[1], '+').map(destination => parseSwapLeg(destination))
+  if (sources.length === 0 || sources.some(leg => leg == null) || legs.length === 0 || legs.some(leg => leg == null)) return null
+  const parsedSources = combineSwapLegs(sources as SwapSourceLeg[], false)
+  const parsedLegs = combineSwapLegs(legs as SwapLeg[])
+  if (parsedLegs.length === 0) return null
   return {
-    source,
+    sources: parsedSources,
     legs: parsedLegs,
-    formatted: `${source} > ${parsedLegs.map(leg =>
-      leg.multiplier === 1 ? leg.instrument : `${leg.multiplier} ${leg.instrument}`,
-    ).join(' + ')}`,
+    formatted: formatSwapInput({ sources: parsedSources, legs: parsedLegs }),
   }
 }
 
-export function formatSwapRow(row: Pick<SwapRow, 'source' | 'legs'>): string {
-  return `${row.source} > ${row.legs.map(leg =>
-    leg.multiplier === 1 ? leg.instrument : `${leg.multiplier} ${leg.instrument}`,
-  ).join(' + ')}`
+export function formatSwapRow(row: Pick<SwapRow, 'sources' | 'legs'>): string {
+  return formatSwapInput(row)
 }
 
 export interface LegacyTickerRow {
@@ -235,7 +253,7 @@ function parseLegacySwapCall(value: string) {
   const destination = parseInstrumentExpression(match[2])
   if (source == null || destination == null || !Number.isFinite(multiplier) || multiplier === 0) return null
   return {
-    source,
+    sources: [{ instrument: source, multiplier: 1 }],
     legs: [{ instrument: destination, multiplier }],
   }
 }
@@ -258,7 +276,7 @@ export function convertLegacyTickerRow(row: LegacyTickerRow, fallbackId: string)
       ? { mode: 'ALL_REMAINING' }
       : { mode: 'AMOUNT', amount: allocation }
     if (transfer.mode === 'AMOUNT' && (!Number.isFinite(transfer.amount) || transfer.amount <= 0)) return null
-    return { id, type: 'SWAP', source: swap.source, transfer, legs: swap.legs }
+    return { id, type: 'SWAP', sources: swap.sources, transfer, legs: swap.legs }
   }
   if (ticker.includes('>') || /^SWAP\s*\(/i.test(ticker)) return null
 
@@ -295,18 +313,21 @@ function canonicalSwapTransfer(value: unknown): SwapTransfer | null {
     : null
 }
 
-function canonicalSwapLegs(value: unknown): SwapLeg[] | null {
+function canonicalSwapLegs(value: unknown, positiveOnly = false): SwapLeg[] | null {
   if (!Array.isArray(value) || value.length === 0) return null
   const legs = value.map(item => {
     if (item == null || typeof item !== 'object') return null
     const leg = item as Record<string, unknown>
     const instrument = parseInstrumentExpression(String(leg.instrument ?? ''))
     const multiplier = leg.multiplier
-    return instrument != null && typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier !== 0
+    return instrument != null && typeof multiplier === 'number' && Number.isFinite(multiplier) &&
+      (positiveOnly ? multiplier > 0 : multiplier !== 0)
       ? { instrument, multiplier }
       : null
   })
-  return legs.some(leg => leg == null) ? null : legs as SwapLeg[]
+  if (legs.some(leg => leg == null)) return null
+  const combined = combineSwapLegs(legs as SwapLeg[], !positiveOnly)
+  return combined.length === 0 ? null : combined
 }
 
 export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
@@ -332,11 +353,15 @@ export function canonicalPortfolioRow(value: unknown): PortfolioRow | null {
       : null
   }
   if (row.type !== 'SWAP') return null
-  const source = parseInstrumentExpression(String(row.source ?? ''))
+  const legacySource = parseInstrumentExpression(String(row.source ?? ''))
+  const sources = canonicalSwapLegs(
+    row.sources ?? (legacySource == null ? null : [{ instrument: legacySource, multiplier: 1 }]),
+    true,
+  )
   const transfer = canonicalSwapTransfer(row.transfer)
   const legs = canonicalSwapLegs(row.legs)
-  return source != null && transfer != null && legs != null
-    ? { id: row.id, type: 'SWAP', source, transfer, legs }
+  return sources != null && transfer != null && legs != null
+    ? { id: row.id, type: 'SWAP', sources, transfer, legs }
     : null
 }
 
@@ -354,8 +379,12 @@ function invalidResolutionIssue(value: unknown, rowId: string): PortfolioResolut
     return { code: 'INVALID_INSTRUMENT', rowId, message: 'The holding instrument expression is invalid.' }
   }
   if (row.type === 'SWAP') {
-    if (parseInstrumentExpression(String(row.source ?? '')) == null) {
-      return { code: 'INVALID_INSTRUMENT', rowId, message: 'The swap source instrument expression is invalid.' }
+    const legacySource = parseInstrumentExpression(String(row.source ?? ''))
+    if (canonicalSwapLegs(
+      row.sources ?? (legacySource == null ? null : [{ instrument: legacySource, multiplier: 1 }]),
+      true,
+    ) == null) {
+      return { code: 'INVALID_INSTRUMENT', rowId, message: 'The swap must have at least one valid positive source leg.' }
     }
     if (canonicalSwapTransfer(row.transfer) == null) {
       return { code: 'INVALID_TRANSFER', rowId, message: 'The swap transfer amount must be positive and finite.' }
@@ -498,26 +527,35 @@ function resolveRows(
       return
     }
 
-    const available = Math.max(exposures.get(row.source) ?? 0, 0)
-    const amount = row.transfer.mode === 'ALL_REMAINING' ? available : row.transfer.amount
-    if (available <= EPSILON) {
+    const availability = row.sources.map(source => ({
+      ...source,
+      available: Math.max(exposures.get(source.instrument) ?? 0, 0),
+    }))
+    const amount = row.transfer.mode === 'ALL_REMAINING'
+      ? Math.min(...availability.map(source => source.available / source.multiplier))
+      : row.transfer.amount
+    const deficient = availability.filter(source => amount * source.multiplier - source.available > EPSILON)
+    if (row.transfer.mode === 'ALL_REMAINING' && amount <= EPSILON) {
+      const unavailable = availability.filter(source => source.available <= EPSILON)
       issues.push(withPath({
         code: 'SOURCE_UNAVAILABLE',
         rowId: row.id,
-        message: `No positive ${row.source} exposure is available to swap.`,
+        message: `No positive ${unavailable.map(source => source.instrument).join(', ')} exposure is available to swap.`,
       }))
       return
     }
-    if (amount - available > EPSILON) {
+    if (deficient.length > 0) {
       issues.push(withPath({
         code: 'INSUFFICIENT_SOURCE',
         rowId: row.id,
-        message: `Only ${available} of positive ${row.source} exposure is available to swap ${amount}.`,
+        message: deficient.map(source =>
+          `Only ${source.available} of positive ${source.instrument} exposure is available to swap ${amount * source.multiplier}.`,
+        ).join(' '),
       }))
       return
     }
 
-    addExposure(row.source, -amount)
+    row.sources.forEach(source => addExposure(source.instrument, -amount * source.multiplier))
     row.legs.forEach(leg => addExposure(leg.instrument, amount * leg.multiplier))
   })
 

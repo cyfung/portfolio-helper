@@ -27,7 +27,7 @@ describe('portfolio row dragging', () => {
     const rows = [
       { id: 'holding', type: 'HOLDING' as const, instrument: 'SPY', allocation: '50' },
       { id: 'reference', type: 'PORTFOLIO_REFERENCE' as const, portfolioName: 'Child', allocation: '40', normalizationMode: 'NET_100' as const },
-      { id: 'swap', type: 'SWAP' as const, source: 'SPY', transferMode: 'AMOUNT' as const, transferAmount: '10', legs: [] },
+      { id: 'swap', type: 'SWAP' as const, sources: [{ id: 'source', instrument: 'SPY', multiplier: '1' }], transferMode: 'AMOUNT' as const, transferAmount: '10', legs: [] },
     ]
 
     expect(reorderPortfolioRows(rows, 'swap', 'holding', 'before').map(row => row.id))
