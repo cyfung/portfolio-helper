@@ -35,7 +35,8 @@ data class PortfolioSyncEntry(
     val name: String,
     val slug: String,
     val stocks: List<AndroidSyncStock>,
-    val cash: List<BackupCash>
+    val cash: List<BackupCash>,
+    val flexibleWeightMappings: String = ""
 )
 
 @Serializable
@@ -257,7 +258,8 @@ object BackupService {
             name = portfolio.name,
             slug = portfolio.slug,
             stocks = r.stocks.map { it.toAndroidSyncStock() },
-            cash = r.cash
+            cash = r.cash,
+            flexibleWeightMappings = portfolio.getConfig("flexibleWeightMappings") ?: ""
         )
     }
 

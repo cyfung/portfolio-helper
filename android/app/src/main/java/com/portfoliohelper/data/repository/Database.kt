@@ -1,6 +1,8 @@
 package com.portfoliohelper.data.repository
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.portfoliohelper.data.model.CashEntry
 import com.portfoliohelper.data.model.MarketPrice
 import com.portfoliohelper.data.model.Portfolio
@@ -171,7 +173,7 @@ interface MarketPriceDao {
         PortfolioMarginAlert::class,
         TickerSettings::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -181,4 +183,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tickerSettingsDao(): TickerSettingsDao
     abstract fun cashDao(): CashDao
     abstract fun marketPriceDao(): MarketPriceDao
+
+    companion object {
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE portfolios ADD COLUMN flexibleWeightMappings TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+    }
 }

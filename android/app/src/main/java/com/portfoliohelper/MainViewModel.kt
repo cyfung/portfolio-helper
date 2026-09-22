@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.portfoliohelper.data.repository.parseLetfDefinition
+import com.portfoliohelper.domain.hasFlexibleWeightMappings
 
 sealed class SyncStatus {
     object Idle : SyncStatus()
@@ -81,6 +82,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val selectedPortfolioId: StateFlow<Int> = settings.selectedPortfolioId
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
+    val selectedPortfolio: StateFlow<Portfolio?> = combine(portfolios, selectedPortfolioId) { items, id ->
+        items.firstOrNull { it.serialId == id }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val portfolioAlerts: StateFlow<List<PortfolioMarginAlert>> =
         db.portfolioMarginAlertDao().observeAll()
@@ -163,6 +168,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val rebalanceTargetMarginPct: StateFlow<Double?> = selectedPortfolioId
         .flatMapLatest { pid -> settings.rebalanceTargetMarginPct(pid) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val flexibleRebalancingAvailable: StateFlow<Boolean> = selectedPortfolio
+        .map { portfolio -> hasFlexibleWeightMappings(portfolio?.flexibleWeightMappings) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val savedFlexibleRebalancingEnabled: StateFlow<Boolean> = selectedPortfolioId
+        .flatMapLatest { pid -> settings.flexibleRebalancingEnabled(pid) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val flexibleRebalancingEnabled: StateFlow<Boolean> = combine(
+        flexibleRebalancingAvailable,
+        savedFlexibleRebalancingEnabled,
+    ) { available, enabled -> available && enabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // ── Cash screen navigation (triggered by notification tap) ───────────────
 
@@ -419,6 +438,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         settings.saveRebalanceTargetMarginPct(selectedPortfolioId.value, pct)
     }
 
+    fun saveFlexibleRebalancingEnabled(enabled: Boolean) = viewModelScope.launch {
+        settings.saveFlexibleRebalancingEnabled(
+            selectedPortfolioId.value,
+            enabled && flexibleRebalancingAvailable.value,
+        )
+    }
+
     // ── Portfolio CRUD (local only) ───────────────────────────────────────────
 
     fun createPortfolio(name: String) = viewModelScope.launch {
@@ -429,7 +455,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renamePortfolio(serialId: Int, name: String) = viewModelScope.launch {
-        db.portfolioDao().upsert(Portfolio(serialId = serialId, displayName = name))
+        val portfolio = portfolios.value.firstOrNull { it.serialId == serialId } ?: return@launch
+        db.portfolioDao().upsert(portfolio.copy(displayName = name))
         refreshMarketData()
     }
 
@@ -442,6 +469,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         db.cashDao().deleteAll(serialId)
         db.portfolioMarginAlertDao().delete(serialId)
         db.portfolioDao().delete(serialId)
+        settings.clearFlexibleRebalancingEnabled(listOf(serialId))
         refreshMarketData()
     }
 

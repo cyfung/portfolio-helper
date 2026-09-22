@@ -4,6 +4,7 @@ import com.portfoliohelper.util.appJson
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SyncChecksumTest {
     @Test
@@ -28,5 +29,28 @@ class SyncChecksumTest {
             computeSyncChecksum(response.portfolios),
         )
         assertFalse("manualQty" in payload)
+    }
+
+    @Test
+    fun `Android sync carries flexible weight mappings without changing its checksum`() {
+        val mappings = """[{"left":"UPRO","right":"3 VOO"}]"""
+        val entry = PortfolioSyncEntry(
+            serialId = 7,
+            name = "Flexible",
+            slug = "flexible",
+            stocks = listOf(AndroidSyncStock("UPRO", 2.0)),
+            cash = emptyList(),
+            flexibleWeightMappings = mappings,
+        )
+        val payload = appJson.encodeToString(
+            AllSyncResponse.serializer(),
+            AllSyncResponse(listOf(entry), computeSyncChecksum(listOf(entry))),
+        )
+
+        assertTrue("\"flexibleWeightMappings\":\"" in payload)
+        assertEquals(
+            "08be6054d0152a015f398a5eeab9b05081bb3105400cb4b72c057d2129710cfa",
+            computeSyncChecksum(listOf(entry)),
+        )
     }
 }

@@ -68,6 +68,14 @@ _Avoid_: Wildcard weight, star weight
 The signed instrument exposures remaining after a portfolio has applied its own swaps in row order, without expanding synthetic instruments. A referenced portfolio passes this composition to its parent without allowing its swaps to consume parent or sibling holdings.
 _Avoid_: Expanded child rows
 
+**Flexible weight mapping**:
+A bidirectional relationship between instrument expressions that permits offsetting allocation deviations and rebalancing amounts to move between them.
+_Avoid_: Flexible setting, flexibility rule
+
+**Flexible rebalancing mode**:
+A portfolio display mode that presents target weights and rebalancing amounts after applying its flexible weight mappings.
+_Avoid_: Flexible toggle, F mode
+
 **Portfolio depletion**:
 The absorbing state reached when a withdrawal exhausts a simulated portfolio. Its value is clamped to zero and remains zero for the rest of the run; later cashflows or returns cannot revive it.
 _Avoid_: Temporary bankruptcy, negative portfolio value

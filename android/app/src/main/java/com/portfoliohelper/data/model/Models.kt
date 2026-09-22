@@ -10,7 +10,8 @@ import kotlinx.serialization.Serializable
 data class Portfolio(
     @PrimaryKey(autoGenerate = true) val serialId: Int = 0,
     val displayName: String,
-    val slug: String = ""
+    val slug: String = "",
+    val flexibleWeightMappings: String = ""
 )
 
 // ── Portfolio position ────────────────────────────────────────────────────────

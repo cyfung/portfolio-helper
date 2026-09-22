@@ -42,6 +42,9 @@ object PrefsKeys {
 
     fun REBALANCE_TARGET_MARGIN_PCT(portfolioId: Int) =
         doublePreferencesKey("rebalance_target_margin_pct_$portfolioId")
+
+    fun FLEXIBLE_REBALANCING_ENABLED(portfolioId: Int) =
+        booleanPreferencesKey("flexible_rebalancing_enabled_$portfolioId")
 }
 
 data class MarginCheckStats(
@@ -244,6 +247,23 @@ class SettingsRepository(private val context: Context) {
             } else {
                 prefs[key] = pct
             }
+        }
+    }
+
+    fun flexibleRebalancingEnabled(portfolioId: Int): Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PrefsKeys.FLEXIBLE_REBALANCING_ENABLED(portfolioId)] ?: false
+    }
+
+    suspend fun saveFlexibleRebalancingEnabled(portfolioId: Int, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            val key = PrefsKeys.FLEXIBLE_REBALANCING_ENABLED(portfolioId)
+            if (enabled) prefs[key] = true else prefs.remove(key)
+        }
+    }
+
+    suspend fun clearFlexibleRebalancingEnabled(portfolioIds: Collection<Int>) {
+        context.dataStore.edit { prefs ->
+            portfolioIds.forEach { prefs.remove(PrefsKeys.FLEXIBLE_REBALANCING_ENABLED(it)) }
         }
     }
 

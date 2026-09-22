@@ -13,6 +13,7 @@ import com.portfoliohelper.data.model.Portfolio
 import com.portfoliohelper.data.model.PortfolioMarginAlert
 import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.model.TickerSettings
+import com.portfoliohelper.domain.hasFlexibleWeightMappings
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.request.*
@@ -225,7 +226,7 @@ class SyncRepository(
 
             val encryptedBytes = response.readBytes()
             val jsonBytes = AesGcm.decrypt(encryptedBytes, aesKey)
-            val allSync = json.decodeFromString<AllSyncResponse>(jsonBytes.toString(Charsets.UTF_8))
+            val allSync = decodeAllSyncResponse(jsonBytes.toString(Charsets.UTF_8))
 
             parseAndSave(allSync)
             Log.i("SyncRepository", "Sync successful: ${allSync.portfolios.size} portfolios")
@@ -259,6 +260,7 @@ class SyncRepository(
             throw Exception("Sync data integrity check failed — data may be incomplete")
         }
 
+        val previousPortfolios = db.portfolioDao().getAll()
         db.withTransaction {
             db.positionDao().hardDeleteAll()
             db.cashDao().deleteAll()
@@ -284,7 +286,12 @@ class SyncRepository(
                 if (serialId > maxSerialId) maxSerialId = serialId
 
                 db.portfolioDao().upsert(
-                    Portfolio(serialId = serialId, displayName = entry.name, slug = entry.slug)
+                    Portfolio(
+                        serialId = serialId,
+                        displayName = entry.name,
+                        slug = entry.slug,
+                        flexibleWeightMappings = entry.flexibleWeightMappings,
+                    )
                 )
 
                 entry.stocks.forEach { s ->
@@ -339,6 +346,10 @@ class SyncRepository(
                 )
             }
         }
+
+        settings.clearFlexibleRebalancingEnabled(
+            flexiblePreferenceIdsToClear(previousPortfolios, response.portfolios)
+        )
     }
 
     private fun computeSyncChecksum(portfolios: List<PortfolioSyncEntry>): String {
@@ -361,7 +372,8 @@ data class PortfolioSyncEntry(
     val name: String,
     val slug: String,
     val stocks: List<BackupStock>,
-    val cash: List<BackupCash>
+    val cash: List<BackupCash>,
+    val flexibleWeightMappings: String = ""
 )
 
 @kotlinx.serialization.Serializable
@@ -397,3 +409,21 @@ data class BackupCash(
     val portfolioRef: String? = null,
     val snapshotUsd: Double? = null
 )
+
+fun decodeAllSyncResponse(payload: String): AllSyncResponse =
+    Json { ignoreUnknownKeys = true }.decodeFromString(payload)
+
+fun flexiblePreferenceIdsToClear(
+    previous: List<Portfolio>,
+    synced: List<PortfolioSyncEntry>,
+): Set<Int> {
+    val previousById = previous.associateBy { it.serialId }
+    val syncedById = synced.associateBy { it.serialId }
+    val ineligibleOrRemoved = (previousById.keys + syncedById.keys).filterTo(mutableSetOf()) { id ->
+        syncedById[id]?.let { hasFlexibleWeightMappings(it.flexibleWeightMappings) } != true
+    }
+    val replaced = synced.filterTo(mutableSetOf()) { entry ->
+        previousById[entry.serialId]?.slug?.let { it != entry.slug } == true
+    }.mapTo(mutableSetOf()) { it.serialId }
+    return ineligibleOrRemoved + replaced
+}

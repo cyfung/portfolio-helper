@@ -50,6 +50,9 @@ import androidx.compose.ui.unit.sp
 import com.portfoliohelper.MainViewModel
 import com.portfoliohelper.data.model.Position
 import com.portfoliohelper.data.repository.YahooQuote
+import com.portfoliohelper.domain.FlexibleStockInput
+import com.portfoliohelper.domain.computeFlexibleStockDisplay
+import com.portfoliohelper.domain.parseFlexibleWeightMappings
 import com.portfoliohelper.ui.components.Divider
 import com.portfoliohelper.ui.components.MeasureTableLayout
 import com.portfoliohelper.ui.components.MonoText
@@ -84,6 +87,9 @@ private data class RebalanceStockDisplayData(
     val estWaiting: Boolean,
     val rebalDollars: Double?,
     val rebalQty: Double?,
+    val rebalUsd: Double?,
+    val priceUsd: Double?,
+    val multiplierToUsd: Double?,
     val currency: String?,
 )
 
@@ -101,6 +107,9 @@ fun RebalanceScreen(vm: MainViewModel) {
     val targetMarginPct by vm.rebalanceTargetMarginPct.collectAsState()
     val estPrices by vm.estPrices.collectAsState()
     val estWaitingSymbols by vm.estWaitingSymbols.collectAsState()
+    val selectedPortfolio by vm.selectedPortfolio.collectAsState()
+    val flexibleAvailable by vm.flexibleRebalancingAvailable.collectAsState()
+    val flexibleEnabled by vm.flexibleRebalancingEnabled.collectAsState()
 
     val scrollState = rememberScrollState()
     val hasTargetWeights = positions.any { it.targetWeight > 0 }
@@ -117,7 +126,7 @@ fun RebalanceScreen(vm: MainViewModel) {
             .background(ext.bgPrimary)
     ) {
         val screenWidth = maxWidth
-        val stockData = positions.map { pos ->
+        val normalStockData = positions.map { pos ->
             buildRebalanceStockDisplayData(
                 pos = pos,
                 quote = marketData[pos.symbol],
@@ -130,7 +139,36 @@ fun RebalanceScreen(vm: MainViewModel) {
                 estWaiting = pos.symbol in estWaitingSymbols,
             )
         }
-
+        val mappings = remember(selectedPortfolio?.flexibleWeightMappings) {
+            parseFlexibleWeightMappings(selectedPortfolio?.flexibleWeightMappings)
+        }
+        val flexibleDisplay = remember(normalStockData, mappings) {
+            computeFlexibleStockDisplay(
+                stocks = normalStockData.map { stock ->
+                    FlexibleStockInput(
+                        symbol = stock.symbol,
+                        currentWeightPct = stock.currentWeight,
+                        targetWeight = stock.targetWeight,
+                        rebalDollars = stock.rebalUsd ?: 0.0,
+                    )
+                },
+                mappings = mappings,
+            )
+        }
+        val stockData = if (flexibleAvailable && flexibleEnabled) {
+            normalStockData.map { stock ->
+                val flexibleUsd = flexibleDisplay.rebalDollars[stock.symbol]
+                stock.copy(
+                    targetWeight = flexibleDisplay.targetWeight[stock.symbol] ?: stock.targetWeight,
+                    rebalDollars = if (stock.rebalUsd != null && flexibleUsd != null && stock.multiplierToUsd != null && stock.multiplierToUsd != 0.0) {
+                        flexibleUsd / stock.multiplierToUsd
+                    } else null,
+                    rebalQty = if (stock.rebalUsd != null && flexibleUsd != null && stock.priceUsd != null && stock.priceUsd > 0.0) {
+                        flexibleUsd / stock.priceUsd
+                    } else null,
+                )
+            }
+        } else normalStockData
         val widthMeasureData = stockData + RebalanceStockDisplayData(
             symbol = "WWWW.PA",
             currentWeight = 22.2,
@@ -139,6 +177,9 @@ fun RebalanceScreen(vm: MainViewModel) {
             estWaiting = false,
             rebalDollars = -88888.88,
             rebalQty = -888.88,
+            rebalUsd = -88888.88,
+            priceUsd = 100.0,
+            multiplierToUsd = 1.0,
             currency = "USD",
         )
         val sortedCcys = remember(displayCcy, stockData) {
@@ -230,6 +271,9 @@ fun RebalanceScreen(vm: MainViewModel) {
                             displayCcy = displayCcy,
                             targetMarginPct = targetMarginPct,
                             onTargetMarginChange = vm::saveRebalanceTargetMarginPct,
+                            flexibleAvailable = flexibleAvailable,
+                            flexibleEnabled = flexibleEnabled,
+                            onFlexibleEnabledChange = vm::saveFlexibleRebalancingEnabled,
                         )
                     }
                     stickyHeader {
@@ -286,6 +330,9 @@ private fun RebalanceSummaryCards(
     displayCcy: String,
     targetMarginPct: Double?,
     onTargetMarginChange: (Double?) -> Unit,
+    flexibleAvailable: Boolean,
+    flexibleEnabled: Boolean,
+    onFlexibleEnabledChange: (Boolean) -> Unit,
 ) {
     val ext = MaterialTheme.ext
     Column {
@@ -341,6 +388,56 @@ private fun RebalanceSummaryCards(
                 onValueChange = onTargetMarginChange,
                 modifier = Modifier.weight(1f)
             )
+            if (flexibleAvailable) {
+                FlexibleModeCard(
+                    enabled = flexibleEnabled,
+                    onEnabledChange = onFlexibleEnabledChange,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlexibleModeCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val ext = MaterialTheme.ext
+    Surface(
+        onClick = { onEnabledChange(!enabled) },
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = if (enabled) ext.actionPositive.copy(alpha = 0.14f) else ext.bgElevated,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            Text(
+                "Flexible",
+                style = MaterialTheme.typography.labelSmall,
+                color = ext.textTertiary,
+                fontSize = 10.sp,
+            )
+            Spacer(Modifier.height(4.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    if (enabled) "On" else "Off",
+                    color = if (enabled) ext.actionPositive else ext.textPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
     }
 }
@@ -616,6 +713,9 @@ private fun buildRebalanceStockDisplayData(
         estWaiting = estWaiting,
         rebalDollars = rebalNative,
         rebalQty = rebalQty,
+        rebalUsd = rebalUsd,
+        priceUsd = priceUsd,
+        multiplierToUsd = multiplierToUsd,
         currency = currency,
     )
 }
